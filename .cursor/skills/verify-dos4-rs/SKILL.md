@@ -37,7 +37,7 @@ The harness is `scripts/qemu-smoke.sh`. It boots `target/i686-unknown-none/relea
 PROOF_DIR=.cursor/skills/verify-dos4-rs/proof scripts/qemu-smoke.sh
 ```
 
-The script passes `-display none -serial stdio -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04 -m 64` and a 15 second `timeout`. Read the feature file before driving. The stable strings are `dos4-rs i686`, `dos4-rs x86_64`, `AX=0004 BX=FF00 CX=0000 CF=1`, `BIOS`, and `AUX`.
+The script passes `-display none -serial stdio -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04 -m 64` and a 15 second `timeout`. Read the feature file before driving. The stable strings are `dos4-rs i686`, `dos4-rs x86_64`, `AX=0004 BX=FF00 CX=0000 CF=1`, `BIOS`, `AUX`, and `DSK8102`.
 
 ## Evidence
 

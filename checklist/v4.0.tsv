@@ -16,7 +16,7 @@ v4.0/src/BIOS/MSBIO.LNK	text	untranslated	src/bios/msbio.rs
 v4.0/src/BIOS/MSBIO.SKL	text	untranslated	src/bios/msbio.rs
 v4.0/src/BIOS/MSCLOCK.ASM	text	untranslated	src/bios/msclock.rs
 v4.0/src/BIOS/MSCON.ASM	text	translated	src/bios/mscon.rs
-v4.0/src/BIOS/MSDISK.ASM	text	untranslated	src/bios/msdisk.rs
+v4.0/src/BIOS/MSDISK.ASM	text	partial	src/bios/msdisk.rs
 v4.0/src/BIOS/MSDSKPR.INC	text	untranslated	src/bios/msdskpr.rs
 v4.0/src/BIOS/MSEQU.INC	text	untranslated	src/bios/msequ.rs
 v4.0/src/BIOS/MSEXTRN.INC	text	untranslated	src/bios/msextrn.rs

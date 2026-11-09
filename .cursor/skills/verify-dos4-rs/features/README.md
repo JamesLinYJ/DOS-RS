@@ -38,3 +38,4 @@ Each feature file starts with an H1 title and one paragraph. It then uses exactl
 - [Read the DOS version](int21-ah30.md) covers INT 21h AH=30h, including carry.
 - [Write to the console](bios-con.md) covers CON$WRIT through INT 29h and INT 10h AH=0Eh.
 - [Write to AUX](bios-aux.md) covers AUX$WRIT through INT 14h AH=1.
+- [Read one disk sector](bios-disk.md) covers a one-sector read that returns status `8102h`.

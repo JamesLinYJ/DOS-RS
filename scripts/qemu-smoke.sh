@@ -74,6 +74,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DSK8102" "$out"; then
+		echo "$name missing disk status" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if [[ -n "${PROOF_DIR:-}" ]]; then
 		mkdir -p "$PROOF_DIR"
 		cp "$out" "$PROOF_DIR/$name.txt"

@@ -25,6 +25,11 @@ fn boot(gate: usize) -> ! {
     puts_result(&line);
     bios::mscon::con_write_bytes(b"BIOS\r\n");
     bios::msaux::aux_write_bytes(b"AUX\r\n");
+    let mut sector = [0u8; 512];
+    let disk_status = bios::msdisk::read_sector0(&mut sector);
+    puts("DSK");
+    put_hex16(disk_status);
+    puts("\n");
     debug_exit()
 }
 
@@ -157,6 +162,7 @@ fn load_idt(gate: usize) {
     unsafe {
         let idt = &raw mut IDT;
         (*idt)[0x10] = IdtEntry::interrupt(bios::mscon::int10_gate_addr(), selector);
+        (*idt)[0x13] = IdtEntry::interrupt(bios::msdisk::int13_gate_addr(), selector);
         (*idt)[0x14] = IdtEntry::interrupt(bios::msaux::int14_gate_addr(), selector);
         (*idt)[0x16] = IdtEntry::interrupt(bios::mscon::int16_gate_addr(), selector);
         (*idt)[0x21] = entry;
