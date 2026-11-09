@@ -351,7 +351,7 @@ fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
 /// Writes the logical GPRs back into the trap.
 ///
 /// On i686 each GPR write stores the low 32 bits. On x86_64 it stores the full `u64`.
-/// DS and ES are stored as 16-bit selectors. The pushed flags and the return frame are not written.
+/// DS and ES are written back as selector values. The pushed flags are not written.
 #[cfg(target_arch = "x86")]
 fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFrame) {
     let regs = frame.native(token);
