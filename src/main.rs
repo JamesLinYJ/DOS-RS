@@ -8,6 +8,7 @@
 use core::arch::asm;
 
 mod arch;
+mod bios;
 mod int21;
 
 /// Multiboot calls this. It does not return.
@@ -22,6 +23,7 @@ fn boot(gate: usize) -> ! {
     puts(banner());
     let line = invoke_int21();
     puts_result(&line);
+    bios::mscon::con_write_bytes(b"BIOS\r\n");
     debug_exit()
 }
 
@@ -142,9 +144,9 @@ struct IdtPtr {
 
 static mut IDT: [IdtEntry; 256] = [IdtEntry::empty(); 256];
 
-/// Loads an IDT whose vector `0x21` is an interrupt gate at `gate`.
+/// Loads interrupt gates for INT 10h, INT 16h, INT 21h, and INT 29h.
 ///
-/// An interrupt gate clears IF on entry. No other vector is installed.
+/// An interrupt gate clears IF on entry.
 fn load_idt(gate: usize) {
     let selector: u16;
     unsafe {
@@ -153,7 +155,10 @@ fn load_idt(gate: usize) {
     let entry = IdtEntry::interrupt(gate, selector);
     unsafe {
         let idt = &raw mut IDT;
+        (*idt)[0x10] = IdtEntry::interrupt(bios::mscon::int10_gate_addr(), selector);
+        (*idt)[0x16] = IdtEntry::interrupt(bios::mscon::int16_gate_addr(), selector);
         (*idt)[0x21] = entry;
+        (*idt)[0x29] = IdtEntry::interrupt(bios::mscon::int29_gate_addr(), selector);
         let ptr = IdtPtr {
             limit: (core::mem::size_of_val(&*idt) - 1) as u16,
             #[cfg(target_arch = "x86")]
@@ -227,6 +232,10 @@ fn puts(text: &str) {
         }
         putc(byte);
     }
+}
+
+pub(crate) fn serial_putc(byte: u8) {
+    putc(byte);
 }
 
 fn putc(byte: u8) {

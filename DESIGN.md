@@ -100,3 +100,7 @@ Three crates named `bios`, `dos`, and `cmd` would each publish an init and a cop
 ## Next implementation step
 
 Fill in the PIC mask, the IDT, the naked `int 0x21` gate, COM1, and the `0x10` debug exit, then add the smoke script that maps QEMU status 33 to process status 0.
+
+## Console slice
+
+`src/bios/mscon.rs` is `BIOS/MSCON.ASM`. `CON$WRIT` executes `int 0x29` for each byte. That gate is `OUTCHR` from `BIOS/MSBIO1.ASM`. `OUTCHR` executes `int 0x10` with AH=`0x0E` and BX=7. AH=`0x0E` writes AL to COM1. Packet offsets come from `BIOS/MSEQU.INC`. Media is 13, the transfer address is 14, and the count is 18. After AH=30h the kernel writes `BIOS` and CR LF through command 8. `BIOS/MSCON.ASM` is translated. `BIOS/MSBIO1.ASM` is partial, because only `OUTCHR` is taken from it.

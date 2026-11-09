@@ -10,12 +10,12 @@ v4.0/src/BIOS/MAKEFILE	text	untranslated	src/bios/makefile.rs
 v4.0/src/BIOS/MS96TPI.INC	text	untranslated	src/bios/ms96tpi.rs
 v4.0/src/BIOS/MSAUX.ASM	text	untranslated	src/bios/msaux.rs
 v4.0/src/BIOS/MSBDATA.INC	text	untranslated	src/bios/msbdata.rs
-v4.0/src/BIOS/MSBIO1.ASM	text	untranslated	src/bios/msbio1.rs
+v4.0/src/BIOS/MSBIO1.ASM	text	partial	src/bios/msbio1.rs
 v4.0/src/BIOS/MSBIO2.ASM	text	untranslated	src/bios/msbio2.rs
 v4.0/src/BIOS/MSBIO.LNK	text	untranslated	src/bios/msbio.rs
 v4.0/src/BIOS/MSBIO.SKL	text	untranslated	src/bios/msbio.rs
 v4.0/src/BIOS/MSCLOCK.ASM	text	untranslated	src/bios/msclock.rs
-v4.0/src/BIOS/MSCON.ASM	text	untranslated	src/bios/mscon.rs
+v4.0/src/BIOS/MSCON.ASM	text	translated	src/bios/mscon.rs
 v4.0/src/BIOS/MSDISK.ASM	text	untranslated	src/bios/msdisk.rs
 v4.0/src/BIOS/MSDSKPR.INC	text	untranslated	src/bios/msdskpr.rs
 v4.0/src/BIOS/MSEQU.INC	text	untranslated	src/bios/msequ.rs
