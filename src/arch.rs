@@ -130,10 +130,16 @@ pub(crate) fn gate_addr() -> usize {
     int21_gate as *const () as usize
 }
 
+unsafe extern "C" {
+    fn int21_gate();
+}
+
 /// i686 ring 0 trap. The CPU pushes EFLAGS, CS, and EIP as 4-byte slots.
 ///
-/// GPRs, DS, and ES are software-saved. This struct is not a stack overlay.
+/// GPRs, DS, and ES are software-saved into this `repr(C)` image. The image
+/// is not the CPU push itself. The naked gate copies the push in with `mov`.
 #[cfg(target_arch = "x86")]
+#[repr(C)]
 struct TrapFrame {
     eax: u32,
     ebx: u32,
@@ -142,17 +148,24 @@ struct TrapFrame {
     esi: u32,
     edi: u32,
     ebp: u32,
-    ds: u16,
-    es: u16,
+    ds: u32,
+    es: u32,
     eip: u32,
-    cs: u16,
+    cs: u32,
     eflags: u32,
 }
 
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::size_of::<TrapFrame>() == 48);
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::offset_of!(TrapFrame, eflags) == 44);
+
 /// x86_64 trap. The CPU pushes SS, RSP, RFLAGS, CS, and RIP as 8-byte slots.
 ///
-/// GPRs, DS, and ES are software-saved. This struct is not a stack overlay.
+/// GPRs, DS, and ES are software-saved into this `repr(C)` image. The image
+/// is not the CPU push itself. The naked gate copies the push in with `mov`.
 #[cfg(target_arch = "x86_64")]
+#[repr(C)]
 struct TrapFrame {
     rax: u64,
     rbx: u64,
@@ -161,8 +174,8 @@ struct TrapFrame {
     rsi: u64,
     rdi: u64,
     rbp: u64,
-    ds: u16,
-    es: u16,
+    ds: u64,
+    es: u64,
     rip: u64,
     cs: u64,
     rflags: u64,
@@ -170,29 +183,113 @@ struct TrapFrame {
     ss: u64,
 }
 
-impl TrapFrame {
-    fn capture() -> Self {
-        // TODO: save GPRs, DS, and ES in software.
-        // TODO: on i686, read the CPU push of EFLAGS, CS, EIP.
-        // TODO: on x86_64, read the CPU push of SS, RSP, RFLAGS, CS, RIP.
-        unimplemented!("read the CPU trap frame")
-    }
-}
+#[cfg(target_arch = "x86_64")]
+const _: () = assert!(core::mem::size_of::<TrapFrame>() == 112);
+#[cfg(target_arch = "x86_64")]
+const _: () = assert!(core::mem::offset_of!(TrapFrame, ss) == 104);
 
-/// IDT target for vector 0x21.
-///
-/// A Rust prologue would clobber the GPRs this mapper needs, so the filled-in
-/// gate is a naked stub. It saves GPRs into a `TrapFrame` with `mov`, calls
-/// [`dispatch_from_trap`], restores the GPRs, and executes `iret` without
-/// writing the pushed flags.
-fn int21_gate() {
-    let mut trap = TrapFrame::capture();
-    dispatch_from_trap(&mut trap);
-    // TODO: naked stub. iret. Leave the pushed flags slot as the CPU wrote it.
-    unimplemented!("iret")
-}
+#[cfg(target_arch = "x86")]
+global_asm!(
+    r#"
+.section .text, "ax"
+.code32
+.global int21_gate
+int21_gate:
+    sub esp, 48
+    mov [esp + 0], eax
+    mov [esp + 4], ebx
+    mov [esp + 8], ecx
+    mov [esp + 12], edx
+    mov [esp + 16], esi
+    mov [esp + 20], edi
+    mov [esp + 24], ebp
+    mov eax, [esp + 48]
+    mov [esp + 36], eax
+    mov eax, [esp + 52]
+    mov [esp + 40], eax
+    mov eax, [esp + 56]
+    mov [esp + 44], eax
+    xor eax, eax
+    mov ax, ds
+    mov [esp + 28], eax
+    xor eax, eax
+    mov ax, es
+    mov [esp + 32], eax
+    lea eax, [esp]
+    push eax
+    call dispatch_from_trap
+    add esp, 4
+    mov eax, [esp + 28]
+    mov ds, ax
+    mov eax, [esp + 32]
+    mov es, ax
+    mov ebx, [esp + 4]
+    mov ecx, [esp + 8]
+    mov edx, [esp + 12]
+    mov esi, [esp + 16]
+    mov edi, [esp + 20]
+    mov ebp, [esp + 24]
+    mov eax, [esp + 0]
+    add esp, 48
+    iretd
+"#
+);
 
-fn dispatch_from_trap(trap: &mut TrapFrame) {
+#[cfg(target_arch = "x86_64")]
+global_asm!(
+    r#"
+.section .text, "ax"
+.code64
+.global int21_gate
+int21_gate:
+    sub rsp, 112
+    mov [rsp + 0], rax
+    mov [rsp + 8], rbx
+    mov [rsp + 16], rcx
+    mov [rsp + 24], rdx
+    mov [rsp + 32], rsi
+    mov [rsp + 40], rdi
+    mov [rsp + 48], rbp
+    mov rax, [rsp + 112]
+    mov [rsp + 72], rax
+    mov rax, [rsp + 120]
+    mov [rsp + 80], rax
+    mov rax, [rsp + 128]
+    mov [rsp + 88], rax
+    mov rax, [rsp + 136]
+    mov [rsp + 96], rax
+    mov rax, [rsp + 144]
+    mov [rsp + 104], rax
+    xor rax, rax
+    mov ax, ds
+    mov [rsp + 56], rax
+    xor rax, rax
+    mov ax, es
+    mov [rsp + 64], rax
+    mov rbx, rsp
+    mov rdi, rbx
+    and rsp, -16
+    call dispatch_from_trap
+    mov rsp, rbx
+    mov ax, [rsp + 56]
+    mov ds, ax
+    mov ax, [rsp + 64]
+    mov es, ax
+    mov rbx, [rsp + 8]
+    mov rcx, [rsp + 16]
+    mov rdx, [rsp + 24]
+    mov rsi, [rsp + 32]
+    mov rdi, [rsp + 40]
+    mov rbp, [rsp + 48]
+    mov rax, [rsp + 0]
+    add rsp, 112
+    iretq
+"#
+);
+
+#[no_mangle]
+unsafe extern "C" fn dispatch_from_trap(trap: *mut TrapFrame) {
+    let trap = unsafe { &mut *trap };
     let token = GateToken::mint();
     let mut logical = logical_from_trap(&token, trap);
     int21::entry(&token, &mut logical);
@@ -245,8 +342,8 @@ fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
             si: trap.rsi,
             di: trap.rdi,
             bp: trap.rbp,
-            ds: u64::from(trap.ds),
-            es: u64::from(trap.es),
+            ds: trap.ds,
+            es: trap.es,
         },
     )
 }
@@ -265,8 +362,8 @@ fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFra
     trap.esi = regs.si as u32;
     trap.edi = regs.di as u32;
     trap.ebp = regs.bp as u32;
-    trap.ds = regs.ds as u16;
-    trap.es = regs.es as u16;
+    trap.ds = regs.ds as u32;
+    trap.es = regs.es as u32;
 }
 
 /// Writes the logical GPRs back into the trap.
@@ -282,6 +379,6 @@ fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFra
     trap.rsi = regs.si;
     trap.rdi = regs.di;
     trap.rbp = regs.bp;
-    trap.ds = regs.ds as u16;
-    trap.es = regs.es as u16;
+    trap.ds = regs.ds;
+    trap.es = regs.es;
 }

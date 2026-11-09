@@ -1,0 +1,5 @@
+dos4-rs follows the INT 21h AH=30h register contract of Microsoft's MS-DOS 4.0.
+
+The original source is the MIT-licensed release at https://github.com/microsoft/MS-DOS, commit 2d04cacc5322951f187bb17e017c12920ac8ebe2. That tree is not included here. Copyright (c) Microsoft Corporation, under the MIT license shipped with that commit.
+
+Code in this repository is under the MIT license in LICENSE.

@@ -1,0 +1,82 @@
+#!/bin/bash
+# Boot both kernels under QEMU. Map isa-debug-exit status 33 to process status 0.
+set -euo pipefail
+
+root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+
+doctor() {
+	local missing=0
+	command -v qemu-system-i386 >/dev/null || { echo "missing qemu-system-i386" >&2; missing=1; }
+	command -v qemu-system-x86_64 >/dev/null || { echo "missing qemu-system-x86_64" >&2; missing=1; }
+	command -v timeout >/dev/null || { echo "missing timeout" >&2; missing=1; }
+	rustc +nightly-2026-11-08 --version | grep -q '1.102.0-nightly' || {
+		echo "want rustc 1.102.0-nightly from nightly-2026-11-08" >&2
+		missing=1
+	}
+	if [[ ! -f "$root/target/i686-unknown-none/release/dos4-rs" ]]; then
+		echo "missing i686 kernel. Build it before driving." >&2
+		missing=1
+	fi
+	if [[ ! -f "$root/target/x86_64-unknown-none/release/dos4-rs" ]]; then
+		echo "missing x86_64 kernel. Build it before driving." >&2
+		missing=1
+	fi
+	if [[ "$missing" -ne 0 ]]; then
+		exit 1
+	fi
+	echo "doctor ok"
+}
+
+run_one() {
+	local name="$1"
+	local qemu="$2"
+	local kernel="$3"
+	local out
+	out="$(mktemp)"
+	set +e
+	timeout 15 "$qemu" \
+		-kernel "$kernel" \
+		-display none \
+		-serial stdio \
+		-no-reboot \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-m 64 \
+		>"$out" 2>&1
+	local status=$?
+	set -e
+	if [[ "$status" -ne 33 ]]; then
+		cat "$out" >&2
+		echo "$name qemu status $status, want 33" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "dos4-rs $name" "$out"; then
+		echo "$name missing banner" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "AX=0004 BX=FF00 CX=0000 CF=1" "$out"; then
+		echo "$name missing AH=30h result" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if [[ -n "${PROOF_DIR:-}" ]]; then
+		mkdir -p "$PROOF_DIR"
+		cp "$out" "$PROOF_DIR/$name.txt"
+		printf '%s\n' "$status" >"$PROOF_DIR/$name.qemu-exit"
+	fi
+	cat "$out"
+	rm -f "$out"
+}
+
+if [[ "${1:-}" == "doctor" ]]; then
+	doctor
+	exit 0
+fi
+
+doctor
+run_one i686 qemu-system-i386 "$root/target/i686-unknown-none/release/dos4-rs"
+run_one x86_64 qemu-system-x86_64 "$root/target/x86_64-unknown-none/release/dos4-rs"
+exit 0
