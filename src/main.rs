@@ -61,8 +61,11 @@ fn boot(gate: usize) -> ! {
     puts("PRNR");
     put_hex16(bios::mslpt::prn_ioctl_get());
     puts("\n");
-    if bios::msload::load_io_sys() {
+    if let Some(bytes) = bios::msload::load_io_sys() {
         puts("LOADOK\n");
+        puts("LOAD");
+        put_hex16(bytes);
+        puts("\n");
     }
     bios::sysinit1::com_err();
     let sent = bios::mslpt::prn_tilbusy(b".");
