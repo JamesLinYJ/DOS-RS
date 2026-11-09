@@ -9,6 +9,7 @@ use core::arch::asm;
 
 mod arch;
 mod bios;
+mod dos;
 mod int21;
 
 /// Multiboot calls this. It does not return.
@@ -49,6 +50,7 @@ fn boot(gate: usize) -> ! {
     if bios::msload::load_io_sys() {
         puts("LOADOK\n");
     }
+    bios::sysinit1::com_err();
     debug_exit()
 }
 

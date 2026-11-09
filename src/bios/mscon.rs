@@ -282,6 +282,8 @@ fn int29(al: u8) {
             "int 0x29",
             al = in(reg_byte) al,
             lateout("eax") _,
+            // The handler calls Rust. Caller-saved registers do not survive it.
+            clobber_abi("C"),
         );
     }
 }

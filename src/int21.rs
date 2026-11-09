@@ -155,6 +155,8 @@ const SERIAL_CX: DosWord = DosWord(0x0000);
 /// The index is the function number. This array is the only catalog.
 const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     let mut slots = [in_range_stub as fn(&mut LogicalFrame); 0x6D];
+    slots[0x02] = std_con_output as fn(&mut LogicalFrame);
+    slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
     slots[0x30] = get_version as fn(&mut LogicalFrame);
     slots
 };
@@ -177,6 +179,16 @@ pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
         return;
     }
     DISPATCH[ah.index()](frame);
+}
+
+/// AH=2. DL is the character. The console device receives that byte.
+fn std_con_output(frame: &mut LogicalFrame) {
+    crate::dos::cpmio2::out_char((frame.dx & 0xff) as u8);
+}
+
+/// AH=9. DX is the linear address of a `$`-terminated string.
+fn std_con_string_output(frame: &mut LogicalFrame) {
+    crate::dos::cpmio::write_dollar_string(frame.dx as u32);
 }
 
 /// AH=30h. AL is ignored.
