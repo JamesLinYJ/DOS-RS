@@ -93,6 +93,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CLKW0001000D" "$out"; then
+		echo "$name missing clock write line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "PRN" "$out"; then
 		echo "$name missing printer line" >&2
 		cat "$out" >&2

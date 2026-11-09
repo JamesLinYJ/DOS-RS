@@ -51,6 +51,89 @@ fn tim_read(out: &mut [u8; 6], ticks_hi: u16, ticks_lo: u16) {
     let _ = unsafe { HAVE_CMOS };
 }
 
+/// `TIM$WRIT`. The six bytes are the `TIM$READ` order. `HaveCMOSClock` is 0,
+/// so the BCD set-time and set-date calls are not taken. `TIME_TO_TICKS`
+/// still runs, then INT 1Ah AH=1, then `DAYCNT` is stored.
+pub fn write_clock(time: &[u8; 6]) -> (u16, u16) {
+    let day = u16::from_le_bytes([time[0], time[1]]);
+    let minutes = time[2];
+    let hours = time[3];
+    let hundredths = time[4];
+    let seconds = time[5];
+    let cmos = unsafe { HAVE_CMOS };
+    if cmos != 0 {
+        let _hours_bcd = hours;
+        let _minutes_bcd = minutes;
+        let _seconds_bcd = seconds;
+    }
+    let (hi, lo) = time_to_ticks(hours, minutes, seconds, hundredths);
+    int1a_write(hi, lo);
+    unsafe {
+        DAYCNT = day;
+    }
+    if cmos != 0 {
+        let _day = day;
+    }
+    (hi, lo)
+}
+
+/// `TIME_TO_TICKS`. CX on entry is minutes in CL and hours in CH. DX is
+/// hundredths in DL and seconds in DH. The tick count comes back in CX:DX.
+fn time_to_ticks(hours: u8, minutes: u8, seconds: u8, hundredths: u8) -> (u16, u16) {
+    let mut cx = u32::from(minutes);
+    let mut dx = (u32::from(seconds) << 8) | u32::from(hundredths);
+    let mut ax = (60u32 * u32::from(hours)) & 0xffff;
+    ax = (ax + cx) & 0xffff;
+    cx = 6000;
+    let mut bx = dx;
+    let prod = ax * cx;
+    dx = (prod >> 16) & 0xffff;
+    ax = prod & 0xffff;
+    cx = ax;
+    ax = (100 * ((bx >> 8) & 0xff)) & 0xffff;
+    let sum = cx + ax;
+    cx = sum & 0xffff;
+    dx = (dx + (sum >> 16)) & 0xffff;
+    bx &= 0x00ff;
+    let sum = cx + bx;
+    cx = sum & 0xffff;
+    dx = (dx + (sum >> 16)) & 0xffff;
+    let old_ax = ax;
+    ax = dx;
+    dx = old_ax;
+    let old_ax = ax;
+    ax = cx;
+    cx = old_ax;
+    bx = 59659;
+    let prod = ax * bx;
+    dx = (prod >> 16) & 0xffff;
+    ax = prod & 0xffff;
+    let old_dx = dx;
+    dx = cx;
+    cx = old_dx;
+    let old_ax = ax;
+    ax = dx;
+    dx = old_ax;
+    let prod = ax * bx;
+    let high = (prod >> 16) & 0xffff;
+    ax = prod & 0xffff;
+    let sum = ax + cx;
+    ax = sum & 0xffff;
+    dx = (high + (sum >> 16)) & 0xffff;
+    let old_ax = ax;
+    ax = dx;
+    dx = old_ax;
+    let quot = (ax / 5) & 0xff;
+    let rem = ax % 5;
+    cx = quot;
+    ax = dx;
+    dx = rem;
+    let dividend = (dx << 16) | ax;
+    ax = (dividend / 5) & 0xffff;
+    dx = ax;
+    (cx as u16, dx as u16)
+}
+
 /// `TIM$READ` from ticks in CX:DX to the AX:BX time word pair.
 ///
 /// CX=1 and DX=0x0E is 65550 ticks, which this sequence turns into
@@ -92,6 +175,35 @@ fn ticks_to_hms(ticks_hi: u16, ticks_lo: u16) -> (u16, u16) {
     let ax_word = minutes | (hours << 8);
     let bx_word = (hundredths as u16) | (seconds << 8);
     (ax_word, bx_word)
+}
+
+fn int1a_write(ticks_hi: u16, ticks_lo: u16) {
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let mut ax: u16 = 0x0100;
+        let mut cx = ticks_hi;
+        let mut dx = ticks_lo;
+        asm!(
+            "int 0x1a",
+            inout("ax") ax,
+            inout("cx") cx,
+            inout("dx") dx,
+        );
+        let _ = (ax, cx, dx);
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let mut ax: u16 = 0x0100;
+        let mut cx = ticks_hi;
+        let mut dx = ticks_lo;
+        asm!(
+            "int 0x1a",
+            inout("ax") ax,
+            inout("cx") cx,
+            inout("dx") dx,
+        );
+        let _ = (ax, cx, dx);
+    }
 }
 
 fn int1a_read(ticks_hi: u16, ticks_lo: u16) -> (u16, u16, u8) {

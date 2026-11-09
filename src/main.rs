@@ -46,6 +46,14 @@ fn boot(gate: usize) -> ! {
         put_hex8(byte);
     }
     puts("\n");
+    // Same 1:00:00.36 record, through TIME_TO_TICKS. The inverse is
+    // CX=1 DX=0x000D.
+    let written = [0x00, 0x00, 0x00, 0x01, 0x24, 0x00];
+    let (hi, lo) = bios::msclock::write_clock(&written);
+    puts("CLKW");
+    put_hex16(hi);
+    put_hex16(lo);
+    puts("\n");
     let _prn = bios::mslpt::prn_write_bytes(b"PRN\r\n");
     if bios::msload::load_io_sys() {
         puts("LOADOK\n");
