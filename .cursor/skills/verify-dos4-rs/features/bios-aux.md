@@ -1,6 +1,6 @@
 # Write to AUX
 
-After the console line, the kernel writes the bytes of `AUX` and a CR LF through the auxiliary driver. Each byte is INT 14h with AH=1. That send writes the byte to COM1 and leaves the timeout bit clear.
+After the console line, the kernel writes the bytes of `AUX` and a CR LF through the auxiliary driver. `STRATEGY` saves the request, then `AUX0$IN` indexes command 8 and calls `AUX$WRIT`. Each byte is INT 14h with AH=1 and DX from `GETDX`. That send writes the byte to COM1 and leaves the timeout bit clear.
 
 ## Sub-features
 

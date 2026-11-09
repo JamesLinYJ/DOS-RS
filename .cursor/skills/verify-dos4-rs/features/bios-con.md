@@ -1,6 +1,6 @@
 # Write to the console
 
-After the version line, the kernel writes the bytes of `BIOS` and a CR LF through the console driver. Each byte is INT 29h, which is `OUTCHR`. `OUTCHR` executes INT 10h with AH=`0Eh`. That teletype writes the byte to COM1.
+After the version line, the kernel writes the bytes of `BIOS` and a CR LF through the console driver. `STRATEGY` saves the request, then `CON$IN` indexes command 8 and calls `CON$WRIT`. Each byte is INT 29h, which is `OUTCHR`. `OUTCHR` executes INT 10h with AH=`0Eh`. That teletype writes the byte to COM1.
 
 ## Sub-features
 

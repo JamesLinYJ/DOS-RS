@@ -32,7 +32,6 @@ struct ConState {
     keyrd_func: u8,
     keysts_func: u8,
     fhavek09: u8,
-    ptrsav: usize,
 }
 
 static mut CON: ConState = ConState {
@@ -40,7 +39,6 @@ static mut CON: ConState = ConState {
     keyrd_func: 0,
     keysts_func: 1,
     fhavek09: 0,
-    ptrsav: 0,
 };
 
 /// Maximum command in `CONTBL` (`DB 10`), then one slot per command.
@@ -68,13 +66,10 @@ pub fn con_write_bytes(bytes: &[u8]) {
     packet[TRANS..TRANS + 4].copy_from_slice(&addr.to_le_bytes());
     let count = bytes.len() as u16;
     packet[COUNT..COUNT + 2].copy_from_slice(&count.to_le_bytes());
-    unsafe {
-        (*core::ptr::addr_of_mut!(CON)).ptrsav = packet.as_mut_ptr() as usize;
-    }
-    dispatch();
+    super::msbio1::run_con(packet.as_mut_ptr());
 }
 
-fn dispatch() {
+pub(crate) fn con_in() {
     let cmd = packet_byte(CMD);
     if cmd as usize >= CONTBL.len() {
         cmd_err();
@@ -248,7 +243,7 @@ fn exit_with(al: u8) {
 }
 
 fn ptrsav() -> *mut u8 {
-    unsafe { (*core::ptr::addr_of!(CON)).ptrsav as *mut u8 }
+    super::msbio1::packet()
 }
 
 fn packet_byte(offset: usize) -> u8 {

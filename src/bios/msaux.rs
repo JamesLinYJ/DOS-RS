@@ -16,12 +16,6 @@ const ERROR_DONE: u16 = 0x8100;
 const WRITE_FAULT: u8 = 10;
 const FLAG_TIMEOUT: u8 = 0x80;
 
-struct AuxState {
-    ptrsav: usize,
-}
-
-static mut AUX: AuxState = AuxState { ptrsav: 0 };
-
 pub fn aux_write_bytes(bytes: &[u8]) {
     let mut packet = [0u8; 32];
     packet[0] = 22;
@@ -30,10 +24,16 @@ pub fn aux_write_bytes(bytes: &[u8]) {
     packet[TRANS..TRANS + 4].copy_from_slice(&addr.to_le_bytes());
     let count = bytes.len() as u16;
     packet[COUNT..COUNT + 2].copy_from_slice(&count.to_le_bytes());
-    unsafe {
-        (*core::ptr::addr_of_mut!(AUX)).ptrsav = packet.as_mut_ptr() as usize;
+    super::msbio1::run_aux0(packet.as_mut_ptr());
+}
+
+pub(crate) fn aux0_in() {
+    let cmd = unsafe { *ptrsav().add(CMD) };
+    if cmd == DEV_WRITE || cmd == DEV_WRITE + 1 {
+        aux_writ();
+    } else {
+        write_word(ptrsav(), STATUS, ERROR_DONE | 3);
     }
-    aux_writ();
 }
 
 fn aux_writ() {
@@ -62,12 +62,14 @@ fn int14_send(al: u8) -> u8 {
     #[cfg(target_arch = "x86")]
     let ax = unsafe {
         let ax: u32;
+        let port = u32::from(super::msbio1::get_dx());
         asm!(
             "mov al, {byte}",
             "mov ah, 1",
-            "xor dx, dx",
+            "mov dx, {port:x}",
             "int 0x14",
             byte = in(reg_byte) al,
+            port = in(reg) port,
             lateout("eax") ax,
             lateout("edx") _,
         );
@@ -76,12 +78,14 @@ fn int14_send(al: u8) -> u8 {
     #[cfg(target_arch = "x86_64")]
     let ax = unsafe {
         let ax: u64;
+        let port = u32::from(super::msbio1::get_dx());
         asm!(
             "mov al, {byte}",
             "mov ah, 1",
-            "xor dx, dx",
+            "mov dx, {port:x}",
             "int 0x14",
             byte = in(reg_byte) al,
+            port = in(reg) port,
             lateout("rax") ax,
             lateout("rdx") _,
         );
@@ -95,7 +99,7 @@ fn exit_ok() {
 }
 
 fn ptrsav() -> *mut u8 {
-    unsafe { (*core::ptr::addr_of!(AUX)).ptrsav as *mut u8 }
+    super::msbio1::packet()
 }
 
 fn packet_word(offset: usize) -> u16 {
