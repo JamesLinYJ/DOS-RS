@@ -80,6 +80,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CLK00000000" "$out"; then
+		echo "$name missing clock line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if [[ -n "${PROOF_DIR:-}" ]]; then
 		mkdir -p "$PROOF_DIR"
 		cp "$out" "$PROOF_DIR/$name.txt"

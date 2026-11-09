@@ -30,6 +30,12 @@ fn boot(gate: usize) -> ! {
     puts("DSK");
     put_hex16(disk_status);
     puts("\n");
+    let mut clock = [0u8; 6];
+    let _clock_status = bios::msclock::read_clock(&mut clock);
+    puts("CLK");
+    put_hex16(u16::from_le_bytes([clock[0], clock[1]]));
+    put_hex16(u16::from_le_bytes([clock[2], clock[3]]));
+    puts("\n");
     debug_exit()
 }
 
@@ -163,6 +169,7 @@ fn load_idt(gate: usize) {
         let idt = &raw mut IDT;
         (*idt)[0x10] = IdtEntry::interrupt(bios::mscon::int10_gate_addr(), selector);
         (*idt)[0x13] = IdtEntry::interrupt(bios::msdisk::int13_gate_addr(), selector);
+        (*idt)[0x1A] = IdtEntry::interrupt(bios::msclock::int1a_gate_addr(), selector);
         (*idt)[0x14] = IdtEntry::interrupt(bios::msaux::int14_gate_addr(), selector);
         (*idt)[0x16] = IdtEntry::interrupt(bios::mscon::int16_gate_addr(), selector);
         (*idt)[0x21] = entry;
