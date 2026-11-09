@@ -221,52 +221,87 @@ fn int13(ah_cmd: u8, count: u8) -> (u8, bool) {
     let ax_in = u16::from(ah_cmd) << 8 | u16::from(count);
     #[cfg(target_arch = "x86")]
     let (ax, flags) = unsafe {
-        let ax: u32;
+        let mut ax = ax_in;
+        let mut cx = cx;
+        let mut dx = dx;
         let flags: u32;
         asm!(
-            "mov ax, {ax:x}",
-            "mov cx, {cx:x}",
-            "mov dx, {dx:x}",
             "int 0x13",
             "pushfd",
-            "pop ebx",
-            ax = in(reg) ax_in,
-            cx = in(reg) cx,
-            dx = in(reg) dx,
-            lateout("eax") ax,
-            lateout("ebx") flags,
-            lateout("ecx") _,
-            lateout("edx") _,
+            "pop {fl}",
+            inout("ax") ax,
+            inout("cx") cx,
+            inout("dx") dx,
+            fl = lateout(reg) flags,
         );
+        let _ = (ax, cx, dx);
         (ax, flags)
     };
     #[cfg(target_arch = "x86_64")]
     let (ax, flags) = unsafe {
-        let ax: u64;
+        let mut ax = ax_in;
+        let mut cx = cx;
+        let mut dx = dx;
         let flags: u64;
         asm!(
-            "mov ax, {ax:x}",
-            "mov cx, {cx:x}",
-            "mov dx, {dx:x}",
             "int 0x13",
             "pushfq",
-            "pop r8",
-            ax = in(reg) ax_in,
-            cx = in(reg) cx,
-            dx = in(reg) dx,
-            lateout("rax") ax,
-            lateout("r8") flags,
-            lateout("rcx") _,
-            lateout("rdx") _,
+            "pop {fl}",
+            inout("ax") ax,
+            inout("cx") cx,
+            inout("dx") dx,
+            fl = lateout(reg) flags,
         );
-        (ax as u32, flags as u32)
+        let _ = (ax, cx, dx);
+        (ax, flags as u32)
     };
     (((ax >> 8) & 0xff) as u8, (flags & 1) != 0)
 }
 
+/// INT 13h. Hard disks (DL bit 7) time out. Drive 0 reads `disks/msload.img`.
+///
+/// Return value: low 16 bits are AX, bit 16 is carry.
 #[no_mangle]
-extern "C" fn bios_int13() {
-    // No controller. Timeout, carry set by the gate.
+extern "C" fn bios_int13_regs(ax: u32, bx: u32, cx: u32, dx: u32) -> u32 {
+    let ah = ((ax >> 8) & 0xff) as u8;
+    let al = (ax & 0xff) as u8;
+    let drive = (dx & 0xff) as u8;
+    if drive & 0x80 != 0 {
+        return (0x80u32 << 8) | (1 << 16);
+    }
+    if ah == 0 {
+        return 0;
+    }
+    if ah != 2 || al == 0 {
+        return (0x01u32 << 8) | (1 << 16);
+    }
+    let sector = (cx & 0x3f) as u32;
+    let cyl = ((cx >> 8) & 0xff) | ((cx & 0xc0) << 2);
+    let head = (dx >> 8) & 0xff;
+    const SPT: u32 = 18;
+    const HEADS: u32 = 2;
+    if sector == 0 {
+        return (0x04u32 << 8) | (1 << 16);
+    }
+    let lba = (cyl * HEADS + head) * SPT + (sector - 1);
+    let image = msload_image();
+    let start = lba as usize * 512;
+    let bytes = al as usize * 512;
+    if start.saturating_add(bytes) > image.len() {
+        return (0x04u32 << 8) | (1 << 16);
+    }
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            image[start..].as_ptr(),
+            bx as *mut u8,
+            bytes,
+        );
+    }
+    u32::from(al)
+}
+
+fn msload_image() -> &'static [u8] {
+    include_bytes!("../../disks/msload.img")
 }
 
 #[cfg(target_arch = "x86")]
@@ -276,8 +311,27 @@ global_asm!(
 .code32
 .global int13_gate
 int13_gate:
-    mov ah, 0x80
+    pushad
+    mov eax, [esp + 28]
+    mov ebx, [esp + 16]
+    mov ecx, [esp + 24]
+    mov edx, [esp + 20]
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call bios_int13_regs
+    add esp, 16
+    mov [esp + 28], eax
+    popad
+    test eax, 0x10000
+    jz 1f
     or dword ptr [esp + 8], 1
+    jmp 2f
+1:
+    and dword ptr [esp + 8], 0xfffffffe
+2:
+    and eax, 0xffff
     iretd
 "#
 );
@@ -289,8 +343,33 @@ global_asm!(
 .code64
 .global int13_gate
 int13_gate:
-    mov ah, 0x80
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push r12
+    mov r12, rsp
+    and rsp, -16
+    mov edi, [r12 + 32]
+    mov esi, [r12 + 24]
+    mov edx, [r12 + 16]
+    mov ecx, [r12 + 8]
+    call bios_int13_regs
+    mov rsp, r12
+    pop r12
+    mov [rsp + 24], rax
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    test rax, 0x10000
+    jz 1f
     or qword ptr [rsp + 16], 1
+    jmp 2f
+1:
+    and qword ptr [rsp + 16], 0xfffffffffffffffe
+2:
+    and rax, 0xffff
     iretq
 "#
 );

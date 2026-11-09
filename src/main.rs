@@ -36,7 +36,19 @@ fn boot(gate: usize) -> ! {
     put_hex16(u16::from_le_bytes([clock[0], clock[1]]));
     put_hex16(u16::from_le_bytes([clock[2], clock[3]]));
     puts("\n");
+    // INT 1Ah is entered with CX=1 and DX=0x0E. The gate must hand those
+    // ticks back, and TIM$READ then stores 1:00:00.36.
+    let mut forced = [0u8; 6];
+    let _forced = bios::msclock::read_clock_at(&mut forced, 1, 0x0E);
+    puts("CLKP");
+    for byte in forced {
+        put_hex8(byte);
+    }
+    puts("\n");
     let _prn = bios::mslpt::prn_write_bytes(b"PRN\r\n");
+    if bios::msload::load_io_sys() {
+        puts("LOADOK\n");
+    }
     debug_exit()
 }
 
@@ -258,6 +270,12 @@ pub(crate) fn serial_putc(byte: u8) {
 fn putc(byte: u8) {
     while inb(0x3FD) & 0x20 == 0 {}
     outb(0x3F8, byte);
+}
+
+fn put_hex8(value: u8) {
+    let digits = b"0123456789ABCDEF";
+    putc(digits[(value >> 4) as usize]);
+    putc(digits[(value & 0xF) as usize]);
 }
 
 fn put_hex16(mut value: u16) {

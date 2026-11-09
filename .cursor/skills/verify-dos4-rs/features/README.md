@@ -39,5 +39,6 @@ Each feature file starts with an H1 title and one paragraph. It then uses exactl
 - [Write to the console](bios-con.md) covers CON$WRIT through INT 29h and INT 10h AH=0Eh.
 - [Write to AUX](bios-aux.md) covers AUX$WRIT through INT 14h AH=1.
 - [Read one disk sector](bios-disk.md) covers a one-sector read that returns status `8102h`.
-- [Read the clock](bios-clock.md) covers INT 1Ah AH=0 and a zero tick count.
+- [Read the clock](bios-clock.md) covers INT 1Ah AH=0, a zero tick count, and CX=1 DX=0x0E.
 - [Write to the printer](bios-prn.md) covers INT 17h AH=0.
+- [Load IO.SYS](bios-msload.md) covers the drive 0 read of `IO.SYS` and the no-system message path's text.

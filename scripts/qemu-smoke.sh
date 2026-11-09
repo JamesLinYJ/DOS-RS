@@ -40,6 +40,7 @@ run_one() {
 		-serial stdio \
 		-no-reboot \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		-drive if=floppy,index=0,format=raw,file="$root/disks/msload.img" \
 		-m 64 \
 		>"$out" 2>&1
 	local status=$?
@@ -86,8 +87,20 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CLKP000000012400" "$out"; then
+		echo "$name missing forced clock line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "PRN" "$out"; then
 		echo "$name missing printer line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "LOADOK" "$out"; then
+		echo "$name missing MSLOAD line" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1
