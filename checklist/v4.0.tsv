@@ -26,7 +26,7 @@ v4.0/src/BIOS/MSINIT.ASM	text	untranslated	src/bios/msinit.rs
 v4.0/src/BIOS/MSIOCTL.INC	text	untranslated	src/bios/msioctl.rs
 v4.0/src/BIOS/MSLOAD.ASM	text	untranslated	src/bios/msload.rs
 v4.0/src/BIOS/MSLOAD.INC	text	untranslated	src/bios/msload.rs
-v4.0/src/BIOS/MSLPT.ASM	text	untranslated	src/bios/mslpt.rs
+v4.0/src/BIOS/MSLPT.ASM	text	partial	src/bios/mslpt.rs
 v4.0/src/BIOS/MSMACRO.INC	text	untranslated	src/bios/msmacro.rs
 v4.0/src/BIOS/MSSTACK.INC	text	untranslated	src/bios/msstack.rs
 v4.0/src/BIOS/MSVOLID.INC	text	untranslated	src/bios/msvolid.rs

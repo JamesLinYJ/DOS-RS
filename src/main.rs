@@ -36,6 +36,7 @@ fn boot(gate: usize) -> ! {
     put_hex16(u16::from_le_bytes([clock[0], clock[1]]));
     put_hex16(u16::from_le_bytes([clock[2], clock[3]]));
     puts("\n");
+    let _prn = bios::mslpt::prn_write_bytes(b"PRN\r\n");
     debug_exit()
 }
 
@@ -171,6 +172,7 @@ fn load_idt(gate: usize) {
         (*idt)[0x13] = IdtEntry::interrupt(bios::msdisk::int13_gate_addr(), selector);
         (*idt)[0x1A] = IdtEntry::interrupt(bios::msclock::int1a_gate_addr(), selector);
         (*idt)[0x14] = IdtEntry::interrupt(bios::msaux::int14_gate_addr(), selector);
+        (*idt)[0x17] = IdtEntry::interrupt(bios::mslpt::int17_gate_addr(), selector);
         (*idt)[0x16] = IdtEntry::interrupt(bios::mscon::int16_gate_addr(), selector);
         (*idt)[0x21] = entry;
         (*idt)[0x29] = IdtEntry::interrupt(bios::mscon::int29_gate_addr(), selector);
