@@ -2,4 +2,5 @@
 //!
 //! Disk, SYSINIT, and MSLOAD are not in this module.
 
+pub mod msaux;
 pub mod mscon;

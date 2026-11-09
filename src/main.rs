@@ -24,6 +24,7 @@ fn boot(gate: usize) -> ! {
     let line = invoke_int21();
     puts_result(&line);
     bios::mscon::con_write_bytes(b"BIOS\r\n");
+    bios::msaux::aux_write_bytes(b"AUX\r\n");
     debug_exit()
 }
 
@@ -156,6 +157,7 @@ fn load_idt(gate: usize) {
     unsafe {
         let idt = &raw mut IDT;
         (*idt)[0x10] = IdtEntry::interrupt(bios::mscon::int10_gate_addr(), selector);
+        (*idt)[0x14] = IdtEntry::interrupt(bios::msaux::int14_gate_addr(), selector);
         (*idt)[0x16] = IdtEntry::interrupt(bios::mscon::int16_gate_addr(), selector);
         (*idt)[0x21] = entry;
         (*idt)[0x29] = IdtEntry::interrupt(bios::mscon::int29_gate_addr(), selector);
