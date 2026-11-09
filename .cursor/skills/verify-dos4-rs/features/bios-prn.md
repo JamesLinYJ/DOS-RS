@@ -1,11 +1,15 @@
 # Write to the printer
 
-After the clock line, the kernel writes the bytes of `PRN` and a CR LF through the printer driver. Each byte is INT 17h with AH=0. The handler writes the byte to COM1 and returns AH=0, so the timeout bit is clear.
+After the clock lines, the kernel writes the bytes of `PRN` and a CR LF through the printer driver. Each byte is INT 17h with AH=0. The handler writes the byte to COM1 and returns AH=0, so the timeout bit is clear. A status call with AH=2 returns not-busy and prints `PRNS`. The generic ioctl get-retry call prints `PRNR0050`.
 
 ## Sub-features
 
-- `prn-write-i686` prints `PRN` after `CLK00000000` on i686.
-- `prn-write-x86_64` prints `PRN` after `CLK00000000` on x86_64.
+- `prn-write-i686` prints `PRN` on i686.
+- `prn-write-x86_64` prints `PRN` on x86_64.
+- `prn-stat-i686` prints `PRNS` on i686.
+- `prn-stat-x86_64` prints `PRNS` on x86_64.
+- `prn-retry-i686` prints `PRNR0050` on i686.
+- `prn-retry-x86_64` prints `PRNR0050` on x86_64.
 
 ## How to get to it (user POV)
 
@@ -18,8 +22,8 @@ Preconditions:
 - `scripts/qemu-smoke.sh doctor` prints `doctor ok`.
 - Both release kernels exist from this run's build.
 
-- **Write PRN.** Run `PROOF_DIR=.cursor/skills/verify-dos4-rs/proof scripts/qemu-smoke.sh`. Each target prints `PRN`. The script's process status is 0.
-- **Proof.** The proof transcripts contain `PRN` after `CLK00000000`.
+- **Write PRN.** Run `PROOF_DIR=.cursor/skills/verify-dos4-rs/proof scripts/qemu-smoke.sh`. Each target prints `PRN`, `PRNS`, and `PRNR0050`. The script's process status is 0.
+- **Proof.** The proof transcripts contain those three printer lines.
 
 ## Gotchas
 

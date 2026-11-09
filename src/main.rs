@@ -55,10 +55,20 @@ fn boot(gate: usize) -> ! {
     put_hex16(lo);
     puts("\n");
     let _prn = bios::mslpt::prn_write_bytes(b"PRN\r\n");
+    if bios::mslpt::prn_stat() == 0x0100 {
+        puts("PRNS\n");
+    }
+    puts("PRNR");
+    put_hex16(bios::mslpt::prn_ioctl_get());
+    puts("\n");
     if bios::msload::load_io_sys() {
         puts("LOADOK\n");
     }
     bios::sysinit1::com_err();
+    let sent = bios::mslpt::prn_tilbusy(b".");
+    puts("PRNT");
+    put_hex16(sent);
+    puts("\n");
     debug_exit()
 }
 

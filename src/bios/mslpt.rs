@@ -1,77 +1,155 @@
-//! Printer write from `BIOS/MSLPT.ASM`.
+//! Printer driver from `BIOS/MSLPT.ASM`.
 //!
-//! `PRN$WRIT` calls INT 17h with AH=0. There is no printer ROM under QEMU
-//! `-kernel`. The handler writes AL to COM1 and returns AH=0, so the timeout
-//! bit is clear and the write continues.
+//! `PRN$WRIT` retries only when INT 17h reports timeout. `PRN$STAT` uses
+//! AH=2. Under QEMU `-kernel` there is no printer ROM. AH=0 writes AL to
+//! COM1 and returns AH=0. AH=2 returns AH=80h, not busy and no error.
+//! `WAIT_COUNT` starts at 50h for each of the four devices.
 
 use core::arch::{asm, global_asm};
 
 const STATUS: usize = 3;
-const TRANS: usize = 14;
-const COUNT: usize = 18;
+const MAJOR: usize = 13;
+const MINOR: usize = 14;
+const IOCTL_PACKET: usize = 19;
 const DONE: u16 = 0x0100;
+const BUSY_DONE: u16 = 0x0300;
+const ERROR_DONE: u16 = 0x8100;
 const IOERR: u8 = 0x08;
 const TIMEOUT: u8 = 0x01;
+const NOPAPER: u8 = 0x20;
+const NOT_BUSY: u8 = 0x80;
+const IOC_PC: u8 = 5;
+const GET_RETRY: u8 = 0x65;
+const SET_RETRY: u8 = 0x45;
+
+static mut PRINTDEV: u8 = 0;
+static mut WAIT_COUNT: [u16; 4] = [0x50, 0x50, 0x50, 0x50];
 
 pub fn prn_write_bytes(bytes: &[u8]) -> u16 {
-    let mut packet = [0u8; 32];
-    let mut left = bytes.len() as u16;
+    if bytes.is_empty() {
+        return DONE;
+    }
     let mut index = 0usize;
-    while left != 0 {
-        let mut retries = 2u8;
+    while index < bytes.len() {
+        let mut retries = 2u16;
         loop {
-            let ah = int17_print(bytes[index]);
-            if ah & IOERR == 0 && ah & TIMEOUT == 0 {
+            let (ah, zf) = prn_op(0, bytes[index]);
+            if zf || ah & TIMEOUT == 0 {
                 break;
             }
-            retries = retries.saturating_sub(1);
+            retries -= 1;
             if retries == 0 {
-                write_word(packet.as_mut_ptr(), STATUS, 0x8100 | 10);
-                return 0x810A;
+                return ERROR_DONE | 2;
             }
         }
         index += 1;
-        left -= 1;
     }
-    write_word(packet.as_mut_ptr(), STATUS, DONE);
-    let _ = (COUNT, TRANS);
     DONE
 }
 
-fn int17_print(al: u8) -> u8 {
+/// `PRN$STAT`. Not busy returns done. Busy returns the busy-done status.
+pub fn prn_stat() -> u16 {
+    let (ah, zf) = prn_op(2, 0);
+    if !zf {
+        let al = if ah & NOPAPER != 0 { 9 } else { 10 };
+        return ERROR_DONE | al;
+    }
+    if ah & NOT_BUSY != 0 {
+        DONE
+    } else {
+        BUSY_DONE
+    }
+}
+
+/// `PRN$TILBUSY`. Stops when the status says the printer is still busy.
+pub fn prn_tilbusy(bytes: &[u8]) -> u16 {
+    let mut done = 0u16;
+    for &byte in bytes {
+        let (ah, zf) = prn_op(2, 0);
+        if !zf || ah & NOT_BUSY == 0 {
+            break;
+        }
+        let (ah, zf) = prn_op(0, byte);
+        if !zf {
+            let _ = ah;
+            break;
+        }
+        done += 1;
+    }
+    done
+}
+
+/// `PRN$GENIOCTL` get-retry. The packet is the `IOCTL_REQ` layout.
+pub fn prn_ioctl_get() -> u16 {
+    let mut data = [0u8; 2];
+    let mut packet = [0u8; 32];
+    packet[MAJOR] = IOC_PC;
+    packet[MINOR] = GET_RETRY;
+    let addr = data.as_mut_ptr() as u32;
+    packet[IOCTL_PACKET..IOCTL_PACKET + 4].copy_from_slice(&addr.to_le_bytes());
+    prn_genioctl(packet.as_mut_ptr());
+    u16::from_le_bytes(data)
+}
+
+fn prn_genioctl(packet: *mut u8) {
+    let major = unsafe { *packet.add(MAJOR) };
+    if major != IOC_PC {
+        write_word(packet, STATUS, ERROR_DONE | 3);
+        return;
+    }
+    let minor = unsafe { *packet.add(MINOR) };
+    let data = read_dword(packet, IOCTL_PACKET) as *mut u8;
+    let index = unsafe { PRINTDEV } as usize & 3;
+    if minor == GET_RETRY {
+        let count = unsafe { WAIT_COUNT[index] };
+        write_word(data, 0, count);
+        write_word(packet, STATUS, DONE);
+    } else if minor == SET_RETRY {
+        let count = read_word(data, 0);
+        unsafe { WAIT_COUNT[index] = count };
+        write_word(data, 0, count);
+        write_word(packet, STATUS, DONE);
+    } else {
+        write_word(packet, STATUS, ERROR_DONE | 3);
+    }
+}
+
+/// `PRNOP` / `PRNSTAT`. Returns AH and ZF from the status triage.
+fn prn_op(ah_cmd: u8, al: u8) -> (u8, bool) {
+    let _dx = super::msbio1::get_dx();
+    let ah = int17(ah_cmd, al);
+    if ah & IOERR != 0 {
+        let zf = ah & NOPAPER == 0;
+        return (ah, zf);
+    }
+    let zf = ah & TIMEOUT == 0;
+    (ah, zf)
+}
+
+fn int17(ah_cmd: u8, al: u8) -> u8 {
+    let mut ax = (u16::from(ah_cmd) << 8) | u16::from(al);
     #[cfg(target_arch = "x86")]
-    let ax = unsafe {
-        let ax: u32;
-        asm!(
-            "mov al, {byte}",
-            "xor ah, ah",
-            "int 0x17",
-            byte = in(reg_byte) al,
-            lateout("eax") ax,
-        );
-        ax
-    };
+    unsafe {
+        asm!("int 0x17", inout("ax") ax);
+    }
     #[cfg(target_arch = "x86_64")]
-    let ax = unsafe {
-        let ax: u64;
-        asm!(
-            "mov al, {byte}",
-            "xor ah, ah",
-            "int 0x17",
-            byte = in(reg_byte) al,
-            lateout("rax") ax,
-        );
-        ax as u32
-    };
+    unsafe {
+        asm!("int 0x17", inout("ax") ax);
+    }
     ((ax >> 8) & 0xff) as u8
 }
 
 #[no_mangle]
-extern "C" fn bios_int17(ax: usize) {
+extern "C" fn bios_int17(ax: usize) -> u8 {
     let ah = ((ax >> 8) & 0xff) as u8;
     let al = (ax & 0xff) as u8;
     if ah == 0 {
         crate::serial_putc(al);
+        0
+    } else if ah == 2 {
+        NOT_BUSY
+    } else {
+        0
     }
 }
 
@@ -89,10 +167,10 @@ int17_gate:
     push ecx
     call bios_int17
     add esp, 4
+    mov [esp + 9], al
     pop edx
     pop ecx
     pop eax
-    xor ah, ah
     iretd
 "#
 );
@@ -116,8 +194,8 @@ int17_gate:
     pop rbx
     pop rdx
     pop rcx
+    mov [rsp + 1], al
     pop rax
-    xor ah, ah
     iretq
 "#
 );
@@ -135,5 +213,20 @@ fn write_word(pkt: *mut u8, offset: usize, value: u16) {
     unsafe {
         *pkt.add(offset) = bytes[0];
         *pkt.add(offset + 1) = bytes[1];
+    }
+}
+
+fn read_word(pkt: *const u8, offset: usize) -> u16 {
+    unsafe { u16::from_le_bytes([*pkt.add(offset), *pkt.add(offset + 1)]) }
+}
+
+fn read_dword(pkt: *const u8, offset: usize) -> u32 {
+    unsafe {
+        u32::from_le_bytes([
+            *pkt.add(offset),
+            *pkt.add(offset + 1),
+            *pkt.add(offset + 2),
+            *pkt.add(offset + 3),
+        ])
     }
 }

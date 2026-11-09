@@ -105,8 +105,26 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "PRNS" "$out"; then
+		echo "$name missing printer status" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PRNR0050" "$out"; then
+		echo "$name missing printer retry count" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "LOADOK" "$out"; then
 		echo "$name missing MSLOAD line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PRNT0001" "$out"; then
+		echo "$name missing printer tilbusy count" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1
