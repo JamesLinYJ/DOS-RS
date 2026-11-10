@@ -209,6 +209,8 @@ fn boot(gate: usize) -> ! {
         dos::rom::show();
         // Seek within BAR.COM, write the first byte back, and close the handle.
         dos::close::show();
+        // Media check from the rest of FAT.ASM: unchanged, changed, dirty, error.
+        dos::fat::media_show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

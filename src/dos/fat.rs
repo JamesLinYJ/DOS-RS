@@ -94,3 +94,121 @@ pub fn pack(fat: &mut [u8], max_cluster: u16, cluster: u16, data: u16) -> bool {
     fat[offset + 1] = bytes[1];
     true
 }
+
+/// Drive block the media check in `FAT_GOT_DPB` updates.
+pub struct Dpb {
+    pub first_access: u8,
+    pub free_cnt: i16,
+    pub next_free: u16,
+}
+
+/// Result of `FAT_GOT_DPB` after the driver media byte is known.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Media {
+    /// Return byte 1. The disk is the same one.
+    Unchanged,
+    /// `NEWDSK`. Free space is unknown and the next-free cluster restarts.
+    Changed,
+    /// Return byte 0 and a dirty buffer. The disk is left alone.
+    Dirty,
+    /// The driver status was an error and the user failed the call.
+    Fail,
+}
+
+/// `FAT_GOT_DPB`. `returned` is the media-check byte: 1, 0, or 0xFF.
+/// `status_err` is `STERR` in the request status.
+pub fn fat_got_dpb(dpb: &mut Dpb, returned: u8, status_err: bool, dirty: bool) -> Media {
+    if status_err {
+        dpb.free_cnt = -1;
+        return Media::Fail;
+    }
+    let mixed = dpb.first_access | returned;
+    dpb.first_access = 0;
+    if mixed & 0x80 != 0 {
+        return media_changed(dpb);
+    }
+    if mixed == 0 {
+        if dirty {
+            return Media::Dirty;
+        }
+        return media_changed(dpb);
+    }
+    Media::Unchanged
+}
+
+fn media_changed(dpb: &mut Dpb) -> Media {
+    dpb.free_cnt = -1;
+    dpb.next_free = 0;
+    Media::Changed
+}
+
+/// `FATREAD_CDS` after a media change. A zero id is the root and stays.
+pub fn fatread_cds(ids: &mut [u16], changed: bool) {
+    if !changed {
+        return;
+    }
+    let mut index = 0usize;
+    while index < ids.len() {
+        if ids[index] != 0 {
+            ids[index] = 0xffff;
+        }
+        index += 1;
+    }
+}
+
+/// The media-check branches that follow `MAPCLUSTER`.
+pub fn media_show() {
+    let nc = check(0, 1, false, false);
+    let chg = check(0, 0xff, false, false);
+    let mut ids = [0u16, 0x1234];
+    fatread_cds(&mut ids, chg.0 == Media::Changed);
+    let dty = check(0, 0, false, true);
+    let err = check(0, 1, true, false);
+    let fst = check(0xff, 1, false, false);
+    crate::bios::mscon::con_write_bytes(b"FATMED ");
+    crate::bios::mscon::con_write_bytes(label(nc));
+    crate::bios::mscon::con_write_bytes(b" ");
+    crate::bios::mscon::con_write_bytes(label(chg));
+    crate::bios::mscon::con_write_bytes(b" CDS");
+    put_hex16(ids[1]);
+    crate::bios::mscon::con_write_bytes(b" ");
+    crate::bios::mscon::con_write_bytes(label(dty));
+    crate::bios::mscon::con_write_bytes(b" ");
+    crate::bios::mscon::con_write_bytes(label(err));
+    crate::bios::mscon::con_write_bytes(b" ");
+    crate::bios::mscon::con_write_bytes(if fst.0 == Media::Changed && fst.1 == -1 && fst.2 == 0 {
+        b"FST\r\n"
+    } else {
+        b"BAD\r\n"
+    });
+}
+
+fn check(first: u8, returned: u8, status_err: bool, dirty: bool) -> (Media, i16, u16) {
+    let mut dpb = Dpb {
+        first_access: first,
+        free_cnt: 4,
+        next_free: 2,
+    };
+    let media = fat_got_dpb(&mut dpb, returned, status_err, dirty);
+    (media, dpb.free_cnt, dpb.next_free)
+}
+
+fn label(result: (Media, i16, u16)) -> &'static [u8] {
+    match result {
+        (Media::Unchanged, 4, 2) => b"NC",
+        (Media::Changed, -1, 0) => b"CHG",
+        (Media::Dirty, 4, 2) => b"DTY",
+        (Media::Fail, -1, 2) => b"ERR",
+        _ => b"BAD",
+    }
+}
+
+fn put_hex16(value: u16) {
+    let hex = b"0123456789ABCDEF";
+    crate::bios::mscon::con_write_bytes(&[
+        hex[((value >> 12) & 0xf) as usize],
+        hex[((value >> 8) & 0xf) as usize],
+        hex[((value >> 4) & 0xf) as usize],
+        hex[(value & 0xf) as usize],
+    ]);
+}
