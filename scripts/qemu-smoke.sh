@@ -849,6 +849,24 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COPY MS0200000000 ON0001000000 TW0000000000 TM0100000000 OW0400000000 CD0001010400 CC0000010400 BB0001010000 VV0001000001 BD0300000000 BP0300000000 DR0002000000 SL0003000000 SE0500000000 DA01 DC03 DN00 RB0500 RA0201 RZ0201" "$out"; then
+		echo "$name missing COPY scan" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "CPR1 010112 010112 020101 030000" "$out"; then
+		echo "$name missing COPY flush" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "CPR2 A040004 B000800 K090100 N000000 SZ0E ST3F EQ01 NE00" "$out"; then
+		echo "$name missing COPY names" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

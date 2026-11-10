@@ -98,9 +98,9 @@ v4.0/src/CMD/COMMAND/COMMAND.LNK	text	untranslated	src/cmd/command/command.rs
 v4.0/src/CMD/COMMAND/COMMAND.SKL	text	untranslated	src/cmd/command/command.rs
 v4.0/src/CMD/COMMAND/COMSEG.ASM	text	partial	src/cmd/command/comseg.rs
 v4.0/src/CMD/COMMAND/COMSW.ASM	text	partial	src/cmd/command/comsw.rs
-v4.0/src/CMD/COMMAND/COPY.ASM	text	untranslated	src/cmd/command/copy.rs
-v4.0/src/CMD/COMMAND/COPYPR1.ASM	text	untranslated	src/cmd/command/copypr1.rs
-v4.0/src/CMD/COMMAND/COPYPR2.ASM	text	untranslated	src/cmd/command/copypr2.rs
+v4.0/src/CMD/COMMAND/COPY.ASM	text	partial	src/cmd/command/copy.rs
+v4.0/src/CMD/COMMAND/COPYPR1.ASM	text	partial	src/cmd/command/copypr1.rs
+v4.0/src/CMD/COMMAND/COPYPR2.ASM	text	partial	src/cmd/command/copypr2.rs
 v4.0/src/CMD/COMMAND/CPARSE.ASM	text	untranslated	src/cmd/command/cparse.rs
 v4.0/src/CMD/COMMAND/ENVDATA.ASM	text	translated	src/cmd/command/envdata.rs
 v4.0/src/CMD/COMMAND/FORDATA.ASM	text	untranslated	src/cmd/command/fordata.rs

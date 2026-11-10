@@ -347,6 +347,10 @@ fn boot(gate: usize) -> ! {
         cmd::command::command2::show();
         cmd::command::comseg::show();
         cmd::command::comsw::show();
+        // COPY scans the destination before it decides ASCII or binary.
+        cmd::command::copy::show();
+        cmd::command::copypr1::show();
+        cmd::command::copypr2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
