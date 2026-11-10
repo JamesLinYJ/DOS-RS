@@ -171,6 +171,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COMSPEC=\\\\COMMAND.COM" "$out"; then
+		echo "$name missing COMSPEC" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "CMDOK" "$out"; then
 		echo "$name missing COMMAND.COM load" >&2
 		cat "$out" >&2

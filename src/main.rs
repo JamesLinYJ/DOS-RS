@@ -9,6 +9,7 @@ use core::arch::asm;
 
 mod arch;
 mod bios;
+mod cmd;
 mod dos;
 mod int21;
 
@@ -114,6 +115,16 @@ fn boot(gate: usize) -> ! {
     }
     if crate::dos::exec::invoke() {
         puts("CMDOK\n");
+        if let Some(payload) = crate::dos::exec::command_payload() {
+            let _size = cmd::command::envdata::environ_len();
+            if cmd::command::envdata::payload_is_comspec(payload) {
+                puts("COMSPEC=");
+                for &byte in cmd::command::envdata::ECOMSPEC {
+                    putc(byte);
+                }
+                puts("\n");
+            }
+        }
     }
     bios::sysinit1::com_err();
     debug_exit()
