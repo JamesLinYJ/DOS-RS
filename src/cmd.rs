@@ -5,3 +5,4 @@ pub mod comp;
 pub mod debug;
 pub mod diskcomp;
 pub mod diskcopy;
+pub mod edlin;

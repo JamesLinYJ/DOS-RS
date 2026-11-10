@@ -184,7 +184,7 @@ v4.0/src/CMD/DISKCOPY/DISKCOPY.EQU	text	partial	src/cmd/diskcopy/diskcopy.rs
 v4.0/src/CMD/DISKCOPY/DISKCOPY.LNK	text	untranslated	src/cmd/diskcopy/diskcopy.rs
 v4.0/src/CMD/DISKCOPY/DISKCOPY.SKL	text	untranslated	src/cmd/diskcopy/diskcopy.rs
 v4.0/src/CMD/DISKCOPY/MAKEFILE	text	untranslated	src/cmd/diskcopy/makefile.rs
-v4.0/src/CMD/EDLIN/EDLCMD1.ASM	text	untranslated	src/cmd/edlin/edlcmd1.rs
+v4.0/src/CMD/EDLIN/EDLCMD1.ASM	text	partial	src/cmd/edlin/edlcmd1.rs
 v4.0/src/CMD/EDLIN/EDLCMD2.ASM	text	untranslated	src/cmd/edlin/edlcmd2.rs
 v4.0/src/CMD/EDLIN/EDLEQU.ASM	text	untranslated	src/cmd/edlin/edlequ.rs
 v4.0/src/CMD/EDLIN/EDLIN.ASM	text	untranslated	src/cmd/edlin/edlin.rs

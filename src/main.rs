@@ -456,6 +456,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcopy::dcpymacr::show();
         // A 40-track source is not formatted onto 15-sector media.
         cmd::diskcopy::diskcopy::show();
+        // Append takes one parameter. A bare line takes fewer than two.
+        cmd::edlin::edlcmd1::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
