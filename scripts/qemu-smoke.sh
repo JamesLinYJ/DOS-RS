@@ -777,6 +777,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MACRO2 SL5C NU1 CH0 DRV02 DRV00 DRVFF TX413A P1 G0 N1 CN5CBAR UP03 MF02 SC1 SC0 NS00 NSFF UNC DEV FIL EM02" "$out"; then
+		echo "$name missing path canonicalization" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

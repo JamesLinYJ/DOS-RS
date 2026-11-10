@@ -327,6 +327,8 @@ fn boot(gate: usize) -> ! {
         dos::dosmes::show();
         // Drive macros: functions 7 and 8 update in-use, and A is unit 0.
         dos::r#macro::show();
+        // Path canonicalization: slash, drive letters, and dot-dot backup.
+        dos::macro2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
