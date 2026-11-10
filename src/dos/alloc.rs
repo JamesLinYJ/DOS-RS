@@ -89,6 +89,23 @@ fn coalesce(index: usize) {
     }
 }
 
+/// Size of the biggest free block, in paragraphs. `$ALLOC` of `0xFFFF` returns this in BX.
+pub fn largest_free() -> u16 {
+    ensure();
+    let mut max = 0u16;
+    let n = count();
+    let mut index = 0usize;
+    while index < n {
+        unsafe {
+            if ITEMS[index].owner == 0 && ITEMS[index].size > max {
+                max = ITEMS[index].size;
+            }
+        }
+        index += 1;
+    }
+    max
+}
+
 /// AH=48h. `Ok` is the memory segment. `Err` is the code and the largest block.
 pub fn alloc(request: u16) -> Result<u16, (u16, u16)> {
     ensure();

@@ -56,6 +56,10 @@ pub fn on_frame(al: u8, bx: u16) -> (u16, u16, u8) {
         if drive == 0 || drive == 1 {
             return (0, 0, 0);
         }
+        // Drive 3 is a fixed disk: the removable-media status busy bit is set.
+        if drive == 3 {
+            return (1, 0, 1);
+        }
         return (INVALID_DRIVE, 0, 0);
     }
     (1, 0, 0)
@@ -64,10 +68,13 @@ pub fn on_frame(al: u8, bx: u16) -> (u16, u16, u8) {
 pub fn show() {
     let (closed, _, _) = query(0, 5, 0);
     let (_, _, removable) = query(8, 0, 1);
+    let (_, _, fixed) = query(8, 0, 3);
     crate::bios::mscon::con_write_bytes(b"IOCTL H");
     put_hex8(closed as u8);
     crate::bios::mscon::con_write_bytes(b" REM");
     put_hex8(removable);
+    crate::bios::mscon::con_write_bytes(b" FIX");
+    put_hex8(fixed);
     crate::bios::mscon::con_write_bytes(b"\r\n");
     crate::dos::path::show();
 }

@@ -423,8 +423,14 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "IOCTL H06 REM00" "$out"; then
+	if ! grep -q "IOCTL H06 REM00 FIX01" "$out"; then
 		echo "$name missing IOCTL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PATHLEN 4 OK 67 BAD" "$out"; then
+		echo "$name missing path length" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1
@@ -437,6 +443,12 @@ run_one() {
 	fi
 	if ! grep -q "EXEC FN01 NF02 COM" "$out"; then
 		echo "$name missing EXEC" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "EXEC LD 0100 SP00FE" "$out"; then
+		echo "$name missing EXEC load" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1

@@ -127,6 +127,26 @@ pub fn show() {
     crate::bios::mscon::con_write_bytes(b" NF");
     put_hex8(missing as u8);
     crate::bios::mscon::con_write_bytes(if com { b" COM\r\n" } else { b" EXE\r\n" });
+    let (ip, sp) = com_load();
+    crate::bios::mscon::con_write_bytes(b"EXEC LD ");
+    put_hex16(ip);
+    crate::bios::mscon::con_write_bytes(b" SP");
+    put_hex16(sp);
+    crate::bios::mscon::con_write_bytes(b"\r\n");
+}
+
+/// COM load from `exec_com_file`. The first `$ALLOC` of `0xFFFF` fails and
+/// returns the largest block. A block under 64K is converted to bytes, then
+/// 100h is subtracted for the PSP. SP is that count plus `0xFE`. IP is 100h.
+pub fn com_load() -> (u16, u16) {
+    let block = crate::dos::alloc::largest_free();
+    let mut bytes = 0u16;
+    if block < 0x1000 {
+        bytes = block << 4;
+    }
+    let to_read = bytes.wrapping_sub(0x0100);
+    let sp = to_read.wrapping_add(0x00fe);
+    (0x0100, sp)
 }
 
 fn call(al: u8, name: &[u8]) -> u16 {
@@ -141,6 +161,11 @@ fn call(al: u8, name: &[u8]) -> u16 {
         );
     }
     eax as u16
+}
+
+fn put_hex16(value: u16) {
+    put_hex8((value >> 8) as u8);
+    put_hex8(value as u8);
 }
 
 fn put_hex8(value: u8) {
