@@ -77,3 +77,4 @@ pub mod stdcpmio;
 pub mod stddosme;
 pub mod stdtable;
 pub mod time;
+pub mod util;

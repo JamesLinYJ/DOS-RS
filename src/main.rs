@@ -319,6 +319,8 @@ fn boot(gate: usize) -> ! {
         dos::strin::show();
         // Date and time: 1980 through 2099, with leap day and packed fields.
         dos::time::show();
+        // Handles: a slot of FF is unused, and a busy file is reused by its owner.
+        dos::util::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

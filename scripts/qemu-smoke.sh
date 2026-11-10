@@ -753,6 +753,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "UTIL H06 S01 B06 T00 T01 NO JF01 JF04 SN02 OW00 NB04" "$out"; then
+		echo "$name missing handle utilities" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
