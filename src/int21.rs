@@ -145,6 +145,11 @@ impl LogicalFrame {
     fn set_dl(&mut self, dl: u8) {
         self.dx = (self.dx & !0xFF) | u64::from(dl);
     }
+
+    /// Replaces bits 0..16 of DX. Bits 16..63 stay as they were.
+    fn store_dx(&mut self, word: DosWord) {
+        self.dx = (self.dx & !0xFFFF) | u64::from(word.0);
+    }
 }
 
 /// Major 4 in AL, minor 0 in AH. The word is `0x0004`.
@@ -163,6 +168,10 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
+    slots[0x2A] = get_date as fn(&mut LogicalFrame);
+    slots[0x2B] = set_date as fn(&mut LogicalFrame);
+    slots[0x2C] = get_time as fn(&mut LogicalFrame);
+    slots[0x2D] = set_time as fn(&mut LogicalFrame);
     slots[0x2E] = set_verify_on_write as fn(&mut LogicalFrame);
     slots[0x30] = get_version as fn(&mut LogicalFrame);
     slots[0x33] = set_ctrl_c_trapping as fn(&mut LogicalFrame);
@@ -216,6 +225,87 @@ fn exec_program(frame: &mut LogicalFrame) {
     if !crate::dos::exec::image_has_command(frame.dx as u32 as *const u8) {
         frame.set_al(Al(2));
     }
+}
+
+/// DOS date. 1980-01-01 is the unset clock, a Tuesday.
+static mut YEAR: u16 = 1980;
+static mut MONTH: u8 = 1;
+static mut DAY: u8 = 1;
+static mut HOUR: u8 = 0;
+static mut MINUTE: u8 = 0;
+static mut SECOND: u8 = 0;
+static mut HUNDREDTH: u8 = 0;
+
+/// AH=2Ah. CX is the year, DH the month, DL the day, AL the weekday.
+fn get_date(frame: &mut LogicalFrame) {
+    let (year, month, day) = unsafe { (YEAR, MONTH, DAY) };
+    frame.store_cx(DosWord(year));
+    frame.store_dx(DosWord((u16::from(month) << 8) | u16::from(day)));
+    frame.set_al(Al(weekday(year, month, day)));
+}
+
+/// AH=2Bh. AL is 0 when the date is stored, and 0xFF when it is rejected.
+fn set_date(frame: &mut LogicalFrame) {
+    let year = frame.cx as u16;
+    let month = (frame.dx >> 8) as u8;
+    let day = frame.dx as u8;
+    if date_ok(year, month, day) {
+        unsafe {
+            YEAR = year;
+            MONTH = month;
+            DAY = day;
+        }
+        frame.set_al(Al(0));
+    } else {
+        frame.set_al(Al(0xff));
+    }
+}
+
+/// AH=2Ch. CH hours, CL minutes, DH seconds, DL hundredths.
+fn get_time(frame: &mut LogicalFrame) {
+    let (hour, minute, second, hundredth) = unsafe { (HOUR, MINUTE, SECOND, HUNDREDTH) };
+    frame.store_cx(DosWord((u16::from(hour) << 8) | u16::from(minute)));
+    frame.store_dx(DosWord((u16::from(second) << 8) | u16::from(hundredth)));
+}
+
+/// AH=2Dh. AL is 0 when the time is stored, and 0xFF when it is rejected.
+fn set_time(frame: &mut LogicalFrame) {
+    let hour = (frame.cx >> 8) as u8;
+    let minute = frame.cx as u8;
+    let second = (frame.dx >> 8) as u8;
+    let hundredth = frame.dx as u8;
+    if hour < 24 && minute < 60 && second < 60 && hundredth < 100 {
+        unsafe {
+            HOUR = hour;
+            MINUTE = minute;
+            SECOND = second;
+            HUNDREDTH = hundredth;
+        }
+        frame.set_al(Al(0));
+    } else {
+        frame.set_al(Al(0xff));
+    }
+}
+
+/// Sakamoto. 0 is Sunday, matching INT 21h AH=2Ah.
+fn weekday(year: u16, month: u8, day: u8) -> u8 {
+    let table = [0i32, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let mut y = i32::from(year);
+    let m = i32::from(month);
+    if m < 3 {
+        y -= 1;
+    }
+    let w = (y + y / 4 - y / 100 + y / 400 + table[(m - 1) as usize] + i32::from(day)).rem_euclid(7);
+    w as u8
+}
+
+fn date_ok(year: u16, month: u8, day: u8) -> bool {
+    if year < 1980 || year > 2099 || month == 0 || month > 12 || day == 0 {
+        return false;
+    }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = [0u8, 31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    day <= days[month as usize]
 }
 
 /// AH=2Eh. `$SET_VERIFY_ON_WRITE`. AL bit 0 is the flag.

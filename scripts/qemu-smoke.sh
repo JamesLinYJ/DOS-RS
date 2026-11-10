@@ -243,6 +243,36 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "FOO=BAR" "$out"; then
+		echo "$name missing SET" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Current date is Tue 01-01-1980" "$out"; then
+		echo "$name missing DATE" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Current date is Sun 03-04-1984" "$out"; then
+		echo "$name missing DATE set" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Current time is  00:00:00.00" "$out"; then
+		echo "$name missing TIME" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Current time is  01:02:03.04" "$out"; then
+		echo "$name missing TIME set" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

@@ -87,6 +87,13 @@ pub fn path_cmd(tail: &[u8]) {
     }
 }
 
+pub fn copy_path(out: &mut [u8]) -> usize {
+    let len = unsafe { PATH_LEN };
+    let n = len.min(out.len());
+    out[..n].copy_from_slice(unsafe { &PATH_VALUE[..n] });
+    n
+}
+
 fn print_path() {
     let len = unsafe { PATH_LEN };
     if len == 0 {

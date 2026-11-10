@@ -154,6 +154,16 @@ fn boot(gate: usize) -> ! {
         let _path_show = cmd::command::tmisc1::dispatch(b"PATH\r");
         // CLS asks INT 2Fh and clears through INT 10h.
         let _cls = cmd::command::tmisc1::dispatch(b"CLS\r");
+        // SET with no tail lists the block. FOO=BAR is stored, then listed.
+        let _set = cmd::command::tmisc1::dispatch(b"SET FOO=BAR\r");
+        let _set_show = cmd::command::tmisc1::dispatch(b"SET\r");
+        // DATE and TIME read AH=2Ah and AH=2Ch, then store a new value.
+        let _date = cmd::command::tmisc1::dispatch(b"DATE\r");
+        let _date_set = cmd::command::tmisc1::dispatch(b"DATE 3-4-1984\r");
+        let _date_show = cmd::command::tmisc1::dispatch(b"DATE\r");
+        let _time = cmd::command::tmisc1::dispatch(b"TIME\r");
+        let _time_set = cmd::command::tmisc1::dispatch(b"TIME 1:02:03.04\r");
+        let _time_show = cmd::command::tmisc1::dispatch(b"TIME\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

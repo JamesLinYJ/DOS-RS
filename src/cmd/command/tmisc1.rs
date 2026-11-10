@@ -5,7 +5,7 @@
 //! that matches is the only one run.
 
 use super::tdata::{COMTAB, F_SWITCH_ALLOWED};
-use super::{tcmd2a, tucode};
+use super::{tcmd2a, tenv, tpipe, tucode};
 
 pub fn dispatch(line: &[u8]) -> bool {
     let (name, rest) = split_name(line);
@@ -37,6 +37,18 @@ pub fn dispatch(line: &[u8]) -> bool {
     }
     if name.eq_ignore_ascii_case(b"VERIFY") {
         tucode::verify_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"SET") {
+        tenv::set_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"DATE") {
+        tpipe::date_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"TIME") {
+        tpipe::time_cmd(rest);
         return true;
     }
     false

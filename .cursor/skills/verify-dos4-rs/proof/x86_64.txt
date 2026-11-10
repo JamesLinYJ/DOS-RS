@@ -36,3 +36,10 @@ VERIFY is on
 No Path
 PATH=\DOS
 CLS
+PATH=\DOS
+COMSPEC=\COMMAND.COM
+FOO=BAR
+Current date is Tue 01-01-1980
+Current date is Sun 03-04-1984
+Current time is  00:00:00.00
+Current time is  01:02:03.04
