@@ -161,6 +161,18 @@ fn show_shell() {
         End::Other => crate::bios::mscon::con_write_bytes(b"CMD INT\r\n"),
         End::Loop => crate::bios::mscon::con_write_bytes(b"CMD LOOP\r\n"),
     }
+    if let Some(size) = super::disk::file_len(b"SAY     BIN") {
+        let mut body = [0u8; 32];
+        let length = super::disk::read_head(b"SAY     BIN", &mut body).unwrap_or(0);
+        crate::bios::mscon::con_write_bytes(b"EXE2BIN ");
+        put_hex8((size >> 8) as u8);
+        put_hex8(size as u8);
+        if length >= 2 && size == 0x18 && body[0] == 0x0E && body[1] == 0x1F {
+            crate::bios::mscon::con_write_bytes(b" 0E1F OK\r\n");
+        } else {
+            crate::bios::mscon::con_write_bytes(b" NO\r\n");
+        }
+    }
     report_header(b"PACKME  EXE");
     report_packed();
     report_listing();
