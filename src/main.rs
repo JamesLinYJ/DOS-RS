@@ -446,6 +446,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcopy::copyinit::show();
         // There is no message 24. A serial field is right aligned and zero padded.
         cmd::diskcopy::dcopyms::show();
+        // The only switch is /1, and drive text is capitalized by character.
+        cmd::diskcopy::dcopypar::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

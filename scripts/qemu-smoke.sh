@@ -1161,6 +1161,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DCOPYPAR MN00 MX02 SW01 KW00 FL0101 FN0002 TY06 TGFF SW0001 FN0002 NS01 CP0081 OR0000 S00 T00 AFF STFFFF EX00 MN0000 K00 S01 T02 AFF STFFFF EX00 MN0000 K00 S00 T00 A01 STFFFF EX00 MN0000 K00 S00 T00 AFF ST0004 EX01 MN0009 K01 S00 T00 AFF ST0004 EX01 MN0003 K00" "$out"; then
+		echo "$name missing copy parser" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

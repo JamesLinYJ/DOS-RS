@@ -2,3 +2,4 @@
 
 pub mod copyinit;
 pub mod dcopyms;
+pub mod dcopypar;
