@@ -1275,7 +1275,10 @@ run_one() {
 		|| ! grep -q "menu-ok" "$out" \
 		|| ! grep -q "Created include file \[BMSG.CLA\]" "$out" \
 		|| ! grep -q "CMD DIR BMSG.CTL" "$out" \
-		|| ! grep -q "\$M_NUM_CLS  EQU 1" "$out"; then
+		|| ! grep -q "\$M_NUM_CLS  EQU 1" "$out" \
+		|| ! grep -q "conv.exe => conv.com \[OK\]" "$out" \
+		|| ! grep -q "CMD DIR CONV.COM" "$out" \
+		|| ! grep -q "Converted" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

@@ -186,4 +186,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `BUILDMSG.EXE` still prints `Allocatable memory size is 606208` and returns status 1 when the tail is empty. The shell then runs `BUILDMSG.EXE USAMS BMSG.SKL`. The message file has a `BMSG` class, so the index contains it. The builder writes `BMSG.CTL` and the include files. The line is `Created include file [BMSG.CLA]`, the directory line is `CMD DIR BMSG.CTL`, and the file begins `$M_NUM_CLS  EQU 1`.
 
+`CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

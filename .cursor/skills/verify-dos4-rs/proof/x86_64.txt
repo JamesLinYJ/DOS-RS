@@ -361,6 +361,11 @@ Processing [BMSG.SKL]
 CMD DIR BMSG.CTL
 CMD TYPE $M_NUM_CLS  EQU 1
 
+CMD COPY OK
+conv.exe => conv.com [OK]
+CMD DIR CONV.COM
+CMD TYPE éRConvertedMZ=ÿÿ¸ŽØº´	Í!¸LÍ!HELLO EXE
+$è[PŒÀ‹È‰Oû‹&È‰O÷‹ ‰Où‹$‰Oõ‹>(‹±Óâ‹ã&ÅµƒÇŒÝ&.ƒÅèŽÝâæ¿‹òÆ‹Ë+Îó¤XúŽWû‹gùûÿoõ
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
