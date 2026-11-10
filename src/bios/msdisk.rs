@@ -20,6 +20,8 @@ const ERROR_AH: u16 = 0x8100;
 const ERRIN: [u8; 8] = [0xCC, 0x80, 0x40, 0x10, 0x08, 0x06, 0x04, 0x03];
 const ERROUT: [u8; 9] = [10, 2, 6, 4, 4, 15, 8, 0, 12];
 
+#[derive(Clone, Copy)]
+#[repr(C)]
 struct Bds {
     drivelet: u8,
     drivenum: u8,
@@ -32,6 +34,7 @@ struct Bds {
     hidsec: u16,
 }
 
+#[repr(C)]
 struct Disk {
     bds: Bds,
     medbyt: u8,
@@ -93,6 +96,68 @@ pub fn read_sector0(buffer: &mut [u8]) -> u16 {
     }
     let _ = buffer;
     packet_status()
+}
+
+/// Read cylinder 0, head 0, sector 1 of drive 0. That is logical sector 0
+/// of the floppy image. The hard-disk BDS is left alone.
+pub fn read_floppy_boot(buffer: &mut [u8; 512]) -> bool {
+    let carry = int13_into(ROMREAD, 1, 1, 0, 0, 0, buffer);
+    !carry && buffer[510] == 0x55 && buffer[511] == 0xAA
+}
+
+fn int13_into(
+    ah_cmd: u8,
+    count: u8,
+    sector: u8,
+    cyl: u16,
+    head: u8,
+    drive: u8,
+    buf: &mut [u8],
+) -> bool {
+    let cx = (cyl & 0xff) << 8 | u16::from(sector & 0x3f) | ((cyl & 0x300) >> 2);
+    let dx = u16::from(drive) | (u16::from(head) << 8);
+    let mut ax = (u16::from(ah_cmd) << 8) | u16::from(count);
+    #[cfg(target_arch = "x86")]
+    let flags = unsafe {
+        let mut cx = cx;
+        let mut dx = dx;
+        let flags: u32;
+        let ptr = buf.as_mut_ptr() as u32;
+        asm!(
+            "int 0x13",
+            "pushfd",
+            "pop {fl}",
+            inout("ax") ax,
+            inout("cx") cx,
+            inout("dx") dx,
+            in("ebx") ptr,
+            fl = lateout(reg) flags,
+        );
+        let _ = (ax, cx, dx);
+        flags
+    };
+    #[cfg(target_arch = "x86_64")]
+    let flags = unsafe {
+        let mut cx = cx;
+        let mut dx = dx;
+        let flags: u64;
+        asm!(
+            "push rbx",
+            "mov ebx, {ptr:e}",
+            "int 0x13",
+            "pop rbx",
+            "pushfq",
+            "pop {fl}",
+            inout("ax") ax,
+            inout("cx") cx,
+            inout("dx") dx,
+            ptr = in(reg) buf.as_mut_ptr(),
+            fl = lateout(reg) flags,
+        );
+        let _ = (ax, cx, dx);
+        flags
+    };
+    flags & 1 != 0
 }
 
 fn diskrd() -> bool {
