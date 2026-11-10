@@ -261,6 +261,8 @@ fn boot(gate: usize) -> ! {
         dos::msioctl::show();
         // Standard IOCTL build: the switch is off and the calls match IBM.
         dos::stdioctl::show();
+        // Wait, Ctrl-C exit, keep, stay resident, and abort.
+        dos::msproc::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
