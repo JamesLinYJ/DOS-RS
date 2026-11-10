@@ -26,6 +26,7 @@ pub mod tfor;
 pub mod tmisc2;
 pub mod tparse;
 pub mod tprintf;
+pub mod tranmsg;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;

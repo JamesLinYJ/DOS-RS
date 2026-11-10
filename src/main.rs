@@ -384,6 +384,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tparse::show();
         // A date substitution is copied, then the original value is cleared.
         cmd::command::tprintf::show();
+        // Utility messages stay in table order, including each substitution.
+        cmd::command::tranmsg::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
