@@ -273,6 +273,8 @@ fn boot(gate: usize) -> ! {
         dos::mscpmio::show();
         // DOS printf: hex, newline, character, and string.
         dos::dosprint::show();
+        // Buffered console input: empty buffer, skipped Ctrl-F, and a full line.
+        dos::kstrin::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

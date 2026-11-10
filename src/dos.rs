@@ -39,6 +39,7 @@ pub mod handle;
 pub mod highsw;
 pub mod ifs;
 pub mod ioctl;
+pub mod kstrin;
 pub mod isearch;
 pub mod lock;
 pub mod misc;
