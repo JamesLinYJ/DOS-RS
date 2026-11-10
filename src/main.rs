@@ -331,6 +331,8 @@ fn boot(gate: usize) -> ! {
         dos::macro2::show();
         // String compare folds case and slash, and a full table index is rejected.
         dos::misc2::show();
+        // New directory nodes: the root cannot grow, and a second label is rejected.
+        dos::mknode::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

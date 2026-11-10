@@ -789,6 +789,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MKNODE BD0005 RT GR DOT2E20 DD2E2E EX01 MD05 NT03 RO05 DV03 BP04 MT04 EO07 NW00 SH06 DIR00 C00000100 VC00 VC01 DA00 FLC0 FA20 FL42 VOL1" "$out"; then
+		echo "$name missing directory nodes" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

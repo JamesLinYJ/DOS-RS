@@ -813,7 +813,7 @@ v4.0/src/DOS/MACRO.ASM	text	partial	src/dos/macro.rs
 v4.0/src/DOS/MAKEFILE	text	untranslated	src/dos/makefile.rs
 v4.0/src/DOS/MISC2.ASM	text	partial	src/dos/misc2.rs
 v4.0/src/DOS/MISC.ASM	text	partial	src/dos/misc.rs
-v4.0/src/DOS/MKNODE.ASM	text	untranslated	src/dos/mknode.rs
+v4.0/src/DOS/MKNODE.ASM	text	partial	src/dos/mknode.rs
 v4.0/src/DOS/MS_CODE.ASM	text	partial	src/dos/ms_code.rs
 v4.0/src/DOS/MSCODE.ASM	text	partial	src/dos/mscode.rs
 v4.0/src/DOS/MSCONST.ASM	text	untranslated	src/dos/msconst.rs
