@@ -1059,6 +1059,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBCONST R8414C R84148 R64158 R64358 R64258 SR4553 SR4353 SZ4259 SZ4457 SH524F4C SH534152 IM414444 IM434D50 G154455354 G13F3F3F G2494E43 G23F3F3F NP90 RTC3 ITCC INEC XLD7 HLF4 AA37 CLF8 STFB MX00C1 SP005A IP0100 FLF202 WZ0F LN0080 NR08" "$out"; then
+		echo "$name missing debugger tables" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

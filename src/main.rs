@@ -412,6 +412,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debcom2::show();
         // A near call is three bytes. INT 3 is one. Trace defaults to one.
         cmd::debug::debcom3::show();
+        // Sixteen-bit names run AX, CX, DX, BX. IP starts at 100h.
+        cmd::debug::debconst::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
