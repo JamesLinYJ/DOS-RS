@@ -128,6 +128,10 @@ pub fn set_dta(ptr: *mut u8) {
     unsafe { DTA = ptr }
 }
 
+pub fn dta() -> *mut u8 {
+    unsafe { DTA }
+}
+
 pub fn find_first(name: *const u8, attr: u8) -> u16 {
     ensure();
     let raw = read_asciiz(name);
@@ -312,5 +316,94 @@ fn up(byte: u8) -> u8 {
         byte - 0x20
     } else {
         byte
+    }
+}
+
+static mut FCB_NEXT: usize = 0;
+static mut FCB_PAT: [u8; 11] = [b' '; 11];
+static mut FCB_ATTR: u8 = 0;
+
+pub(crate) fn name_match(pat: &[u8; 11], name: &[u8; 11]) -> bool {
+    let mut i = 0usize;
+    while i < 11 {
+        if pat[i] != b'?' && pat[i] != name[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+fn fcb_attr_ok(file_attr: u8, search_attr: u8) -> bool {
+    if search_attr & 0x08 != 0 {
+        return file_attr & 0x08 != 0;
+    }
+    const SPECIAL: u8 = 0x02 | 0x04 | 0x08 | 0x10;
+    file_attr & SPECIAL & !search_attr == 0
+}
+
+fn fcb_find(start: usize) -> Option<usize> {
+    let pat = unsafe { FCB_PAT };
+    let attr = unsafe { FCB_ATTR };
+    let mut index = start;
+    while index < SLOTS {
+        let ent = slot(index);
+        if ent.live && fcb_attr_ok(ent.attr, attr) && name_match(&pat, &ent.name) {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn write_fcb_dir(ent: &Ent, dta: *mut u8) {
+    if dta.is_null() {
+        return;
+    }
+    let mut raw = [0u8; 32];
+    raw[..11].copy_from_slice(&ent.name);
+    raw[11] = ent.attr;
+    raw[22] = ent.time as u8;
+    raw[23] = (ent.time >> 8) as u8;
+    raw[24] = ent.date as u8;
+    raw[25] = (ent.date >> 8) as u8;
+    raw[26] = ent.cluster as u8;
+    raw[27] = (ent.cluster >> 8) as u8;
+    let size = if ent.owned {
+        u32::from(ent.data_len)
+    } else {
+        u32::from(ent.size)
+    };
+    raw[28..32].copy_from_slice(&size.to_le_bytes());
+    let mut i = 0usize;
+    while i < 32 {
+        unsafe { *dta.add(i) = raw[i] }
+        i += 1;
+    }
+}
+
+/// AH=11h. A volume-attribute search misses every file on this disk.
+pub fn fcb_search_first(fcb: *const u8) -> u8 {
+    ensure();
+    let (_, attr) = crate::dos::fcb::split(fcb);
+    unsafe {
+        FCB_ATTR = attr;
+        FCB_PAT = crate::dos::fcb::packed_name(fcb);
+        FCB_NEXT = 0;
+    }
+    fcb_search_next()
+}
+
+/// AH=12h.
+pub fn fcb_search_next() -> u8 {
+    ensure();
+    let start = unsafe { FCB_NEXT };
+    match fcb_find(start) {
+        Some(index) => {
+            unsafe { FCB_NEXT = index + 1 }
+            write_fcb_dir(&slot(index), dta());
+            0
+        }
+        None => 0xff,
     }
 }

@@ -120,6 +120,48 @@ pub fn write(handle: u16, src: *const u8, count: usize) -> usize {
     n
 }
 
+/// Read `count` bytes of a root file at a byte offset. The handle cursor is left alone.
+pub fn read_at(name: &[u8; 11], offset: usize, dst: *mut u8, count: usize) -> usize {
+    if dst.is_null() || count == 0 {
+        return 0;
+    }
+    let Some(index) = crate::dos::search::find_packed(name) else {
+        return 0;
+    };
+    let ent = crate::dos::search::slot(index);
+    if ent.dir {
+        return 0;
+    }
+    if ent.owned {
+        let len = ent.data_len as usize;
+        if offset >= len {
+            return 0;
+        }
+        let n = count.min(len - offset);
+        let mut i = 0usize;
+        while i < n {
+            unsafe { *dst.add(i) = ent.data[offset + i] }
+            i += 1;
+        }
+        return n;
+    }
+    if ent.cluster < 2 {
+        return 0;
+    }
+    let base = (4 + (ent.cluster as usize - 2)) * 512;
+    let size = ent.size as usize;
+    if offset >= size || base + offset >= IMAGE.len() {
+        return 0;
+    }
+    let n = count.min(size - offset).min(IMAGE.len() - (base + offset));
+    let mut i = 0usize;
+    while i < n {
+        unsafe { *dst.add(i) = IMAGE[base + offset + i] }
+        i += 1;
+    }
+    n
+}
+
 pub fn read(handle: u16, dst: *mut u8, count: usize) -> usize {
     if handle != 5 || unsafe { !OPEN } {
         return 0;

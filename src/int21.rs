@@ -166,7 +166,18 @@ const SERIAL_CX: DosWord = DosWord(0x0000);
 const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     let mut slots = [in_range_stub as fn(&mut LogicalFrame); 0x6D];
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
+    slots[0x0F] = fcb_open as fn(&mut LogicalFrame);
+    slots[0x10] = fcb_close as fn(&mut LogicalFrame);
     slots[0x11] = dir_search_first as fn(&mut LogicalFrame);
+    slots[0x12] = dir_search_next as fn(&mut LogicalFrame);
+    slots[0x13] = fcb_delete as fn(&mut LogicalFrame);
+    slots[0x14] = fcb_seq_read as fn(&mut LogicalFrame);
+    slots[0x16] = fcb_create as fn(&mut LogicalFrame);
+    slots[0x17] = fcb_rename as fn(&mut LogicalFrame);
+    slots[0x21] = fcb_random_read as fn(&mut LogicalFrame);
+    slots[0x23] = fcb_length as fn(&mut LogicalFrame);
+    slots[0x24] = fcb_position as fn(&mut LogicalFrame);
+    slots[0x29] = parse_fcb as fn(&mut LogicalFrame);
     slots[0x1A] = set_dta as fn(&mut LogicalFrame);
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
@@ -268,10 +279,67 @@ fn get_cwd(frame: &mut LogicalFrame) {
     frame.store_ax(DosWord(crate::dos::path::getcwd(frame.si as *mut u8)));
 }
 
-/// AH=11h. This image has no volume label, so the search returns AL=0xFF.
+/// AH=0Fh. DX is the FCB.
+fn fcb_open(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio2::open(frame.dx as *mut u8)));
+}
+
+/// AH=10h. DX is the FCB.
+fn fcb_close(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio::close(frame.dx as *const u8)));
+}
+
+/// AH=11h. A volume-label FCB still returns AL=0xFF on this disk.
 fn dir_search_first(frame: &mut LogicalFrame) {
-    let _fcb = frame.dx;
-    frame.set_al(Al(0xff));
+    frame.set_al(Al(crate::dos::search::fcb_search_first(frame.dx as *const u8)));
+}
+
+/// AH=12h.
+fn dir_search_next(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::search::fcb_search_next()));
+}
+
+/// AH=13h.
+fn fcb_delete(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio::delete(frame.dx as *const u8)));
+}
+
+/// AH=14h.
+fn fcb_seq_read(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio2::seq_read(frame.dx as *mut u8)));
+}
+
+/// AH=16h.
+fn fcb_create(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio2::create(frame.dx as *mut u8)));
+}
+
+/// AH=17h.
+fn fcb_rename(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio::rename(frame.dx as *mut u8)));
+}
+
+/// AH=21h.
+fn fcb_random_read(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio2::random_read(frame.dx as *mut u8)));
+}
+
+/// AH=23h.
+fn fcb_length(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio::file_length(frame.dx as *mut u8)));
+}
+
+/// AH=24h.
+fn fcb_position(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::fcbio::set_position(frame.dx as *mut u8)));
+}
+
+/// AH=29h. DS:SI is the text. ES:DI is the FCB. AL is the control bits.
+fn parse_fcb(frame: &mut LogicalFrame) {
+    let flags = (frame.ax & 0xff) as u8;
+    let (al, si) = crate::dos::parse::parse(flags, frame.si as *const u8, frame.di as *mut u8);
+    frame.set_al(Al(al));
+    frame.si = si as u64;
 }
 
 /// AH=19h. AL is the default drive. This image leaves it at 0, which is A.

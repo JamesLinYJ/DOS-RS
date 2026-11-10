@@ -202,6 +202,9 @@ fn boot(gate: usize) -> ! {
         let _goto = cmd::command::tmisc1::dispatch(b"GOTO NOWHERE\r");
         let _for = cmd::command::tmisc1::dispatch(b"FOR %A IN (X) DO ECHO forok\r");
         let _shift = cmd::command::tmisc1::dispatch(b"SHIFT\r");
+        // FCB open of FOO.COM after the rename. The line is the file length
+        // and the sequential-read return.
+        dos::fcb::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
