@@ -1253,6 +1253,7 @@ run_one() {
 		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out" \
 		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \
 		|| ! grep -q "nmake-wrote" "$out" \
+		|| grep -q "U4013" "$out" \
 		|| ! grep -q "Microsoft (R) Macro Assembler Version 5.10" "$out" \
 		|| ! grep -q "MASM OK" "$out" \
 		|| ! grep -q "c1ok" "$out" \

@@ -279,7 +279,6 @@ LINKED OK
 Microsoft (R) Program Maintenance Utility   Version 1.00.05
 Copyright (c) Microsoft Corp 1987, 1988. All rights reserved.
 
-NMAKE : warning U4013: tools initialization file not found
 	copy makein.txt makeout.txt
 CMD COPY OK
 CMD TYPE nmake-wrote
