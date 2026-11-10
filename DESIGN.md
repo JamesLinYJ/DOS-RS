@@ -180,4 +180,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `C1L.EXE` is the large-model C front end from that same tree, `v4.0/src/TOOLS/C1L.EXE`, under the same MIT license. The shell runs `C1L.EXE -f LARGE.C`. `TYPE sy` then shows the symbol `largeok`. The same `C2.EXE` and `C3.EXE -c LARGE.OBJ` passes turn that into an object. `LINK.EXE LARGE.OBJ,LARGE.EXE;` writes the program, and `LARGE.EXE` prints `L1 OK`.
 
+`CL.EXE` still prints `usage: cl [ option... ] filename... [ -link linkoption... ]` when the tail is empty. A nested program load can hold the compiler passes, and the child's environment pointer keeps `MSC_CMD_FLAGS`. The shell deletes `LARGE.OBJ` and runs `CL.EXE -c LARGE.C`. CL starts C1, C2, and C3. The banner is `Microsoft (R) C Optimizing Compiler Version 5.10`, the new object is `CMD DIR LARGE.OBJ`, and the object names `_largeok`.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

@@ -328,6 +328,15 @@ CMD TYPE g%@edlargeokfprintfihmain
 
 Microsoft (R) Overlay Linker  Version 3.65   
 Copyright (C) Microsoft Corp 19L1 OK
+CMD DEL OK
+Microsoft (R) C Optimizing Compiler Version 5.10
+Copyright (c) Microsoft Corp 1984, 1985, 1986, 1987, 1988. All rights reserved.
+
+LARGE.C
+CMD DIR LARGE.OBJ
+CMD TYPE Ä	LARGE.CîàMS Cnà	üSLIBCEàù0sO„à°CV7ñ.DGROUP_TEXTCODE_DATADATACONST_BSSBSS?òHıòHòH
+òH	öˇˇˇVú@E¿å1
+__acrtused__chkstk_largeok_printf_mainÑê_largeok_mainà¢—†
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK

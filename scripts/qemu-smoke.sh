@@ -1265,7 +1265,11 @@ run_one() {
 		|| ! grep -q "CMD DIR MORE.CLA" "$out" \
 		|| ! grep -q "; MORE.clA" "$out" \
 		|| ! grep -q "largeok" "$out" \
-		|| ! grep -q "L1 OK" "$out"; then
+		|| ! grep -q "L1 OK" "$out" \
+		|| ! grep -q "Microsoft (R) C Optimizing Compiler Version 5.10" "$out" \
+		|| ! grep -q "CMD DIR LARGE.OBJ" "$out" \
+		|| ! grep -q "_largeok" "$out" \
+		|| grep -q "D4005" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

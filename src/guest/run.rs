@@ -865,6 +865,13 @@ fn write_console(cpu: &mut CpuState, ram: &GuestRam) {
     cpu.set_carry(false);
 }
 
+const NESTED_BYTES: usize = 262144;
+static mut NESTED: [u8; NESTED_BYTES] = [0; NESTED_BYTES];
+
+fn nested_image() -> &'static mut [u8; NESTED_BYTES] {
+    unsafe { &mut *core::ptr::addr_of_mut!(NESTED) }
+}
+
 fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if cpu.low(Slot::Accumulator) != 0 {
         cpu.set_carry(true);
@@ -880,8 +887,8 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         cpu.set_wide(Slot::Accumulator, 2);
         return;
     };
-    let mut image = [0u8; 512];
-    let Some(length) = volume::read_named(volume::IMAGE, &name, &mut image) else {
+    let image = nested_image();
+    let Some(length) = volume::read_named(volume::IMAGE, &name, image) else {
         cpu.set_carry(true);
         cpu.set_wide(Slot::Accumulator, 2);
         return;
@@ -897,8 +904,31 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         cpu.set_wide(Slot::Accumulator, 8);
         return;
     };
+    let arena = session.break_at;
+    if length > 32 * 1024 {
+        let load_segment = segment.saturating_add(0x0010);
+        let image_end = resident_end(&image[..length], load_segment);
+        if image_end > session.break_at && image_end < super::memory::CONVENTIONAL_END {
+            session.break_at = image_end;
+        }
+    }
+    let given_environment = u16::from_le_bytes([
+        ram.load(block_segment, block_offset).unwrap_or(0),
+        ram.load(block_segment, block_offset.wrapping_add(1)).unwrap_or(0),
+    ]);
+    if given_environment != 0 {
+        let bytes = given_environment.to_le_bytes();
+        let _ = ram.store(segment, 0x2C, bytes[0]);
+        let _ = ram.store(segment, 0x2D, bytes[1]);
+    }
     copy_command_tail(ram, block_segment, block_offset, segment);
-    match drive(&mut child, ram, session, 512) {
+    let mut inherited = [false; HANDLE_SLOTS];
+    let mut slot = 0usize;
+    while slot < HANDLE_SLOTS {
+        inherited[slot] = session.opens[slot].is_some();
+        slot += 1;
+    }
+    match drive(&mut child, ram, session, 8_000_000) {
         End::Stopped(code) => {
             session.last_code = u16::from(code);
             cpu.set_wide(Slot::Accumulator, 0);
@@ -909,6 +939,17 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
             cpu.set_carry(true);
         }
     }
+    slot = 0;
+    while slot < HANDLE_SLOTS {
+        if !inherited[slot] {
+            if let Some(opened) = session.opens[slot] {
+                let _ = flush_opened(&opened);
+            }
+            session.opens[slot] = None;
+        }
+        slot += 1;
+    }
+    session.break_at = arena;
 }
 
 fn environment_segment(ram: &GuestRam, segment: u16, offset: u16) -> u16 {
