@@ -188,8 +188,10 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x57] = file_times as fn(&mut LogicalFrame);
     slots[0x3C] = create_file as fn(&mut LogicalFrame);
     slots[0x3D] = open_handle as fn(&mut LogicalFrame);
+    slots[0x3E] = close_handle as fn(&mut LogicalFrame);
     slots[0x3F] = read_handle as fn(&mut LogicalFrame);
     slots[0x40] = write_handle as fn(&mut LogicalFrame);
+    slots[0x42] = lseek as fn(&mut LogicalFrame);
     slots[0x41] = delete_file as fn(&mut LogicalFrame);
     slots[0x47] = get_cwd as fn(&mut LogicalFrame);
     slots[0x4E] = find_first as fn(&mut LogicalFrame);
@@ -419,6 +421,23 @@ fn file_times(frame: &mut LogicalFrame) {
         frame.store_ax(DosWord(0));
     } else {
         frame.store_ax(DosWord(1));
+    }
+}
+
+/// AH=3Eh. BX is the handle. AX is 0, or 6 when the handle is not open.
+fn close_handle(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::handle::close(frame.bx as u16)));
+}
+
+/// AH=42h. AL is the method. CX:DX is the offset. DX:AX is the new position.
+fn lseek(frame: &mut LogicalFrame) {
+    let method = (frame.ax & 0xff) as u8;
+    match crate::dos::handle::seek(frame.bx as u16, method, frame.dx as u16, frame.cx as u16) {
+        Ok(pos) => {
+            frame.store_ax(DosWord(pos as u16));
+            frame.store_dx(DosWord((pos >> 16) as u16));
+        }
+        Err(code) => frame.store_ax(DosWord(code)),
     }
 }
 

@@ -12,6 +12,10 @@ static mut OWNED: bool = false;
 static mut OWNED_AT: usize = 0;
 static mut OWNED_POS: usize = 0;
 static mut OPEN_AT: usize = usize::MAX;
+static mut POS: u32 = 0;
+static mut SIZE: u32 = 0;
+static mut BASE: usize = 0;
+static mut DIRTY: bool = false;
 
 pub fn open_asciiz(name: *const u8) -> Option<u16> {
     let mut raw = [0u8; 12];
@@ -33,25 +37,13 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
             return None;
         }
         if ent.owned {
-            unsafe {
-                OWNED = true;
-                OWNED_AT = index;
-                OPEN_AT = index;
-                OWNED_POS = 0;
-                OPEN = true;
-            }
+            arm_owned(index);
             return Some(5);
         }
         if ent.cluster >= 2 {
             let start = (4 + (ent.cluster as usize - 2)) * 512;
             if start < IMAGE.len() {
-                unsafe {
-                    OFF = start;
-                    LEFT = (ent.size as usize).min(IMAGE.len() - start);
-                    OPEN = true;
-                    OWNED = false;
-                    OPEN_AT = index;
-                }
+                arm_image(index, start, ent.size as usize);
                 return Some(5);
             }
         }
@@ -73,13 +65,7 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
             if start >= IMAGE.len() {
                 return None;
             }
-            unsafe {
-                OFF = start;
-                LEFT = size.min(IMAGE.len() - start);
-                OPEN = true;
-                OWNED = false;
-                OPEN_AT = index;
-            }
+            arm_image(index, start, size);
             return Some(5);
         }
         index += 1;
@@ -88,13 +74,7 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
 }
 
 pub fn bind_owned(index: usize) {
-    unsafe {
-        OWNED = true;
-        OWNED_AT = index;
-        OPEN_AT = index;
-        OWNED_POS = 0;
-        OPEN = true;
-    }
+    arm_owned(index);
 }
 
 pub fn opened_index(handle: u16) -> Option<usize> {
@@ -110,14 +90,66 @@ pub fn write(handle: u16, src: *const u8, count: usize) -> usize {
     }
     let index = unsafe { OWNED_AT };
     let mut ent = crate::dos::search::slot(index);
+    let mut pos = unsafe { OWNED_POS };
     let mut n = 0usize;
-    while n < count && (ent.data_len as usize) < ent.data.len() {
-        ent.data[ent.data_len as usize] = unsafe { *src.add(n) };
-        ent.data_len += 1;
+    while n < count && pos < ent.data.len() {
+        ent.data[pos] = unsafe { *src.add(n) };
+        pos += 1;
         n += 1;
     }
+    if (pos as u8) > ent.data_len {
+        ent.data_len = pos as u8;
+        ent.size = u16::from(ent.data_len);
+    }
     crate::dos::search::set_slot(index, ent);
+    unsafe {
+        OWNED_POS = pos;
+        POS = pos as u32;
+        SIZE = u32::from(ent.data_len);
+        if n > 0 {
+            DIRTY = true;
+        }
+    }
     n
+}
+
+/// AH=42h. `method` 0 stores CX:DX, 1 adds it to the position, 2 adds it to the size.
+/// The `Ok` value is the new position. `Err` is `error_invalid_handle` or
+/// `error_invalid_function`.
+pub fn seek(handle: u16, method: u8, dx: u16, cx: u16) -> Result<u32, u16> {
+    if handle != 5 || unsafe { !OPEN } {
+        return Err(6);
+    }
+    if method > 2 {
+        return Err(1);
+    }
+    let offset = (u32::from(cx) << 16) | u32::from(dx);
+    let pos = unsafe {
+        match method {
+            0 => offset,
+            1 => POS.wrapping_add(offset),
+            _ => SIZE.wrapping_add(offset),
+        }
+    };
+    place(pos);
+    Ok(pos)
+}
+
+/// AH=3Eh. A second close of the same handle is `error_invalid_handle`.
+pub fn close(handle: u16) -> u16 {
+    if handle != 5 || unsafe { !OPEN } {
+        return 6;
+    }
+    let index = unsafe { OPEN_AT };
+    let dirty = unsafe { DIRTY };
+    if dirty {
+        crate::dos::close::commit(index);
+    }
+    unsafe {
+        OPEN = false;
+        DIRTY = false;
+    }
+    0
 }
 
 /// Read `count` bytes of a root file at a byte offset. The handle cursor is left alone.
@@ -176,7 +208,10 @@ pub fn read(handle: u16, dst: *mut u8, count: usize) -> usize {
             unsafe { *dst.add(i) = ent.data[pos + i] }
             i += 1;
         }
-        unsafe { OWNED_POS += n }
+        unsafe {
+            OWNED_POS += n;
+            POS += n as u32;
+        }
         return n;
     }
     let n = count.min(unsafe { LEFT });
@@ -189,8 +224,55 @@ pub fn read(handle: u16, dst: *mut u8, count: usize) -> usize {
     unsafe {
         OFF += n;
         LEFT -= n;
+        POS += n as u32;
     }
     n
+}
+
+fn arm_owned(index: usize) {
+    let ent = crate::dos::search::slot(index);
+    unsafe {
+        OWNED = true;
+        OWNED_AT = index;
+        OPEN_AT = index;
+        OWNED_POS = 0;
+        POS = 0;
+        SIZE = u32::from(ent.data_len);
+        DIRTY = false;
+        OPEN = true;
+    }
+}
+
+fn arm_image(index: usize, start: usize, size: usize) {
+    unsafe {
+        OWNED = false;
+        OPEN_AT = index;
+        BASE = start;
+        SIZE = size as u32;
+        DIRTY = false;
+        OPEN = true;
+    }
+    place(0);
+}
+
+fn place(pos: u32) {
+    unsafe {
+        POS = pos;
+        if OWNED {
+            OWNED_POS = pos as usize;
+            return;
+        }
+        let size = SIZE as usize;
+        let at = pos as usize;
+        if at >= size {
+            OFF = BASE.saturating_add(size);
+            LEFT = 0;
+        } else {
+            OFF = BASE + at;
+            let room = IMAGE.len().saturating_sub(OFF);
+            LEFT = (size - at).min(room);
+        }
+    }
 }
 
 fn pack(name: &[u8]) -> Option<[u8; 11]> {

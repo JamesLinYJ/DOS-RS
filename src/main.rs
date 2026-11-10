@@ -207,6 +207,8 @@ fn boot(gate: usize) -> ! {
         dos::fcb::show();
         // Extend cluster 3 on the FAT12 image, then the same step on a FAT16 table.
         dos::rom::show();
+        // Seek within BAR.COM, write the first byte back, and close the handle.
+        dos::close::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
