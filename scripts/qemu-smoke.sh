@@ -999,6 +999,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COMP2 LW00 HW00 EQ01 MM00 ST00 MK01 OK01 MM00 ST00 MK00 OK01 MM01 OF00000001 L58 R59 ST00 MK00 OK00 MM0A OF00000000 L00 R01 ST01 MK00 OK00 MM01 OF00000000 L1A R00 ST00 MK01 OK00" "$out"; then
+		echo "$name missing file compare" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

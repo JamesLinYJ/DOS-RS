@@ -135,7 +135,7 @@ v4.0/src/CMD/COMMAND/TSPC.ASM	text	partial	src/cmd/command/tspc.rs
 v4.0/src/CMD/COMMAND/TUCODE.ASM	text	partial	src/cmd/command/tucode.rs
 v4.0/src/CMD/COMMAND/UINIT.ASM	text	partial	src/cmd/command/uinit.rs
 v4.0/src/CMD/COMP/COMP1.ASM	text	partial	src/cmd/comp/comp1.rs
-v4.0/src/CMD/COMP/COMP2.ASM	text	untranslated	src/cmd/comp/comp2.rs
+v4.0/src/CMD/COMP/COMP2.ASM	text	partial	src/cmd/comp/comp2.rs
 v4.0/src/CMD/COMP/COMPEQ.INC	text	untranslated	src/cmd/comp/compeq.rs
 v4.0/src/CMD/COMP/COMP.LNK	text	untranslated	src/cmd/comp/comp.rs
 v4.0/src/CMD/COMP/COMPMS.INC	text	untranslated	src/cmd/comp/compms.rs

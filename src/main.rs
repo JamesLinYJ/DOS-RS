@@ -392,6 +392,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::uinit::show();
         // COMP is a COM file. Its entry is 100h.
         cmd::comp::comp1::show();
+        // Ten mismatches end a compare. The end mark is 1Ah in either file.
+        cmd::comp::comp2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
