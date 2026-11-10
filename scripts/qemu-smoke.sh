@@ -1017,6 +1017,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COMPP NR00 DT00 TM00 FI01 CA01 CX00 DV01 QU00 NU00 KY00 SW01 V100 V200 V300 IN00 BS01 OK0000 ELFFFF MY0001 MS0002 NS0003 NK0004 RG0006 NV0007 ST0008 SY0009" "$out"; then
+		echo "$name missing compare parser switches" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

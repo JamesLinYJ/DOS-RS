@@ -398,6 +398,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::compeq::show();
         // Compare offsets are hex dwords. Name prompts read a buffered line.
         cmd::comp::compms::show();
+        // COMP parses files, drives, and switches. Dates and numbers stay off.
+        cmd::comp::compp::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
