@@ -242,7 +242,7 @@ CMD DIR PACKED.EXE
 Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
 BuildMsg - PSP at 0000
 Program memory size is 0
-Allocatable memory size is 605952
+Allocatable memory size is 606208
 Processing []
 
  Function 3D, Error 22784, Class 0, Action 0, Locus 0 
@@ -271,8 +271,7 @@ Microsoft (R) Library Manager  Version 3.10
 Copyright (C) Microsoft Corp 1983-1988.  All rights reserved.
 
 CMD DIR LIB.LST
-Insufficient Memory
-The number topic(s) and text string(s) written = 0EXEFIX 1234 0010
+The number topic(s) and text string(s) written = 57EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 LIB LST __aFFaldiv........affaldiv          __aFFalmul..
 OP LEA 10

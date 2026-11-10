@@ -541,6 +541,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             rename_path(cpu, ram);
             Action::Continue
         }
+        0x5B => {
+            create_new(cpu, ram, session);
+            Action::Continue
+        }
         0x4D => {
             cpu.set_wide(Slot::Accumulator, session.last_code);
             session.last_code = 0;
@@ -636,6 +640,17 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     }
     cpu.set_wide(Slot::Accumulator, moved);
     cpu.set_carry(false);
+}
+
+fn create_new(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
+    if let Some(name) = file_component(&guest_text(cpu, ram))
+        && super::disk::exists(&name)
+    {
+        cpu.set_wide(Slot::Accumulator, 0x50);
+        cpu.set_carry(true);
+        return;
+    }
+    create_file(cpu, ram, session);
 }
 
 fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
@@ -1043,6 +1058,7 @@ pub(super) fn spawn(
     if !super::mz::plant_environment(ram, SHELL_CHILD, program) {
         return 0xFF;
     }
+    let arena = session.break_at;
     if image.len() > 32 * 1024 {
         let load_segment = SHELL_CHILD.saturating_add(0x0010);
         let paragraphs = u16::try_from(image.len().div_ceil(16)).unwrap_or(u16::MAX);
@@ -1054,27 +1070,31 @@ pub(super) fn spawn(
     if !args.is_empty() {
         let prefix = SHELL_CHILD;
         let count = args.len().min(126);
-        if !ram.store(prefix, 0x80, (count + 1) as u8) {
-            return 0xFF;
-        }
-        if !ram.store(prefix, 0x81, b' ') {
+        if !ram.store(prefix, 0x80, (count + 1) as u8)
+            || !ram.store(prefix, 0x81, b' ')
+        {
+            session.break_at = arena;
             return 0xFF;
         }
         let mut index = 0usize;
         while index < count {
             if !ram.store(prefix, 0x82u16.wrapping_add(index as u16), args[index]) {
+                session.break_at = arena;
                 return 0xFF;
             }
             index += 1;
         }
         if !ram.store(prefix, 0x82u16.wrapping_add(index as u16), b'\r') {
+            session.break_at = arena;
             return 0xFF;
         }
     }
-    match drive(&mut cpu, ram, session, 2_000_000) {
+    let code = match drive(&mut cpu, ram, session, 2_000_000) {
         End::Stopped(code) => code,
         _ => 0xFF,
-    }
+    };
+    session.break_at = arena;
+    code
 }
 
 fn place_com(image: &[u8], ram: &mut GuestRam, segment: u16) -> Option<CpuState> {

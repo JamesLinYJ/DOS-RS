@@ -1238,7 +1238,7 @@ run_one() {
 		|| ! grep -q "PACKED 28AF 4D5A OK" "$out" \
 		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
 		|| ! grep -q "BuildMsg - PSP at 0000" "$out" \
-		|| ! grep -q "Allocatable memory size is 605952" "$out" \
+		|| ! grep -q "Allocatable memory size is 606208" "$out" \
 		|| ! grep -q "CMD ERRORLEVEL 1" "$out" \
 		|| ! grep -q "Couldn't open  menu creation files." "$out" \
 		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out" \
@@ -1246,8 +1246,7 @@ run_one() {
 		|| ! grep -q "Microsoft (R) Library Manager  Version 3.10" "$out" \
 		|| ! grep -q "CMD DIR LIB.LST" "$out" \
 		|| ! grep -q "LIB LST __aFFaldiv" "$out" \
-		|| ! grep -q "Insufficient Memory" "$out" \
-		|| ! grep -q "The number topic(s) and text string(s) written = 0" "$out"; then
+		|| ! grep -q "The number topic(s) and text string(s) written = 57" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
