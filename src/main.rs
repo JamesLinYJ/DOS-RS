@@ -279,6 +279,8 @@ fn boot(gate: usize) -> ! {
         dos::msdisp::show();
         // Standard process build: escape is 1Bh and cancel is Ctrl-X.
         dos::stdproc::show();
+        // Standard dispatch table: CALL 5 limit 24h, INT 21h limit 6Ch.
+        dos::stdtable::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
