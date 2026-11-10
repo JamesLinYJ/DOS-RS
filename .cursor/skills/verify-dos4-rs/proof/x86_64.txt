@@ -50,3 +50,5 @@ IO       SYS
 COMMAND  COM
 \COMMAND.COM
 File not found
+Directory of  A:\
+COMMAND  COM

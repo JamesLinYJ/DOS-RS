@@ -303,6 +303,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if [ "$(grep -c "IO       SYS" "$out")" -ne 1 ]; then
+		echo "$name missing DEL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

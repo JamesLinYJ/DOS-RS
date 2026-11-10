@@ -55,6 +55,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tcmd1b::type_cmd(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"DEL") || name.eq_ignore_ascii_case(b"ERASE") {
+        tcmd1a::erase_cmd(rest);
+        return true;
+    }
     if name.eq_ignore_ascii_case(b"DIR") {
         tcmd1a::dir_cmd(rest);
         return true;

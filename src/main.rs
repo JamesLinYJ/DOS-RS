@@ -171,6 +171,9 @@ fn boot(gate: usize) -> ! {
         // TYPE prints the file bytes. NONE is the missing-file line.
         let _typed = cmd::command::tmisc1::dispatch(b"TYPE COMMAND.COM\r");
         let _type_miss = cmd::command::tmisc1::dispatch(b"TYPE NONE\r");
+        // DEL removes IO.SYS. The following DIR no longer lists it.
+        let _del = cmd::command::tmisc1::dispatch(b"DEL IO.SYS\r");
+        let _erased = cmd::command::tmisc1::dispatch(b"DIR\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
