@@ -217,6 +217,8 @@ fn boot(gate: usize) -> ! {
         dos::dir::show();
         // `DOS_DUP` increments the local SFT reference count.
         dos::dup::show();
+        // `$LockOper` from LOCK.ASM. The second lock of the same range fails.
+        dos::lock::show();
         // IOCTL on a closed handle, removable media, and the path checks.
         dos::ioctl::show();
         // Exec rejects AL=2, misses a name, and loads COMMAND.COM as a COM file.

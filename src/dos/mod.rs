@@ -36,6 +36,7 @@ pub mod disk3;
 pub mod handle;
 pub mod highsw;
 pub mod ioctl;
+pub mod lock;
 pub mod misc;
 pub mod ms_code;
 pub mod parse;

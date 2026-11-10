@@ -200,6 +200,7 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x4E] = find_first as fn(&mut LogicalFrame);
     slots[0x4F] = find_next as fn(&mut LogicalFrame);
     slots[0x56] = rename_file as fn(&mut LogicalFrame);
+    slots[0x5C] = lock_oper as fn(&mut LogicalFrame);
     slots[0x2A] = get_date as fn(&mut LogicalFrame);
     slots[0x2B] = set_date as fn(&mut LogicalFrame);
     slots[0x2C] = get_time as fn(&mut LogicalFrame);
@@ -478,6 +479,15 @@ fn lseek(frame: &mut LogicalFrame) {
         }
         Err(code) => frame.store_ax(DosWord(code)),
     }
+}
+
+/// AH=5Ch. AL=0 locks CX:DX for SI:DI bytes. AL=1 unlocks that range.
+fn lock_oper(frame: &mut LogicalFrame) {
+    let al = (frame.ax & 0xff) as u8;
+    let start = ((frame.cx as u32) << 16) | (frame.dx as u32);
+    let len = ((frame.si as u32) << 16) | (frame.di as u32);
+    let open = crate::dos::handle::opened_index(frame.bx as u16).is_some();
+    frame.store_ax(DosWord(crate::dos::lock::oper(al, open, start, len)));
 }
 
 /// AH=3Dh. AX is handle 5, or 0xFFFF when the name is not in the root.

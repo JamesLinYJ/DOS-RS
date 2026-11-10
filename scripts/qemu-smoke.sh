@@ -423,6 +423,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "LOCK OK VL21 UL00" "$out"; then
+		echo "$name missing LOCK" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "DUP REF0002" "$out"; then
 		echo "$name missing DUP" >&2
 		cat "$out" >&2
