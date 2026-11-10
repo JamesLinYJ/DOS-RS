@@ -277,6 +277,8 @@ fn boot(gate: usize) -> ! {
         dos::kstrin::show();
         // IBM dispatch: CALL 5 stops at 24h and F8h is not an OEM hook.
         dos::msdisp::show();
+        // Standard process build: escape is 1Bh and cancel is Ctrl-X.
+        dos::stdproc::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
