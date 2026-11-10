@@ -147,7 +147,7 @@ v4.0/src/CMD/COMP/MAKEFILE	text	untranslated	src/cmd/comp/makefile.rs
 v4.0/src/CMD/DEBUG/DEBASM.ASM	text	partial	src/cmd/debug/debasm.rs
 v4.0/src/CMD/DEBUG/DEBCOM1.ASM	text	partial	src/cmd/debug/debcom1.rs
 v4.0/src/CMD/DEBUG/DEBCOM2.ASM	text	partial	src/cmd/debug/debcom2.rs
-v4.0/src/CMD/DEBUG/DEBCOM3.ASM	text	untranslated	src/cmd/debug/debcom3.rs
+v4.0/src/CMD/DEBUG/DEBCOM3.ASM	text	partial	src/cmd/debug/debcom3.rs
 v4.0/src/CMD/DEBUG/DEBCONST.ASM	text	untranslated	src/cmd/debug/debconst.rs
 v4.0/src/CMD/DEBUG/DEBDATA.ASM	text	untranslated	src/cmd/debug/debdata.rs
 v4.0/src/CMD/DEBUG/DEBEMS.ASM	text	untranslated	src/cmd/debug/debems.rs

@@ -1053,6 +1053,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBCOM3 L03 L04 L05 L01 L02 L02 L02 LFF L02 L03 L04 LFF CT0001 CT0005 MK02 MK01 MK00" "$out"; then
+		echo "$name missing trace lengths" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

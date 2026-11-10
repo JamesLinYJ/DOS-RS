@@ -410,6 +410,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debcom1::show();
         // Flag names run from the high bit. The same bit twice is an error.
         cmd::debug::debcom2::show();
+        // A near call is three bytes. INT 3 is one. Trace defaults to one.
+        cmd::debug::debcom3::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
