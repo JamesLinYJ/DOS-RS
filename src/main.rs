@@ -217,6 +217,8 @@ fn boot(gate: usize) -> ! {
         dos::ioctl::show();
         // Exec rejects AL=2, misses a name, and loads COMMAND.COM as a COM file.
         dos::exec::show();
+        // First-fit arena: two blocks, free the first, then a request that does not fit.
+        dos::alloc::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -5,6 +5,7 @@
 //! and a single character. No new register type is added. The frame stays
 //! in `int21`.
 
+pub mod alloc;
 pub mod buf;
 pub mod close;
 pub mod cpmio;

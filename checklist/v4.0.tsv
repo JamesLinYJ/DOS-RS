@@ -770,7 +770,7 @@ v4.0/src/DEV/XMAEM/XMAEM.LNK	text	untranslated	src/dev/xmaem/xmaem.rs
 v4.0/src/DEV/XMAEM/XMAEM.MAK	text	untranslated	src/dev/xmaem/xmaem.rs
 v4.0/src/DEV/XMAEM/XMAEM.SKL	text	untranslated	src/dev/xmaem/xmaem.rs
 v4.0/src/DOS/ABORT.ASM	text	untranslated	src/dos/abort.rs
-v4.0/src/DOS/ALLOC.ASM	text	untranslated	src/dos/alloc.rs
+v4.0/src/DOS/ALLOC.ASM	text	partial	src/dos/alloc.rs
 v4.0/src/DOS/BUF.ASM	text	partial	src/dos/buf.rs
 v4.0/src/DOS/CLOSE.ASM	text	partial	src/dos/close.rs
 v4.0/src/DOS/CPMIO2.ASM	text	partial	src/dos/cpmio2.rs

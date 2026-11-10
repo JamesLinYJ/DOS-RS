@@ -195,6 +195,8 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x42] = lseek as fn(&mut LogicalFrame);
     slots[0x41] = delete_file as fn(&mut LogicalFrame);
     slots[0x47] = get_cwd as fn(&mut LogicalFrame);
+    slots[0x48] = alloc_memory as fn(&mut LogicalFrame);
+    slots[0x49] = free_memory as fn(&mut LogicalFrame);
     slots[0x4E] = find_first as fn(&mut LogicalFrame);
     slots[0x4F] = find_next as fn(&mut LogicalFrame);
     slots[0x56] = rename_file as fn(&mut LogicalFrame);
@@ -275,6 +277,22 @@ fn chdir(frame: &mut LogicalFrame) {
 /// AH=3Ah.
 fn rmdir(frame: &mut LogicalFrame) {
     frame.store_ax(DosWord(crate::dos::path::rmdir(frame.dx as *const u8)));
+}
+
+/// AH=48h. BX is the paragraph count. AX is the memory segment.
+fn alloc_memory(frame: &mut LogicalFrame) {
+    match crate::dos::alloc::alloc(frame.bx as u16) {
+        Ok(seg) => frame.store_ax(DosWord(seg)),
+        Err((code, max)) => {
+            frame.store_ax(DosWord(code));
+            frame.store_bx(DosWord(max));
+        }
+    }
+}
+
+/// AH=49h. ES is the memory segment, one paragraph above the header.
+fn free_memory(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::alloc::free(frame.es as u16)));
 }
 
 /// AH=47h. SI receives the ASCIIZ path without the drive letter.
