@@ -16,6 +16,7 @@ const ERROR_DONE: u16 = 0x8100;
 const WRITE_FAULT: u8 = 10;
 const FLAG_TIMEOUT: u8 = 0x80;
 
+#[inline(never)]
 pub fn aux_write_bytes(bytes: &[u8]) {
     let mut packet = [0u8; 32];
     packet[0] = 22;

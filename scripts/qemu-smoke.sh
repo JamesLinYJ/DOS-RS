@@ -183,6 +183,24 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "ECHO is on" "$out"; then
+		echo "$name missing ECHO state" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "hello" "$out"; then
+		echo "$name missing ECHO text" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "ECHO is off" "$out"; then
+		echo "$name missing ECHO off" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

@@ -5,7 +5,7 @@
 //! that matches is the only one run.
 
 use super::tdata::{COMTAB, F_SWITCH_ALLOWED};
-use super::tcmd2a;
+use super::{tcmd2a, tucode};
 
 pub fn dispatch(line: &[u8]) -> bool {
     let (name, rest) = split_name(line);
@@ -15,12 +15,15 @@ pub fn dispatch(line: &[u8]) -> bool {
     if flags & F_SWITCH_ALLOWED == 0 && rest.contains(&b'/') {
         return false;
     }
-    if name == b"VER" {
+    if name.eq_ignore_ascii_case(b"VER") {
         tcmd2a::version();
-        true
-    } else {
-        false
+        return true;
     }
+    if name.eq_ignore_ascii_case(b"ECHO") {
+        tucode::echo(rest);
+        return true;
+    }
+    false
 }
 
 fn find_com(name: &[u8]) -> Option<u8> {

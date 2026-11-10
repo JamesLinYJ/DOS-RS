@@ -128,6 +128,13 @@ fn boot(gate: usize) -> ! {
         cmd::command::tcmd2a::print_default_prompt();
         puts("\n");
         let _ran = cmd::command::tmisc1::dispatch(b"VER");
+        // The prompt loop runs the next typed line. Bare ECHO prints message
+        // 1057. A tail that is not ON or OFF is printed from 82h. OFF clears
+        // the bit, so the following bare ECHO prints the off text.
+        let _echo = cmd::command::tmisc1::dispatch(b"ECHO\r");
+        let _echo_text = cmd::command::tmisc1::dispatch(b"ECHO hello\r");
+        let _echo_off = cmd::command::tmisc1::dispatch(b"ECHO OFF\r");
+        let _echo_again = cmd::command::tmisc1::dispatch(b"ECHO\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -58,6 +58,7 @@ const CONTBL: [fn(); 11] = [
 
 const _: () = assert!(CONTBL.len() - 1 == 10);
 
+#[inline(never)]
 pub fn con_write_bytes(bytes: &[u8]) {
     let mut packet = [0u8; 32];
     packet[CMDLEN] = 22;
