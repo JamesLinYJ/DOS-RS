@@ -777,7 +777,7 @@ v4.0/src/DOS/CPMIO2.ASM	text	partial	src/dos/cpmio2.rs
 v4.0/src/DOS/CPMIO.ASM	text	partial	src/dos/cpmio.rs
 v4.0/src/DOS/CREATE.ASM	text	untranslated	src/dos/create.rs
 v4.0/src/DOS/CRIT.ASM	text	partial	src/dos/crit.rs
-v4.0/src/DOS/CTRLC.ASM	text	untranslated	src/dos/ctrlc.rs
+v4.0/src/DOS/CTRLC.ASM	text	partial	src/dos/ctrlc.rs
 v4.0/src/DOS/DELETE.ASM	text	untranslated	src/dos/delete.rs
 v4.0/src/DOS/DEV.ASM	text	untranslated	src/dos/dev.rs
 v4.0/src/DOS/DINFO.ASM	text	untranslated	src/dos/dinfo.rs

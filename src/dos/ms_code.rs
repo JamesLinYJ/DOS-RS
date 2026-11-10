@@ -30,6 +30,16 @@ static mut CLASS: u8 = 0;
 static mut ACTION: u8 = 0;
 static mut LOCUS: u8 = 1;
 
+/// Store an extended error that was already mapped, including class, action, and locus.
+pub fn store(code: u16, class: u8, action: u8, locus: u8) {
+    unsafe {
+        EXTERR = code;
+        CLASS = class;
+        ACTION = action;
+        LOCUS = locus;
+    }
+}
+
 /// `SYS_RET_ERR`. AH is cleared. The low byte is the error code.
 pub fn sys_ret_err(code: u16) -> u16 {
     let al = (code & 0xff) as u8;

@@ -465,6 +465,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "I24 AREA02 ER0013 CL0B AC07 LC02 IG00 RT01 FL03 AB" "$out"; then
+		echo "$name missing INT 24" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
