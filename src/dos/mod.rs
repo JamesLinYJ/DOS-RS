@@ -8,6 +8,7 @@
 pub mod alloc;
 pub mod buf;
 pub mod close;
+pub mod crit;
 pub mod cpmio;
 pub mod cpmio2;
 pub mod disp;

@@ -221,6 +221,8 @@ fn boot(gate: usize) -> ! {
         dos::alloc::show();
         // The last error is the invalid drive, with its class, action, and locus.
         dos::ms_code::show();
+        // Critical section enter/leave after the sharer patches the leading RET.
+        dos::crit::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
