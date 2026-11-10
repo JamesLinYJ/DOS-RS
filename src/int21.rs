@@ -156,6 +156,7 @@ const SERIAL_CX: DosWord = DosWord(0x0000);
 const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     let mut slots = [in_range_stub as fn(&mut LogicalFrame); 0x6D];
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
+    slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
     slots[0x30] = get_version as fn(&mut LogicalFrame);
     slots[0x4B] = exec_program as fn(&mut LogicalFrame);
@@ -180,6 +181,11 @@ pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
         return;
     }
     DISPATCH[ah.index()](frame);
+}
+
+/// AH=19h. AL is the default drive. This image leaves it at 0, which is A.
+fn get_default_drive(frame: &mut LogicalFrame) {
+    frame.set_al(Al(0));
 }
 
 /// AH=2. DL is the character. The console device receives that byte.

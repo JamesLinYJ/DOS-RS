@@ -22,3 +22,4 @@ BUF0002
 Unrecognized command in CONFIG.SYS
 CMDOK
 COMSPEC=\COMMAND.COM
+A>

@@ -125,6 +125,8 @@ fn boot(gate: usize) -> ! {
                 puts("\n");
             }
         }
+        cmd::command::tcmd2a::print_default_prompt();
+        puts("\n");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
