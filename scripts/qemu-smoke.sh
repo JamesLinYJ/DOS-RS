@@ -921,6 +921,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "RUCODE FT01 FT00 FT00 RW00 RW01 IX0C IX00 IX10 NS01 NS00 NS01 KN01 KN00 PR01 PR03 PR0F FF03 IG00 RT01 AB02 FL03 QFF Y01 N00 XFF AF01 AF01 AF00 LD01 LD00 LD01" "$out"; then
+		echo "$name missing critical error handler" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

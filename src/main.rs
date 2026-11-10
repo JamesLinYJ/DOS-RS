@@ -366,6 +366,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::path2::show();
         // Resident flags: echo starts on, and the last command looks external.
         cmd::command::rdata::show();
+        // Critical errors: ignore is checked before retry, and /F fails.
+        cmd::command::rucode::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

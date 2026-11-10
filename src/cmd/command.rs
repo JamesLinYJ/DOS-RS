@@ -17,6 +17,7 @@ pub mod parse2;
 pub mod path1;
 pub mod path2;
 pub mod rdata;
+pub mod rucode;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;
