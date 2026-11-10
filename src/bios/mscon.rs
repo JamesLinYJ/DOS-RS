@@ -58,6 +58,21 @@ const _: () = assert!(CONTBL.len() - 1 == 10);
 
 #[inline(never)]
 pub fn con_write_bytes(bytes: &[u8]) {
+    let mut start = 0usize;
+    let mut index = 0usize;
+    while index <= bytes.len() {
+        let split = index == bytes.len() || bytes[index] == 0;
+        if split && index > start {
+            write_raw(&bytes[start..index]);
+        }
+        if index < bytes.len() && bytes[index] == 0 {
+            start = index + 1;
+        }
+        index += 1;
+    }
+}
+
+fn write_raw(bytes: &[u8]) {
     let mut packet = [0u8; 32];
     packet[CMDLEN] = 22;
     packet[CMD] = DEV_WRITE;

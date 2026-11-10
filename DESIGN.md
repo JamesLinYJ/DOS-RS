@@ -158,4 +158,6 @@ INT 21h function 36h reports free and total allocation units. DOS `DISK_INFO` co
 
 `LIB.EXE` is the library manager from that same tree, `v4.0/src/TOOLS/LIB.EXE`, under the same MIT license. The shell runs `LIB.EXE LIBH.LIB, LIB.LST` on the real library `v4.0/src/TOOLS/BLD/LIB/LIBH.LIB`. It prints `Microsoft (R) Library Manager  Version 3.10`. A missing file opened with the create flag is created with the caller's attribute, and the new handle can be duplicated. The runtime then writes `LIB.LST`. The directory line is `CMD DIR LIB.LST`, and the listing begins `LIB LST __aFFaldiv`.
 
+`ASC2HLP.EXE` is the help builder from that same tree, `v4.0/src/TOOLS/ASC2HLP.EXE`, under the same MIT license. The shell runs it with an empty tail. It prints `Insufficient Memory` and `The number topic(s) and text string(s) written = 0`. A zero byte in that count is not sent to the console.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

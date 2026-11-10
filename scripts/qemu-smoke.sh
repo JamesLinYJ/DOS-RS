@@ -1245,7 +1245,9 @@ run_one() {
 		|| ! grep -qF "usage: cl [ option... ] filename... [ -link linkoption... ]" "$out" \
 		|| ! grep -q "Microsoft (R) Library Manager  Version 3.10" "$out" \
 		|| ! grep -q "CMD DIR LIB.LST" "$out" \
-		|| ! grep -q "LIB LST __aFFaldiv" "$out"; then
+		|| ! grep -q "LIB LST __aFFaldiv" "$out" \
+		|| ! grep -q "Insufficient Memory" "$out" \
+		|| ! grep -q "The number topic(s) and text string(s) written = 0" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
