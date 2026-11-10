@@ -32,7 +32,10 @@ fn boot(gate: usize) -> ! {
     put_hex16(disk_status);
     puts("\n");
     let mut floppy = [0u8; 512];
-    if bios::msdisk::read_floppy_boot(&mut floppy) {
+    if bios::msdisk::read_floppy_boot(&mut floppy)
+        && bios::msdisk::boot_sector_valid(&floppy)
+        && bios::msdisk::fixed_disk_paths()
+    {
         puts("DSKF55AA\n");
     }
     puts("MED");
@@ -90,6 +93,11 @@ fn boot(gate: usize) -> ! {
     puts("PAR");
     put_hex16(bios::sysinit1::para_round(17));
     puts("\n");
+    if bios::sysinit1::round_mem(17, 0, 0x100).is_ok()
+        && bios::sysinit2::skip_comment(b"; note\nBUFFERS=4\n") == 7
+    {
+        // The round and the comment skip agreed. The serial lines stay.
+    }
     bios::sysinit1::com_err();
     debug_exit()
 }

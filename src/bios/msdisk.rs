@@ -12,7 +12,16 @@ const COUNT: usize = 18;
 const ROMREAD: u8 = 2;
 const MAXERR: u16 = 5;
 const FNON_REMOVABLE: u16 = 0x0001;
+const FCHANGELINE: u16 = 0x0002;
+const FI_AM_MULT: u16 = 0x0010;
+const FI_OWN_PHYSICAL: u16 = 0x0020;
 const FCHANGED_BY_FORMAT: u16 = 0x0100;
+const UNFORMATTED_MEDIA: u16 = 0x0200;
+const ROM_WRITE: u8 = 3;
+const ROM_VERIFY: u8 = 4;
+const SOFT_ECC: u8 = 0x11;
+const WRITE_FAULT: u8 = 0xCC;
+const ACCESS_MAX: u8 = 5;
 /// `MSBDATA.INC` `Secrete_Code`. The word is the two characters `jk`.
 const SECRETE_CODE: u16 = u16::from_le_bytes(*b"jk");
 const FTOOBIG: u8 = 0x80;
@@ -94,6 +103,170 @@ pub fn media_check() -> i16 {
         si = 0;
     }
     si
+}
+
+/// `SETDRIVE`. One BDS, logical drive 0. Carry when the letter is absent.
+pub fn set_drive(logical: u8) -> bool {
+    disk().bds.drivelet == logical
+}
+
+/// `DSK$REM`. A fixed disk takes the busy exit.
+pub fn dsk_removable() -> u16 {
+    if disk().bds.flags & FNON_REMOVABLE != 0 {
+        0x0300
+    } else {
+        0x0100
+    }
+}
+
+/// `CHECKSINGLE`. A fixed disk, or a drive that is not shared, returns at once.
+pub fn check_single() -> bool {
+    let flags = disk().bds.flags;
+    flags & (FNON_REMOVABLE | FI_OWN_PHYSICAL) != 0 || flags & FI_AM_MULT == 0
+}
+
+/// `CHECK_TIME_OF_ACCESS`. SI comes back 1 when little or no time has passed.
+pub fn check_time_of_access(now_hi: u16, now_lo: u16, last_hi: u16, last_lo: u16, accesses: u8) -> (i16, u8) {
+    let mut si: i16 = 1;
+    let mut count = accesses;
+    let lo_borrow = now_lo < last_lo;
+    let elapsed_lo = now_lo.wrapping_sub(last_lo);
+    let elapsed_hi = now_hi.wrapping_sub(last_hi).wrapping_sub(u16::from(lo_borrow));
+    if elapsed_hi != 0 {
+        si = 0;
+    } else if elapsed_lo == 0 {
+        count = count.saturating_add(1);
+        if count >= ACCESS_MAX {
+            count = ACCESS_MAX - 1;
+            si = 0;
+        }
+    } else if elapsed_lo > 36 {
+        si = 0;
+    }
+    (si, count)
+}
+
+/// `CHECK_WRAP` for a fixed disk. Sector numbers past the track spill onto
+/// the next head, and past the last head onto the next cylinder.
+pub fn check_wrap(cx: u16, dh: u8, seclim: u16, hdlim: u16) -> (u16, u8) {
+    if seclim == 0 || hdlim == 0 {
+        return (cx, dh);
+    }
+    let sector = cx & 0x3f;
+    if sector <= seclim {
+        return (cx, dh);
+    }
+    let mut heads = u32::from(sector / seclim);
+    let mut new_sector = sector % seclim;
+    if new_sector == 0 {
+        new_sector = seclim;
+        heads = heads.saturating_sub(1);
+    }
+    let mut head = u32::from(dh) + heads;
+    let mut cyl = u32::from((cx >> 8) & 0xff) | u32::from((cx & 0xc0) << 2);
+    if head > u32::from(hdlim) {
+        let wraps = head / u32::from(hdlim);
+        head %= u32::from(hdlim);
+        if head == 0 {
+            head = u32::from(hdlim);
+            if wraps > 0 {
+                cyl += wraps - 1;
+            }
+        } else {
+            cyl += wraps;
+        }
+    }
+    let dh = (head as u8).wrapping_sub(1);
+    let ch = (cyl & 0xff) as u8;
+    let cl = ((new_sector as u8) & 0x3f) | (((cyl >> 2) as u8) & 0xc0);
+    (u16::from(ch) << 8 | u16::from(cl), dh)
+}
+
+/// `READBOOTSEC` sanity check. A short jump plus NOP, and a media byte in
+/// the F0-FF range, keeps BX at 0.
+pub fn boot_sector_valid(sector: &[u8]) -> bool {
+    if sector.len() < 22 {
+        return false;
+    }
+    let jump_ok = sector[0] == 0x69
+        || sector[0] == 0xE9
+        || (sector[0] == 0xEB && sector[2] == 0x90);
+    if !jump_ok {
+        return false;
+    }
+    sector[21] & 0xF0 == 0xF0
+}
+
+/// `IOSETUP` records the physical drive. The disk-base table itself is not
+/// present under `-kernel`, so the settle bytes stay at the fast value 1.
+pub fn io_setup(drivenum: u8) -> u8 {
+    let _fast_settle = 1u8;
+    drivenum
+}
+
+/// `SET_TIM` stores the tick words when they differ from the last access.
+pub fn set_tim(now_hi: u16, now_lo: u16, last_hi: u16, last_lo: u16) -> (u16, u16, bool) {
+    if now_lo == last_lo && now_hi == last_hi {
+        (last_hi, last_lo, false)
+    } else {
+        (now_hi, now_lo, true)
+    }
+}
+
+/// `INT_2F_13`. AH=13h replaces the saved INT 13h vector and returns the old one.
+pub fn int2f_13(ah: u8, old: u32, new_handler: u32) -> Option<u32> {
+    if ah == 0x13 {
+        let _installed = new_handler;
+        Some(old)
+    } else {
+        None
+    }
+}
+
+/// Reads use the fast settle. A fixed disk always does. A reset (`step_drv`
+/// of -1) forces the slow settle on a write.
+pub fn fast_settle(ah: u8, formfactor: u8, step_drv: i8) -> bool {
+    if formfactor == FFHARDFILE {
+        return true;
+    }
+    if step_drv == -1 {
+        return false;
+    }
+    ah == ROMREAD || ah == ROM_VERIFY
+}
+
+/// Soft ECC on a verify is ignored once the retry count is exhausted.
+pub fn verify_soft_ecc(ah: u8, retries: u16) -> bool {
+    ah == SOFT_ECC && retries == 0
+}
+
+/// The fixed-disk paths that do not issue INT 13h. False means one of them
+/// disagreed with the BDS.
+pub fn fixed_disk_paths() -> bool {
+    let (media, _) = check_time_of_access(0, 10, 0, 0, 0);
+    let (wrapped, _) = check_wrap(18, 0, 17, 2);
+    let (ticks_hi, ticks_lo, stored) = set_tim(0, 1, 0, 0);
+    set_drive(0)
+        && !set_drive(1)
+        && dsk_removable() == 0x0300
+        && check_single()
+        && io_setup(0x80) == 0x80
+        && media == 1
+        && wrapped & 0x3f == 1
+        && stored
+        && ticks_hi == 0
+        && ticks_lo == 1
+        && fast_settle(ROMREAD, FFHARDFILE, 0)
+        && !fast_settle(ROM_WRITE, 0, -1)
+        && verify_soft_ecc(SOFT_ECC, 0)
+        && !verify_soft_ecc(WRITE_FAULT, 1)
+        && int2f_13(0x13, 0x1000, 0x2000) == Some(0x1000)
+        && int2f_13(0, 0x1000, 0x2000).is_none()
+        && !ask_rom_media(disk().bds.flags)
+}
+
+fn ask_rom_media(flags: u16) -> bool {
+    flags & FCHANGELINE != 0
 }
 
 /// Read one sector at sector 0 of logical drive 0. Returns the status word.
@@ -191,7 +364,7 @@ fn diskrd() -> bool {
     if disk.seccnt == 0 {
         return false;
     }
-    if disk.bds.flags & 0x200 != 0 {
+    if disk.bds.flags & UNFORMATTED_MEDIA != 0 {
         return true;
     }
     let start = disk.sector as u32 + u32::from(disk.bds.hidsec);

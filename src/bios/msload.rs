@@ -118,15 +118,32 @@ pub fn load_io_sys() -> Option<u16> {
             return None;
         }
     }
-    // `GO_IBMBIO` would far-jump into the loaded image. This port returns
-    // the loaded length instead. The image is the IO.SYS payload, not a
-    // protected-mode entry.
+    // `GO_IBMBIO` packages the registers MSINIT wants and would far-jump
+    // to 70:0. The loaded file is not a protected-mode entry, so the
+    // registers are checked and the length is returned instead.
+    let (drive, media, first_lo, first_hi) = go_ibmbio_regs(&boot, 0);
+    if drive != 0 || media != 0xF8 || first_lo != data_lba as u16 || first_hi != 0 {
+        errorout();
+        return None;
+    }
     if filled >= 2 && &image[..2] == b"OK" {
         Some(filled as u16)
     } else {
         errorout();
         None
     }
+}
+
+/// Registers `GO_IBMBIO` would pass to MSINIT: DL, CH, BX, AX.
+fn go_ibmbio_regs(boot: &[u8], drive: u8) -> (u8, u8, u16, u16) {
+    let media = boot[21];
+    let reserved = u16::from_le_bytes([boot[14], boot[15]]);
+    let fats = u16::from(boot[16]);
+    let root_entries = u16::from_le_bytes([boot[17], boot[18]]);
+    let spf = u16::from_le_bytes([boot[22], boot[23]]);
+    let root_sectors = (root_entries * 32 + 511) / 512;
+    let first = reserved + fats * spf + root_sectors;
+    (drive, media, first, 0)
 }
 
 fn cluster_count(boot: &[u8]) -> u32 {

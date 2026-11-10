@@ -9,6 +9,22 @@ use super::sysimes;
 
 /// `DELIM`. `/` and NUL are delimiters, and so are space, tab, `=`, comma,
 /// and semicolon.
+/// `Organize` skips a comment that starts with `;` through the line feed.
+pub fn skip_comment(text: &[u8]) -> usize {
+    let mut index = 0usize;
+    if text.first() != Some(&b';') {
+        return 0;
+    }
+    while index < text.len() && text[index] != b'\n' {
+        index += 1;
+    }
+    if index < text.len() {
+        index + 1
+    } else {
+        index
+    }
+}
+
 pub fn delim(al: u8) -> bool {
     al == b'/' || al == 0 || al == b' ' || al == b'\t' || al == b'=' || al == b',' || al == b';'
 }
