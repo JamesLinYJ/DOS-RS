@@ -674,6 +674,86 @@ fn write_component(out: &mut [u8], mut used: usize, name: &[u8; 11]) -> usize {
     used
 }
 
+pub fn working_directory() -> u16 {
+    storage().cwd
+}
+
+pub fn parent_directory(cluster: u16) -> u16 {
+    if cluster < 2 {
+        return 0;
+    }
+    let disk = storage();
+    let Some(map) = layout(disk) else {
+        return 0;
+    };
+    parent_of(disk, &map, cluster)
+}
+
+pub struct DirMatch {
+    pub name: [u8; 11],
+    pub attr: u8,
+    pub time: u16,
+    pub date: u16,
+    pub size: u32,
+    pub index: u16,
+}
+
+pub fn find_match(dir: u16, template: &[u8; 11], search_attr: u8, start: u16) -> Option<DirMatch> {
+    let disk = storage();
+    let map = layout(disk)?;
+    let mut index = usize::from(start);
+    let limit = entry_count(&map, dir);
+    while index < limit {
+        let raw = entry(disk, &map, dir, index)?;
+        if raw[0] == 0 {
+            return None;
+        }
+        if raw[0] != 0xE5 {
+            let mut name = [b' '; 11];
+            name.copy_from_slice(&raw[..11]);
+            if attribute_visible(raw[11], search_attr) && names_match(template, &name) {
+                let size = u32::from_le_bytes([raw[28], raw[29], raw[30], raw[31]]);
+                return Some(DirMatch {
+                    name,
+                    attr: raw[11],
+                    time: u16::from_le_bytes([raw[22], raw[23]]),
+                    date: u16::from_le_bytes([raw[24], raw[25]]),
+                    size,
+                    index: u16::try_from(index).unwrap_or(u16::MAX),
+                });
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+pub fn directory_cluster(parent: u16, name: &[u8; 11]) -> Option<u16> {
+    let disk = storage();
+    let map = layout(disk)?;
+    let found = find(disk, &map, parent, name)?;
+    if found.attr & 0x10 == 0 {
+        return None;
+    }
+    Some(found.cluster)
+}
+
+fn attribute_visible(file_attr: u8, search_attr: u8) -> bool {
+    const SPECIAL: u8 = 0x02 | 0x04 | 0x08 | 0x10;
+    file_attr & SPECIAL & !search_attr == 0
+}
+
+fn names_match(template: &[u8; 11], name: &[u8; 11]) -> bool {
+    let mut index = 0usize;
+    while index < 11 {
+        if template[index] != b'?' && template[index] != name[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
 pub fn canonical(text: &[u8]) -> Option<[u8; 11]> {
     let mut name = [b' '; 11];
     let mut extension = false;

@@ -605,6 +605,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             find_first(cpu, ram, session);
             Action::Continue
         }
+        0x4F => {
+            find_next(cpu, ram, session);
+            Action::Continue
+        }
         0x56 => {
             rename_path(cpu, ram);
             Action::Continue
@@ -1971,16 +1975,267 @@ fn current_directory(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessi
 }
 
 fn find_first(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
-    let Some(name) = file_component(&guest_text(cpu, ram)) else {
+    let text = guest_text(cpu, ram);
+    if let Some(letter) = drive_letter(&text)
+        && letter != b'A'
+    {
+        fail(cpu, session, 15);
+        return;
+    }
+    let Some((dir, template)) = search_spec(&text) else {
+        fail(cpu, session, 3);
+        return;
+    };
+    let attr = cpu.low(Slot::Count);
+    let Some(found) = super::disk::find_match(dir, &template, attr, 0) else {
         fail(cpu, session, 2);
         return;
     };
-    if !volume::listed(volume::IMAGE, &name) || !write_found(ram, session, &name) {
-        fail(cpu, session, 2);
-        return;
+    if write_match(ram, session, dir, &template, attr, &found) {
+        cpu.set_wide(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+    } else {
+        fail(cpu, session, 5);
     }
-    cpu.set_wide(Slot::Accumulator, 0);
-    cpu.set_carry(false);
+}
+
+fn find_next(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let (segment, base) = dta_target(session);
+    let mut template = [b' '; 11];
+    let mut index = 0usize;
+    while index < template.len() {
+        let Some(byte) = ram.load(segment, base.wrapping_add(1 + index as u16)) else {
+            fail(cpu, session, 18);
+            return;
+        };
+        template[index] = byte;
+        index += 1;
+    }
+    let Some(attr) = ram.load(segment, base.wrapping_add(12)) else {
+        fail(cpu, session, 18);
+        return;
+    };
+    let Some(start) = load_word(ram, segment, base.wrapping_add(13)) else {
+        fail(cpu, session, 18);
+        return;
+    };
+    let Some(dir) = load_word(ram, segment, base.wrapping_add(15)) else {
+        fail(cpu, session, 18);
+        return;
+    };
+    let Some(found) = super::disk::find_match(dir, &template, attr, start) else {
+        fail(cpu, session, 18);
+        return;
+    };
+    if write_match(ram, session, dir, &template, attr, &found) {
+        cpu.set_wide(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+    } else {
+        fail(cpu, session, 5);
+    }
+}
+
+fn drive_letter(text: &[u8; 64]) -> Option<u8> {
+    if text.len() >= 2 && text[1] == b':' {
+        Some(ascii_upper(text[0]))
+    } else {
+        None
+    }
+}
+
+fn search_spec(text: &[u8; 64]) -> Option<(u16, [u8; 11])> {
+    let mut end = 0usize;
+    while end < text.len() && text[end] != 0 {
+        end += 1;
+    }
+    if end == 0 {
+        return None;
+    }
+    let mut cursor = 0usize;
+    let mut dir = super::disk::working_directory();
+    if end >= 2 && text[1] == b':' {
+        cursor = 2;
+        dir = 0;
+    }
+    if cursor < end && (text[cursor] == b'\\' || text[cursor] == b'/') {
+        dir = 0;
+        cursor += 1;
+    }
+    let mut last = cursor;
+    let mut index = cursor;
+    while index < end {
+        if text[index] == b'\\' || text[index] == b'/' {
+            dir = directory_at(dir, &text[last..index])?;
+            last = index + 1;
+        }
+        index += 1;
+    }
+    if last >= end {
+        return None;
+    }
+    Some((dir, component_template(&text[last..end])))
+}
+
+fn directory_at(parent: u16, text: &[u8]) -> Option<u16> {
+    if text == b"." || text.is_empty() {
+        return Some(parent);
+    }
+    if text == b".." {
+        return Some(super::disk::parent_directory(parent));
+    }
+    let mut padded = [0u8; 64];
+    let count = text.len().min(padded.len() - 1);
+    let mut index = 0usize;
+    while index < count {
+        padded[index] = text[index];
+        index += 1;
+    }
+    let name = dos_name(&padded)?;
+    super::disk::directory_cluster(parent, &name)
+}
+
+fn component_template(text: &[u8]) -> [u8; 11] {
+    let mut name = [b' '; 11];
+    let mut extension = false;
+    let mut fill = false;
+    let mut base = 0usize;
+    let mut ext = 0usize;
+    let mut index = 0usize;
+    while index < text.len() {
+        let upper = ascii_upper(text[index]);
+        if upper == b'.' && !extension {
+            if fill {
+                while base < 8 {
+                    name[base] = b'?';
+                    base += 1;
+                }
+            }
+            extension = true;
+            fill = false;
+            index += 1;
+            continue;
+        }
+        if upper == b'*' {
+            fill = true;
+            index += 1;
+            continue;
+        }
+        if !extension && base < 8 {
+            name[base] = if fill { b'?' } else { upper };
+            base += 1;
+        } else if extension && ext < 3 {
+            name[8 + ext] = if fill { b'?' } else { upper };
+            ext += 1;
+        }
+        index += 1;
+    }
+    if fill {
+        if extension {
+            while ext < 3 {
+                name[8 + ext] = b'?';
+                ext += 1;
+            }
+        } else {
+            while base < 8 {
+                name[base] = b'?';
+                base += 1;
+            }
+        }
+    }
+    name
+}
+
+fn write_match(
+    ram: &mut GuestRam,
+    session: &Session,
+    dir: u16,
+    template: &[u8; 11],
+    search_attr: u8,
+    found: &super::disk::DirMatch,
+) -> bool {
+    let (segment, base) = dta_target(session);
+    if !ram.store(segment, base, 1) {
+        return false;
+    }
+    let mut index = 0usize;
+    while index < template.len() {
+        if !ram.store(segment, base.wrapping_add(1 + index as u16), template[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    if !ram.store(segment, base.wrapping_add(12), search_attr) {
+        return false;
+    }
+    let next = found.index.wrapping_add(1).to_le_bytes();
+    if !ram.store(segment, base.wrapping_add(13), next[0])
+        || !ram.store(segment, base.wrapping_add(14), next[1])
+    {
+        return false;
+    }
+    let place = dir.to_le_bytes();
+    if !ram.store(segment, base.wrapping_add(15), place[0])
+        || !ram.store(segment, base.wrapping_add(16), place[1])
+    {
+        return false;
+    }
+    if !ram.store(segment, base.wrapping_add(0x15), found.attr) {
+        return false;
+    }
+    let stamp_time = found.time.to_le_bytes();
+    let stored_date = if found.date == 0 { 0x0021 } else { found.date };
+    let stamp_date = stored_date.to_le_bytes();
+    if !ram.store(segment, base.wrapping_add(0x16), stamp_time[0])
+        || !ram.store(segment, base.wrapping_add(0x17), stamp_time[1])
+        || !ram.store(segment, base.wrapping_add(0x18), stamp_date[0])
+        || !ram.store(segment, base.wrapping_add(0x19), stamp_date[1])
+    {
+        return false;
+    }
+    let size = found.size.to_le_bytes();
+    let mut part = 0usize;
+    while part < size.len() {
+        if !ram.store(
+            segment,
+            base.wrapping_add(0x1A).wrapping_add(part as u16),
+            size[part],
+        ) {
+            return false;
+        }
+        part += 1;
+    }
+    let mut shown = [0u8; 13];
+    let mut length = 0usize;
+    let mut cursor = 0usize;
+    while cursor < 8 && found.name[cursor] != b' ' {
+        shown[length] = found.name[cursor];
+        length += 1;
+        cursor += 1;
+    }
+    if found.name[8] != b' ' {
+        shown[length] = b'.';
+        length += 1;
+        cursor = 8;
+        while cursor < 11 && found.name[cursor] != b' ' {
+            shown[length] = found.name[cursor];
+            length += 1;
+            cursor += 1;
+        }
+    }
+    let mut slot = 0usize;
+    while slot < shown.len() {
+        if !ram.store(segment, base.wrapping_add(0x1E).wrapping_add(slot as u16), shown[slot]) {
+            return false;
+        }
+        slot += 1;
+    }
+    true
+}
+
+fn load_word(ram: &GuestRam, segment: u16, offset: u16) -> Option<u16> {
+    let low = ram.load(segment, offset)?;
+    let high = ram.load(segment, offset.wrapping_add(1))?;
+    Some(u16::from_le_bytes([low, high]))
 }
 
 fn dta_target(session: &Session) -> (u16, u16) {
@@ -1989,50 +2244,6 @@ fn dta_target(session: &Session) -> (u16, u16) {
     } else {
         (session.dta_segment, session.dta_offset)
     }
-}
-
-fn write_found(ram: &mut GuestRam, session: &Session, name: &[u8; 11]) -> bool {
-    let mut shown = [0u8; 16];
-    let mut length = 0usize;
-    let mut index = 0usize;
-    while index < 8 && name[index] != b' ' {
-        shown[length] = name[index];
-        length += 1;
-        index += 1;
-    }
-    if name[8] != b' ' {
-        shown[length] = b'.';
-        length += 1;
-        let mut ext = 8usize;
-        while ext < 11 && name[ext] != b' ' {
-            shown[length] = name[ext];
-            length += 1;
-            ext += 1;
-        }
-    }
-    shown[length] = b'\r';
-    length += 1;
-    shown[length] = b'\n';
-    length += 1;
-    shown[length] = b'$';
-    length += 1;
-    shown[length] = 0;
-    length += 1;
-    let (segment, base) = dta_target(session);
-    let attr = volume::attribute(volume::IMAGE, name).unwrap_or(0x20);
-    if !ram.store(segment, base.wrapping_add(0x15), attr) {
-        return false;
-    }
-    let mut offset = base.wrapping_add(30);
-    let mut cursor = 0usize;
-    while cursor < length {
-        if !ram.store(segment, offset, shown[cursor]) {
-            return false;
-        }
-        offset = offset.wrapping_add(1);
-        cursor += 1;
-    }
-    true
 }
 
 fn report_space(cpu: &mut CpuState) {

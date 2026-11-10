@@ -44,11 +44,6 @@ pub fn listed(image: &[u8], name: &[u8; 11]) -> bool {
         .is_some()
 }
 
-pub fn attribute(image: &[u8], name: &[u8; 11]) -> Option<u8> {
-    let volume = describe(image)?;
-    Some(find_entry(image, &volume, name)?[11])
-}
-
 struct Layout {
     bytes_per_sector: usize,
     sectors_per_cluster: usize,
