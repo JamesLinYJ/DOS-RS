@@ -287,6 +287,8 @@ fn boot(gate: usize) -> ! {
         dos::stdctrlc::show();
         // Standard absolute disk calls leave the BIOS status untranslated.
         dos::stdcode::show();
+        // Standard console I/O: escape is 1Bh and a ready A is returned.
+        dos::stdcpmio::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
