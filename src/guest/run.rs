@@ -1047,6 +1047,33 @@ fn place_child(image: &[u8], ram: &mut GuestRam, executable: bool) -> Option<Cpu
     }
 }
 
+fn resident_end(image: &[u8], load_segment: u16) -> u16 {
+    if image.len() >= 28 && image[0] == b'M' && image[1] == b'Z' {
+        let header = u16::from_le_bytes([image[8], image[9]]);
+        let pages = u16::from_le_bytes([image[4], image[5]]);
+        let last = u16::from_le_bytes([image[2], image[3]]);
+        let extra = u16::from_le_bytes([image[10], image[11]]);
+        let bytes = if pages == 0 {
+            0
+        } else if last == 0 {
+            u32::from(pages) * 512
+        } else {
+            u32::from(pages - 1) * 512 + u32::from(last)
+        };
+        let payload = bytes.saturating_sub(u32::from(header) * 16);
+        let loaded = u16::try_from(payload.div_ceil(16)).unwrap_or(u16::MAX);
+        let stack = u16::from_le_bytes([image[14], image[15]]);
+        let image_end = load_segment
+            .saturating_add(loaded)
+            .saturating_add(extra)
+            .saturating_add(1);
+        let near_end = load_segment.saturating_add(stack).saturating_add(0x1000);
+        return if near_end > image_end { near_end } else { image_end };
+    }
+    let paragraphs = u16::try_from(image.len().div_ceil(16)).unwrap_or(u16::MAX);
+    load_segment.saturating_add(paragraphs).saturating_add(1)
+}
+
 pub(super) fn spawn(
     image: &[u8],
     args: &[u8],
@@ -1075,8 +1102,7 @@ pub(super) fn spawn(
     let arena = session.break_at;
     if image.len() > 32 * 1024 {
         let load_segment = SHELL_CHILD.saturating_add(0x0010);
-        let paragraphs = u16::try_from(image.len().div_ceil(16)).unwrap_or(u16::MAX);
-        let image_end = load_segment.saturating_add(paragraphs).saturating_add(1);
+        let image_end = resident_end(image, load_segment);
         if image_end > session.break_at && image_end < super::memory::CONVENTIONAL_END {
             session.break_at = image_end;
         }

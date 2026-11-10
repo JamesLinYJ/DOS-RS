@@ -1248,7 +1248,7 @@ run_one() {
 		|| ! grep -q "LIB LST __aFFaldiv" "$out" \
 		|| ! grep -q "The number topic(s) and text string(s) written = 57" "$out" \
 		|| ! grep -q "Microsoft (R) Overlay Linker  Version 3.65" "$out" \
-		|| ! grep -q "SAY.OBJ : fatal error L1101: invalid object module" "$out"; then
+		|| ! grep -q "LINKED OK" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
