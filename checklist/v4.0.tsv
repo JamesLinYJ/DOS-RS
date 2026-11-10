@@ -138,7 +138,7 @@ v4.0/src/CMD/COMP/COMP1.ASM	text	partial	src/cmd/comp/comp1.rs
 v4.0/src/CMD/COMP/COMP2.ASM	text	partial	src/cmd/comp/comp2.rs
 v4.0/src/CMD/COMP/COMPEQ.INC	text	partial	src/cmd/comp/compeq.rs
 v4.0/src/CMD/COMP/COMP.LNK	text	untranslated	src/cmd/comp/comp.rs
-v4.0/src/CMD/COMP/COMPMS.INC	text	untranslated	src/cmd/comp/compms.rs
+v4.0/src/CMD/COMP/COMPMS.INC	text	partial	src/cmd/comp/compms.rs
 v4.0/src/CMD/COMP/COMPPAR.ASM	text	untranslated	src/cmd/comp/comppar.rs
 v4.0/src/CMD/COMP/COMPP.ASM	text	untranslated	src/cmd/comp/compp.rs
 v4.0/src/CMD/COMP/COMP.SKL	text	untranslated	src/cmd/comp/comp.rs

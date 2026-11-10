@@ -396,6 +396,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::comp2::show();
         // Extended open keeps the code-page check in bit 8.
         cmd::comp::compeq::show();
+        // Compare offsets are hex dwords. Name prompts read a buffered line.
+        cmd::comp::compms::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
