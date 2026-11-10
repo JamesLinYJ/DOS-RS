@@ -240,6 +240,18 @@ Copyright (C) Microsoft Corp 1985,1986.  All rights reserved.
 CMD ERRORLEVEL /
 CMD DIR PACKED.EXE
 Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
+BuildMsg - PSP at 0000
+Program memory size is 0
+Allocatable memory size is 605952
+Processing []
+
+ Function 3D, Error 22784, Class 0, Action 0, Locus 0 
+  InRegs:
+  AX:3D00 BX:11F0 CX:0001 DX:3A43 SI:28EE DI:0001 DS:0F5A ES:0082
+  DS:DX -> []
+  OutRegs:
+  AX:0002 BX:11F0 CX:0001 DX:3A43 SI:28EE DI:0001 DS:0F5A ES:0082
+CMD ERRORLEVEL 1
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 OP LEA 10

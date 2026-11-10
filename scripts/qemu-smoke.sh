@@ -1236,7 +1236,10 @@ run_one() {
 		|| ! grep -q "EXEFIX 1234 0010" "$out" \
 		|| ! grep -q "CMD DIR PACKED.EXE" "$out" \
 		|| ! grep -q "PACKED 28AF 4D5A OK" "$out" \
-		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out"; then
+		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
+		|| ! grep -q "BuildMsg - PSP at 0000" "$out" \
+		|| ! grep -q "Allocatable memory size is 605952" "$out" \
+		|| ! grep -q "CMD ERRORLEVEL 1" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
