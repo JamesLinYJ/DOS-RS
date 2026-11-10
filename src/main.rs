@@ -380,6 +380,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tfor::show();
         // A switch is consumed before the path is classified.
         cmd::command::tmisc2::show();
+        // Line feed is not an end of line, and a quote is not special.
+        cmd::command::tparse::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
