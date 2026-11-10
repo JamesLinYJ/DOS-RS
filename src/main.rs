@@ -267,6 +267,8 @@ fn boot(gate: usize) -> ! {
         dos::mssw::show();
         // IBM absolute disk read: BIOS status 2 becomes 80h.
         dos::mscode::show();
+        // Ctrl-C: same stack retries, carry on a new stack aborts.
+        dos::msctrlc::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
