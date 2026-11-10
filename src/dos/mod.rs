@@ -7,3 +7,4 @@
 
 pub mod cpmio;
 pub mod cpmio2;
+pub mod exec;

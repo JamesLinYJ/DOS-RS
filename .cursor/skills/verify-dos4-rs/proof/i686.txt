@@ -20,5 +20,6 @@ PAR0002
 BUF0002
 
 Unrecognized command in CONFIG.SYS
+CMDOK
 
 Bad or missing Command Interpreter

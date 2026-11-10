@@ -171,6 +171,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CMDOK" "$out"; then
+		echo "$name missing COMMAND.COM load" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "Bad or missing Command Interpreter" "$out"; then
 		echo "$name missing SYSINIT line" >&2
 		cat "$out" >&2

@@ -112,6 +112,9 @@ fn boot(gate: usize) -> ! {
     {
         // The round and the comment skip agreed. The serial lines stay.
     }
+    if crate::dos::exec::invoke() {
+        puts("CMDOK\n");
+    }
     bios::sysinit1::com_err();
     debug_exit()
 }

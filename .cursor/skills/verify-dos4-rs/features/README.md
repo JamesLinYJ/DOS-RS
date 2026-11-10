@@ -43,3 +43,4 @@ Each feature file starts with an H1 title and one paragraph. It then uses exactl
 - [Write to the printer](bios-prn.md) covers INT 17h AH=0.
 - [Load IO.SYS](bios-msload.md) covers the drive 0 read of `IO.SYS` and the no-system message path's text.
 - [Missing command interpreter](bios-sysinit.md) covers `COMERR` printing through INT 21h AH=9 and AH=2.
+- [Load COMMAND.COM](dos-exec.md) covers INT 21h AH=4Bh reading the shell from the floppy image.
