@@ -822,7 +822,7 @@ v4.0/src/DOS/MSCTRLC.ASM	text	partial	src/dos/msctrlc.rs
 v4.0/src/DOS/MSDISP.ASM	text	partial	src/dos/msdisp.rs
 v4.0/src/DOS/MSDOS.LNK	text	untranslated	src/dos/msdos.rs
 v4.0/src/DOS/MSDOS.SKL	text	untranslated	src/dos/msdos.rs
-v4.0/src/DOS/MSHALO.ASM	text	untranslated	src/dos/mshalo.rs
+v4.0/src/DOS/MSHALO.ASM	text	partial	src/dos/mshalo.rs
 v4.0/src/DOS/MSINIT.ASM	text	untranslated	src/dos/msinit.rs
 v4.0/src/DOS/MSIOCTL.ASM	text	partial	src/dos/msioctl.rs
 v4.0/src/DOS/MSPROC.ASM	text	partial	src/dos/msproc.rs

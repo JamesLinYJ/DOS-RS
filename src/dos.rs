@@ -58,6 +58,7 @@ pub mod msproc;
 pub mod mssw;
 pub mod ms_code;
 pub mod msconst;
+pub mod mshalo;
 pub mod nstdos;
 pub mod open;
 pub mod parse;

@@ -335,6 +335,8 @@ fn boot(gate: usize) -> ! {
         dos::mknode::show();
         // Initialized data: debug marker, 128-byte sectors, and sharer slots.
         dos::msconst::show();
+        // ROM cartridges are scanned from C000 and stop at F000.
+        dos::mshalo::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
