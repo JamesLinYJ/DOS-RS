@@ -9,6 +9,7 @@ mod arch;
 mod bios;
 mod cmd;
 mod dos;
+mod guest;
 mod int21;
 
 /// Multiboot calls this. It does not return.
@@ -458,6 +459,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcopy::diskcopy::show();
         // Append takes one parameter. A bare line takes fewer than two.
         cmd::edlin::edlcmd1::show();
+        // The guest adds six to the letter A, then prints the rest of the line.
+        guest::run::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

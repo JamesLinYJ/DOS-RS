@@ -104,3 +104,18 @@ Fill in the PIC mask, the IDT, the naked `int 0x21` gate, COM1, and the `0x10` d
 ## Console slice
 
 `src/bios/mscon.rs` is `BIOS/MSCON.ASM`. `CON$WRIT` executes `int 0x29` for each byte. That gate is `OUTCHR` from `BIOS/MSBIO1.ASM`. `OUTCHR` executes `int 0x10` with AH=`0x0E` and BX=7. AH=`0x0E` writes AL to COM1. Packet offsets come from `BIOS/MSEQU.INC`. Media is 13, the transfer address is 14, and the count is 18. After AH=30h the kernel writes `BIOS` and CR LF through command 8. `BIOS/MSCON.ASM` is translated. `BIOS/MSBIO1.ASM` is partial, because only `OUTCHR` is taken from it.
+
+## Guest 8086
+
+Both boot targets run the same interpreter. x86_64 has no virtual-8086 mode, so a second engine on i686 would split the DOS contract. Compat16 already runs guest code on a host that is not the guest CPU. This kernel takes that split and leaves the rest.
+
+Taken from [Compat16](https://github.com/JamesLinYJ/Compat16), read-only, and not modified:
+
+- `crates/guest` `Registers` is one owned struct. Guest numbers are never host registers. The kernel stores the same eight words, four selectors, the instruction pointer, and the flags in `CpuState`. The field names here are roles, because register names stay in `src/arch.rs`.
+- `crates/cpu` `RealModeSegments` forms a linear address as `segment * 16 + offset`, with a 16-bit offset. A failed add is an error, not a wrapped host pointer. `GuestMemory` checks the range before it reads or writes. `src/guest/memory.rs` is that contract for a 128 KiB prefix of the real-mode space.
+- `StepOutcome::Interrupt` means the instruction pointer already sits past the interrupt instruction. The owner, not the decoder, performs the service. `INT 21h` in `src/guest/run.rs` is that owner: print one byte, print a dollar-terminated string, or stop with the low half of the accumulator as the return code.
+- `read_register` / `write_register` select a word by a three-bit index and a width. Byte indices 0 through 3 are the low half. Indices 4 through 7 are the high half. The same index map is in `CpuState`.
+
+Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and the Windows host. Those need `std` and do not fit this `no_std` image. Operand reads that cross offset `0xFFFF` wrap inside the segment. Compat16 adds the 16-bit offset once and then reads a linear word, which steps into the next paragraph. Programs in the guest image do not rely on that boundary.
+
+`disks/guest12.img` is a FAT12 volume. The directory entry `HELLO   COM` is cluster 2. The loader copies those bytes to offset `0x100` in a program segment prefix and runs them. The program adds 6 to the letter A, prints that byte, then prints the rest of the line. The serial check is `GUEST HELLO COM`.
