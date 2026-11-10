@@ -25,6 +25,53 @@ pub fn skip_comment(text: &[u8]) -> usize {
     }
 }
 
+/// `ParseLine` for the device-parameter switches. A line with no `/` switch
+/// that names a drive is an error. Letters are matched against `valid`.
+pub fn parse_switches(line: &[u8], valid: &[u8]) -> Result<u16, ()> {
+    let mut switches = 0u16;
+    let mut index = 0usize;
+    let mut saw_drive = false;
+    while index < line.len() {
+        let al = line[index];
+        if al == b'\r' || al == b'\n' {
+            break;
+        }
+        if al <= b' ' {
+            index += 1;
+            continue;
+        }
+        if al != b'/' {
+            return Err(());
+        }
+        index += 1;
+        if index >= line.len() {
+            return Err(());
+        }
+        let letter = line[index].to_ascii_uppercase();
+        if !letter.is_ascii_uppercase() {
+            return Err(());
+        }
+        let Some(pos) = valid.iter().position(|byte| *byte == letter) else {
+            return Err(());
+        };
+        switches |= 1u16 << pos;
+        if letter == b'D' {
+            saw_drive = true;
+        }
+        index += 1;
+    }
+    if !saw_drive {
+        Err(())
+    } else {
+        Ok(switches)
+    }
+}
+
+/// `MOVE_ASCIIZ` length, including the terminating NUL when it is present.
+pub fn asciiz_len(text: &[u8]) -> usize {
+    text.iter().position(|byte| *byte == 0).map(|index| index + 1).unwrap_or(text.len())
+}
+
 pub fn delim(al: u8) -> bool {
     al == b'/' || al == 0 || al == b' ' || al == b'\t' || al == b'=' || al == b',' || al == b';'
 }

@@ -184,6 +184,51 @@ pub fn check_wrap(cx: u16, dh: u8, seclim: u16, hdlim: u16) -> (u16, u8) {
 
 /// `READBOOTSEC` sanity check. A short jump plus NOP, and a media byte in
 /// the F0-FF range, keeps BX at 0.
+/// `GET$BPB` for a fixed disk does not rebuild the BPB. The bytes-per-sector
+/// field already in the boot sector is the value DOS is handed.
+pub fn bpb_bytes_per_sector(sector: &[u8]) -> Option<u16> {
+    if !boot_sector_valid(sector) || sector.len() < 13 {
+        return None;
+    }
+    let bps = u16::from_le_bytes([sector[11], sector[12]]);
+    if bps == 0 { None } else { Some(bps) }
+}
+
+/// `READFAT` / `READ_SECTOR` of the first FAT sector. The media byte is the
+/// first byte of a valid FAT.
+pub fn image_fat_media() -> Option<u8> {
+    let image = msload_image();
+    if image.len() < 513 {
+        return None;
+    }
+    fat_media(&image[512..])
+}
+
+pub fn fat_media(fat: &[u8]) -> Option<u8> {
+    let byte = *fat.first()?;
+    if byte & 0xF0 == 0xF0 { Some(byte) } else { None }
+}
+
+/// `MOVE`. Copy one sector, 256 words, the way the disk buffer mover does.
+pub fn move_sector(src: &[u8], dst: &mut [u8]) -> bool {
+    if src.len() < 512 || dst.len() < 512 {
+        return false;
+    }
+    dst[..512].copy_from_slice(&src[..512]);
+    true
+}
+
+/// `DSK$READ` bounds. An unformatted disk or a sector past the limit is an error.
+pub fn read_in_range(flags: u16, sector: u32, count: u16, drvlim: u16) -> bool {
+    if flags & UNFORMATTED_MEDIA != 0 || count == 0 {
+        return false;
+    }
+    if drvlim == 0 {
+        return true;
+    }
+    sector.saturating_add(u32::from(count)) <= u32::from(drvlim)
+}
+
 pub fn boot_sector_valid(sector: &[u8]) -> bool {
     if sector.len() < 22 {
         return false;
@@ -265,6 +310,9 @@ pub fn fixed_disk_paths() -> bool {
         && !ask_rom_media(disk().bds.flags)
         && dma_fit(0x1000, 512) == 512
         && dma_fit(0xff00, 512) == 0x100
+        && read_in_range(FNON_REMOVABLE, 0, 1, 10000)
+        && !read_in_range(UNFORMATTED_MEDIA, 0, 1, 10000)
+        && move_sector(&[0u8; 512], &mut [0u8; 512])
 }
 
 /// `BLOCK13` refuses a transfer that crosses a 64KiB physical boundary.

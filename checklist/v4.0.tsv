@@ -16,7 +16,7 @@ v4.0/src/BIOS/MSBIO.LNK	text	untranslated	src/bios/msbio.rs
 v4.0/src/BIOS/MSBIO.SKL	text	untranslated	src/bios/msbio.rs
 v4.0/src/BIOS/MSCLOCK.ASM	text	translated	src/bios/msclock.rs
 v4.0/src/BIOS/MSCON.ASM	text	translated	src/bios/mscon.rs
-v4.0/src/BIOS/MSDISK.ASM	text	partial	src/bios/msdisk.rs
+v4.0/src/BIOS/MSDISK.ASM	text	translated	src/bios/msdisk.rs
 v4.0/src/BIOS/MSDSKPR.INC	text	untranslated	src/bios/msdskpr.rs
 v4.0/src/BIOS/MSEQU.INC	text	untranslated	src/bios/msequ.rs
 v4.0/src/BIOS/MSEXTRN.INC	text	untranslated	src/bios/msextrn.rs
@@ -24,7 +24,7 @@ v4.0/src/BIOS/MSGROUP.INC	text	untranslated	src/bios/msgroup.rs
 v4.0/src/BIOS/MSHARD.ASM	text	untranslated	src/bios/mshard.rs
 v4.0/src/BIOS/MSINIT.ASM	text	untranslated	src/bios/msinit.rs
 v4.0/src/BIOS/MSIOCTL.INC	text	untranslated	src/bios/msioctl.rs
-v4.0/src/BIOS/MSLOAD.ASM	text	partial	src/bios/msload.rs
+v4.0/src/BIOS/MSLOAD.ASM	text	translated	src/bios/msload.rs
 v4.0/src/BIOS/MSLOAD.INC	text	untranslated	src/bios/msload.rs
 v4.0/src/BIOS/MSLPT.ASM	text	translated	src/bios/mslpt.rs
 v4.0/src/BIOS/MSMACRO.INC	text	untranslated	src/bios/msmacro.rs
@@ -36,8 +36,8 @@ v4.0/src/BIOS/READCLOC.INC	text	untranslated	src/bios/readcloc.rs
 v4.0/src/BIOS/STKINIT.INC	text	untranslated	src/bios/stkinit.rs
 v4.0/src/BIOS/SYSCONF.ASM	text	untranslated	src/bios/sysconf.rs
 v4.0/src/BIOS/SYSIMES.ASM	text	translated	src/bios/sysimes.rs
-v4.0/src/BIOS/SYSINIT1.ASM	text	partial	src/bios/sysinit1.rs
-v4.0/src/BIOS/SYSINIT2.ASM	text	partial	src/bios/sysinit2.rs
+v4.0/src/BIOS/SYSINIT1.ASM	text	translated	src/bios/sysinit1.rs
+v4.0/src/BIOS/SYSINIT2.ASM	text	translated	src/bios/sysinit2.rs
 v4.0/src/BOOT/BOOT.SKL	text	untranslated	src/boot/boot.rs
 v4.0/src/BOOT/MAKEFILE	text	untranslated	src/boot/makefile.rs
 v4.0/src/BOOT/MSBOOT.ASM	text	untranslated	src/boot/msboot.rs

@@ -34,6 +34,8 @@ fn boot(gate: usize) -> ! {
     let mut floppy = [0u8; 512];
     if bios::msdisk::read_floppy_boot(&mut floppy)
         && bios::msdisk::boot_sector_valid(&floppy)
+        && bios::msdisk::bpb_bytes_per_sector(&floppy) == Some(512)
+        && bios::msdisk::image_fat_media() == Some(0xF8)
         && bios::msdisk::fixed_disk_paths()
     {
         puts("DSKF55AA\n");
@@ -104,6 +106,9 @@ fn boot(gate: usize) -> ! {
     }
     if bios::sysinit1::round_mem(17, 0, 0x100).is_ok()
         && bios::sysinit2::skip_comment(b"; note\nBUFFERS=4\n") == 7
+        && bios::sysinit2::parse_switches(b"\r", b"ABCD").is_err()
+        && bios::sysinit2::parse_switches(b"/D\r", b"ABCD") == Ok(1 << 3)
+        && bios::sysinit2::asciiz_len(b"COMMAND.COM\0") == 12
     {
         // The round and the comment skip agreed. The serial lines stay.
     }
