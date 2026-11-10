@@ -178,4 +178,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `NOSRVBLD.EXE` still prints `At lest one filespec ( for .SKL ) needed.` when the tail is empty. Later the shell runs `NOSRVBLD.EXE MORE.SKL USAMS.MSG`. The skeleton names one class and then ends, because a `:util` line makes this builder repeat that line. A skeleton read stops at the first newline so the buffered position stays on the next line. It writes `MORE.CLA`, the directory line is `CMD DIR MORE.CLA`, and the builder prints `Message files for MORE.SKL completed.`
 
+`C1L.EXE` is the large-model C front end from that same tree, `v4.0/src/TOOLS/C1L.EXE`, under the same MIT license. The shell runs `C1L.EXE -f LARGE.C`. `TYPE sy` then shows the symbol `largeok`.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

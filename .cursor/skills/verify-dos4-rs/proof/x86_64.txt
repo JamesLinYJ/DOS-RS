@@ -324,6 +324,7 @@ CMD DIR MORE.CLA
 CMD TYPE ; MORE.clA 
 
 
+CMD TYPE g%@edlargeokfprintfihmain
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
