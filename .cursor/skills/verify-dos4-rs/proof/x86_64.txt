@@ -239,6 +239,7 @@ Copyright (C) Microsoft Corp 1985,1986.  All rights reserved.
 
 CMD ERRORLEVEL /
 CMD DIR PACKED.EXE
+Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 OP LEA 10

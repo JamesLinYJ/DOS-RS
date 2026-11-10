@@ -144,4 +144,6 @@ Opcode `8D` with a register source is not a memory operand. Compat16's `execute_
 
 `EXEPACK.EXE` is the compressor from that same tree, `v4.0/src/TOOLS/EXEPACK.EXE`, under the same MIT license. The shell runs `EXEPACK.EXE EXEFIX.EXE PACKED.EXE`. The written file is 0x28AF bytes and begins with the MZ mark, and it contains the packer's stub text. The serial line is `PACKED 28AF 4D5A OK`. The directory lists `CMD DIR PACKED.EXE`. After that write the compressor does not return to the shell, so the shell reports a non-zero status. The proof of the write is those two lines.
 
+`BUILDIDX.EXE` is the message-index builder from that same tree, `v4.0/src/TOOLS/BUILDIDX.EXE`, under the same MIT license. The volume is 288 sectors so this tool and the packed output both fit. The shell runs it with an empty tail, and it prints `Incorrect number of parms  given to BUILDIDX.`
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.
