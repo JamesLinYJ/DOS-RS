@@ -426,6 +426,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debmes::show();
         // The default length is the dump size shifted right twice.
         cmd::debug::debuasm::show();
+        // X runs expanded memory because the system-version switch is off.
+        cmd::debug::debug::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

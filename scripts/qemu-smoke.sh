@@ -1101,6 +1101,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBUG SV00 RP AS ER CM DU EN FL GO HX IN ER ER LD MV NM OU ZT QT RG SE TR UN ER WR EM ER ER ER ER ER QT RP P00 P00 Q01 F50 TV2522" "$out"; then
+		echo "$name missing command letters" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

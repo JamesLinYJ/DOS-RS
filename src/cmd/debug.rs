@@ -11,3 +11,5 @@ pub mod debequ;
 pub mod deberr;
 pub mod debmes;
 pub mod debuasm;
+#[allow(clippy::module_inception)]
+pub mod debug;
