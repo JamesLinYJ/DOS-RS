@@ -271,7 +271,13 @@ Microsoft (R) Library Manager  Version 3.10
 Copyright (C) Microsoft Corp 1983-1988.  All rights reserved.
 
 CMD DIR LIB.LST
-The number topic(s) and text string(s) written = 57EXEFIX 1234 0010
+The number topic(s) and text string(s) written = 57
+Microsoft (R) Overlay Linker  Version 3.65   
+Copyright (C) Microsoft Corp 19SAY.OBJ : fatal error L1101: invalid object module
+ pos: 1 Record type: 5934
+CMD ERRORLEVEL 2
+CMD RUN FAIL
+EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 LIB LST __aFFaldiv........affaldiv          __aFFalmul..
 OP LEA 10

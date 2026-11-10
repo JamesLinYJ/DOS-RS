@@ -6,7 +6,7 @@
 
 use super::volume;
 
-const CAPACITY: usize = 512 * 1024;
+const CAPACITY: usize = 1280 * 512;
 const FAT_ROOM: usize = 2048;
 
 struct Disk {
@@ -493,7 +493,7 @@ fn alloc(disk: &mut Disk, map: &Map) -> Option<u16> {
     let mut cluster = 2u16;
     while cluster <= map.max_cluster {
         if crate::dos::fat::unpack(&fat, map.max_cluster, cluster) == Some(0) {
-            if !crate::dos::fat::pack(&mut fat, map.max_cluster, cluster, 0x0FFF) {
+            if !crate::dos::fat::pack(&mut fat, map.max_cluster, cluster, 0xFFFF) {
                 return None;
             }
             if !put_fat(disk, map, &fat) {

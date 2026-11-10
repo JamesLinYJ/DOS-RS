@@ -489,6 +489,19 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             device_control(cpu);
             Action::Continue
         }
+        0x63 => {
+            if cpu.low(Slot::Accumulator) == 0
+                && ram.store(SHELL_CHILD, 0xFE, 0)
+                && ram.store(SHELL_CHILD, 0xFF, 0)
+            {
+                cpu.set_selector(Segment::Data, SHELL_CHILD);
+                cpu.set_wide(Slot::Source, 0xFE);
+                cpu.set_carry(false);
+            } else {
+                cpu.set_carry(true);
+            }
+            Action::Continue
+        }
         0x45 => {
             duplicate(cpu, session);
             Action::Continue
@@ -615,7 +628,8 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let mut offset = cpu.wide(Slot::Data);
     let segment = cpu.selector(Segment::Data);
     if handle < 3 {
-        cpu.set_carry(true);
+        cpu.set_wide(Slot::Accumulator, 0);
+        cpu.set_carry(false);
         return;
     }
     let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
@@ -1382,7 +1396,7 @@ fn device_control(cpu: &mut CpuState) {
         cpu.set_carry(true);
         return;
     }
-    let info = if cpu.wide(Slot::Base) < 3 { 0x80D3 } else { 0 };
+    let info = if cpu.wide(Slot::Base) < 3 { 0x80D3 } else { 0x0040 };
     cpu.set_wide(Slot::Data, info);
     cpu.set_carry(false);
 }

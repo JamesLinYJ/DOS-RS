@@ -707,6 +707,9 @@ fn shift_byte(
     if !write_byte(cpu, ram, &operand, value) {
         return Outcome::Fault(opcode);
     }
+    if count & 0x1F != 0 {
+        cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
+    }
     cpu.set_carry(carry);
     Outcome::Continue
 }
@@ -1039,6 +1042,7 @@ fn shift_word_once(
     if !write_word(cpu, ram, &operand, result) {
         return Outcome::Fault(opcode);
     }
+    cpu.apply_result_flags(sized_flags(result, 0x8000));
     cpu.set_carry(carried);
     Outcome::Continue
 }
@@ -1441,6 +1445,7 @@ fn shift_once(
     if !write_byte(cpu, ram, &operand, value) {
         return Outcome::Fault(opcode);
     }
+    cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
     cpu.set_carry(carried);
     Outcome::Continue
 }
@@ -1693,7 +1698,8 @@ fn shift_by_count(
     if operation > 5 && operation != 7 {
         return Outcome::Fault(opcode);
     }
-    let mut times = cpu.low(Slot::Count) & 0x1F;
+    let count = cpu.low(Slot::Count) & 0x1F;
+    let mut times = count;
     let mut carry = cpu.flags() & 1 != 0;
     if wide {
         let Some(mut value) = read_word(cpu, ram, &operand) else {
@@ -1736,6 +1742,9 @@ fn shift_by_count(
         if !write_word(cpu, ram, &operand, value) {
             return Outcome::Fault(opcode);
         }
+        if count != 0 {
+            cpu.apply_result_flags(sized_flags(value, 0x8000));
+        }
     } else {
         let Some(mut value) = read_byte(cpu, ram, &operand) else {
             return Outcome::Fault(opcode);
@@ -1752,6 +1761,9 @@ fn shift_by_count(
         }
         if !write_byte(cpu, ram, &operand, value) {
             return Outcome::Fault(opcode);
+        }
+        if count != 0 {
+            cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
         }
     }
     cpu.set_carry(carry);
@@ -2096,6 +2108,20 @@ fn step_index(cpu: &CpuState, value: u16) -> u16 {
     } else {
         value.wrapping_add(1)
     }
+}
+
+fn sized_flags(result: u16, sign: u16) -> u16 {
+    let mut flags = 0u16;
+    if result == 0 {
+        flags |= 0x0040;
+    }
+    if result & sign != 0 {
+        flags |= 0x0080;
+    }
+    if (result as u8).count_ones().is_multiple_of(2) {
+        flags |= 0x0004;
+    }
+    flags
 }
 
 fn logic_flags(result: u16) -> u16 {

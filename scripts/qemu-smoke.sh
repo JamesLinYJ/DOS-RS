@@ -1246,7 +1246,9 @@ run_one() {
 		|| ! grep -q "Microsoft (R) Library Manager  Version 3.10" "$out" \
 		|| ! grep -q "CMD DIR LIB.LST" "$out" \
 		|| ! grep -q "LIB LST __aFFaldiv" "$out" \
-		|| ! grep -q "The number topic(s) and text string(s) written = 57" "$out"; then
+		|| ! grep -q "The number topic(s) and text string(s) written = 57" "$out" \
+		|| ! grep -q "Microsoft (R) Overlay Linker  Version 3.65" "$out" \
+		|| ! grep -q "SAY.OBJ : fatal error L1101: invalid object module" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

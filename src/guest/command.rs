@@ -18,7 +18,7 @@ struct Binding {
     live: bool,
 }
 
-static mut LAUNCH: [u8; 65536] = [0; 65536];
+static mut LAUNCH: [u8; 131072] = [0; 131072];
 
 static mut ENV: [Binding; ROWS] = [Binding {
     name: [0; 8],
@@ -331,6 +331,6 @@ fn env() -> &'static mut [Binding; ROWS] {
     unsafe { &mut *core::ptr::addr_of_mut!(ENV) }
 }
 
-fn launch_image() -> &'static mut [u8; 65536] {
+fn launch_image() -> &'static mut [u8; 131072] {
     unsafe { &mut *core::ptr::addr_of_mut!(LAUNCH) }
 }
