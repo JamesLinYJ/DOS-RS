@@ -281,6 +281,8 @@ fn boot(gate: usize) -> ! {
         dos::stdproc::show();
         // Standard dispatch table: CALL 5 limit 24h, INT 21h limit 6Ch.
         dos::stdtable::show();
+        // Standard dispatch: F8h installs an OEM handler, F9h fails until then.
+        dos::stddisp::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

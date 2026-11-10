@@ -57,4 +57,5 @@ pub mod rom;
 pub mod search;
 pub mod stdioctl;
 pub mod stdproc;
+pub mod stddisp;
 pub mod stdtable;
