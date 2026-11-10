@@ -173,7 +173,8 @@ fn show_shell() {
             crate::bios::mscon::con_write_bytes(b" NO\r\n");
         }
     }
-    report_header(b"PACKME  EXE");
+    report_header(b"EXEFIX ", b"PACKME  EXE");
+    report_header(b"PACKFIX ", b"FIX2    EXE");
     report_packed();
     report_listing();
 }
@@ -231,7 +232,7 @@ fn report_packed() {
     }
 }
 
-fn report_header(name: &[u8; 11]) {
+fn report_header(label: &[u8], name: &[u8; 11]) {
     let mut body = [0u8; 32];
     let Some(length) = super::disk::read_head(name, &mut body) else {
         return;
@@ -239,7 +240,7 @@ fn report_header(name: &[u8; 11]) {
     if length < 14 {
         return;
     }
-    crate::bios::mscon::con_write_bytes(b"EXEFIX ");
+    crate::bios::mscon::con_write_bytes(label);
     put_hex8(body[13]);
     put_hex8(body[12]);
     crate::bios::mscon::con_write_bytes(b" ");
