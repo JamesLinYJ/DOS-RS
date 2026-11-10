@@ -166,6 +166,8 @@ fn boot(gate: usize) -> ! {
         let _time_show = cmd::command::tmisc1::dispatch(b"TIME\r");
         // VOL searches for a volume label. This disk has none.
         let _vol = cmd::command::tmisc1::dispatch(b"VOL\r");
+        // DIR lists the boot root. The names are the 8.3 fields.
+        let _dir = cmd::command::tmisc1::dispatch(b"DIR\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -45,3 +45,6 @@ Current time is  00:00:00.00
 Current time is  01:02:03.04
 
  Volume in drive A has no label
+Directory of  A:\
+IO       SYS
+COMMAND  COM
