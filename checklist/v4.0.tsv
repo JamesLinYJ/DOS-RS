@@ -848,7 +848,7 @@ v4.0/src/DOS/STDCTRLC.ASM	text	untranslated	src/dos/stdctrlc.rs
 v4.0/src/DOS/STDDATA.ASM	text	untranslated	src/dos/stddata.rs
 v4.0/src/DOS/STDDISP.ASM	text	untranslated	src/dos/stddisp.rs
 v4.0/src/DOS/STDDOSME.ASM	text	untranslated	src/dos/stddosme.rs
-v4.0/src/DOS/STDIOCTL.ASM	text	untranslated	src/dos/stdioctl.rs
+v4.0/src/DOS/STDIOCTL.ASM	text	partial	src/dos/stdioctl.rs
 v4.0/src/DOS/STDPROC.ASM	text	untranslated	src/dos/stdproc.rs
 v4.0/src/DOS/STDSW.ASM	text	untranslated	src/dos/stdsw.rs
 v4.0/src/DOS/STDTABLE.ASM	text	untranslated	src/dos/stdtable.rs

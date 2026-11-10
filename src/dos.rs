@@ -47,3 +47,4 @@ pub mod parse;
 pub mod path;
 pub mod rom;
 pub mod search;
+pub mod stdioctl;

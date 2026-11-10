@@ -259,6 +259,8 @@ fn boot(gate: usize) -> ! {
         dos::ifs::show();
         // IBM IOCTL build: the switch is true and the media-id call is 66h.
         dos::msioctl::show();
+        // Standard IOCTL build: the switch is off and the calls match IBM.
+        dos::stdioctl::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
