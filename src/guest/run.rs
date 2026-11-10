@@ -33,6 +33,46 @@ pub fn show() {
     show_saved();
     crate::bios::mscon::con_write_bytes(b"EXE2BIN ");
     show_image(b"EXE2BIN EXE", EXE_PREFIX, true, 20000);
+    show_exec();
+}
+
+fn show_exec() {
+    let mut image = [0u8; 16384];
+    let Some(length) = volume::read_named(volume::IMAGE, b"EXEC    EXE", &mut image) else {
+        crate::bios::mscon::con_write_bytes(b"EXEC MISSING\r\n");
+        return;
+    };
+    let ram = memory::storage();
+    ram.clear();
+    let mut session = Session::new();
+    let Some(mut cpu) = place(&image[..length], ram, EXE_PREFIX, true) else {
+        crate::bios::mscon::con_write_bytes(b"EXEC FAULT\r\n");
+        return;
+    };
+    let tail = b" HELLO.COM";
+    if !ram.store(EXE_PREFIX, 0x80, tail.len() as u8) {
+        return;
+    }
+    let mut index = 0u16;
+    while usize::from(index) < tail.len() {
+        if !ram.store(EXE_PREFIX, 0x81u16.wrapping_add(index), tail[usize::from(index)]) {
+            return;
+        }
+        index = index.wrapping_add(1);
+    }
+    if !ram.store(EXE_PREFIX, 0x81u16.wrapping_add(index), b'\r') {
+        return;
+    }
+    match drive(&mut cpu, ram, &mut session, 60000) {
+        End::Stopped(_) => {}
+        End::Fault(opcode) => {
+            crate::bios::mscon::con_write_bytes(b"GUEST FAULT ");
+            put_hex8(opcode);
+            crate::bios::mscon::con_write_bytes(b"\r\n");
+        }
+        End::Other => crate::bios::mscon::con_write_bytes(b"GUEST INT\r\n"),
+        End::Loop => crate::bios::mscon::con_write_bytes(b"GUEST LOOP\r\n"),
+    }
 }
 
 fn show_saved() {
@@ -78,7 +118,7 @@ fn show_shell() {
 }
 
 fn show_image(name: &[u8; 11], segment: u16, executable: bool, limit: u16) {
-    let mut image = [0u8; 4096];
+    let mut image = [0u8; 16384];
     let Some(length) = volume::read_named(volume::IMAGE, name, &mut image) else {
         crate::bios::mscon::con_write_bytes(b"GUEST MISSING\r\n");
         return;
@@ -141,7 +181,8 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
             Outcome::Interrupt(0x20) | Outcome::Halt => return End::Stopped(0),
             Outcome::Fault(opcode) => return End::Fault(opcode),
             Outcome::Interrupt(vector) => {
-                if !serve_bios(cpu, ram, vector) {
+                if serve_bios(cpu, ram, vector) {
+                } else if !enter_vector(cpu, ram, session, vector) {
                     return End::Other;
                 }
             }
@@ -169,10 +210,10 @@ pub(super) struct Session {
     dta_segment: u16,
     dta_offset: u16,
     block: u16,
-    vector_id: u8,
-    vector_segment: u16,
-    vector_offset: u16,
-    vector_live: bool,
+    break_at: u16,
+    vector_segment: [u16; 256],
+    vector_offset: [u16; 256],
+    vector_live: [bool; 256],
 }
 
 impl Session {
@@ -183,16 +224,21 @@ impl Session {
             dta_segment: 0,
             dta_offset: 0,
             block: 0,
-            vector_id: 0,
-            vector_segment: 0,
-            vector_offset: 0,
-            vector_live: false,
+            break_at: GUEST_BLOCK,
+            vector_segment: [0; 256],
+            vector_offset: [0; 256],
+            vector_live: [false; 256],
         }
     }
 }
 
 fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Action {
     match cpu.high(Slot::Accumulator) {
+        0x0B => {
+            cpu.set_low(Slot::Accumulator, 0);
+            cpu.set_carry(false);
+            Action::Continue
+        }
         0x02 => {
             crate::bios::mscon::con_write_bytes(&[cpu.low(Slot::Data)]);
             Action::Continue
@@ -233,10 +279,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x25 => {
-            session.vector_id = cpu.low(Slot::Accumulator);
-            session.vector_segment = cpu.selector(Segment::Data);
-            session.vector_offset = cpu.wide(Slot::Data);
-            session.vector_live = true;
+            let id = usize::from(cpu.low(Slot::Accumulator));
+            session.vector_segment[id] = cpu.selector(Segment::Data);
+            session.vector_offset[id] = cpu.wide(Slot::Data);
+            session.vector_live[id] = true;
             cpu.set_carry(false);
             Action::Continue
         }
@@ -260,9 +306,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x35 => {
-            if session.vector_live && session.vector_id == cpu.low(Slot::Accumulator) {
-                cpu.set_selector(Segment::Extra, session.vector_segment);
-                cpu.set_wide(Slot::Base, session.vector_offset);
+            let id = usize::from(cpu.low(Slot::Accumulator));
+            if session.vector_live[id] {
+                cpu.set_selector(Segment::Extra, session.vector_segment[id]);
+                cpu.set_wide(Slot::Base, session.vector_offset[id]);
                 cpu.set_carry(false);
             } else {
                 cpu.set_carry(true);
@@ -305,26 +352,46 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             write_root(cpu, ram);
             Action::Continue
         }
+        0x44 => {
+            device_control(cpu);
+            Action::Continue
+        }
         0x48 => {
             let asked = cpu.wide(Slot::Base);
-            if asked == 0 || asked > 16 {
-                cpu.set_wide(Slot::Base, 16);
+            let room = 0x2000u16.saturating_sub(session.break_at);
+            if asked == 0 || asked > room {
+                cpu.set_wide(Slot::Base, room);
                 cpu.set_wide(Slot::Accumulator, 8);
                 cpu.set_carry(true);
             } else {
-                session.block = GUEST_BLOCK;
-                cpu.set_wide(Slot::Accumulator, GUEST_BLOCK);
+                let given = session.break_at;
+                session.break_at = session.break_at.wrapping_add(asked);
+                session.block = given;
+                cpu.set_wide(Slot::Accumulator, given);
                 cpu.set_carry(false);
             }
             Action::Continue
         }
         0x49 => {
-            if session.block != 0 && cpu.selector(Segment::Extra) == session.block {
-                session.block = 0;
+            let owned = cpu.selector(Segment::Extra);
+            if owned >= GUEST_BLOCK && owned < session.break_at {
                 cpu.set_carry(false);
             } else {
                 cpu.set_wide(Slot::Accumulator, 9);
                 cpu.set_carry(true);
+            }
+            Action::Continue
+        }
+        0x4A => {
+            let block = cpu.selector(Segment::Extra);
+            let asked = cpu.wide(Slot::Base);
+            let room = 0x2000u16.saturating_sub(block);
+            if asked == 0 || asked > room {
+                cpu.set_wide(Slot::Base, room);
+                cpu.set_wide(Slot::Accumulator, 8);
+                cpu.set_carry(true);
+            } else {
+                cpu.set_carry(false);
             }
             Action::Continue
         }
@@ -459,11 +526,11 @@ fn free_handle(session: &Session) -> Option<usize> {
 }
 
 fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
-    if cpu.wide(Slot::Base) == 1 {
+    let handle = cpu.wide(Slot::Base);
+    if handle == 1 || handle == 2 {
         write_console(cpu, ram);
         return;
     }
-    let handle = cpu.wide(Slot::Base);
     if handle < 3 {
         cpu.set_carry(true);
         return;
@@ -505,10 +572,6 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
 }
 
 fn write_console(cpu: &mut CpuState, ram: &GuestRam) {
-    if cpu.wide(Slot::Base) != 1 {
-        cpu.set_carry(true);
-        return;
-    }
     let count = cpu.wide(Slot::Count);
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
@@ -865,6 +928,41 @@ fn bytes_at(ram: &GuestRam, segment: u16, mut offset: u16) -> [u8; 64] {
         offset = offset.wrapping_add(1);
     }
     text
+}
+
+fn device_control(cpu: &mut CpuState) {
+    if cpu.low(Slot::Accumulator) != 0 {
+        cpu.set_carry(true);
+        return;
+    }
+    let info = if cpu.wide(Slot::Base) < 3 { 0x80D3 } else { 0 };
+    cpu.set_wide(Slot::Data, info);
+    cpu.set_carry(false);
+}
+
+fn enter_vector(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session, vector: u8) -> bool {
+    let id = usize::from(vector);
+    if !session.vector_live[id] {
+        return false;
+    }
+    let flags = cpu.flags();
+    let caller = cpu.selector(Segment::Code);
+    let next = cpu.instruction();
+    if !guest_push(cpu, ram, flags) || !guest_push(cpu, ram, caller) || !guest_push(cpu, ram, next)
+    {
+        return false;
+    }
+    cpu.set_selector(Segment::Code, session.vector_segment[id]);
+    cpu.set_instruction(session.vector_offset[id]);
+    true
+}
+
+fn guest_push(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
+    let pointer = cpu.wide(Slot::Stack).wrapping_sub(2);
+    cpu.set_wide(Slot::Stack, pointer);
+    let bytes = value.to_le_bytes();
+    let segment = cpu.selector(Segment::Stack);
+    ram.store(segment, pointer, bytes[0]) && ram.store(segment, pointer.wrapping_add(1), bytes[1])
 }
 
 fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> bool {

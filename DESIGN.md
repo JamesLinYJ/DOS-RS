@@ -127,3 +127,5 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 `COMPRESS.COM` is the SELECT panel compressor from Microsoft MS-DOS 4.0, file `v4.0/src/TOOLS/COMPRESS.COM` in the [MIT-licensed](https://github.com/microsoft/MS-DOS/blob/main/LICENSE) `microsoft/MS-DOS` tree (Copyright (c) Microsoft Corporation). The guest image also carries `SEL-PAN.DAT`, five letter A bytes. The program opens that file, writes `SELECT.DAT`, and the kernel prints `COMPRESS FF0541`.
 
 `EXE2BIN.EXE` is the same tree's converter, `v4.0/src/TOOLS/EXE2BIN.EXE`, under that same MIT license. With an empty command tail it prints `File not found`. The kernel writes `EXE2BIN ` first, so the serial check is `EXE2BIN File not found`.
+
+`EXEC.EXE` is the Microsoft C 5.10 launcher from that tree, `v4.0/src/TOOLS/EXEC.EXE`, under the same MIT license. The prefix carries an empty environment and the tail ` HELLO.COM`. The runtime prints `exec: can't run HELLO.COM`.

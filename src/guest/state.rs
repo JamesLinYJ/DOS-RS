@@ -171,6 +171,15 @@ impl CpuState {
         self.flags & 0x0400 != 0
     }
 
+    pub fn set_interrupt(&mut self, enabled: bool) {
+        const INTERRUPT: u16 = 0x0200;
+        if enabled {
+            self.flags |= INTERRUPT;
+        } else {
+            self.flags &= !INTERRUPT;
+        }
+    }
+
     pub fn set_direction(&mut self, down: bool) {
         const DIRECTION: u16 = 0x0400;
         if down {

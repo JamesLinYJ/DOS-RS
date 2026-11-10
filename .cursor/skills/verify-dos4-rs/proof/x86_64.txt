@@ -274,3 +274,4 @@ BIOS 16 00
 BIOS 1A 0001
 COMPRESS FF0541
 EXE2BIN File not found
+exec: can't run HELLO.COM

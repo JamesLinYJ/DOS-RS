@@ -51,12 +51,35 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
     if !ram.store(prefix, 2, limit[0]) || !ram.store(prefix, 3, limit[1]) {
         return None;
     }
+    if !plant_environment(ram, prefix) {
+        return None;
+    }
     let mut cpu = CpuState::at_com(prefix);
     cpu.set_instruction(instruction);
     cpu.set_selector(Segment::Code, load_segment.wrapping_add(code_disp));
     cpu.set_selector(Segment::Stack, load_segment.wrapping_add(stack_disp));
     cpu.set_wide(Slot::Stack, stack_pointer);
     Some(cpu)
+}
+
+fn plant_environment(ram: &mut GuestRam, prefix: u16) -> bool {
+    const ENV_SEGMENT: u16 = 0x0600;
+    let segment = ENV_SEGMENT.to_le_bytes();
+    if !ram.store(prefix, 0x2C, segment[0]) || !ram.store(prefix, 0x2D, segment[1]) {
+        return false;
+    }
+    if !ram.store(prefix, 0x80, 1) || !ram.store(prefix, 0x81, b'\r') {
+        return false;
+    }
+    let text = b"\0\x01\0C:\\GUEST.EXE\0";
+    let mut offset = 0u16;
+    for byte in text {
+        if !ram.store(ENV_SEGMENT, offset, *byte) {
+            return false;
+        }
+        offset = offset.wrapping_add(1);
+    }
+    true
 }
 
 fn word(image: &[u8], at: usize) -> Option<u16> {
