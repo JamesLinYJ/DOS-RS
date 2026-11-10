@@ -275,6 +275,8 @@ fn boot(gate: usize) -> ! {
         dos::dosprint::show();
         // Buffered console input: empty buffer, skipped Ctrl-F, and a full line.
         dos::kstrin::show();
+        // IBM dispatch: CALL 5 stops at 24h and F8h is not an OEM hook.
+        dos::msdisp::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

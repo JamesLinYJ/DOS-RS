@@ -819,7 +819,7 @@ v4.0/src/DOS/MSCODE.ASM	text	partial	src/dos/mscode.rs
 v4.0/src/DOS/MSCONST.ASM	text	untranslated	src/dos/msconst.rs
 v4.0/src/DOS/MSCPMIO.ASM	text	partial	src/dos/mscpmio.rs
 v4.0/src/DOS/MSCTRLC.ASM	text	partial	src/dos/msctrlc.rs
-v4.0/src/DOS/MSDISP.ASM	text	untranslated	src/dos/msdisp.rs
+v4.0/src/DOS/MSDISP.ASM	text	partial	src/dos/msdisp.rs
 v4.0/src/DOS/MSDOS.LNK	text	untranslated	src/dos/msdos.rs
 v4.0/src/DOS/MSDOS.SKL	text	untranslated	src/dos/msdos.rs
 v4.0/src/DOS/MSHALO.ASM	text	untranslated	src/dos/mshalo.rs

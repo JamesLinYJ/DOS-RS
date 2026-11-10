@@ -46,6 +46,7 @@ pub mod misc;
 pub mod mscode;
 pub mod mscpmio;
 pub mod msctrlc;
+pub mod msdisp;
 pub mod msioctl;
 pub mod msproc;
 pub mod mssw;
