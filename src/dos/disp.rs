@@ -10,28 +10,28 @@ static mut CNTC_FLAG: u8 = 0;
 const BOOT_DRIVE: u8 = 0;
 
 /// Returns the AL and DL the interrupt hands back.
-pub fn set_ctrl_c(al: u8, dl: u8) -> (u8, u8) {
-    if al == 0 {
-        return (al, unsafe { CNTC_FLAG });
+pub fn set_ctrl_c(result: u8, data_low: u8) -> (u8, u8) {
+    if result == 0 {
+        return (result, unsafe { CNTC_FLAG });
     }
-    if al > 2 {
-        return ctrl_c_extended(al, dl);
+    if result > 2 {
+        return ctrl_c_extended(result, data_low);
     }
-    if al == 2 {
+    if result == 2 {
         let old = unsafe { CNTC_FLAG };
-        unsafe { CNTC_FLAG = dl & 1 }
-        return (al, old);
+        unsafe { CNTC_FLAG = data_low & 1 }
+        return (result, old);
     }
-    unsafe { CNTC_FLAG = dl & 1 }
-    (al, dl)
+    unsafe { CNTC_FLAG = data_low & 1 }
+    (result, data_low)
 }
 
-fn ctrl_c_extended(al: u8, dl: u8) -> (u8, u8) {
-    if al == 3 || al == 4 {
-        return (al, dl);
+fn ctrl_c_extended(result: u8, data_low: u8) -> (u8, u8) {
+    if result == 3 || result == 4 {
+        return (result, data_low);
     }
-    if al == 5 {
-        return (al, BOOT_DRIVE);
+    if result == 5 {
+        return (result, BOOT_DRIVE);
     }
-    (0xFF, dl)
+    (0xFF, data_low)
 }

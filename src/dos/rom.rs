@@ -19,46 +19,46 @@ struct Vol {
 fn allocate(fat: &mut [u8], vol: &mut Vol, last: u16, count: u16) -> Option<u16> {
     let saved = fat::unpack(fat, vol.max, 0)?;
     vol.fatbyt = saved;
-    let mut cx = count;
-    let mut dx = last;
-    let mut bx = vol.next_free;
-    if bx <= 2 {
+    let mut remaining = count;
+    let mut buffer = last;
+    let mut handle = vol.next_free;
+    if handle <= 2 {
         vol.next_free = 2;
-        bx = 1;
+        handle = 1;
     }
     loop {
-        bx = bx.wrapping_add(1);
-        if bx > vol.max {
+        handle = handle.wrapping_add(1);
+        if handle > vol.max {
             if vol.next_free == 2 {
                 let _ = relblks(fat, vol, last);
                 let _ = restfatbyt(fat, vol);
                 return None;
             }
             vol.next_free = 2;
-            bx = 1;
+            handle = 1;
             continue;
         }
-        let link = fat::unpack(fat, vol.max, bx)?;
+        let link = fat::unpack(fat, vol.max, handle)?;
         if link != 0 {
             continue;
         }
-        vol.next_free = bx;
-        if !fat::pack(fat, vol.max, bx, 1) {
+        vol.next_free = handle;
+        if !fat::pack(fat, vol.max, handle, 1) {
             return None;
         }
         if vol.free_cnt != -1 {
             vol.free_cnt -= 1;
         }
-        if !fat::pack(fat, vol.max, dx, bx) {
+        if !fat::pack(fat, vol.max, buffer, handle) {
             return None;
         }
-        dx = bx;
-        cx = cx.wrapping_sub(1);
-        if cx == 0 {
+        buffer = handle;
+        remaining = remaining.wrapping_sub(1);
+        if remaining == 0 {
             break;
         }
     }
-    if !fat::pack(fat, vol.max, bx, 0xffff) {
+    if !fat::pack(fat, vol.max, handle, 0xffff) {
         return None;
     }
     let first = fat::unpack(fat, vol.max, last)?;

@@ -6,6 +6,6 @@
 
 use crate::bios::mscon;
 
-pub fn out_char(dl: u8) {
-    mscon::con_write_bytes(&[dl]);
+pub fn out_char(data_low: u8) {
+    mscon::con_write_bytes(&[data_low]);
 }

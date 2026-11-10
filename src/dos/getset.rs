@@ -9,6 +9,6 @@ pub fn get_verify() -> u8 {
     unsafe { VERFLG }
 }
 
-pub fn set_verify(al: u8) {
-    unsafe { VERFLG = al & 1 }
+pub fn set_verify(result: u8) {
+    unsafe { VERFLG = result & 1 }
 }

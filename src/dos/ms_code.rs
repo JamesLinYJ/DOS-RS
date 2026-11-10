@@ -42,10 +42,10 @@ pub fn store(code: u16, class: u8, action: u8, locus: u8) {
 
 /// `SYS_RET_ERR`. AH is cleared. The low byte is the error code.
 pub fn sys_ret_err(code: u16) -> u16 {
-    let al = (code & 0xff) as u8;
-    unsafe { EXTERR = u16::from(al) }
+    let result = (code & 0xff) as u8;
+    unsafe { EXTERR = u16::from(result) }
     cal_lk();
-    u16::from(al)
+    u16::from(result)
 }
 
 /// `CAL_LK` over `ERR_TABLE_21`.
@@ -70,24 +70,24 @@ fn cal_lk() {
 /// `$GetExtendedError`. AX, then class in BH, action in BL, locus in CH.
 pub fn get() -> (u16, u16, u16) {
     unsafe {
-        let bx = (u16::from(CLASS) << 8) | u16::from(ACTION);
-        let cx = u16::from(LOCUS) << 8;
-        (EXTERR, bx, cx)
+        let handle = (u16::from(CLASS) << 8) | u16::from(ACTION);
+        let count = u16::from(LOCUS) << 8;
+        (EXTERR, handle, count)
     }
 }
 
 pub fn show() {
     let mut buf = [0u8; 8];
     let _ = crate::dos::path::getcwd(buf.as_mut_ptr(), 2);
-    let (ax, bx, cx) = query();
+    let (status, handle, count) = query();
     crate::bios::mscon::con_write_bytes(b"ERR ");
-    put_hex16(ax);
+    put_hex16(status);
     crate::bios::mscon::con_write_bytes(b" CL");
-    put_hex8((bx >> 8) as u8);
+    put_hex8((handle >> 8) as u8);
     crate::bios::mscon::con_write_bytes(b" AC");
-    put_hex8(bx as u8);
+    put_hex8(handle as u8);
     crate::bios::mscon::con_write_bytes(b" LC");
-    put_hex8((cx >> 8) as u8);
+    put_hex8((count >> 8) as u8);
     crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 

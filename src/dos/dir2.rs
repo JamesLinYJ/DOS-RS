@@ -47,8 +47,8 @@ pub fn start_srch() -> Srch {
 
 /// `MatchAttributes`. Zero means the found attribute is allowed.
 pub fn match_attributes(attrib: u8, found: u8) -> bool {
-    let al = (!attrib) & found & ATTR_ALL;
-    al == 0
+    let result = (!attrib) & found & ATTR_ALL;
+    result == 0
 }
 
 /// `DEVNAME`. `Some` is BH. Volume searches and unknown names miss.
@@ -73,8 +73,8 @@ fn walk(name: &[u8; 11]) -> Option<u8> {
     while index >= 0 {
         let dev = &DEVICES[index as usize];
         if dev.attr & DEV_CHAR != 0 && dev.name == name[..8] {
-            let bh = ((dev.attr as u8) | 0xc0) & !0x20;
-            return Some(bh);
+            let high_byte = ((dev.attr as u8) | 0xc0) & !0x20;
+            return Some(high_byte);
         }
         index = dev.next;
     }
@@ -85,21 +85,21 @@ fn walk(name: &[u8; 11]) -> Option<u8> {
 pub fn chk_dev(text: &[u8], attrib: u8) -> Option<u8> {
     let mut name = [b' '; 11];
     let mut stored = 0usize;
-    let mut cx = 9usize;
-    let mut si = 0usize;
+    let mut count = 9usize;
+    let mut source = 0usize;
     loop {
-        if cx == 0 {
+        if count == 0 {
             return None;
         }
-        let al = if si >= text.len() {
+        let result = if source >= text.len() {
             0
         } else {
-            let byte = up(text[si]);
-            si += 1;
+            let byte = up(text[source]);
+            source += 1;
             byte
         };
-        if al == b'.' || al == 0 {
-            let pad = cx + 2;
+        if result == b'.' || result == 0 {
+            let pad = count + 2;
             let mut n = 0usize;
             while n < pad && stored < 11 {
                 name[stored] = b' ';
@@ -108,14 +108,14 @@ pub fn chk_dev(text: &[u8], attrib: u8) -> Option<u8> {
             }
             return dev_name(&mut name, attrib);
         }
-        if al == b'\\' || al == b'/' {
+        if result == b'\\' || result == b'/' {
             return None;
         }
         if stored < 11 {
-            name[stored] = al;
+            name[stored] = result;
             stored += 1;
         }
-        cx -= 1;
+        count -= 1;
     }
 }
 
@@ -133,16 +133,16 @@ pub fn build_device_ent(name: &[u8; 11]) -> [u8; 32] {
 /// `ROOTPATH` when the string after `d:\` is empty. AH is 0 and the zero flag is set.
 pub fn root_path(sattrib: u8) -> (u8, u8, bool) {
     let attrib = sattrib;
-    let ah = 0u8;
-    (ah, attrib, true)
+    let function = 0u8;
+    (function, attrib, true)
 }
 
 /// `GETPATH` for a canonical `d:\` path or a `d:/` device.
 pub fn get_path(wfp: &[u8], sattrib: u8) -> Result<u8, ()> {
     if wfp.len() >= 3 && wfp[1] == b':' && wfp[2] == b'\\' {
         if wfp.len() == 3 || wfp[3] == 0 {
-            let (ah, _, zero) = root_path(sattrib);
-            if zero && ah == 0 {
+            let (function, _, zero) = root_path(sattrib);
+            if zero && function == 0 {
                 return Ok(0);
             }
         }
@@ -150,7 +150,7 @@ pub fn get_path(wfp: &[u8], sattrib: u8) -> Result<u8, ()> {
     }
     let rest = if wfp.len() > 3 { &wfp[3..] } else { b"" };
     match chk_dev(rest, 0) {
-        Some(bh) => Ok(bh),
+        Some(high_byte) => Ok(high_byte),
         None => Err(()),
     }
 }

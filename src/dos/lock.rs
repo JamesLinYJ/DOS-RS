@@ -16,15 +16,15 @@ struct Range {
 
 static mut LOCK: Range = Range { start: 0, len: 0, held: false };
 
-pub fn oper(al: u8, open: bool, start: u32, len: u32) -> u16 {
-    if al > 1 {
+pub fn oper(result: u8, open: bool, start: u32, len: u32) -> u16 {
+    if result > 1 {
         return INVALID_FUNCTION;
     }
     if !open {
         return INVALID_HANDLE;
     }
     unsafe {
-        if al == 0 {
+        if result == 0 {
             if LOCK.held && overlap(LOCK.start, LOCK.len, start, len) {
                 return LOCK_VIOLATION;
             }

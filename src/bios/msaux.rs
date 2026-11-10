@@ -44,9 +44,9 @@ fn aux_writ() {
     let src = trans_ptr();
     let mut left = count;
     while left != 0 {
-        let al = unsafe { *src.add((count - left) as usize) };
-        let ah = int14_send(al);
-        if ah & FLAG_TIMEOUT != 0 {
+        let result = unsafe { *src.add((count - left) as usize) };
+        let function = int14_send(result);
+        if function & FLAG_TIMEOUT != 0 {
             let pkt = ptrsav();
             write_word(pkt, COUNT, count - left);
             write_word(pkt, STATUS, ERROR_DONE | WRITE_FAULT as u16);

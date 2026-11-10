@@ -9,8 +9,8 @@ const COMMAND_NAME: &[u8; 11] = b"COMMAND COM";
 const PAYLOAD: &[u8] = b"\\COMMAND.COM";
 
 /// True when AL is a function `$Exec` accepts.
-pub fn function_ok(al: u8) -> bool {
-    al == 0 || al == 1 || al == 3
+pub fn function_ok(result: u8) -> bool {
+    result == 0 || result == 1 || result == 3
 }
 
 /// Load `COMMAND.COM` from the image. The name pointer must be that ASCIIZ.

@@ -116,14 +116,14 @@ pub fn write(handle: u16, src: *const u8, count: usize) -> usize {
 /// AH=42h. `method` 0 stores CX:DX, 1 adds it to the position, 2 adds it to the size.
 /// The `Ok` value is the new position. `Err` is `error_invalid_handle` or
 /// `error_invalid_function`.
-pub fn seek(handle: u16, method: u8, dx: u16, cx: u16) -> Result<u32, u16> {
+pub fn seek(handle: u16, method: u8, buffer: u16, count: u16) -> Result<u32, u16> {
     if handle != 5 || unsafe { !OPEN } {
         return Err(6);
     }
     if method > 2 {
         return Err(1);
     }
-    let offset = (u32::from(cx) << 16) | u32::from(dx);
+    let offset = (u32::from(count) << 16) | u32::from(buffer);
     let pos = unsafe {
         match method {
             0 => offset,

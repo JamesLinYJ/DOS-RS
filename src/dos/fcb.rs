@@ -61,39 +61,39 @@ pub fn make_fcb(flags: u8, text: *const u8, fcb: *mut u8) -> (u8, *const u8) {
         *fcb.add(14) = 0;
         *fcb.add(15) = 0;
     }
-    let mut si = text;
+    let mut source = text;
     let mut wild = false;
     unsafe {
         loop {
-            let al = *si;
-            if al != b' ' && al != b'\t' {
+            let result = *source;
+            if result != b' ' && result != b'\t' {
                 break;
             }
-            si = si.add(1);
+            source = source.add(1);
         }
         if flags & 1 != 0 {
-            let al = *si;
-            if al == b'.' || al == b',' || al == b';' || al == b'=' || al == b'+' {
-                si = si.add(1);
+            let result = *source;
+            if result == b'.' || result == b',' || result == b';' || result == b'=' || result == b'+' {
+                source = source.add(1);
             }
         }
-        let al = *si;
-        if al > b' ' && *si.add(1) == b':' {
-            let drive = up(al).wrapping_sub(b'@');
+        let result = *source;
+        if result > b' ' && *source.add(1) == b':' {
+            let drive = up(result).wrapping_sub(b'@');
             if drive == 0 || drive > 26 {
-                return (0xff, si);
+                return (0xff, source);
             }
             *fcb = drive;
-            si = si.add(2);
+            source = source.add(2);
         }
         let mut i = 0usize;
         while i < 8 {
-            let al = *si;
-            if al == 0 || al == b'.' || al == b' ' || al == b'\r' || al == b'\n' {
+            let result = *source;
+            if result == 0 || result == b'.' || result == b' ' || result == b'\r' || result == b'\n' {
                 break;
             }
-            si = si.add(1);
-            if al == b'*' {
+            source = source.add(1);
+            if result == b'*' {
                 while i < 8 {
                     *fcb.add(1 + i) = b'?';
                     i += 1;
@@ -101,22 +101,22 @@ pub fn make_fcb(flags: u8, text: *const u8, fcb: *mut u8) -> (u8, *const u8) {
                 wild = true;
                 break;
             }
-            *fcb.add(1 + i) = up(al);
-            if al == b'?' {
+            *fcb.add(1 + i) = up(result);
+            if result == b'?' {
                 wild = true;
             }
             i += 1;
         }
-        if *si == b'.' {
-            si = si.add(1);
+        if *source == b'.' {
+            source = source.add(1);
             i = 0;
             while i < 3 {
-                let al = *si;
-                if al == 0 || al == b' ' || al == b'\r' || al == b'\n' {
+                let result = *source;
+                if result == 0 || result == b' ' || result == b'\r' || result == b'\n' {
                     break;
                 }
-                si = si.add(1);
-                if al == b'*' {
+                source = source.add(1);
+                if result == b'*' {
                     while i < 3 {
                         *fcb.add(9 + i) = b'?';
                         i += 1;
@@ -124,8 +124,8 @@ pub fn make_fcb(flags: u8, text: *const u8, fcb: *mut u8) -> (u8, *const u8) {
                     wild = true;
                     break;
                 }
-                *fcb.add(9 + i) = up(al);
-                if al == b'?' {
+                *fcb.add(9 + i) = up(result);
+                if result == b'?' {
                     wild = true;
                 }
                 i += 1;
@@ -133,9 +133,9 @@ pub fn make_fcb(flags: u8, text: *const u8, fcb: *mut u8) -> (u8, *const u8) {
         }
     }
     if wild {
-        (1, si)
+        (1, source)
     } else {
-        (0, si)
+        (0, source)
     }
 }
 
@@ -160,7 +160,7 @@ pub fn show() {
     }
     let size = u16::from_le_bytes([fcb[16], fcb[17]]);
     let _len = int_fcb(0x23, fcb.as_mut_ptr());
-    let al = int_fcb(0x14, fcb.as_mut_ptr());
+    let result = int_fcb(0x14, fcb.as_mut_ptr());
     let _closed = int_fcb(0x10, fcb.as_mut_ptr());
     con_write_bytes(b"FCB FOO.COM ");
     put_hex16(size);
@@ -169,7 +169,7 @@ pub fn show() {
     con_write_bytes(b" NX");
     put_hex8(nx);
     con_write_bytes(b" AL");
-    put_hex8(al);
+    put_hex8(result);
     con_write_bytes(b"\r\n");
 }
 

@@ -33,29 +33,29 @@ pub(crate) fn extent_record(fcb: *const u8) -> u32 {
     unsafe {
         let nr = *fcb.add(FCB_NR);
         let extent = u16::from_le_bytes([*fcb.add(FCB_EXTENT), *fcb.add(FCB_EXTENT + 1)]);
-        let al = nr << 1;
+        let result = nr << 1;
         let cf = (extent & 1) as u8;
-        let dx = extent >> 1;
-        let al = (al >> 1) | (cf << 7);
-        let ah = (dx & 0xff) as u8;
-        let dl = (dx >> 8) as u8;
-        (u32::from(dl) << 16) | (u32::from(ah) << 8) | u32::from(al)
+        let buffer = extent >> 1;
+        let result = (result >> 1) | (cf << 7);
+        let function = (buffer & 0xff) as u8;
+        let data_low = (buffer >> 8) as u8;
+        (u32::from(data_low) << 16) | (u32::from(function) << 8) | u32::from(result)
     }
 }
 
 /// `SetExtent`.
 pub(crate) fn set_extent(fcb: *mut u8, record: u32) {
-    let ax = (record & 0xffff) as u16;
-    let mut dx = ((record >> 16) & 0xffff) as u16;
-    let al = (ax as u8) & 0x7f;
-    let mut cx = (ax & 0xff00) | u16::from((ax as u8) & 0x80);
-    let carry = cx >> 15;
-    cx <<= 1;
-    dx = (dx << 1) | carry;
-    let extent_lo = (cx >> 8) as u8;
-    let extent_hi = dx as u8;
+    let status = (record & 0xffff) as u16;
+    let mut buffer = ((record >> 16) & 0xffff) as u16;
+    let result = (status as u8) & 0x7f;
+    let mut count = (status & 0xff00) | u16::from((status as u8) & 0x80);
+    let carry = count >> 15;
+    count <<= 1;
+    buffer = (buffer << 1) | carry;
+    let extent_lo = (count >> 8) as u8;
+    let extent_hi = buffer as u8;
     unsafe {
-        *fcb.add(FCB_NR) = al;
+        *fcb.add(FCB_NR) = result;
         *fcb.add(FCB_EXTENT) = extent_lo;
         *fcb.add(FCB_EXTENT + 1) = extent_hi;
     }

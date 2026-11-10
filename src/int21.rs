@@ -16,9 +16,9 @@ struct DosWord(u16);
 ///
 /// Distinct from [`Ah`] so a function number cannot be stored as AL.
 #[derive(Clone, Copy)]
-struct Al(u8);
+struct ResultByte(u8);
 
-impl Al {
+impl ResultByte {
     const ZERO: Self = Self(0);
 }
 
@@ -26,9 +26,9 @@ impl Al {
 ///
 /// Distinct from [`Al`] and from [`DosWord`].
 #[derive(Clone, Copy)]
-struct Ah(u8);
+struct FunctionCode(u8);
 
-impl Ah {
+impl FunctionCode {
     /// True when AH is above the bound derived from [`DISPATCH`].
     fn above_max(self) -> bool {
         self.0 > MAXCOM
@@ -53,15 +53,15 @@ struct ErrorCode(u16);
 /// push. Slots are 64-bit on both targets. There is no flags field, so a handler
 /// cannot read or write carry.
 pub(crate) struct LogicalFrame {
-    ax: u64,
-    bx: u64,
-    cx: u64,
-    dx: u64,
-    si: u64,
-    di: u64,
-    bp: u64,
-    ds: u64,
-    es: u64,
+    status: u64,
+    handle: u64,
+    count: u64,
+    buffer: u64,
+    source: u64,
+    destination: u64,
+    base: u64,
+    data_segment: u64,
+    extra_segment: u64,
 }
 
 /// The untyped GPR image the mapper copies.
@@ -69,15 +69,15 @@ pub(crate) struct LogicalFrame {
 /// Flags, the return address, and the x86_64 interrupt stack pointer are absent.
 #[derive(Clone, Copy)]
 pub(crate) struct NativeRegs {
-    pub ax: u64,
-    pub bx: u64,
-    pub cx: u64,
-    pub dx: u64,
-    pub si: u64,
-    pub di: u64,
-    pub bp: u64,
-    pub ds: u64,
-    pub es: u64,
+    pub status: u64,
+    pub handle: u64,
+    pub count: u64,
+    pub buffer: u64,
+    pub source: u64,
+    pub destination: u64,
+    pub base: u64,
+    pub data_segment: u64,
+    pub extra_segment: u64,
 }
 
 impl LogicalFrame {
@@ -87,15 +87,15 @@ impl LogicalFrame {
     pub(crate) fn from_native(token: &GateToken, regs: NativeRegs) -> Self {
         token.seal();
         Self {
-            ax: regs.ax,
-            bx: regs.bx,
-            cx: regs.cx,
-            dx: regs.dx,
-            si: regs.si,
-            di: regs.di,
-            bp: regs.bp,
-            ds: regs.ds,
-            es: regs.es,
+            status: regs.status,
+            handle: regs.handle,
+            count: regs.count,
+            buffer: regs.buffer,
+            source: regs.source,
+            destination: regs.destination,
+            base: regs.base,
+            data_segment: regs.data_segment,
+            extra_segment: regs.extra_segment,
         }
     }
 
@@ -105,50 +105,50 @@ impl LogicalFrame {
     pub(crate) fn native(&self, token: &GateToken) -> NativeRegs {
         token.seal();
         NativeRegs {
-            ax: self.ax,
-            bx: self.bx,
-            cx: self.cx,
-            dx: self.dx,
-            si: self.si,
-            di: self.di,
-            bp: self.bp,
-            ds: self.ds,
-            es: self.es,
+            status: self.status,
+            handle: self.handle,
+            count: self.count,
+            buffer: self.buffer,
+            source: self.source,
+            destination: self.destination,
+            base: self.base,
+            data_segment: self.data_segment,
+            extra_segment: self.extra_segment,
         }
     }
 
-    fn ah(&self) -> Ah {
-        Ah((self.ax >> 8) as u8)
+    fn function(&self) -> FunctionCode {
+        FunctionCode((self.status >> 8) as u8)
     }
 
     /// Replaces bits 0..16 of AX. Bits 16..63 stay as they were.
     fn store_ax(&mut self, word: DosWord) {
-        self.ax = (self.ax & !0xFFFF) | u64::from(word.0);
+        self.status = (self.status & !0xFFFF) | u64::from(word.0);
     }
 
     /// Replaces bits 0..16 of BX. Bits 16..63 stay as they were.
     fn store_bx(&mut self, word: DosWord) {
-        self.bx = (self.bx & !0xFFFF) | u64::from(word.0);
+        self.handle = (self.handle & !0xFFFF) | u64::from(word.0);
     }
 
     /// Replaces bits 0..16 of CX. Bits 16..63 stay as they were.
     fn store_cx(&mut self, word: DosWord) {
-        self.cx = (self.cx & !0xFFFF) | u64::from(word.0);
+        self.count = (self.count & !0xFFFF) | u64::from(word.0);
     }
 
     /// Replaces bits 0..8 of AX. AH and bits 16..63 stay as they were.
-    fn set_al(&mut self, al: Al) {
-        self.ax = (self.ax & !0xFF) | u64::from(al.0);
+    fn set_al(&mut self, result: ResultByte) {
+        self.status = (self.status & !0xFF) | u64::from(result.0);
     }
 
     /// Replaces bits 0..8 of DX. DH and bits 16..63 stay as they were.
-    fn set_dl(&mut self, dl: u8) {
-        self.dx = (self.dx & !0xFF) | u64::from(dl);
+    fn set_dl(&mut self, data_low: u8) {
+        self.buffer = (self.buffer & !0xFF) | u64::from(data_low);
     }
 
     /// Replaces bits 0..16 of DX. Bits 16..63 stay as they were.
     fn store_dx(&mut self, word: DosWord) {
-        self.dx = (self.dx & !0xFFFF) | u64::from(word.0);
+        self.buffer = (self.buffer & !0xFFFF) | u64::from(word.0);
     }
 }
 
@@ -226,22 +226,22 @@ const _: () = assert!(MAXCOM == 0x6C);
 /// write flags and does not touch an INDOS counter, because this module has no such counter.
 pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
     token.seal();
-    let ah = frame.ah();
-    if ah.above_max() {
+    let function = frame.function();
+    if function.above_max() {
         out_of_range(frame);
         return;
     }
-    DISPATCH[ah.index()](frame);
+    DISPATCH[function.index()](frame);
 }
 
 /// AH=1Ah. DX is the DTA.
 fn set_dta(frame: &mut LogicalFrame) {
-    crate::dos::search::set_dta(frame.dx as *mut u8);
+    crate::dos::search::set_dta(frame.buffer as *mut u8);
 }
 
 /// AH=4Eh. CX is the search attribute. DX is the ASCIIZ name.
 fn find_first(frame: &mut LogicalFrame) {
-    let code = crate::dos::search::find_first(frame.dx as *const u8, frame.cx as u8);
+    let code = crate::dos::search::find_first(frame.buffer as *const u8, frame.count as u8);
     frame.store_ax(DosWord(code));
 }
 
@@ -252,46 +252,46 @@ fn find_next(frame: &mut LogicalFrame) {
 
 /// AH=41h. DX is the ASCIIZ name.
 fn delete_file(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::file::delete(frame.dx as *const u8)));
+    frame.store_ax(DosWord(crate::dos::file::delete(frame.buffer as *const u8)));
 }
 
 /// AH=56h. DX is the old name and DI is the new name.
 fn rename_file(frame: &mut LogicalFrame) {
-    let code = crate::dos::file::rename(frame.dx as *const u8, frame.di as *const u8);
+    let code = crate::dos::file::rename(frame.buffer as *const u8, frame.destination as *const u8);
     frame.store_ax(DosWord(code));
 }
 
 /// AH=3Ch. DX is the new name.
 fn create_file(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::file::create(frame.dx as *const u8)));
+    frame.store_ax(DosWord(crate::dos::file::create(frame.buffer as *const u8)));
 }
 
 /// AH=39h.
 fn mkdir(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::mkdir(frame.dx as *const u8)));
+    frame.store_ax(DosWord(crate::dos::path::mkdir(frame.buffer as *const u8)));
 }
 
 /// AH=3Bh.
 fn chdir(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::chdir(frame.dx as *const u8)));
+    frame.store_ax(DosWord(crate::dos::path::chdir(frame.buffer as *const u8)));
 }
 
 /// AH=3Ah.
 fn rmdir(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::rmdir(frame.dx as *const u8)));
+    frame.store_ax(DosWord(crate::dos::path::rmdir(frame.buffer as *const u8)));
 }
 
 /// AH=59h. AX is the last error. BH is the class, BL the action, CH the locus.
 fn get_extended_error(frame: &mut LogicalFrame) {
-    let (ax, bx, cx) = crate::dos::ms_code::get();
-    frame.store_ax(DosWord(ax));
-    frame.store_bx(DosWord(bx));
-    frame.store_cx(DosWord(cx));
+    let (status, handle, count) = crate::dos::ms_code::get();
+    frame.store_ax(DosWord(status));
+    frame.store_bx(DosWord(handle));
+    frame.store_cx(DosWord(count));
 }
 
 /// AH=48h. BX is the paragraph count. AX is the memory segment.
 fn alloc_memory(frame: &mut LogicalFrame) {
-    match crate::dos::alloc::alloc(frame.bx as u16) {
+    match crate::dos::alloc::alloc(frame.handle as u16) {
         Ok(seg) => frame.store_ax(DosWord(seg)),
         Err((code, max)) => {
             frame.store_ax(DosWord(code));
@@ -302,100 +302,100 @@ fn alloc_memory(frame: &mut LogicalFrame) {
 
 /// AH=49h. ES is the memory segment, one paragraph above the header.
 fn free_memory(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::alloc::free(frame.es as u16)));
+    frame.store_ax(DosWord(crate::dos::alloc::free(frame.extra_segment as u16)));
 }
 
 /// AH=47h. SI receives the ASCIIZ path without the drive letter.
 fn get_cwd(frame: &mut LogicalFrame) {
     frame.store_ax(DosWord(crate::dos::path::getcwd(
-        frame.si as *mut u8,
-        frame.dx as u8,
+        frame.source as *mut u8,
+        frame.buffer as u8,
     )));
 }
 
 /// AH=0Fh. DX is the FCB.
 fn fcb_open(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio2::open(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio2::open(frame.buffer as *mut u8)));
 }
 
 /// AH=10h. DX is the FCB.
 fn fcb_close(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio::close(frame.dx as *const u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio::close(frame.buffer as *const u8)));
 }
 
 /// AH=11h. A volume-label FCB still returns AL=0xFF on this disk.
 fn dir_search_first(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::search::fcb_search_first(frame.dx as *const u8)));
+    frame.set_al(ResultByte(crate::dos::search::fcb_search_first(frame.buffer as *const u8)));
 }
 
 /// AH=12h.
 fn dir_search_next(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::search::fcb_search_next()));
+    frame.set_al(ResultByte(crate::dos::search::fcb_search_next()));
 }
 
 /// AH=13h.
 fn fcb_delete(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio::delete(frame.dx as *const u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio::delete(frame.buffer as *const u8)));
 }
 
 /// AH=14h.
 fn fcb_seq_read(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio2::seq_read(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio2::seq_read(frame.buffer as *mut u8)));
 }
 
 /// AH=16h.
 fn fcb_create(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio2::create(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio2::create(frame.buffer as *mut u8)));
 }
 
 /// AH=17h.
 fn fcb_rename(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio::rename(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio::rename(frame.buffer as *mut u8)));
 }
 
 /// AH=21h.
 fn fcb_random_read(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio2::random_read(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio2::random_read(frame.buffer as *mut u8)));
 }
 
 /// AH=23h.
 fn fcb_length(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio::file_length(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio::file_length(frame.buffer as *mut u8)));
 }
 
 /// AH=24h.
 fn fcb_position(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::fcbio::set_position(frame.dx as *mut u8)));
+    frame.set_al(ResultByte(crate::dos::fcbio::set_position(frame.buffer as *mut u8)));
 }
 
 /// AH=29h. DS:SI is the text. ES:DI is the FCB. AL is the control bits.
 fn parse_fcb(frame: &mut LogicalFrame) {
-    let flags = (frame.ax & 0xff) as u8;
-    let (al, si) = crate::dos::parse::parse(flags, frame.si as *const u8, frame.di as *mut u8);
-    frame.set_al(Al(al));
-    frame.si = si as u64;
+    let flags = (frame.status & 0xff) as u8;
+    let (result, source) = crate::dos::parse::parse(flags, frame.source as *const u8, frame.destination as *mut u8);
+    frame.set_al(ResultByte(result));
+    frame.source = source as u64;
 }
 
 /// AH=19h. AL is the default drive. This image leaves it at 0, which is A.
 fn get_default_drive(frame: &mut LogicalFrame) {
-    frame.set_al(Al(0));
+    frame.set_al(ResultByte(0));
 }
 
 /// AH=2. DL is the character. The console device receives that byte.
 fn std_con_output(frame: &mut LogicalFrame) {
-    crate::dos::cpmio2::out_char((frame.dx & 0xff) as u8);
+    crate::dos::cpmio2::out_char((frame.buffer & 0xff) as u8);
 }
 
 /// AH=9. DX is the linear address of a `$`-terminated string.
 fn std_con_string_output(frame: &mut LogicalFrame) {
-    crate::dos::cpmio::write_dollar_string(frame.dx as u32);
+    crate::dos::cpmio::write_dollar_string(frame.buffer as u32);
 }
 
 /// AH=4Bh. AL is the exec function. 0, 1, and 3 load. 2 is rejected.
 fn exec_program(frame: &mut LogicalFrame) {
-    let al = (frame.ax & 0xff) as u8;
-    match crate::dos::exec::dispatch(al, frame.dx as u32 as *const u8) {
-        Ok(_) => frame.set_al(Al(0)),
+    let result = (frame.status & 0xff) as u8;
+    match crate::dos::exec::dispatch(result, frame.buffer as u32 as *const u8) {
+        Ok(_) => frame.set_al(ResultByte(0)),
         Err(code) => frame.store_ax(DosWord(code)),
     }
 }
@@ -411,12 +411,12 @@ static mut HUNDREDTH: u8 = 0;
 
 /// AH=44h. AL=0 and AL=8 are the slices of `$IOCTL` this boot uses.
 fn ioctl(frame: &mut LogicalFrame) {
-    let al = (frame.ax & 0xff) as u8;
-    let (ax, dx, al_out) = crate::dos::ioctl::on_frame(al, frame.bx as u16);
-    frame.store_ax(DosWord(if al == 8 { u16::from(al_out) } else { ax }));
-    frame.store_dx(DosWord(dx));
-    if al == 8 && ax == 0 {
-        frame.set_al(Al(al_out));
+    let result = (frame.status & 0xff) as u8;
+    let (status, buffer, al_out) = crate::dos::ioctl::on_frame(result, frame.handle as u16);
+    frame.store_ax(DosWord(if result == 8 { u16::from(al_out) } else { status }));
+    frame.store_dx(DosWord(buffer));
+    if result == 8 && status == 0 {
+        frame.set_al(ResultByte(al_out));
     }
 }
 
@@ -425,18 +425,18 @@ fn ioctl(frame: &mut LogicalFrame) {
 /// `GET_FILE_INFO` and `SET_FILE_ATTRIBUTE` in `DOS/FINFO.ASM`. AX is 2 when
 /// the name is not in the root.
 fn file_attributes(frame: &mut LogicalFrame) {
-    let al = (frame.ax & 0xff) as u8;
-    let Some(index) = crate::dos::search::lookup_asciiz(frame.dx as *const u8) else {
+    let result = (frame.status & 0xff) as u8;
+    let Some(index) = crate::dos::search::lookup_asciiz(frame.buffer as *const u8) else {
         frame.store_ax(DosWord(2));
         return;
     };
-    if al == 0 {
+    if result == 0 {
         let ent = crate::dos::search::slot(index);
         let attr = if ent.attr != 0 { ent.attr } else { 0x20 };
         frame.store_cx(DosWord(u16::from(attr)));
         frame.store_ax(DosWord(0));
-    } else if al == 1 {
-        crate::dos::search::set_attr(index, frame.cx as u8);
+    } else if result == 1 {
+        crate::dos::search::set_attr(index, frame.count as u8);
         frame.store_ax(DosWord(0));
     } else {
         frame.store_ax(DosWord(1));
@@ -446,18 +446,18 @@ fn file_attributes(frame: &mut LogicalFrame) {
 /// AH=57h. AL=0 returns the open file's time in CX and date in DX.
 /// AL=1 stores CX and DX. A zero date stays 1980-01-01 until this call sets one.
 fn file_times(frame: &mut LogicalFrame) {
-    let al = (frame.ax & 0xff) as u8;
-    let Some(index) = crate::dos::handle::opened_index(frame.bx as u16) else {
+    let result = (frame.status & 0xff) as u8;
+    let Some(index) = crate::dos::handle::opened_index(frame.handle as u16) else {
         frame.store_ax(DosWord(6));
         return;
     };
-    if al == 0 {
+    if result == 0 {
         let ent = crate::dos::search::slot(index);
         frame.store_cx(DosWord(ent.time));
         frame.store_dx(DosWord(if ent.date == 0 { 0x0021 } else { ent.date }));
         frame.store_ax(DosWord(0));
-    } else if al == 1 {
-        crate::dos::search::set_stamp(index, frame.cx as u16, frame.dx as u16);
+    } else if result == 1 {
+        crate::dos::search::set_stamp(index, frame.count as u16, frame.buffer as u16);
         frame.store_ax(DosWord(0));
     } else {
         frame.store_ax(DosWord(1));
@@ -466,13 +466,13 @@ fn file_times(frame: &mut LogicalFrame) {
 
 /// AH=3Eh. BX is the handle. AX is 0, or 6 when the handle is not open.
 fn close_handle(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::handle::close(frame.bx as u16)));
+    frame.store_ax(DosWord(crate::dos::handle::close(frame.handle as u16)));
 }
 
 /// AH=42h. AL is the method. CX:DX is the offset. DX:AX is the new position.
 fn lseek(frame: &mut LogicalFrame) {
-    let method = (frame.ax & 0xff) as u8;
-    match crate::dos::handle::seek(frame.bx as u16, method, frame.dx as u16, frame.cx as u16) {
+    let method = (frame.status & 0xff) as u8;
+    match crate::dos::handle::seek(frame.handle as u16, method, frame.buffer as u16, frame.count as u16) {
         Ok(pos) => {
             frame.store_ax(DosWord(pos as u16));
             frame.store_dx(DosWord((pos >> 16) as u16));
@@ -483,16 +483,16 @@ fn lseek(frame: &mut LogicalFrame) {
 
 /// AH=5Ch. AL=0 locks CX:DX for SI:DI bytes. AL=1 unlocks that range.
 fn lock_oper(frame: &mut LogicalFrame) {
-    let al = (frame.ax & 0xff) as u8;
-    let start = ((frame.cx as u32) << 16) | (frame.dx as u32);
-    let len = ((frame.si as u32) << 16) | (frame.di as u32);
-    let open = crate::dos::handle::opened_index(frame.bx as u16).is_some();
-    frame.store_ax(DosWord(crate::dos::lock::oper(al, open, start, len)));
+    let result = (frame.status & 0xff) as u8;
+    let start = ((frame.count as u32) << 16) | (frame.buffer as u32);
+    let len = ((frame.source as u32) << 16) | (frame.destination as u32);
+    let open = crate::dos::handle::opened_index(frame.handle as u16).is_some();
+    frame.store_ax(DosWord(crate::dos::lock::oper(result, open, start, len)));
 }
 
 /// AH=3Dh. AX is handle 5, or 0xFFFF when the name is not in the root.
 fn open_handle(frame: &mut LogicalFrame) {
-    match crate::dos::handle::open_asciiz(frame.dx as *const u8) {
+    match crate::dos::handle::open_asciiz(frame.buffer as *const u8) {
         Some(handle) => frame.store_ax(DosWord(handle)),
         None => frame.store_ax(DosWord(0xffff)),
     }
@@ -500,13 +500,13 @@ fn open_handle(frame: &mut LogicalFrame) {
 
 /// AH=40h. AX is the number of bytes copied from DX into the open file.
 fn write_handle(frame: &mut LogicalFrame) {
-    let n = crate::dos::handle::write(frame.bx as u16, frame.dx as *const u8, frame.cx as usize);
+    let n = crate::dos::handle::write(frame.handle as u16, frame.buffer as *const u8, frame.count as usize);
     frame.store_ax(DosWord(n as u16));
 }
 
 /// AH=3Fh. AX is the number of bytes copied to DX.
 fn read_handle(frame: &mut LogicalFrame) {
-    let n = crate::dos::handle::read(frame.bx as u16, frame.dx as *mut u8, frame.cx as usize);
+    let n = crate::dos::handle::read(frame.handle as u16, frame.buffer as *mut u8, frame.count as usize);
     frame.store_ax(DosWord(n as u16));
 }
 
@@ -515,23 +515,23 @@ fn get_date(frame: &mut LogicalFrame) {
     let (year, month, day) = unsafe { (YEAR, MONTH, DAY) };
     frame.store_cx(DosWord(year));
     frame.store_dx(DosWord((u16::from(month) << 8) | u16::from(day)));
-    frame.set_al(Al(weekday(year, month, day)));
+    frame.set_al(ResultByte(weekday(year, month, day)));
 }
 
 /// AH=2Bh. AL is 0 when the date is stored, and 0xFF when it is rejected.
 fn set_date(frame: &mut LogicalFrame) {
-    let year = frame.cx as u16;
-    let month = (frame.dx >> 8) as u8;
-    let day = frame.dx as u8;
+    let year = frame.count as u16;
+    let month = (frame.buffer >> 8) as u8;
+    let day = frame.buffer as u8;
     if date_ok(year, month, day) {
         unsafe {
             YEAR = year;
             MONTH = month;
             DAY = day;
         }
-        frame.set_al(Al(0));
+        frame.set_al(ResultByte(0));
     } else {
-        frame.set_al(Al(0xff));
+        frame.set_al(ResultByte(0xff));
     }
 }
 
@@ -544,10 +544,10 @@ fn get_time(frame: &mut LogicalFrame) {
 
 /// AH=2Dh. AL is 0 when the time is stored, and 0xFF when it is rejected.
 fn set_time(frame: &mut LogicalFrame) {
-    let hour = (frame.cx >> 8) as u8;
-    let minute = frame.cx as u8;
-    let second = (frame.dx >> 8) as u8;
-    let hundredth = frame.dx as u8;
+    let hour = (frame.count >> 8) as u8;
+    let minute = frame.count as u8;
+    let second = (frame.buffer >> 8) as u8;
+    let hundredth = frame.buffer as u8;
     if hour < 24 && minute < 60 && second < 60 && hundredth < 100 {
         unsafe {
             HOUR = hour;
@@ -555,9 +555,9 @@ fn set_time(frame: &mut LogicalFrame) {
             SECOND = second;
             HUNDREDTH = hundredth;
         }
-        frame.set_al(Al(0));
+        frame.set_al(ResultByte(0));
     } else {
-        frame.set_al(Al(0xff));
+        frame.set_al(ResultByte(0xff));
     }
 }
 
@@ -584,20 +584,20 @@ fn date_ok(year: u16, month: u8, day: u8) -> bool {
 
 /// AH=2Eh. `$SET_VERIFY_ON_WRITE`. AL bit 0 is the flag.
 fn set_verify_on_write(frame: &mut LogicalFrame) {
-    crate::dos::getset::set_verify((frame.ax & 0xff) as u8);
+    crate::dos::getset::set_verify((frame.status & 0xff) as u8);
 }
 
 /// AH=54h. `$GET_VERIFY_ON_WRITE`. AL comes back as the flag.
 fn get_verify_on_write(frame: &mut LogicalFrame) {
-    frame.set_al(Al(crate::dos::getset::get_verify()));
+    frame.set_al(ResultByte(crate::dos::getset::get_verify()));
 }
 
 /// AH=33h. `$SET_CTRL_C_TRAPPING`.
 fn set_ctrl_c_trapping(frame: &mut LogicalFrame) {
-    let al = (frame.ax & 0xff) as u8;
-    let dl = (frame.dx & 0xff) as u8;
-    let (new_al, new_dl) = crate::dos::disp::set_ctrl_c(al, dl);
-    frame.set_al(Al(new_al));
+    let result = (frame.status & 0xff) as u8;
+    let data_low = (frame.buffer & 0xff) as u8;
+    let (new_al, new_dl) = crate::dos::disp::set_ctrl_c(result, data_low);
+    frame.set_al(ResultByte(new_al));
     frame.set_dl(new_dl);
 }
 
@@ -615,14 +615,14 @@ fn get_version(frame: &mut LogicalFrame) {
 ///
 /// Sets AL to 0 and leaves every other register alone. Not a list of function numbers.
 fn in_range_stub(frame: &mut LogicalFrame) {
-    frame.set_al(Al::ZERO);
+    frame.set_al(ResultByte::ZERO);
 }
 
 /// AH above [`MAXCOM`].
 ///
 /// Sets AL to 0. Leaves AH and every other register alone. Does not build an [`ErrorCode`].
 fn out_of_range(frame: &mut LogicalFrame) {
-    frame.set_al(Al::ZERO);
+    frame.set_al(ResultByte::ZERO);
 }
 
 pub fn current_date() -> (u16, u8, u8, u8) {

@@ -20,18 +20,18 @@ const CRT_ERR_TAB: [u16; 8] = [0, 5, 82, 80, 3, 5, 32, 2];
 
 /// `DOS_CREATE` when AH is 0, and `DOS_CREATE_NEW` when truncate is not allowed.
 pub fn dos_create(attr: u8, name: &[u8; 11], truncate_ok: bool) -> Result<u8, u16> {
-    let mut al = attr;
-    if al & !(ATTR_ALL | ATTR_IGNORE | ATTR_VOLUME) != 0 {
+    let mut result = attr;
+    if result & !(ATTR_ALL | ATTR_IGNORE | ATTR_VOLUME) != 0 {
         return Err(5);
     }
-    if al & ATTR_VOLUME != 0 {
-        al = ATTR_VOLUME;
+    if result & ATTR_VOLUME != 0 {
+        result = ATTR_VOLUME;
     }
-    al |= ATTR_ARCHIVE;
-    if al & (ATTR_DIRECTORY | ATTR_DEVICE) != 0 {
+    result |= ATTR_ARCHIVE;
+    if result & (ATTR_DIRECTORY | ATTR_DEVICE) != 0 {
         return Err(5);
     }
-    match make_node(al, name, truncate_ok) {
+    match make_node(result, name, truncate_ok) {
         Ok(made) => Ok(made),
         Err(code) => Err(CRT_ERR_TAB[code as usize]),
     }

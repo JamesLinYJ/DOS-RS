@@ -32,15 +32,15 @@ pub fn parse_switches(line: &[u8], valid: &[u8]) -> Result<u16, ()> {
     let mut index = 0usize;
     let mut saw_drive = false;
     while index < line.len() {
-        let al = line[index];
-        if al == b'\r' || al == b'\n' {
+        let result = line[index];
+        if result == b'\r' || result == b'\n' {
             break;
         }
-        if al <= b' ' {
+        if result <= b' ' {
             index += 1;
             continue;
         }
-        if al != b'/' {
+        if result != b'/' {
             return Err(());
         }
         index += 1;
@@ -72,8 +72,8 @@ pub fn asciiz_len(text: &[u8]) -> usize {
     text.iter().position(|byte| *byte == 0).map(|index| index + 1).unwrap_or(text.len())
 }
 
-pub fn delim(al: u8) -> bool {
-    al == b'/' || al == 0 || al == b' ' || al == b'\t' || al == b'=' || al == b',' || al == b';'
+pub fn delim(result: u8) -> bool {
+    result == b'/' || result == 0 || result == b' ' || result == b'\t' || result == b'=' || result == b',' || result == b';'
 }
 
 /// `GETNUM`. A decimal run is returned in AX. A non-digit at the start, or a
@@ -85,8 +85,8 @@ pub fn get_num(text: &[u8]) -> Result<u16, ()> {
     let mut total: u16 = 0;
     let mut index = 0usize;
     loop {
-        let al = text[index];
-        let digit = to_digit(al)?;
+        let result = text[index];
+        let digit = to_digit(result)?;
         let product = u32::from(total) * 10 + u32::from(digit);
         if product > 0xffff {
             return Err(());
@@ -104,11 +104,11 @@ pub fn get_num(text: &[u8]) -> Result<u16, ()> {
     Ok(total)
 }
 
-fn to_digit(al: u8) -> Result<u8, ()> {
-    if al < b'0' {
+fn to_digit(result: u8) -> Result<u8, ()> {
+    if result < b'0' {
         return Err(());
     }
-    let digit = al - b'0';
+    let digit = result - b'0';
     if digit > 9 {
         Err(())
     } else {

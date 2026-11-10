@@ -61,11 +61,11 @@ pub fn deviocall2(attr: u16, func: u8, high_sector: u16) -> u16 {
 }
 
 /// `IOFUNC` for a file. The bool is the zero flag: set means not ready or EOF.
-pub fn iofunc_file(ah: u8, handle_no: u16) -> (u8, bool) {
-    if ah == 0 {
+pub fn iofunc_file(function: u8, handle_no: u16) -> (u8, bool) {
+    if function == 0 {
         return io_in(handle_no);
     }
-    let mut left = ah.wrapping_sub(1);
+    let mut left = function.wrapping_sub(1);
     if left == 0 {
         return io_status(handle_no);
     }
@@ -89,9 +89,9 @@ fn io_in(handle_no: u16) -> (u8, bool) {
 
 fn io_status(handle_no: u16) -> (u8, bool) {
     let pos = handle::seek(handle_no, 1, 0, 0).unwrap_or(0);
-    let (al, zf) = io_in(handle_no);
+    let (result, zf) = io_in(handle_no);
     let _ = handle::seek(handle_no, 0, pos as u16, (pos >> 16) as u16);
-    (al, zf)
+    (result, zf)
 }
 
 pub fn show() {

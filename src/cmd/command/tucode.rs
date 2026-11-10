@@ -32,9 +32,9 @@ pub fn break_cmd(tail: &[u8]) {
             dos_break(1, 0);
         }
         OnOff::Blank => {
-            let dl = dos_break(0, 0);
+            let data_low = dos_break(0, 0);
             con_write_bytes(b"BREAK is ");
-            con_write_bytes(if dl & 1 == 0 { OFF_TEXT } else { ON_TEXT });
+            con_write_bytes(if data_low & 1 == 0 { OFF_TEXT } else { ON_TEXT });
             crlf2();
         }
         OnOff::Other => {
@@ -50,9 +50,9 @@ pub fn verify_cmd(tail: &[u8]) {
         OnOff::On => dos_verify_set(1),
         OnOff::Off => dos_verify_set(0),
         OnOff::Blank => {
-            let al = dos_verify_get();
+            let result = dos_verify_get();
             con_write_bytes(b"VERIFY is ");
-            con_write_bytes(if al & 1 == 0 { OFF_TEXT } else { ON_TEXT });
+            con_write_bytes(if result & 1 == 0 { OFF_TEXT } else { ON_TEXT });
             crlf2();
         }
         OnOff::Other => {

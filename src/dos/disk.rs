@@ -55,16 +55,16 @@ pub fn dwrite(sector: u32, count: u16, src: &[u8]) -> bool {
 
 /// `FATSecRd`. The first copy that reads wins. Later copies are `fat_size` apart.
 pub fn fat_sec_read(dpb: &Dpb, sector: u32, dst: &mut [u8]) -> bool {
-    let mut dx = sector;
+    let mut buffer = sector;
     let mut left = dpb.fat_count;
     if left == 0 {
-        return dread(dx, 1, dst);
+        return dread(buffer, 1, dst);
     }
     while left > 0 {
-        if dread(dx, 1, dst) {
+        if dread(buffer, 1, dst) {
             return true;
         }
-        dx = dx.wrapping_add(u32::from(dpb.fat_size));
+        buffer = buffer.wrapping_add(u32::from(dpb.fat_size));
         left -= 1;
     }
     false

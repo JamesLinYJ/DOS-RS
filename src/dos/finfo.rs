@@ -84,7 +84,7 @@ pub fn show() {
     let _ = super::dircall::dos_rmdir(b"A:\\TEMP\0");
     let device = get_file_info(b"CON");
     let bad = set_file_attribute(b"FOO.COM", u16::from(ATTR_DIRECTORY));
-    let (ax, bx, _cx) = ms_code::get();
+    let (status, handle, _cx) = ms_code::get();
     let set = set_file_attribute(b"FOO.COM", 0x21);
     let fast = get_fast_path(FAST_OPEN_SET | FAST_YES);
     crate::bios::mscon::con_write_bytes(b"FINFO ");
@@ -120,9 +120,9 @@ pub fn show() {
         Err(err) => err as u8,
     });
     crate::bios::mscon::con_write_bytes(b" CL");
-    put_hex8((bx >> 8) as u8);
+    put_hex8((handle >> 8) as u8);
     crate::bios::mscon::con_write_bytes(b" AC");
-    put_hex8(bx as u8);
+    put_hex8(handle as u8);
     crate::bios::mscon::con_write_bytes(b" LC");
     put_hex8((ms_code::get().2 >> 8) as u8);
     crate::bios::mscon::con_write_bytes(b" SET");
@@ -133,7 +133,7 @@ pub fn show() {
     crate::bios::mscon::con_write_bytes(b" FO");
     put_hex8(fast);
     crate::bios::mscon::con_write_bytes(b"\r\n");
-    let _ = ax;
+    let _ = status;
 }
 
 fn put_hex16(value: u16) {

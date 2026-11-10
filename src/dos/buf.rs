@@ -88,73 +88,73 @@ fn cur_head(sector: u32) -> (usize, usize) {
     }
 }
 
-fn place_buf(hash: usize, di: usize) {
+fn place_buf(hash: usize, destination: usize) {
     unsafe {
         let head = HASH[hash].head as usize;
-        let next = BUFS[di].next as usize;
+        let next = BUFS[destination].next as usize;
         if next != head {
-            if di == head {
+            if destination == head {
                 HASH[hash].head = next as u8;
             } else {
-                let prev = BUFS[di].prev as usize;
+                let prev = BUFS[destination].prev as usize;
                 let nxt = next;
                 BUFS[prev].next = nxt as u8;
                 BUFS[nxt].prev = prev as u8;
                 let last = BUFS[head].prev as usize;
-                BUFS[last].next = di as u8;
-                BUFS[head].prev = di as u8;
-                BUFS[di].prev = last as u8;
-                BUFS[di].next = head as u8;
+                BUFS[last].next = destination as u8;
+                BUFS[head].prev = destination as u8;
+                BUFS[destination].prev = last as u8;
+                BUFS[destination].next = head as u8;
             }
         }
-        if BUFS[di].id == 0xff {
-            HASH[hash].head = di as u8;
+        if BUFS[destination].id == 0xff {
+            HASH[hash].head = destination as u8;
         }
     }
 }
 
 /// `ScanPlace`. The returned index is the buffer that followed `di`.
-pub fn scan_place(hash: usize, di: usize) -> usize {
+pub fn scan_place(hash: usize, destination: usize) -> usize {
     ensure();
-    let saved = unsafe { BUFS[di].next as usize };
-    place_buf(hash, di);
+    let saved = unsafe { BUFS[destination].next as usize };
+    place_buf(hash, destination);
     saved
 }
 
 /// `BUFWRITE`. A free or clean buffer is left untouched on disk.
-fn buf_write(di: usize) -> bool {
+fn buf_write(destination: usize) -> bool {
     unsafe {
-        let id = BUFS[di].id;
-        let flags = BUFS[di].flags;
-        BUFS[di].id = 0xff;
-        BUFS[di].flags = 0;
+        let id = BUFS[destination].id;
+        let flags = BUFS[destination].flags;
+        BUFS[destination].id = 0xff;
+        BUFS[destination].flags = 0;
         if id == 0xff || flags & DIRTY == 0 {
             return true;
         }
-        let hash = bucket(BUFS[di].sector);
+        let hash = bucket(BUFS[destination].sector);
         if HASH[hash].dirty > 0 {
             HASH[hash].dirty -= 1;
         }
-        let mut dx = BUFS[di].sector;
-        let mut left = BUFS[di].wrtcnt.max(1);
-        let step = u32::from(BUFS[di].wrtinc.max(1));
+        let mut buffer = BUFS[destination].sector;
+        let mut left = BUFS[destination].wrtcnt.max(1);
+        let step = u32::from(BUFS[destination].wrtinc.max(1));
         let mut wrote = false;
         while left > 0 {
-            if disk::dwrite(dx, 1, &BUFS[di].data) {
+            if disk::dwrite(buffer, 1, &BUFS[destination].data) {
                 wrote = true;
             }
-            dx = dx.wrapping_add(step);
+            buffer = buffer.wrapping_add(step);
             left -= 1;
         }
         wrote
     }
 }
 
-fn mark_dirty(di: usize) {
+fn mark_dirty(destination: usize) {
     unsafe {
-        if BUFS[di].flags & DIRTY == 0 {
-            BUFS[di].flags |= DIRTY;
-            let hash = bucket(BUFS[di].sector);
+        if BUFS[destination].flags & DIRTY == 0 {
+            BUFS[destination].flags |= DIRTY;
+            let hash = bucket(BUFS[destination].sector);
             HASH[hash].dirty = HASH[hash].dirty.wrapping_add(1);
         }
     }
@@ -175,45 +175,45 @@ pub fn get_buffer(dpb: &Dpb, sector: u32, fat: bool) -> Option<(usize, bool)> {
         }
     }
     let (hash, first) = cur_head(sector);
-    let mut di = first;
+    let mut destination = first;
     let mut guard = 0usize;
     loop {
-        let same = unsafe { BUFS[di].sector == sector && BUFS[di].id == drive };
+        let same = unsafe { BUFS[destination].sector == sector && BUFS[destination].id == drive };
         if same {
-            place_buf(hash, di);
-            unsafe { LAST = di as u8 };
-            return Some((di, false));
+            place_buf(hash, destination);
+            unsafe { LAST = destination as u8 };
+            return Some((destination, false));
         }
-        di = unsafe { BUFS[di].next as usize };
+        destination = unsafe { BUFS[destination].next as usize };
         guard += 1;
-        if di == first || guard > NBUF {
+        if destination == first || guard > NBUF {
             break;
         }
     }
-    di = first;
-    if !buf_write(di) {
+    destination = first;
+    if !buf_write(destination) {
         return None;
     }
     let ok = unsafe {
         if fat {
-            disk::fat_sec_read(dpb, sector, &mut BUFS[di].data)
+            disk::fat_sec_read(dpb, sector, &mut BUFS[destination].data)
         } else {
-            disk::dread(sector, 1, &mut BUFS[di].data)
+            disk::dread(sector, 1, &mut BUFS[destination].data)
         }
     };
     if !ok {
         return None;
     }
     unsafe {
-        BUFS[di].sector = sector;
-        BUFS[di].id = drive;
-        BUFS[di].flags = if fat { 0x02 } else { 0 };
-        BUFS[di].wrtcnt = if fat { dpb.fat_count.max(1) } else { 1 };
-        BUFS[di].wrtinc = if fat { dpb.fat_size.max(1) } else { 1 };
-        LAST = di as u8;
+        BUFS[destination].sector = sector;
+        BUFS[destination].id = drive;
+        BUFS[destination].flags = if fat { 0x02 } else { 0 };
+        BUFS[destination].wrtcnt = if fat { dpb.fat_count.max(1) } else { 1 };
+        BUFS[destination].wrtinc = if fat { dpb.fat_size.max(1) } else { 1 };
+        LAST = destination as u8;
     }
-    place_buf(hash, di);
-    Some((di, false))
+    place_buf(hash, destination);
+    Some((destination, false))
 }
 
 fn byte_at(index: usize, at: usize) -> u8 {

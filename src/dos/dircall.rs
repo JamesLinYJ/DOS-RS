@@ -12,7 +12,7 @@ const DIR_SEARCH: u8 = 0x10 + 0x04 + 0x02;
 
 /// `DOS_MKDIR`. AX is 0, or 3 or 5 with carry.
 pub fn dos_mkdir(wfp: &[u8]) -> u16 {
-    if super::dir2::get_path(wfp, DIR_SEARCH).is_ok_and(|bh| bh != 0) {
+    if super::dir2::get_path(wfp, DIR_SEARCH).is_ok_and(|high_byte| high_byte != 0) {
         return ACCESS;
     }
     if is_root(wfp) {
@@ -55,7 +55,7 @@ pub fn dos_chdir(wfp: &[u8]) -> Result<u16, u16> {
         search::set_cwd(b"A:\\");
         return Ok(0);
     }
-    if super::dir2::get_path(wfp, DIR_SEARCH).is_ok_and(|bh| bh != 0) {
+    if super::dir2::get_path(wfp, DIR_SEARCH).is_ok_and(|high_byte| high_byte != 0) {
         return Err(ACCESS);
     }
     let Some(packed) = leaf_packed(wfp) else {
@@ -85,7 +85,7 @@ pub fn dos_rmdir(wfp: &[u8]) -> u16 {
     if is_root(wfp) {
         return ACCESS;
     }
-    if super::dir2::get_path(wfp, DIR_SEARCH).is_ok_and(|bh| bh != 0) {
+    if super::dir2::get_path(wfp, DIR_SEARCH).is_ok_and(|high_byte| high_byte != 0) {
         return ACCESS;
     }
     let Some(packed) = leaf_packed(wfp) else {
@@ -121,7 +121,7 @@ pub fn show() {
     put_hex8(made as u8);
     crate::bios::mscon::con_write_bytes(b" CX");
     match cluster {
-        Ok(cx) => put_hex16(cx),
+        Ok(count) => put_hex16(count),
         Err(err) => put_hex16(err),
     }
     crate::bios::mscon::con_write_bytes(b" RM");

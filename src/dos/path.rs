@@ -113,62 +113,62 @@ pub fn getcwd(buf: *mut u8, drive: u8) -> u16 {
 
 /// `$CURRENT_DIR` copy. A `0x05` directory byte is stored as `0xE5`.
 pub fn copy_dir(src: &[u8], dst: *mut u8) {
-    let mut si = 0usize;
-    let mut di = 0usize;
+    let mut source = 0usize;
+    let mut destination = 0usize;
     if src.is_empty() {
         unsafe { *dst = 0 }
         return;
     }
-    let mut al = src[si];
-    si += 1;
-    if al == 0 {
+    let mut result = src[source];
+    source += 1;
+    if result == 0 {
         unsafe { *dst = 0 }
         return;
     }
-    if al != 0x05 {
-        if al == b'\\' {
-            unsafe { *dst.add(di) = al }
-            di += 1;
-            if si >= src.len() {
-                unsafe { *dst.add(di) = 0 }
+    if result != 0x05 {
+        if result == b'\\' {
+            unsafe { *dst.add(destination) = result }
+            destination += 1;
+            if source >= src.len() {
+                unsafe { *dst.add(destination) = 0 }
                 return;
             }
-            al = src[si];
-            si += 1;
+            result = src[source];
+            source += 1;
         }
-        if al == 0x05 {
-            al = 0xe5;
+        if result == 0x05 {
+            result = 0xe5;
         }
     } else {
-        al = 0xe5;
+        result = 0xe5;
     }
     loop {
-        unsafe { *dst.add(di) = al }
-        di += 1;
-        if al == 0 {
+        unsafe { *dst.add(destination) = result }
+        destination += 1;
+        if result == 0 {
             return;
         }
-        if si >= src.len() {
-            unsafe { *dst.add(di) = 0 }
+        if source >= src.len() {
+            unsafe { *dst.add(destination) = 0 }
             return;
         }
-        al = src[si];
-        si += 1;
-        if al == 0 {
+        result = src[source];
+        source += 1;
+        if result == 0 {
             continue;
         }
-        if al == b'\\' {
-            unsafe { *dst.add(di) = al }
-            di += 1;
-            if si >= src.len() {
-                unsafe { *dst.add(di) = 0 }
+        if result == b'\\' {
+            unsafe { *dst.add(destination) = result }
+            destination += 1;
+            if source >= src.len() {
+                unsafe { *dst.add(destination) = 0 }
                 return;
             }
-            al = src[si];
-            si += 1;
+            result = src[source];
+            source += 1;
         }
-        if al == 0x05 {
-            al = 0xe5;
+        if result == 0x05 {
+            result = 0xe5;
         }
     }
 }

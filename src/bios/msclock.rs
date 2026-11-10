@@ -138,21 +138,21 @@ fn time_to_ticks(hours: u8, minutes: u8, seconds: u8, hundredths: u8) -> (u16, u
 /// CX=1 and DX=0x0E is 65550 ticks, which this sequence turns into
 /// 1:00:00.36. The six clock bytes are then `00 00 00 01 24 00`.
 fn ticks_to_hms(ticks_hi: u16, ticks_lo: u16) -> (u16, u16) {
-    let mut cx = u32::from(ticks_hi);
-    let mut dx = u32::from(ticks_lo);
-    let orig_ax = cx;
-    let orig_dx = dx;
-    let mut carry = dx >> 15;
-    dx = (dx << 1) & 0xffff;
-    cx = ((cx << 1) | carry) & 0xffff;
-    carry = dx >> 15;
-    dx = (dx << 1) & 0xffff;
-    cx = ((cx << 1) | carry) & 0xffff;
-    let sum = dx + orig_dx;
+    let mut count = u32::from(ticks_hi);
+    let mut buffer = u32::from(ticks_lo);
+    let orig_ax = count;
+    let orig_dx = buffer;
+    let mut carry = buffer >> 15;
+    buffer = (buffer << 1) & 0xffff;
+    count = ((count << 1) | carry) & 0xffff;
+    carry = buffer >> 15;
+    buffer = (buffer << 1) & 0xffff;
+    count = ((count << 1) | carry) & 0xffff;
+    let sum = buffer + orig_dx;
     carry = sum >> 16;
-    dx = sum & 0xffff;
-    let ax = (orig_ax + cx + carry) & 0xffff;
-    let dividend = (u64::from(ax) << 16) | u64::from(dx);
+    buffer = sum & 0xffff;
+    let status = (orig_ax + count + carry) & 0xffff;
+    let dividend = (u64::from(status) << 16) | u64::from(buffer);
     let quot = (dividend / 59659) as u32;
     let rem = (dividend % 59659) as u32;
     let low = ((u64::from(rem) << 16) / 59659) as u32;

@@ -311,15 +311,15 @@ fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
     LogicalFrame::from_native(
         token,
         NativeRegs {
-            ax: u64::from(trap.eax),
-            bx: u64::from(trap.ebx),
-            cx: u64::from(trap.ecx),
-            dx: u64::from(trap.edx),
-            si: u64::from(trap.esi),
-            di: u64::from(trap.edi),
-            bp: u64::from(trap.ebp),
-            ds: u64::from(trap.ds),
-            es: u64::from(trap.es),
+            status: u64::from(trap.eax),
+            handle: u64::from(trap.ebx),
+            count: u64::from(trap.ecx),
+            buffer: u64::from(trap.edx),
+            source: u64::from(trap.esi),
+            destination: u64::from(trap.edi),
+            base: u64::from(trap.ebp),
+            data_segment: u64::from(trap.ds),
+            extra_segment: u64::from(trap.es),
         },
     )
 }
@@ -337,15 +337,15 @@ fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
     LogicalFrame::from_native(
         token,
         NativeRegs {
-            ax: trap.rax,
-            bx: trap.rbx,
-            cx: trap.rcx,
-            dx: trap.rdx,
-            si: trap.rsi,
-            di: trap.rdi,
-            bp: trap.rbp,
-            ds: trap.ds,
-            es: trap.es,
+            status: trap.rax,
+            handle: trap.rbx,
+            count: trap.rcx,
+            buffer: trap.rdx,
+            source: trap.rsi,
+            destination: trap.rdi,
+            base: trap.rbp,
+            data_segment: trap.ds,
+            extra_segment: trap.es,
         },
     )
 }
@@ -357,15 +357,15 @@ fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
 #[cfg(target_arch = "x86")]
 fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFrame) {
     let regs = frame.native(token);
-    trap.eax = regs.ax as u32;
-    trap.ebx = regs.bx as u32;
-    trap.ecx = regs.cx as u32;
-    trap.edx = regs.dx as u32;
-    trap.esi = regs.si as u32;
-    trap.edi = regs.di as u32;
-    trap.ebp = regs.bp as u32;
-    trap.ds = regs.ds as u32;
-    trap.es = regs.es as u32;
+    trap.eax = regs.status as u32;
+    trap.ebx = regs.handle as u32;
+    trap.ecx = regs.count as u32;
+    trap.edx = regs.buffer as u32;
+    trap.esi = regs.source as u32;
+    trap.edi = regs.destination as u32;
+    trap.ebp = regs.base as u32;
+    trap.ds = regs.data_segment as u32;
+    trap.es = regs.extra_segment as u32;
 }
 
 /// Writes the logical GPRs back into the trap.
@@ -374,15 +374,15 @@ fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFra
 #[cfg(target_arch = "x86_64")]
 fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFrame) {
     let regs = frame.native(token);
-    trap.rax = regs.ax;
-    trap.rbx = regs.bx;
-    trap.rcx = regs.cx;
-    trap.rdx = regs.dx;
-    trap.rsi = regs.si;
-    trap.rdi = regs.di;
-    trap.rbp = regs.bp;
-    trap.ds = regs.ds;
-    trap.es = regs.es;
+    trap.rax = regs.status;
+    trap.rbx = regs.handle;
+    trap.rcx = regs.count;
+    trap.rdx = regs.buffer;
+    trap.rsi = regs.source;
+    trap.rdi = regs.destination;
+    trap.rbp = regs.base;
+    trap.ds = regs.data_segment;
+    trap.es = regs.extra_segment;
 }
 
 pub fn code_selector() -> u16 {

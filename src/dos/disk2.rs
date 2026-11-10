@@ -17,22 +17,22 @@ pub struct Pieces {
 
 /// `BREAKDOWN`. `pos` is `BYTSECPOS` and `len` is the byte count in CX.
 pub fn breakdown(len: u16, pos: u16, sector_size: u16) -> Pieces {
-    let mut ax = pos;
-    let mut bx = len;
-    if ax != 0 {
-        ax = ax.wrapping_sub(sector_size);
-        ax = ax.wrapping_neg();
-        let (next, borrow) = bx.overflowing_sub(ax);
+    let mut status = pos;
+    let mut handle = len;
+    if status != 0 {
+        status = status.wrapping_sub(sector_size);
+        status = status.wrapping_neg();
+        let (next, borrow) = handle.overflowing_sub(status);
         if !borrow {
-            bx = next;
+            handle = next;
         } else {
-            ax = ax.wrapping_add(bx);
-            bx = 0;
+            status = status.wrapping_add(handle);
+            handle = 0;
         }
     }
-    let first = ax;
-    let sectors = bx.checked_div(sector_size).unwrap_or(0);
-    let mut last = if sector_size == 0 { 0 } else { bx % sector_size };
+    let first = status;
+    let sectors = handle.checked_div(sector_size).unwrap_or(0);
+    let mut last = if sector_size == 0 { 0 } else { handle % sector_size };
     let mut sectors = sectors;
     if last | first == 0 && sectors == 1 {
         last = sector_size;

@@ -6,8 +6,8 @@
 use super::cpmio2;
 
 /// Walk the `$`-terminated string at `dx` and hand each byte to call 2.
-pub fn write_dollar_string(dx: u32) {
-    let ptr = dx as *const u8;
+pub fn write_dollar_string(buffer: u32) {
+    let ptr = buffer as *const u8;
     let mut index = 0usize;
     loop {
         let byte = unsafe { *ptr.add(index) };

@@ -162,13 +162,13 @@ fn split(index: usize, request: u16) -> u16 {
 }
 
 /// AH=49h. `es` is the memory segment, one paragraph above the header.
-pub fn free(es: u16) -> u16 {
+pub fn free(extra_segment: u16) -> u16 {
     ensure();
     let n = count();
     let mut index = 0usize;
     while index < n {
         unsafe {
-            if ITEMS[index].seg + 1 == es {
+            if ITEMS[index].seg + 1 == extra_segment {
                 ITEMS[index].owner = 0;
                 return 0;
             }

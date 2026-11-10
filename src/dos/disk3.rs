@@ -28,8 +28,8 @@ pub fn div32(dividend: u32, divisor: u16) -> (u32, u16) {
 }
 
 /// `SHR32`. `shift` is `dpb_cluster_shift`. Each step clears carry, then rotates.
-pub fn shr32(high: u16, ax: u16, shift: u16) -> (u16, u16) {
-    let mut value = ((high as u32) << 16) | u32::from(ax);
+pub fn shr32(high: u16, status: u16, shift: u16) -> (u16, u16) {
+    let mut value = ((high as u32) << 16) | u32::from(status);
     let mut left = shift;
     while left != 0 {
         value >>= 1;
@@ -39,11 +39,11 @@ pub fn shr32(high: u16, ax: u16, shift: u16) -> (u16, u16) {
 }
 
 /// `File_Handle_Fail_Error`. `Ok` is carry clear. `Err` is the extended error.
-pub fn file_handle_fail(disk_full: bool, dos34: u16, flags: u16, ah: u8) -> Result<(), u16> {
+pub fn file_handle_fail(disk_full: bool, dos34: u16, flags: u16, function: u8) -> Result<(), u16> {
     if !disk_full || dos34 & DISABLE_EOF != 0 || flags & HANDLE_FAIL == 0 {
         return Ok(());
     }
-    let code = if ah & 1 == 0 { EOF_ERROR } else { FULL_ERROR };
+    let code = if function & 1 == 0 { EOF_ERROR } else { FULL_ERROR };
     ms_code::store(code, CLASS_OUT_OF_RESOURCE, ACTION_ABORT, LOCUS_UNKNOWN);
     Err(code)
 }
@@ -63,7 +63,7 @@ pub fn show() {
     let (quot, rem) = div32(0x0800_0000, 512);
     let (_high, cluster) = shr32(0, 0x0010, 3);
     let eof = file_handle_fail(true, 0, HANDLE_FAIL, 0);
-    let (ax, bx, cx) = ms_code::get();
+    let (status, handle, count) = ms_code::get();
     let full = file_handle_fail(true, 0, HANDLE_FAIL, 1);
     let hit = buff_range(7, 0, 0, 7);
     let miss = buff_range(7, 0, 0, 8);
@@ -81,15 +81,15 @@ pub fn show() {
         Err(code) => code,
     });
     crate::bios::mscon::con_write_bytes(b" CL");
-    put_hex8((bx >> 8) as u8);
+    put_hex8((handle >> 8) as u8);
     crate::bios::mscon::con_write_bytes(b" AC");
-    put_hex8(bx as u8);
+    put_hex8(handle as u8);
     crate::bios::mscon::con_write_bytes(b" FULL");
     put_hex16(match full {
         Ok(()) => 0,
         Err(code) => code,
     });
-    let _ = (ax, cx);
+    let _ = (status, count);
     crate::bios::mscon::con_write_bytes(if hit && !miss { b" HIT\r\n" } else { b" MISS\r\n" });
 }
 

@@ -90,17 +90,17 @@ pub fn media_check() -> i16 {
         return 0;
     }
     let flags = disk().bds.flags;
-    let mut si: i16 = 1;
+    let mut source: i16 = 1;
     if flags & FCHANGED_BY_FORMAT != 0 {
         if flags & FNON_REMOVABLE != 0 {
-            si = -1;
+            source = -1;
         } else {
-            si = 0;
+            source = 0;
         }
     } else if flags & FNON_REMOVABLE == 0 {
-        si = 0;
+        source = 0;
     }
-    si
+    source
 }
 
 /// `SETDRIVE`. One BDS, logical drive 0. Carry when the letter is absent.
@@ -125,34 +125,34 @@ pub fn check_single() -> bool {
 
 /// `CHECK_TIME_OF_ACCESS`. SI comes back 1 when little or no time has passed.
 pub fn check_time_of_access(now_hi: u16, now_lo: u16, last_hi: u16, last_lo: u16, accesses: u8) -> (i16, u8) {
-    let mut si: i16 = 1;
+    let mut source: i16 = 1;
     let mut count = accesses;
     let lo_borrow = now_lo < last_lo;
     let elapsed_lo = now_lo.wrapping_sub(last_lo);
     let elapsed_hi = now_hi.wrapping_sub(last_hi).wrapping_sub(u16::from(lo_borrow));
     if elapsed_hi != 0 {
-        si = 0;
+        source = 0;
     } else if elapsed_lo == 0 {
         count = count.saturating_add(1);
         if count >= ACCESS_MAX {
             count = ACCESS_MAX - 1;
-            si = 0;
+            source = 0;
         }
     } else if elapsed_lo > 36 {
-        si = 0;
+        source = 0;
     }
-    (si, count)
+    (source, count)
 }
 
 /// `CHECK_WRAP` for a fixed disk. Sector numbers past the track spill onto
 /// the next head, and past the last head onto the next cylinder.
-pub fn check_wrap(cx: u16, dh: u8, seclim: u16, hdlim: u16) -> (u16, u8) {
+pub fn check_wrap(packed: u16, data_high: u8, seclim: u16, hdlim: u16) -> (u16, u8) {
     if seclim == 0 || hdlim == 0 {
-        return (cx, dh);
+        return (packed, data_high);
     }
-    let sector = cx & 0x3f;
+    let sector = packed & 0x3f;
     if sector <= seclim {
-        return (cx, dh);
+        return (packed, data_high);
     }
     let mut heads = u32::from(sector / seclim);
     let mut new_sector = sector % seclim;
@@ -160,8 +160,8 @@ pub fn check_wrap(cx: u16, dh: u8, seclim: u16, hdlim: u16) -> (u16, u8) {
         new_sector = seclim;
         heads = heads.saturating_sub(1);
     }
-    let mut head = u32::from(dh) + heads;
-    let mut cyl = u32::from((cx >> 8) & 0xff) | u32::from((cx & 0xc0) << 2);
+    let mut head = u32::from(data_high) + heads;
+    let mut cyl = u32::from((packed >> 8) & 0xff) | u32::from((packed & 0xc0) << 2);
     if head > u32::from(hdlim) {
         let wraps = head / u32::from(hdlim);
         head %= u32::from(hdlim);
@@ -174,10 +174,10 @@ pub fn check_wrap(cx: u16, dh: u8, seclim: u16, hdlim: u16) -> (u16, u8) {
             cyl += wraps;
         }
     }
-    let dh = (head as u8).wrapping_sub(1);
-    let ch = (cyl & 0xff) as u8;
-    let cl = ((new_sector as u8) & 0x3f) | (((cyl >> 2) as u8) & 0xc0);
-    (u16::from(ch) << 8 | u16::from(cl), dh)
+    let data_high = (head as u8).wrapping_sub(1);
+    let count_high = (cyl & 0xff) as u8;
+    let count_low = ((new_sector as u8) & 0x3f) | (((cyl >> 2) as u8) & 0xc0);
+    (u16::from(count_high) << 8 | u16::from(count_low), data_high)
 }
 
 /// `READBOOTSEC` sanity check. A short jump plus NOP, and a media byte in
@@ -257,8 +257,8 @@ pub fn set_tim(now_hi: u16, now_lo: u16, last_hi: u16, last_lo: u16) -> (u16, u1
 }
 
 /// `INT_2F_13`. AH=13h replaces the saved INT 13h vector and returns the old one.
-pub fn int2f_13(ah: u8, old: u32, new_handler: u32) -> Option<u32> {
-    if ah == 0x13 {
+pub fn int2f_13(function: u8, old: u32, new_handler: u32) -> Option<u32> {
+    if function == 0x13 {
         let _installed = new_handler;
         Some(old)
     } else {
@@ -268,19 +268,19 @@ pub fn int2f_13(ah: u8, old: u32, new_handler: u32) -> Option<u32> {
 
 /// Reads use the fast settle. A fixed disk always does. A reset (`step_drv`
 /// of -1) forces the slow settle on a write.
-pub fn fast_settle(ah: u8, formfactor: u8, step_drv: i8) -> bool {
+pub fn fast_settle(function: u8, formfactor: u8, step_drv: i8) -> bool {
     if formfactor == FFHARDFILE {
         return true;
     }
     if step_drv == -1 {
         return false;
     }
-    ah == ROMREAD || ah == ROM_VERIFY
+    function == ROMREAD || function == ROM_VERIFY
 }
 
 /// Soft ECC on a verify is ignored once the retry count is exhausted.
-pub fn verify_soft_ecc(ah: u8, retries: u16) -> bool {
-    ah == SOFT_ECC && retries == 0
+pub fn verify_soft_ecc(function: u8, retries: u16) -> bool {
+    function == SOFT_ECC && retries == 0
 }
 
 /// The fixed-disk paths that do not issue INT 13h. False means one of them
@@ -425,14 +425,14 @@ fn block() -> bool {
 }
 
 fn disk_io(count: u16) -> bool {
-    let mut bp = MAXERR;
-    let ah = disk().rflag;
+    let mut base = MAXERR;
+    let function = disk().rflag;
     loop {
-        let failed = fastspeed(ah, count as u8);
+        let failed = fastspeed(function, count as u8);
         if !failed.1 {
             return false;
         }
-        if dskerr(failed.0, &mut bp) {
+        if dskerr(failed.0, &mut base) {
             return true;
         }
     }
@@ -450,42 +450,42 @@ fn fastspeed(ah_cmd: u8, count: u8) -> (u8, bool) {
     int13(ah_cmd, count)
 }
 
-fn dskerr(ah: u8, bp: &mut u16) -> bool {
-    *bp = bp.saturating_sub(1);
-    if *bp == 0 || ah == 0x80 || ah == 0xCC {
-        map_error(ah);
+fn dskerr(function: u8, base: &mut u16) -> bool {
+    *base = base.saturating_sub(1);
+    if *base == 0 || function == 0x80 || function == 0xCC {
+        map_error(function);
         return true;
     }
     false
 }
 
-fn map_error(ah: u8) -> u8 {
+fn map_error(function: u8) -> u8 {
     unsafe {
-        (*core::ptr::addr_of_mut!(DISK)).lsterr = ah;
+        (*core::ptr::addr_of_mut!(DISK)).lsterr = function;
     }
-    let mut al = 12;
+    let mut result = 12;
     for (index, code) in ERRIN.iter().enumerate() {
-        if *code == ah {
-            al = ERROUT[index];
+        if *code == function {
+            result = ERROUT[index];
             break;
         }
     }
-    if !ERRIN.contains(&ah) {
-        al = ERROUT[ERROUT.len() - 1];
+    if !ERRIN.contains(&function) {
+        result = ERROUT[ERROUT.len() - 1];
     }
     unsafe {
-        (*core::ptr::addr_of_mut!(DISK)).lsterr = al;
+        (*core::ptr::addr_of_mut!(DISK)).lsterr = result;
     }
-    al
+    result
 }
 
 fn err_cnt() {
-    let al = disk().lsterr;
-    let cx = disk().seccnt;
+    let result = disk().lsterr;
+    let packed = disk().seccnt;
     let pkt = ptrsav();
     let count = packet_word(COUNT);
-    write_word(pkt, COUNT, count.wrapping_sub(cx));
-    write_status(ERROR_AH | u16::from(al));
+    write_word(pkt, COUNT, count.wrapping_sub(packed));
+    write_status(ERROR_AH | u16::from(result));
 }
 
 fn int13(ah_cmd: u8, count: u8) -> (u8, bool) {

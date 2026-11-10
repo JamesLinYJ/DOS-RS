@@ -86,9 +86,9 @@ fn con_read() {
     let dest = trans_ptr() as *mut u8;
     let mut left = count;
     while left != 0 {
-        let al = chrin();
+        let result = chrin();
         unsafe {
-            dest.add((count - left) as usize).write(al);
+            dest.add((count - left) as usize).write(result);
         }
         left -= 1;
     }
@@ -100,36 +100,36 @@ fn chrin() -> u8 {
         let func = unsafe { (*core::ptr::addr_of!(CON)).keyrd_func };
         let held = unsafe {
             let state = &mut *core::ptr::addr_of_mut!(CON);
-            let al = state.altah;
+            let result = state.altah;
             state.altah = 0;
-            al
+            result
         };
         if held != 0 {
             return held;
         }
-        let (ax, _zf) = int16(func);
-        if ax == 0 {
+        let (status, _zf) = int16(func);
+        if status == 0 {
             continue;
         }
-        if ax == 0x7200 {
+        if status == 0x7200 {
             return 16;
         }
-        let al = ax as u8;
-        let ah = (ax >> 8) as u8;
-        if func != 0 && al == 0xE0 {
-            if ah == 0 {
-                return al;
+        let result = status as u8;
+        let function = (status >> 8) as u8;
+        if func != 0 && result == 0xE0 {
+            if function == 0 {
+                return result;
             }
             unsafe {
-                (*core::ptr::addr_of_mut!(CON)).altah = ah;
+                (*core::ptr::addr_of_mut!(CON)).altah = function;
             }
             return 0;
         }
-        if al != 0 {
-            return al;
+        if result != 0 {
+            return result;
         }
         unsafe {
-            (*core::ptr::addr_of_mut!(CON)).altah = ah;
+            (*core::ptr::addr_of_mut!(CON)).altah = function;
         }
         return 0;
     }
@@ -142,28 +142,28 @@ fn con_rdnd() {
         return;
     }
     let func = unsafe { (*core::ptr::addr_of!(CON)).keysts_func };
-    let (ax, zf) = int16(func);
+    let (status, zf) = int16(func);
     if zf {
         no_char();
         return;
     }
-    if ax == 0 {
+    if status == 0 {
         let read_func = unsafe { (*core::ptr::addr_of!(CON)).keyrd_func };
         let _ = int16(read_func);
         con_rdnd();
         return;
     }
-    if ax == 0x7200 {
+    if status == 0x7200 {
         rd_exit(16);
         return;
     }
-    let mut al = ax as u8;
-    let ah = (ax >> 8) as u8;
+    let mut result = status as u8;
+    let function = (status >> 8) as u8;
     let extended = unsafe { (*core::ptr::addr_of!(CON)).keyrd_func } != 0;
-    if extended && al == 0xE0 && ah != 0 {
-        al = 0;
+    if extended && result == 0xE0 && function != 0 {
+        result = 0;
     }
-    rd_exit(al);
+    rd_exit(result);
 }
 
 fn no_char() {
@@ -180,12 +180,12 @@ fn no_char() {
     bus_exit();
 }
 
-fn rd_exit(al: u8) {
+fn rd_exit(result: u8) {
     let pkt = ptrsav();
     unsafe {
-        *pkt.add(MEDIA) = al;
+        *pkt.add(MEDIA) = result;
     }
-    exit_with(al);
+    exit_with(result);
 }
 
 fn con_flush() {
@@ -213,8 +213,8 @@ fn con_writ() {
     let src = trans_ptr();
     let mut left = count;
     while left != 0 {
-        let al = unsafe { *src.add((count - left) as usize) };
-        int29(al);
+        let result = unsafe { *src.add((count - left) as usize) };
+        int29(result);
         left -= 1;
     }
     exit_ok();
@@ -236,9 +236,9 @@ fn bus_exit() {
     write_word(pkt, STATUS, BUSY_DONE);
 }
 
-fn exit_with(al: u8) {
+fn exit_with(result: u8) {
     let pkt = ptrsav();
-    write_word(pkt, STATUS, DONE | al as u16);
+    write_word(pkt, STATUS, DONE | result as u16);
 }
 
 fn ptrsav() -> *mut u8 {

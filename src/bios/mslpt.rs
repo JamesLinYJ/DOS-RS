@@ -31,8 +31,8 @@ pub fn prn_write_bytes(bytes: &[u8]) -> u16 {
     while index < bytes.len() {
         let mut retries = 2u16;
         loop {
-            let (ah, zf) = prn_op(0, bytes[index]);
-            if zf || ah & TIMEOUT == 0 {
+            let (function, zf) = prn_op(0, bytes[index]);
+            if zf || function & TIMEOUT == 0 {
                 break;
             }
             retries -= 1;
@@ -47,12 +47,12 @@ pub fn prn_write_bytes(bytes: &[u8]) -> u16 {
 
 /// `PRN$STAT`. Not busy returns done. Busy returns the busy-done status.
 pub fn prn_stat() -> u16 {
-    let (ah, zf) = prn_op(2, 0);
+    let (function, zf) = prn_op(2, 0);
     if !zf {
-        let al = if ah & NOPAPER != 0 { 9 } else { 10 };
-        return ERROR_DONE | al;
+        let result = if function & NOPAPER != 0 { 9 } else { 10 };
+        return ERROR_DONE | result;
     }
-    if ah & NOT_BUSY != 0 {
+    if function & NOT_BUSY != 0 {
         DONE
     } else {
         BUSY_DONE
@@ -63,13 +63,13 @@ pub fn prn_stat() -> u16 {
 pub fn prn_tilbusy(bytes: &[u8]) -> u16 {
     let mut done = 0u16;
     for &byte in bytes {
-        let (ah, zf) = prn_op(2, 0);
-        if !zf || ah & NOT_BUSY == 0 {
+        let (function, zf) = prn_op(2, 0);
+        if !zf || function & NOT_BUSY == 0 {
             break;
         }
-        let (ah, zf) = prn_op(0, byte);
+        let (function, zf) = prn_op(0, byte);
         if !zf {
-            let _ = ah;
+            let _ = function;
             break;
         }
         done += 1;
@@ -113,15 +113,15 @@ fn prn_genioctl(packet: *mut u8) {
 }
 
 /// `PRNOP` / `PRNSTAT`. Returns AH and ZF from the status triage.
-fn prn_op(ah_cmd: u8, al: u8) -> (u8, bool) {
+fn prn_op(ah_cmd: u8, result: u8) -> (u8, bool) {
     let _dx = super::msbio1::get_dx();
-    let ah = int17(ah_cmd, al);
-    if ah & IOERR != 0 {
-        let zf = ah & NOPAPER == 0;
-        return (ah, zf);
+    let function = int17(ah_cmd, result);
+    if function & IOERR != 0 {
+        let zf = function & NOPAPER == 0;
+        return (function, zf);
     }
-    let zf = ah & TIMEOUT == 0;
-    (ah, zf)
+    let zf = function & TIMEOUT == 0;
+    (function, zf)
 }
 
 fn int17(command: u8, byte: u8) -> u8 {

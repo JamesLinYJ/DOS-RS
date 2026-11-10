@@ -23,23 +23,23 @@ pub fn disk_info(
     sector_size: u16,
     media: u8,
 ) -> Info {
-    let mut dx = free_cnt as u16;
-    let cx = max_cluster;
-    if free_cnt == -1 || dx >= cx {
-        dx = 0;
-        let mut bx = 2u16;
-        let mut left = cx.wrapping_sub(1);
+    let mut buffer = free_cnt as u16;
+    let count = max_cluster;
+    if free_cnt == -1 || buffer >= count {
+        buffer = 0;
+        let mut handle = 2u16;
+        let mut left = count.wrapping_sub(1);
         while left != 0 {
-            if fat::unpack(fat_bytes, max_cluster, bx) == Some(0) {
-                dx = dx.wrapping_add(1);
+            if fat::unpack(fat_bytes, max_cluster, handle) == Some(0) {
+                buffer = buffer.wrapping_add(1);
             }
-            bx = bx.wrapping_add(1);
+            handle = handle.wrapping_add(1);
             left = left.wrapping_sub(1);
         }
     }
     Info {
-        free: dx,
-        total: cx.wrapping_sub(1),
+        free: buffer,
+        total: count.wrapping_sub(1),
         sector_size,
         sectors_per_cluster: cluster_mask.wrapping_add(1),
         media,

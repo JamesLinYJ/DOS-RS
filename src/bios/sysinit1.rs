@@ -48,13 +48,13 @@ pub fn round_mem(memlo: u16, memhi: u16, alloclim: u16) -> Result<u16, ()> {
     }
 }
 
-pub fn para_round(ax: u16) -> u16 {
-    let sum = u32::from(ax) + 15;
+pub fn para_round(status: u16) -> u16 {
+    let sum = u32::from(status) + 15;
     let carry = u32::from(sum > 0xffff);
-    let mut ax = sum & 0xffff;
-    ax = (ax >> 1) | (carry << 15);
-    ax >>= 1;
-    ax >>= 1;
-    ax >>= 1;
-    ax as u16
+    let mut status = sum & 0xffff;
+    status = (status >> 1) | (carry << 15);
+    status >>= 1;
+    status >>= 1;
+    status >>= 1;
+    status as u16
 }

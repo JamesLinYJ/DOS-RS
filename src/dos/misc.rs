@@ -30,8 +30,8 @@ pub struct Dpb {
 
 /// Build a DPB from a BPB. `ES:BP` drive and unit are left as given.
 pub fn set_dpb(bpb: &[u8], drive: u8, unit: u8) -> Dpb {
-    let mut si = 0usize;
-    let sector_size = word(bpb, &mut si);
+    let mut source = 0usize;
+    let sector_size = word(bpb, &mut source);
     let mut dpb = Dpb {
         drive,
         unit,
@@ -51,49 +51,49 @@ pub fn set_dpb(bpb: &[u8], drive: u8, unit: u8) -> Dpb {
         free_cnt: -1,
     };
     // SI is at sectors per cluster. FAT count is three bytes further.
-    if bpb[si + 3] == 0 {
+    if bpb[source + 3] == 0 {
         dpb.fat_count = 0;
         dpb.max_cluster = sector_size.wrapping_add(1);
         return dpb;
     }
-    let mut dx = sector_size;
-    let mut al = bpb[si];
-    si += 1;
-    al = al.wrapping_sub(1);
-    dpb.cluster_mask = al;
-    al = al.wrapping_add(1);
+    let mut buffer = sector_size;
+    let mut result = bpb[source];
+    source += 1;
+    result = result.wrapping_sub(1);
+    dpb.cluster_mask = result;
+    result = result.wrapping_add(1);
     let mut shift = 0u8;
     let mut guard = 0u8;
-    while al & 1 == 0 && guard < 8 {
+    while result & 1 == 0 && guard < 8 {
         shift = shift.wrapping_add(1);
-        al >>= 1;
+        result >>= 1;
         guard = guard.wrapping_add(1);
     }
     dpb.cluster_shift = shift;
-    dpb.first_fat = word(bpb, &mut si);
-    dpb.fat_count = bpb[si];
-    si += 1;
+    dpb.first_fat = word(bpb, &mut source);
+    dpb.fat_count = bpb[source];
+    source += 1;
     let fats = dpb.fat_count;
-    let mut ax = word(bpb, &mut si);
-    dpb.root_entries = ax;
-    dx >>= 5;
-    ax = ax.wrapping_sub(1).wrapping_add(dx);
-    let per_sector = dx;
-    let dir_sectors = ax.checked_div(per_sector).unwrap_or(0);
-    let disk_size = word(bpb, &mut si);
-    dpb.media = bpb[si];
-    si += 1;
-    dpb.fat_size = word(bpb, &mut si);
-    let mut ax = dpb.fat_size.wrapping_mul(u16::from(fats));
-    ax = ax.wrapping_add(dpb.first_fat);
-    dpb.dir_sector = ax;
-    ax = ax.wrapping_add(dir_sectors);
-    dpb.first_sector = ax;
+    let mut status = word(bpb, &mut source);
+    dpb.root_entries = status;
+    buffer >>= 5;
+    status = status.wrapping_sub(1).wrapping_add(buffer);
+    let per_sector = buffer;
+    let dir_sectors = status.checked_div(per_sector).unwrap_or(0);
+    let disk_size = word(bpb, &mut source);
+    dpb.media = bpb[source];
+    source += 1;
+    dpb.fat_size = word(bpb, &mut source);
+    let mut status = dpb.fat_size.wrapping_mul(u16::from(fats));
+    status = status.wrapping_add(dpb.first_fat);
+    dpb.dir_sector = status;
+    status = status.wrapping_add(dir_sectors);
+    dpb.first_sector = status;
     let clusters = if disk_size != 0 {
-        let ax = dpb.first_sector.wrapping_sub(disk_size).wrapping_neg();
-        ax >> shift
+        let status = dpb.first_sector.wrapping_sub(disk_size).wrapping_neg();
+        status >> shift
     } else {
-        let big = u32::from(word(bpb, &mut si)) | (u32::from(word(bpb, &mut si)) << 16);
+        let big = u32::from(word(bpb, &mut source)) | (u32::from(word(bpb, &mut source)) << 16);
         let mut data = big.wrapping_sub(u32::from(dpb.first_sector));
         let mut n = shift;
         while n > 0 {
@@ -108,8 +108,8 @@ pub fn set_dpb(bpb: &[u8], drive: u8, unit: u8) -> Dpb {
     dpb
 }
 
-fn word(bpb: &[u8], si: &mut usize) -> u16 {
-    let at = *si;
-    *si += 2;
+fn word(bpb: &[u8], source: &mut usize) -> u16 {
+    let at = *source;
+    *source += 2;
     u16::from_le_bytes([bpb[at], bpb[at + 1]])
 }
