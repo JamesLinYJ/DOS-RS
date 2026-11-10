@@ -1,6 +1,6 @@
 # Load COMMAND.COM
 
-After the unrecognized CONFIG line, INT 21h AH=4Bh AL=0 loads `COMMAND.COM` from the floppy image. The payload begins with `\COMMAND.COM`. The serial line shows `CMDOK`. The missing-interpreter line still follows.
+After the unrecognized CONFIG line, INT 21h AH=4Bh AL=0 loads `COMMAND.COM` from the floppy image. The payload begins with `\COMMAND.COM`. The serial line shows `CMDOK` and `COMSPEC=\COMMAND.COM`. A successful load does not print `Bad or missing Command Interpreter`.
 
 ## Sub-features
 
@@ -18,8 +18,8 @@ Preconditions:
 - `scripts/qemu-smoke.sh doctor` prints `doctor ok`.
 - Both release kernels exist from this run's build.
 
-- **Load the shell.** Run `PROOF_DIR=.cursor/skills/verify-dos4-rs/proof scripts/qemu-smoke.sh`. Each target prints `CMDOK` and still prints `Bad or missing Command Interpreter`. The script's process status is 0.
-- **Proof.** The proof transcripts contain `CMDOK` before that interpreter line.
+- **Load the shell.** Run `PROOF_DIR=.cursor/skills/verify-dos4-rs/proof scripts/qemu-smoke.sh`. Each target prints `CMDOK` and `COMSPEC=\COMMAND.COM`. The transcript does not contain `Bad or missing Command Interpreter`. The script's process status is 0.
+- **Proof.** The proof transcripts contain `CMDOK` and do not contain the missing-interpreter sentence.
 
 ## Gotchas
 

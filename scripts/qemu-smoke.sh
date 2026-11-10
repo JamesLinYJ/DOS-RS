@@ -183,8 +183,8 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "Bad or missing Command Interpreter" "$out"; then
-		echo "$name missing SYSINIT line" >&2
+	if grep -q "Bad or missing Command Interpreter" "$out"; then
+		echo "$name printed the missing interpreter after a successful load" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1

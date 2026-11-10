@@ -125,8 +125,10 @@ fn boot(gate: usize) -> ! {
                 puts("\n");
             }
         }
+    } else {
+        // EXEC returned carry. `COMERR` is only that path.
+        bios::sysinit1::com_err();
     }
-    bios::sysinit1::com_err();
     debug_exit()
 }
 
