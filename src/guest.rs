@@ -6,6 +6,7 @@
 
 pub mod alu;
 pub mod memory;
+pub mod mz;
 pub mod run;
 pub mod state;
 pub mod step;

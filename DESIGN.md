@@ -119,3 +119,7 @@ Taken from [Compat16](https://github.com/JamesLinYJ/Compat16), read-only, and no
 Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and the Windows host. Those need `std` and do not fit this `no_std` image. Operand reads that cross offset `0xFFFF` wrap inside the segment. Compat16 adds the 16-bit offset once and then reads a linear word, which steps into the next paragraph. Programs in the guest image do not rely on that boundary.
 
 `disks/guest12.img` is a FAT12 volume. The directory entry `HELLO   COM` is cluster 2. The loader copies those bytes to offset `0x100` in a program segment prefix and runs them. The program adds 6 to the letter A, prints that byte, then prints the rest of the line. The serial check is `GUEST HELLO COM`.
+
+`HELLO   EXE` is cluster 3. The loader places the image 16 paragraphs above the prefix and adds that load segment to each relocation word. The program then copies the fixed word into the data selector and prints `HELLO EXE`.
+
+`RUN.COM` opens `DATA.TXT`, reads one byte, writes it after `FILE `, then loads `CHILD.COM` with function `4Bh`. The child stops with function `4Ch` and code `7`. The parent reads that code with function `4Dh` and prints `FILE Z EXEC 7`. Handles, the saved return code, and the child register file are owned by the guest session. The parent register file is left in place.

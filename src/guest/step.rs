@@ -39,6 +39,8 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     }
     match opcode {
         0x80 => add_immediate(cpu, ram, override_segment, opcode),
+        0x8A | 0x8B => move_from_operand(cpu, ram, override_segment, opcode),
+        0x8E => move_into_segment(cpu, ram, override_segment, opcode),
         0xB0..=0xB7 => move_byte_immediate(cpu, ram, opcode),
         0xB8..=0xBF => move_word_immediate(cpu, ram, opcode),
         0xCD => software_interrupt(cpu, ram, opcode),
@@ -73,6 +75,61 @@ fn add_immediate(
         return Outcome::Fault(opcode);
     }
     cpu.apply_result_flags(flags);
+    Outcome::Continue
+}
+
+fn move_from_operand(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
+    let wide = opcode & 1 == 1;
+    let Some(modrm) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
+        return Outcome::Fault(opcode);
+    };
+    let dest = (modrm >> 3) & 7;
+    if wide {
+        let Some(value) = read_word(cpu, ram, &operand) else {
+            return Outcome::Fault(opcode);
+        };
+        cpu.set_wide(Slot::from_index(dest), value);
+    } else {
+        let Some(value) = read_byte(cpu, ram, &operand) else {
+            return Outcome::Fault(opcode);
+        };
+        let (slot, high) = byte_half(dest);
+        if high {
+            cpu.set_high(slot, value);
+        } else {
+            cpu.set_low(slot, value);
+        }
+    }
+    Outcome::Continue
+}
+
+fn move_into_segment(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
+    let Some(modrm) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(value) = read_word(cpu, ram, &operand) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(which) = Segment::from_index((modrm >> 3) & 7) else {
+        return Outcome::Fault(opcode);
+    };
+    cpu.set_selector(which, value);
     Outcome::Continue
 }
 
@@ -173,6 +230,17 @@ fn address(cpu: &CpuState, rm: u8, displacement: u16) -> (Segment, u16) {
         5 => (Segment::Data, cpu.wide(Slot::Dest).wrapping_add(displacement)),
         6 => (Segment::Stack, cpu.wide(Slot::Frame).wrapping_add(displacement)),
         _ => (Segment::Data, cpu.wide(Slot::Base).wrapping_add(displacement)),
+    }
+}
+
+fn read_word(cpu: &CpuState, ram: &GuestRam, operand: &Operand) -> Option<u16> {
+    match *operand {
+        Operand::Register(index) => Some(cpu.wide(Slot::from_index(index))),
+        Operand::Memory { segment, offset } => {
+            let low = ram.load(cpu.selector(segment), offset)?;
+            let high = ram.load(cpu.selector(segment), offset.wrapping_add(1))?;
+            Some(u16::from_le_bytes([low, high]))
+        }
     }
 }
 

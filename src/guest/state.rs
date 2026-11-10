@@ -56,6 +56,16 @@ pub enum Segment {
 }
 
 impl Segment {
+    pub fn from_index(index: u8) -> Option<Self> {
+        match index & 7 {
+            0 => Some(Self::Extra),
+            1 => Some(Self::Code),
+            2 => Some(Self::Stack),
+            3 => Some(Self::Data),
+            _ => None,
+        }
+    }
+
     fn index(self) -> usize {
         match self {
             Self::Extra => 0,
@@ -86,7 +96,7 @@ impl CpuState {
         state.set_selector(Segment::Code, segment);
         state.set_selector(Segment::Stack, segment);
         state.set_selector(Segment::Data, segment);
-        state.set_wide(Slot::Stack, 0xFFFE);
+        state.set_wide(Slot::Stack, 0x0400);
         state
     }
 
@@ -130,6 +140,14 @@ impl CpuState {
 
     pub fn set_instruction(&mut self, value: u16) {
         self.instruction = value;
+    }
+
+    pub fn set_carry(&mut self, carry: bool) {
+        if carry {
+            self.flags |= 1;
+        } else {
+            self.flags &= !1;
+        }
     }
 
     pub fn apply_result_flags(&mut self, computed: u16) {
