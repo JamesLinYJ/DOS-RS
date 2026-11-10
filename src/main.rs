@@ -351,6 +351,10 @@ fn boot(gate: usize) -> ! {
         cmd::command::copy::show();
         cmd::command::copypr1::show();
         cmd::command::copypr2::show();
+        // Token scan: a return ends the line, and stars become question marks.
+        cmd::command::cparse::show();
+        cmd::command::fordata::show();
+        cmd::command::ifequ::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -867,6 +867,24 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CPARSE F I00 S0000 C00 L03 R I00 S0000 C01 L00 P I80 S0000 C00 L01 V I01 S8010 C00 L01 Q I01 SC000 C00 L01 E I01 SC000 C01 L00 S I02 S0000 C00 L07 A I02 S0000 C00 L07 D I02 S0000 C00 L03" "$out"; then
+		echo "$name missing command parser" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "FORDATA AR0544 FR064C" "$out"; then
+		echo "$name missing FOR workspace" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "IFEQU IB01 IB00" "$out"; then
+		echo "$name missing IF switches" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
