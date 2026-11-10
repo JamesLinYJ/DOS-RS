@@ -1278,7 +1278,8 @@ run_one() {
 		|| ! grep -q "\$M_NUM_CLS  EQU 1" "$out" \
 		|| ! grep -q "conv.exe => conv.com \[OK\]" "$out" \
 		|| ! grep -q "CMD DIR CONV.COM" "$out" \
-		|| ! grep -q "Converted" "$out"; then
+		|| ! grep -q "Converted" "$out" \
+		|| ! grep -q "exec: EXITCODE.COM returned 3" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
