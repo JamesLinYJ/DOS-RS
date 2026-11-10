@@ -74,3 +74,4 @@ Batch file missing
 Label not found
 forok
 FCB FOO.COM 0010 SR00 NXFF AL03
+FAT12 0004 EOF REL EOF FAT16 0003 EOF REL EOF

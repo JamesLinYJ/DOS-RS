@@ -399,6 +399,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "FAT12 0004 EOF REL EOF FAT16 0003 EOF REL EOF" "$out"; then
+		echo "$name missing FAT chain" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

@@ -205,6 +205,8 @@ fn boot(gate: usize) -> ! {
         // FCB open of FOO.COM after the rename. The line is the file length
         // and the sequential-read return.
         dos::fcb::show();
+        // Extend cluster 3 on the FAT12 image, then the same step on a FAT16 table.
+        dos::rom::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
