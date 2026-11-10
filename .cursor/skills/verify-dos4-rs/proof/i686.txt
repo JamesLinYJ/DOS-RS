@@ -337,6 +337,13 @@ CMD DIR LARGE.OBJ
 CMD TYPE Ä	LARGE.CîàMS Cnà	üSLIBCEàù0sO„à°CV7ñ.DGROUP_TEXTCODE_DATADATACONST_BSSBSS?òHıòHòH
 òH	öˇˇˇVú@E¿å1
 __acrtused__chkstk_largeok_printf_mainÑê_largeok_mainà¢—†
+Creating .C files for MENU.MNU using USAMS.MSG file of messages. 
+
+All four files have been opened for menu creation.
+CMD DIR MENUM.C
+CMD TYPE /* menu-ok */
+int menu(void) { return 1; }
+
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK

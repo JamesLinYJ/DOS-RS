@@ -1269,7 +1269,10 @@ run_one() {
 		|| ! grep -q "Microsoft (R) C Optimizing Compiler Version 5.10" "$out" \
 		|| ! grep -q "CMD DIR LARGE.OBJ" "$out" \
 		|| ! grep -q "_largeok" "$out" \
-		|| grep -q "D4005" "$out"; then
+		|| grep -q "D4005" "$out" \
+		|| ! grep -q "All four files have been opened for menu creation." "$out" \
+		|| ! grep -q "CMD DIR MENUM.C" "$out" \
+		|| ! grep -q "menu-ok" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

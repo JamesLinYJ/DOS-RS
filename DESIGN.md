@@ -182,4 +182,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `CL.EXE` still prints `usage: cl [ option... ] filename... [ -link linkoption... ]` when the tail is empty. A nested program load can hold the compiler passes, and the child's environment pointer keeps `MSC_CMD_FLAGS`. The shell deletes `LARGE.OBJ` and runs `CL.EXE -c LARGE.C`. CL starts C1, C2, and C3. The banner is `Microsoft (R) C Optimizing Compiler Version 5.10`, the new object is `CMD DIR LARGE.OBJ`, and the object names `_largeok`.
 
+`MENUBLD.EXE` still prints `Couldn't open  menu creation files.` when the tail is empty. The shell then runs `MENUBLD.EXE MENU.MNU USAMS.MSG`. It reads the menu, the message file, and `USAMS.IDX`, and writes `MENUM.C`. The line is `All four files have been opened for menu creation.`, the directory line is `CMD DIR MENUM.C`, and the file contains `menu-ok`.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.
