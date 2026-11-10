@@ -63,6 +63,53 @@ pub fn dir_cmd(tail: &[u8]) {
     }
 }
 
+pub fn copy_cmd(tail: &[u8]) {
+    let src = token(tail);
+    let rest = skip_token(tail);
+    let dst = token(rest);
+    if src.is_empty() || dst.is_empty() || !blank(skip_token(rest)) {
+        con_write_bytes(b"File not found\r\n");
+        return;
+    }
+    let (Some(from), Some(to)) = (pack_name(src), pack_name(dst)) else {
+        con_write_bytes(b"File not found\r\n");
+        return;
+    };
+    if from.eq_ignore_ascii_case(&to) {
+        con_write_bytes(b"File cannot be copied onto itself\r\n");
+        return;
+    }
+    ensure();
+    let mut found = false;
+    let mut index = 0usize;
+    while index < 16 {
+        if unsafe { ROOT[index].live && ROOT[index].name.eq_ignore_ascii_case(&from) } {
+            found = true;
+        }
+        if unsafe { ROOT[index].live && ROOT[index].name.eq_ignore_ascii_case(&to) } {
+            con_write_bytes(b"File cannot be copied onto itself\r\n");
+            return;
+        }
+        index += 1;
+    }
+    if !found {
+        con_write_bytes(b"File not found\r\n");
+        return;
+    }
+    index = 0;
+    while index < 16 {
+        if unsafe { !ROOT[index].live } {
+            unsafe {
+                ROOT[index].name = to;
+                ROOT[index].live = true;
+            }
+            return;
+        }
+        index += 1;
+    }
+    con_write_bytes(b"File creation error\r\n");
+}
+
 pub fn rename_cmd(tail: &[u8]) {
     let src = token(tail);
     let rest = skip_token(tail);

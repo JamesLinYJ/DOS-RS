@@ -177,6 +177,9 @@ fn boot(gate: usize) -> ! {
         // REN changes COMMAND.COM to FOO.COM. The next DIR shows the new name.
         let _ren = cmd::command::tmisc1::dispatch(b"REN COMMAND.COM FOO.COM\r");
         let _renamed = cmd::command::tmisc1::dispatch(b"DIR\r");
+        // COPY adds BAR.COM. The next DIR lists it.
+        let _copy = cmd::command::tmisc1::dispatch(b"COPY FOO.COM BAR.COM\r");
+        let _copied = cmd::command::tmisc1::dispatch(b"DIR\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

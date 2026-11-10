@@ -54,3 +54,6 @@ Directory of  A:\
 COMMAND  COM
 Directory of  A:\
 FOO      COM
+Directory of  A:\
+BAR      COM
+FOO      COM
