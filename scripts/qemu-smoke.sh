@@ -1095,6 +1095,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBUASM LN0020 R0004 Z0000 R0001 Z0000 IX0240 W00 IX0004 W01 C20 E20 Z00 F0032 S0023 P000E P000C P0000 PFFFE D04 S03 C02 E01 N03 T09 N00 T09" "$out"; then
+		echo "$name missing unassembler" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

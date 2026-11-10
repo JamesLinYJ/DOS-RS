@@ -424,6 +424,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::deberr::show();
         // A failed load is displayed and the carry is kept.
         cmd::debug::debmes::show();
+        // The default length is the dump size shifted right twice.
+        cmd::debug::debuasm::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

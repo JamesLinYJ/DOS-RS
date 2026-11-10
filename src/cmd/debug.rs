@@ -10,3 +10,4 @@ pub mod debems;
 pub mod debequ;
 pub mod deberr;
 pub mod debmes;
+pub mod debuasm;
