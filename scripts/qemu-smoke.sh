@@ -741,6 +741,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "STRIN Z00 Hi L02 C03 BS01 CU00 CA01 BEL01 F6AB CAN01 W17 CPX CPLXY INS1 ESC1B CZ1A SKY TAB06" "$out"; then
+		echo "$name missing string input" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

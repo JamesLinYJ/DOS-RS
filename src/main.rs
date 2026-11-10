@@ -315,6 +315,8 @@ fn boot(gate: usize) -> ! {
         dos::stddata::show();
         // Standard switches: alternate vectors off, IBM cancel is Escape.
         dos::stdsw::show();
+        // Line editor: Ctrl-F is skipped, and escape copies from the template.
+        dos::strin::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
