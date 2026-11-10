@@ -71,6 +71,7 @@ fn boot(gate: usize) -> ! {
         put_hex16(bytes);
         puts("\n");
     }
+    let _messages = bios::sysimes::catalog_bytes();
     bios::sysinit1::com_err();
     let sent = bios::mslpt::prn_tilbusy(b".");
     puts("PRNT");
