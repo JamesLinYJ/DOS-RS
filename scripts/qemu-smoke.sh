@@ -651,6 +651,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "STDCODE IBM0000 MAP0202 MAP0606 DRV00 OK DRVFF BAD" "$out"; then
+		echo "$name missing standard disk" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

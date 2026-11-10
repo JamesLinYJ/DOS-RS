@@ -285,6 +285,8 @@ fn boot(gate: usize) -> ! {
         dos::stddisp::show();
         // Standard Ctrl-C: Ctrl-N turns the printer off, Ctrl-C breaks.
         dos::stdctrlc::show();
+        // Standard absolute disk calls leave the BIOS status untranslated.
+        dos::stdcode::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

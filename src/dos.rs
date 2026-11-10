@@ -59,4 +59,5 @@ pub mod stdioctl;
 pub mod stdproc;
 pub mod stddisp;
 pub mod stdctrlc;
+pub mod stdcode;
 pub mod stdtable;
