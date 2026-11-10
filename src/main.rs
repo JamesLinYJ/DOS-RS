@@ -442,6 +442,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcomp::dcompsm::show();
         // A volume serial is ignored only for media F0h with signature 28h or 29h.
         cmd::diskcomp::diskcomp::show();
+        // Copy fills twelve lists and does not patch a 386.
+        cmd::diskcopy::copyinit::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

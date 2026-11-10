@@ -1149,6 +1149,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COPYINIT SL0C S01 T01 L4141 S02 T02 L4242 S01 T01 L4141 S01 T02 L4142 ST0005 STFFFF STFFFF ST0006 ST0005 STFFFF LT00 ST0006 LT42 STFFFF LT41 ST0005 ST0005 ST0005 STFFFF ST0005 ST0005 STFFFF ST0010 ST0010 STFFFF CT01 T01 CT01 T01 CT02 T02 BF2060 BEA000 CB2523" "$out"; then
+		echo "$name missing copy init" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
