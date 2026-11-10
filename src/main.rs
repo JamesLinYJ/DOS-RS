@@ -339,6 +339,8 @@ fn boot(gate: usize) -> ! {
         dos::mshalo::show();
         // Init walks the fake-version list and stops the device chain at the clock.
         dos::msinit::show();
+        // Allowed errors per call. The dispatch vectors stay where they are.
+        dos::ms_table::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -813,6 +813,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MSTAB VR0004 MAP3D02 3D05 3B02 3B03 0163 3E06 4F12 6C50 BN0000 BN001F BN00440A BN00450D FO0002 NS0002 NM000B SP04 SCFF SQFFFFFFFF TG0000 SV0000" "$out"; then
+		echo "$name missing DOS call tables" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

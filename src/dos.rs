@@ -60,6 +60,7 @@ pub mod ms_code;
 pub mod msconst;
 pub mod mshalo;
 pub mod msinit;
+pub mod ms_table;
 pub mod nstdos;
 pub mod open;
 pub mod parse;
