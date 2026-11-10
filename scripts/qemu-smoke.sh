@@ -147,6 +147,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "SYN0030" "$out"; then
+		echo "$name missing SYSINIT number" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PAR0002" "$out"; then
+		echo "$name missing paragraph round" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "Bad or missing Command Interpreter" "$out"; then
 		echo "$name missing SYSINIT line" >&2
 		cat "$out" >&2

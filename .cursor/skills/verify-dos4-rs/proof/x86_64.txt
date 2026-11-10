@@ -15,5 +15,7 @@ PRNR0050
 PRNT0001
 LOADOK
 LOAD0200
+SYN0030
+PAR0002
 
 Bad or missing Command Interpreter

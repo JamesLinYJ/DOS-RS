@@ -82,6 +82,14 @@ fn boot(gate: usize) -> ! {
         puts("\n");
     }
     let _messages = bios::sysimes::catalog_bytes();
+    if let Ok(number) = bios::sysinit2::get_num(b"48") {
+        puts("SYN");
+        put_hex16(number);
+        puts("\n");
+    }
+    puts("PAR");
+    put_hex16(bios::sysinit1::para_round(17));
+    puts("\n");
     bios::sysinit1::com_err();
     debug_exit()
 }

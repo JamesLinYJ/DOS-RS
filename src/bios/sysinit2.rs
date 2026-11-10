@@ -7,6 +7,52 @@
 
 use super::sysimes;
 
+/// `DELIM`. `/` and NUL are delimiters, and so are space, tab, `=`, comma,
+/// and semicolon.
+pub fn delim(al: u8) -> bool {
+    al == b'/' || al == 0 || al == b' ' || al == b'\t' || al == b'=' || al == b',' || al == b';'
+}
+
+/// `GETNUM`. A decimal run is returned in AX. A non-digit at the start, or a
+/// total that does not fit in 16 bits, is an error.
+pub fn get_num(text: &[u8]) -> Result<u16, ()> {
+    if text.is_empty() {
+        return Err(());
+    }
+    let mut total: u16 = 0;
+    let mut index = 0usize;
+    loop {
+        let al = text[index];
+        let digit = to_digit(al)?;
+        let product = u32::from(total) * 10 + u32::from(digit);
+        if product > 0xffff {
+            return Err(());
+        }
+        total = product as u16;
+        index += 1;
+        if index >= text.len() {
+            break;
+        }
+        let next = text[index];
+        if next == b'\n' || next == b'\r' || (delim(next) && next != b'=' && next != b';') {
+            break;
+        }
+    }
+    Ok(total)
+}
+
+fn to_digit(al: u8) -> Result<u8, ()> {
+    if al < b'0' {
+        return Err(());
+    }
+    let digit = al - b'0';
+    if digit > 9 {
+        Err(())
+    } else {
+        Ok(digit)
+    }
+}
+
 pub fn badfil(name: &[u8]) {
     print_dollar(sysimes::BADLD_PRE);
     let mut index = 0;
