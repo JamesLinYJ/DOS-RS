@@ -22,6 +22,7 @@ pub mod fat;
 pub mod file;
 pub mod getset;
 pub mod dev;
+pub mod dir;
 pub mod dinfo;
 pub mod disk;
 pub mod handle;

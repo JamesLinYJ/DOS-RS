@@ -91,6 +91,19 @@ pub(crate) fn cwd_is_root() -> bool {
     unsafe { CWD_LEN == 3 }
 }
 
+pub(crate) fn for_live(mut visit: impl FnMut([u8; 11])) {
+    ensure();
+    unsafe {
+        let mut index = 0usize;
+        while index < SLOTS {
+            if ROOT[index].live {
+                visit(ROOT[index].name);
+            }
+            index += 1;
+        }
+    }
+}
+
 pub(crate) fn slot(index: usize) -> Ent {
     unsafe { ROOT[index] }
 }

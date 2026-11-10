@@ -213,6 +213,8 @@ fn boot(gate: usize) -> ! {
         dos::fat::media_show();
         // Drive parameter block, buffer cache, and the sector read under it.
         dos::buf::show();
+        // `MetaCompare` from DIR.ASM against the live root.
+        dos::dir::show();
         // IOCTL on a closed handle, removable media, and the path checks.
         dos::ioctl::show();
         // Exec rejects AL=2, misses a name, and loads COMMAND.COM as a COM file.
