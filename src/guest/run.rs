@@ -28,6 +28,24 @@ pub fn show() {
     super::disk::boot();
     show_image(b"DOSCALL COM", WIDE_SEGMENT, false, 8192);
     show_image(b"BIOSCALLCOM", WIDE_SEGMENT, false, 8192);
+    super::disk::boot();
+    show_image(b"COMPRESSCOM", WIDE_SEGMENT, false, 20000);
+    show_saved();
+}
+
+fn show_saved() {
+    let mut body = [0u8; 32];
+    let Some(length) = super::disk::read_file(b"SELECT  DAT", &mut body) else {
+        crate::bios::mscon::con_write_bytes(b"COMPRESS MISS\r\n");
+        return;
+    };
+    crate::bios::mscon::con_write_bytes(b"COMPRESS ");
+    let mut index = 0usize;
+    while index < length {
+        put_hex8(body[index]);
+        index += 1;
+    }
+    crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
 fn show_shell() {
@@ -58,7 +76,7 @@ fn show_shell() {
 }
 
 fn show_image(name: &[u8; 11], segment: u16, executable: bool, limit: u16) {
-    let mut image = [0u8; 1024];
+    let mut image = [0u8; 4096];
     let Some(length) = volume::read_named(volume::IMAGE, name, &mut image) else {
         crate::bios::mscon::con_write_bytes(b"GUEST MISSING\r\n");
         return;
@@ -117,6 +135,7 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
                 Action::Continue => {}
                 Action::Exit(code) => return End::Stopped(code),
             },
+            Outcome::Interrupt(0x03) => {}
             Outcome::Interrupt(0x20) | Outcome::Halt => return End::Stopped(0),
             Outcome::Fault(opcode) => return End::Fault(opcode),
             Outcome::Interrupt(vector) => {
@@ -138,6 +157,8 @@ struct Opened {
     bytes: [u8; 512],
     len: usize,
     pos: usize,
+    name: [u8; 11],
+    named: bool,
 }
 
 pub(super) struct Session {
@@ -191,7 +212,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x40 => {
-            write_console(cpu, ram);
+            write_output(cpu, ram, session);
             Action::Continue
         }
         0x4B => {
@@ -263,7 +284,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x3C => {
-            cpu.set_carry(!named(cpu, ram, |name| super::disk::write_file(name, b"")));
+            create_file(cpu, ram, session);
             Action::Continue
         }
         0x41 => {
@@ -346,6 +367,8 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
                 bytes: file,
                 len: length,
                 pos: 0,
+                name,
+                named: true,
             });
             cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
             cpu.set_carry(false);
@@ -395,6 +418,88 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     }
     cpu.set_wide(Slot::Accumulator, moved);
     cpu.set_carry(false);
+}
+
+fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
+    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+        cpu.set_carry(true);
+        return;
+    };
+    if !super::disk::write_file(&name, b"") {
+        cpu.set_carry(true);
+        return;
+    }
+    let Some(slot) = free_handle(session) else {
+        cpu.set_wide(Slot::Accumulator, 4);
+        cpu.set_carry(true);
+        return;
+    };
+    session.opens[slot] = Some(Opened {
+        bytes: [0; 512],
+        len: 0,
+        pos: 0,
+        name,
+        named: true,
+    });
+    cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
+    cpu.set_carry(false);
+}
+
+fn free_handle(session: &Session) -> Option<usize> {
+    let mut slot = 0usize;
+    while slot < session.opens.len() {
+        if session.opens[slot].is_none() {
+            return Some(slot);
+        }
+        slot += 1;
+    }
+    None
+}
+
+fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
+    if cpu.wide(Slot::Base) == 1 {
+        write_console(cpu, ram);
+        return;
+    }
+    let handle = cpu.wide(Slot::Base);
+    if handle < 3 {
+        cpu.set_carry(true);
+        return;
+    }
+    let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
+        cpu.set_carry(true);
+        return;
+    };
+    if !opened.named {
+        cpu.set_carry(true);
+        return;
+    }
+    let count = cpu.wide(Slot::Count);
+    let segment = cpu.selector(Segment::Data);
+    let mut offset = cpu.wide(Slot::Data);
+    let mut seen = 0u16;
+    while seen < count {
+        if opened.pos >= opened.bytes.len() {
+            break;
+        }
+        let Some(byte) = ram.load(segment, offset) else {
+            break;
+        };
+        opened.bytes[opened.pos] = byte;
+        opened.pos += 1;
+        if opened.pos > opened.len {
+            opened.len = opened.pos;
+        }
+        offset = offset.wrapping_add(1);
+        seen += 1;
+    }
+    let stored = super::disk::write_file(&opened.name, &opened.bytes[..opened.len]);
+    if stored {
+        cpu.set_wide(Slot::Accumulator, seen);
+        cpu.set_carry(false);
+    } else {
+        cpu.set_carry(true);
+    }
 }
 
 fn write_console(cpu: &mut CpuState, ram: &GuestRam) {

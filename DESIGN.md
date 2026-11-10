@@ -123,3 +123,5 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 `HELLO   EXE` is cluster 3. The loader places the image 16 paragraphs above the prefix and adds that load segment to each relocation word. The program then copies the fixed word into the data selector and prints `HELLO EXE`.
 
 `RUN.COM` opens `DATA.TXT`, reads one byte, writes it after `FILE `, then loads `CHILD.COM` with function `4Bh`. The child stops with function `4Ch` and code `7`. The parent reads that code with function `4Dh` and prints `FILE Z EXEC 7`. Handles, the saved return code, and the child register file are owned by the guest session. The parent register file is left in place.
+
+`COMPRESS.COM` is the SELECT panel compressor from Microsoft MS-DOS 4.0, file `v4.0/src/TOOLS/COMPRESS.COM` in the [MIT-licensed](https://github.com/microsoft/MS-DOS/blob/main/LICENSE) `microsoft/MS-DOS` tree (Copyright (c) Microsoft Corporation). The guest image also carries `SEL-PAN.DAT`, five letter A bytes. The program opens that file, writes `SELECT.DAT`, and the kernel prints `COMPRESS FF0541`.
