@@ -1215,6 +1215,27 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CMD VER 4.00" "$out" \
+		|| ! grep -q "CMD ECHO hello" "$out" \
+		|| ! grep -q "CMD DIR HELLO.COM" "$out" \
+		|| ! grep -q "CMD TYPE Z" "$out" \
+		|| ! grep -q "CMD COPY OK" "$out" \
+		|| ! grep -q "CMD DEL OK" "$out" \
+		|| ! grep -q "CMD REN OK" "$out" \
+		|| ! grep -q "CMD MD OK" "$out" \
+		|| ! grep -q "CMD CD OK" "$out" \
+		|| ! grep -q "CMD RD OK" "$out" \
+		|| ! grep -q "CMD SET OK" "$out" \
+		|| ! grep -q "CMD ECHO BATCH" "$out" \
+		|| ! grep -q "CMD ECHO FROM BATCH" "$out" \
+		|| ! grep -q "EXT COM" "$out" \
+		|| ! grep -q "EXT EXE" "$out" \
+		|| ! grep -q "CMD ERRORLEVEL 3" "$out"; then
+		echo "$name missing command built-ins" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

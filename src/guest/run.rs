@@ -13,11 +13,41 @@ const COM_SEGMENT: u16 = 0x0100;
 const EXE_PREFIX: u16 = 0x0300;
 const RUN_SEGMENT: u16 = 0x0500;
 const CHILD_SEGMENT: u16 = 0x0700;
+const SHELL_SEGMENT: u16 = 0x0900;
+const SHELL_CHILD: u16 = 0x0B00;
 
 pub fn show() {
     show_image(b"HELLO   COM", COM_SEGMENT, false);
     show_image(b"HELLO   EXE", EXE_PREFIX, true);
     show_image(b"RUN     COM", RUN_SEGMENT, false);
+    show_shell();
+}
+
+fn show_shell() {
+    super::disk::boot();
+    super::command::reset();
+    let mut image = [0u8; 512];
+    let Some(length) = volume::read_named(volume::IMAGE, b"COMMAND COM", &mut image) else {
+        crate::bios::mscon::con_write_bytes(b"CMD MISSING\r\n");
+        return;
+    };
+    let ram = memory::storage();
+    ram.clear();
+    let mut session = Session::new();
+    let Some(mut cpu) = place(&image[..length], ram, SHELL_SEGMENT, false) else {
+        crate::bios::mscon::con_write_bytes(b"CMD FAULT\r\n");
+        return;
+    };
+    match drive(&mut cpu, ram, &mut session, 20000) {
+        End::Stopped(_) => {}
+        End::Fault(opcode) => {
+            crate::bios::mscon::con_write_bytes(b"CMD FAULT ");
+            put_hex8(opcode);
+            crate::bios::mscon::con_write_bytes(b"\r\n");
+        }
+        End::Other => crate::bios::mscon::con_write_bytes(b"CMD INT\r\n"),
+        End::Loop => crate::bios::mscon::con_write_bytes(b"CMD LOOP\r\n"),
+    }
 }
 
 fn show_image(name: &[u8; 11], segment: u16, executable: bool) {
@@ -75,6 +105,7 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
         steps += 1;
         match step::step(cpu, ram) {
             Outcome::Continue => {}
+            Outcome::Interrupt(0x2E) => super::command::invoke(cpu, ram, session),
             Outcome::Interrupt(0x21) => match service(cpu, ram, session) {
                 Action::Continue => {}
                 Action::Exit(code) => return End::Stopped(code),
@@ -93,12 +124,12 @@ enum Action {
 }
 
 struct Opened {
-    bytes: [u8; 128],
+    bytes: [u8; 512],
     len: usize,
     pos: usize,
 }
 
-struct Session {
+pub(super) struct Session {
     opens: [Option<Opened>; 4],
     last_code: u16,
 }
@@ -142,6 +173,11 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             launch(cpu, ram, session);
             Action::Continue
         }
+        0x30 => {
+            cpu.set_wide(Slot::Accumulator, 0x0004);
+            cpu.set_carry(false);
+            Action::Continue
+        }
         0x4C => Action::Exit(cpu.low(Slot::Accumulator)),
         0x4D => {
             cpu.set_wide(Slot::Accumulator, session.last_code);
@@ -162,7 +198,7 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         cpu.set_carry(true);
         return;
     };
-    let mut file = [0u8; 128];
+    let mut file = [0u8; 512];
     let Some(length) = volume::read_named(volume::IMAGE, &name, &mut file) else {
         cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
@@ -285,6 +321,28 @@ fn place_child(image: &[u8], ram: &mut GuestRam, executable: bool) -> Option<Cpu
         super::mz::load(image, ram, CHILD_SEGMENT)
     } else {
         place_com(image, ram, CHILD_SEGMENT)
+    }
+}
+
+pub(super) fn spawn(image: &[u8], ram: &mut GuestRam, session: &mut Session) -> u8 {
+    let mut offset = 0u16;
+    while offset < 0x0800 {
+        if !ram.store(SHELL_CHILD, offset, 0) {
+            return 0xFF;
+        }
+        offset = offset.wrapping_add(1);
+    }
+    let executable = image.first() == Some(&b'M') && image.get(1) == Some(&b'Z');
+    let Some(mut cpu) = (if executable {
+        super::mz::load(image, ram, SHELL_CHILD)
+    } else {
+        place_com(image, ram, SHELL_CHILD)
+    }) else {
+        return 0xFF;
+    };
+    match drive(&mut cpu, ram, session, 400) {
+        End::Stopped(code) => code,
+        _ => 0xFF,
     }
 }
 

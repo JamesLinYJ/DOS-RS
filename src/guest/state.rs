@@ -134,6 +134,10 @@ impl CpuState {
         self.selectors[which.index()] = value;
     }
 
+    pub fn flags(&self) -> u16 {
+        self.flags
+    }
+
     pub fn instruction(&self) -> u16 {
         self.instruction
     }

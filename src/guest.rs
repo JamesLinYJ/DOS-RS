@@ -5,6 +5,8 @@
 //! instruction pointer has moved past the instruction.
 
 pub mod alu;
+pub mod command;
+pub mod disk;
 pub mod memory;
 pub mod mz;
 pub mod run;
