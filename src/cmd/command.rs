@@ -14,6 +14,7 @@ pub mod ifequ;
 pub mod init;
 pub mod iparse;
 pub mod parse2;
+pub mod path1;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;

@@ -903,6 +903,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "PATH1 FL01 FL01 FL00 PS2F PS5C DR01 DR00 KS00 KS00 KS01 EM000001 DN010104 JN42494E5C464F4F ND42494E5C464F4F" "$out"; then
+		echo "$name missing program search" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

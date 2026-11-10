@@ -360,6 +360,8 @@ fn boot(gate: usize) -> ! {
         // The init parser leaves dates, drives, and quotes off.
         cmd::command::iparse::show();
         cmd::command::parse2::show();
+        // A complete path is not searched again. Empty PATH pieces are skipped.
+        cmd::command::path1::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
