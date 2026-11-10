@@ -489,6 +489,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DIR2 CONC3 NULC4 ND VOLND MAT01 RT00 SR0000FFFF ENT40" "$out"; then
+		echo "$name missing DIR2" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "DIRCALL MK00 CX0002 RM00 DV05 RT05 EX05 DOT202E2E2E" "$out"; then
+		echo "$name missing DIRCALL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

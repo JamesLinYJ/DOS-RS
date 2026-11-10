@@ -233,6 +233,10 @@ fn boot(gate: usize) -> ! {
         dos::dev::show();
         // Free and total clusters from the boot FAT.
         dos::dinfo::show();
+        // Device names, attribute match, and an empty root path.
+        dos::dir2::show();
+        // Make a directory, change to it, remove it, and reject a device and the root.
+        dos::dircall::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
