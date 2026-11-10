@@ -313,6 +313,8 @@ fn boot(gate: usize) -> ! {
         dos::stdasw::show();
         // Standard data: debug is off, and alternate vectors are off.
         dos::stddata::show();
+        // Standard switches: alternate vectors off, IBM cancel is Escape.
+        dos::stdsw::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -68,6 +68,7 @@ pub mod stdasw;
 pub mod stddata;
 pub mod stdioctl;
 pub mod stdproc;
+pub mod stdsw;
 pub mod stddisp;
 pub mod stdctrlc;
 pub mod stdcode;
