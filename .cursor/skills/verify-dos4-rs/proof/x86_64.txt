@@ -369,6 +369,9 @@ CMD TYPE éRConvertedMZ=ÿÿ¸ŽØº´	Í!¸LÍ!HELLO EXE
 $è[PŒÀ‹È‰Oû‹&È‰O÷‹ ‰Où‹$‰Oõ‹>(‹±Óâ‹ã&ÅµƒÇŒÝ&.ƒÅèŽÝâæ¿‹òÆ‹Ë+Îó¤XúŽWû‹gùûÿoõ
 exec: EXITCODE.COM returned 3
 CMD ERRORLEVEL 3
+PARSE 2 HELLO    COM 0
+WILD 1 ???????? ???
+CTRL 0 1 BOOT 1
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKFIX 0ABC 0020

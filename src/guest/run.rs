@@ -360,6 +360,8 @@ pub(super) struct Session {
     block: u16,
     break_at: u16,
     drive: u8,
+    break_check: u8,
+    extended_break: u8,
     /// First paragraph past the bytes of the program now running.
     image_limit: u16,
     /// Paragraph where that program asked to end its own memory block.
@@ -380,6 +382,8 @@ impl Session {
             block: 0,
             break_at: GUEST_BLOCK,
             drive: 0,
+            break_check: 0,
+            extended_break: 0,
             image_limit: 0,
             kept_end: 0,
             vector_segment: [0; 256],
@@ -436,6 +440,14 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             }
             cpu.set_low(Slot::Accumulator, 2);
             cpu.set_carry(false);
+            Action::Continue
+        }
+        0x29 => {
+            parse_filename(cpu, ram);
+            Action::Continue
+        }
+        0x33 => {
+            system_values(cpu, session);
             Action::Continue
         }
         0x1A => {
@@ -1332,6 +1344,208 @@ fn guest_text(cpu: &CpuState, ram: &GuestRam) -> [u8; 64] {
         offset = offset.wrapping_add(1);
     }
     text
+}
+
+fn system_values(cpu: &mut CpuState, session: &mut Session) {
+    match cpu.low(Slot::Accumulator) {
+        0 => {
+            cpu.set_low(Slot::Data, session.break_check);
+            cpu.set_carry(false);
+        }
+        1 => {
+            let requested = cpu.low(Slot::Data);
+            if requested < 2 {
+                session.break_check = requested;
+                cpu.set_carry(false);
+            } else {
+                cpu.set_carry(true);
+            }
+        }
+        2 => {
+            let requested = cpu.low(Slot::Data);
+            if requested < 2 {
+                session.extended_break = requested;
+                cpu.set_carry(false);
+            } else {
+                cpu.set_carry(true);
+            }
+        }
+        5 => {
+            cpu.set_low(Slot::Data, 1);
+            cpu.set_carry(false);
+        }
+        _ => cpu.set_carry(true),
+    }
+}
+
+fn parse_filename(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let options = cpu.low(Slot::Accumulator);
+    let text_segment = cpu.selector(Segment::Data);
+    let mut cursor = cpu.wide(Slot::Source);
+    if options & 1 != 0 {
+        while let Some(byte) = ram.load(text_segment, cursor) {
+            if !leading_separator(byte) {
+                break;
+            }
+            cursor = cursor.wrapping_add(1);
+        }
+    }
+    let first = ram.load(text_segment, cursor).unwrap_or(0);
+    let second = ram.load(text_segment, cursor.wrapping_add(1)).unwrap_or(0);
+    if second == b':' {
+        let letter = ascii_upper(first);
+        if !letter.is_ascii_uppercase() {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            cpu.set_wide(Slot::Source, cursor);
+            cpu.set_carry(false);
+            return;
+        }
+        let _ = ram.store(
+            cpu.selector(Segment::Extra),
+            cpu.wide(Slot::Dest),
+            letter - b'A' + 1,
+        );
+        cursor = cursor.wrapping_add(2);
+    } else if options & 2 == 0 {
+        let _ = ram.store(cpu.selector(Segment::Extra), cpu.wide(Slot::Dest), 0);
+    }
+    let mut wild = false;
+    let name = read_name(ram, text_segment, &mut cursor, &mut wild);
+    let dotted = ram.load(text_segment, cursor) == Some(b'.');
+    if dotted {
+        cursor = cursor.wrapping_add(1);
+    }
+    let extension = read_extension(ram, text_segment, &mut cursor, &mut wild, dotted);
+    let record = cpu.selector(Segment::Extra);
+    let base = cpu.wide(Slot::Dest);
+    if name.written || options & 4 == 0 {
+        write_field(ram, record, base.wrapping_add(1), &name.bytes, 8);
+    }
+    if extension.written || options & 8 == 0 {
+        write_field(ram, record, base.wrapping_add(9), &extension.bytes, 3);
+    }
+    cpu.set_low(Slot::Accumulator, if wild { 1 } else { 0 });
+    cpu.set_wide(Slot::Source, cursor);
+    cpu.set_carry(false);
+}
+
+struct ParsedField {
+    bytes: [u8; 8],
+    written: bool,
+}
+
+fn read_name(
+    ram: &GuestRam,
+    segment: u16,
+    cursor: &mut u16,
+    wild: &mut bool,
+) -> ParsedField {
+    read_field(ram, segment, cursor, wild, 8, true)
+}
+
+fn read_extension(
+    ram: &GuestRam,
+    segment: u16,
+    cursor: &mut u16,
+    wild: &mut bool,
+    dotted: bool,
+) -> ParsedField {
+    if !dotted {
+        return ParsedField {
+            bytes: [b' '; 8],
+            written: false,
+        };
+    }
+    read_field(ram, segment, cursor, wild, 3, false)
+}
+
+fn read_field(
+    ram: &GuestRam,
+    segment: u16,
+    cursor: &mut u16,
+    wild: &mut bool,
+    width: usize,
+    stop_on_dot: bool,
+) -> ParsedField {
+    let mut bytes = [b' '; 8];
+    let mut index = 0usize;
+    let mut written = false;
+    while index < width {
+        let Some(byte) = ram.load(segment, *cursor) else {
+            break;
+        };
+        if byte == b'*' {
+            *wild = true;
+            written = true;
+            while index < width {
+                bytes[index] = b'?';
+                index += 1;
+            }
+            *cursor = cursor.wrapping_add(1);
+            while let Some(next) = ram.load(segment, *cursor) {
+                if (stop_on_dot && next == b'.') || field_end(next) {
+                    break;
+                }
+                *cursor = cursor.wrapping_add(1);
+            }
+            break;
+        }
+        if byte == b'?' {
+            *wild = true;
+            written = true;
+            bytes[index] = b'?';
+            index += 1;
+            *cursor = cursor.wrapping_add(1);
+            continue;
+        }
+        if (stop_on_dot && byte == b'.') || field_end(byte) {
+            break;
+        }
+        written = true;
+        bytes[index] = ascii_upper(byte);
+        index += 1;
+        *cursor = cursor.wrapping_add(1);
+    }
+    ParsedField { bytes, written }
+}
+
+fn write_field(ram: &mut GuestRam, segment: u16, offset: u16, bytes: &[u8; 8], width: usize) {
+    let mut index = 0usize;
+    while index < width {
+        let _ = ram.store(segment, offset.wrapping_add(index as u16), bytes[index]);
+        index += 1;
+    }
+}
+
+fn field_end(byte: u8) -> bool {
+    byte <= 0x20
+        || matches!(
+            byte,
+            b'"' | b'+'
+                | b','
+                | b'/'
+                | b':'
+                | b';'
+                | b'<'
+                | b'='
+                | b'>'
+                | b'['
+                | b'\\'
+                | b']'
+                | b'|'
+        )
+}
+
+fn leading_separator(byte: u8) -> bool {
+    field_end(byte) && byte != b'.' && byte != b':'
+}
+
+fn ascii_upper(byte: u8) -> u8 {
+    if byte.is_ascii_lowercase() {
+        byte.wrapping_sub(b'a').wrapping_add(b'A')
+    } else {
+        byte
+    }
 }
 
 fn dos_name(text: &[u8; 64]) -> Option<[u8; 11]> {

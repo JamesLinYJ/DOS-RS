@@ -1235,6 +1235,9 @@ run_one() {
 		|| ! grep -q $'CMD TYPE \xff\x05A' "$out" \
 		|| ! grep -q "EXEFIX 1234 0010" "$out" \
 		|| ! grep -q "PACKFIX 0ABC 0020" "$out" \
+		|| ! grep -q "PARSE 2 HELLO    COM 0" "$out" \
+		|| ! grep -q "WILD 1 ???????? ???" "$out" \
+		|| ! grep -q "CTRL 0 1 BOOT 1" "$out" \
 		|| ! grep -q "CMD DIR FIX2.EXE" "$out" \
 		|| ! grep -q "CMD DIR PACKED.EXE" "$out" \
 		|| ! grep -q "PACKED 2A00 4D5A OK" "$out" \
