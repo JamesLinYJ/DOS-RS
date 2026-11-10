@@ -10,8 +10,9 @@ CLKW0001000D
 PRN
 PRNS
 PRNR0050
+.
+PRNT0001
 LOADOK
 LOAD0200
 
 Bad or missing Command Interpreter
-.PRNT0001

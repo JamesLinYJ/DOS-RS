@@ -65,6 +65,13 @@ fn boot(gate: usize) -> ! {
     puts("PRNR");
     put_hex16(bios::mslpt::prn_ioctl_get());
     puts("\n");
+    // `PRN$TILBUSY` is a printer entry, not a SYSINIT step. The byte it
+    // sends is the `.` on its own line. The count follows with the other
+    // printer lines, before the loader and the missing interpreter.
+    let sent = bios::mslpt::prn_tilbusy(b".");
+    puts("\nPRNT");
+    put_hex16(sent);
+    puts("\n");
     if let Some(bytes) = bios::msload::load_io_sys() {
         puts("LOADOK\n");
         puts("LOAD");
@@ -73,10 +80,6 @@ fn boot(gate: usize) -> ! {
     }
     let _messages = bios::sysimes::catalog_bytes();
     bios::sysinit1::com_err();
-    let sent = bios::mslpt::prn_tilbusy(b".");
-    puts("PRNT");
-    put_hex16(sent);
-    puts("\n");
     debug_exit()
 }
 

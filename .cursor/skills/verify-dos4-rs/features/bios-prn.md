@@ -1,6 +1,6 @@
 # Write to the printer
 
-After the clock lines, the kernel writes the bytes of `PRN` and a CR LF through the printer driver. Each byte is INT 17h with AH=0. The handler writes the byte to COM1 and returns AH=0, so the timeout bit is clear. A status call with AH=2 returns not-busy and prints `PRNS`. The generic ioctl get-retry call prints `PRNR0050`.
+After the clock lines, the kernel writes the bytes of `PRN` and a CR LF through the printer driver. Each byte is INT 17h with AH=0. The handler writes the byte to COM1 and returns AH=0, so the timeout bit is clear. A status call with AH=2 returns not-busy and prints `PRNS`. The generic ioctl get-retry call prints `PRNR0050`. Output-until-busy sends one `.` and then prints `PRNT0001` with those printer lines. It is not a SYSINIT step.
 
 ## Sub-features
 
