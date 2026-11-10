@@ -309,6 +309,8 @@ fn boot(gate: usize) -> ! {
         dos::share::show();
         // Server call: functions 7 through 9 skip the ids, and 11 returns the table.
         dos::srvcall::show();
+        // Alternate vectors: escape is 1Bh and terminate lives at F0h.
+        dos::stdasw::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

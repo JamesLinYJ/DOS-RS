@@ -64,6 +64,7 @@ pub mod share;
 pub mod srvcall;
 pub mod segcheck;
 pub mod shrprint;
+pub mod stdasw;
 pub mod stdioctl;
 pub mod stdproc;
 pub mod stddisp;
