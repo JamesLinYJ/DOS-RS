@@ -291,6 +291,8 @@ fn boot(gate: usize) -> ! {
         dos::stdcpmio::show();
         // OEM message constants: OEM number FF and code page 437.
         dos::stddosme::show();
+        // Share printf prints user id, a colon, and process id.
+        dos::shrprint::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

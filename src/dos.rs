@@ -55,6 +55,7 @@ pub mod parse;
 pub mod path;
 pub mod rom;
 pub mod search;
+pub mod shrprint;
 pub mod stdioctl;
 pub mod stdproc;
 pub mod stddisp;
