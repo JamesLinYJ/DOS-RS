@@ -838,7 +838,7 @@ v4.0/src/DOS/RENAME.ASM	text	partial	src/dos/rename.rs
 v4.0/src/DOS/ROM.ASM	text	partial	src/dos/rom.rs
 v4.0/src/DOS/SEARCH.ASM	text	partial	src/dos/search.rs
 v4.0/src/DOS/SEGCHECK.ASM	text	partial	src/dos/segcheck.rs
-v4.0/src/DOS/SHARE.ASM	text	untranslated	src/dos/share.rs
+v4.0/src/DOS/SHARE.ASM	text	partial	src/dos/share.rs
 v4.0/src/DOS/SHRPRINT.ASM	text	partial	src/dos/shrprint.rs
 v4.0/src/DOS/SRVCALL.ASM	text	untranslated	src/dos/srvcall.rs
 v4.0/src/DOS/STDASW.ASM	text	untranslated	src/dos/stdasw.rs

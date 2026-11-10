@@ -711,6 +711,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "SHARE S01 OK DN01 NO S02 OK EC NO RD00 AL18 CX0001 RT01 FL00 MFT0000 TRYOK FAIL" "$out"; then
+		echo "$name missing sharing" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

@@ -60,6 +60,7 @@ pub mod proc;
 pub mod rename;
 pub mod rom;
 pub mod search;
+pub mod share;
 pub mod segcheck;
 pub mod shrprint;
 pub mod stdioctl;

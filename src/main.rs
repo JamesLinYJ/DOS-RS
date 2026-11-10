@@ -305,6 +305,8 @@ fn boot(gate: usize) -> ! {
         dos::rename::show();
         // Segment checks: DS against SS or CS, and list walks that stop at FFFFh.
         dos::segcheck::show();
+        // Sharing: slot 1 checks, slot 2 closes, and only reply 1 retries.
+        dos::share::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
