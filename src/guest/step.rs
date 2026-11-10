@@ -71,6 +71,8 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0x86 | 0x87 => exchange_operand(cpu, ram, override_segment, opcode),
         0x91..=0x97 => exchange(cpu, opcode),
         0x9A => call_far(cpu, ram, opcode),
+        0x9B => Outcome::Continue,
+        0xD8..=0xDF => float_skip(cpu, ram, override_segment, opcode),
         0x98 => extend_byte(cpu),
         0x99 => extend_word(cpu),
         0x9C => {
@@ -137,6 +139,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xC5 => load_far(cpu, ram, override_segment, Segment::Data, opcode),
         0xC7 => store_word_immediate(cpu, ram, override_segment, opcode),
         0xCF => interrupt_return(cpu, ram, opcode),
+        0xCA => return_far_count(cpu, ram, opcode),
         0xCB => return_far(cpu, ram, opcode),
         0xCC => Outcome::Interrupt(3),
         0xC6 => store_byte_immediate(cpu, ram, override_segment, opcode),
@@ -309,6 +312,21 @@ fn move_word_immediate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Ou
         return Outcome::Fault(opcode);
     };
     cpu.set_wide(Slot::from_index(opcode & 7), u16::from_le_bytes([low, high]));
+    Outcome::Continue
+}
+
+fn float_skip(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
+    let Some(modrm) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    if decode(cpu, ram, modrm, override_segment).is_none() {
+        return Outcome::Fault(opcode);
+    }
     Outcome::Continue
 }
 
@@ -958,6 +976,21 @@ fn pop_segment(cpu: &mut CpuState, ram: &mut GuestRam, which: Segment, opcode: u
         return Outcome::Fault(opcode);
     };
     cpu.set_selector(which, value);
+    Outcome::Continue
+}
+
+fn return_far_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+    let Some(low) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(high) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    if return_far(cpu, ram, opcode) != Outcome::Continue {
+        return Outcome::Fault(opcode);
+    }
+    let extra = u16::from_le_bytes([low, high]);
+    cpu.set_wide(Slot::Stack, cpu.wide(Slot::Stack).wrapping_add(extra));
     Outcome::Continue
 }
 

@@ -33,6 +33,10 @@ pub fn real_linear(segment: u16, offset: u16) -> Option<u32> {
 impl GuestRam {
     pub fn clear(&mut self) {
         self.bytes.fill(0);
+        // Microsoft C walks a message list at FFFF:0758. That address folds
+        // to 0748 here. A word of all ones is the empty list, so the walk ends.
+        self.bytes[0x748] = 0xFF;
+        self.bytes[0x749] = 0xFF;
     }
 
     pub fn load(&self, segment: u16, offset: u16) -> Option<u8> {

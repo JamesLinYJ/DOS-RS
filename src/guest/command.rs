@@ -18,6 +18,8 @@ struct Binding {
     live: bool,
 }
 
+static mut LAUNCH: [u8; 65536] = [0; 65536];
+
 static mut ENV: [Binding; ROWS] = [Binding {
     name: [0; 8],
     value: [0; 16],
@@ -213,12 +215,12 @@ fn launch_named(
         run_batch(&body[..length], ram, session, depth + 1);
         return;
     }
-    let mut image = [0u8; 32768];
-    let Some(length) = disk::read_file(name, &mut image) else {
+    let image = launch_image();
+    let Some(length) = disk::read_file(name, image) else {
         say(b"CMD RUN FAIL\r\n");
         return;
     };
-    let code = super::run::spawn(&image[..length], args, ram, session);
+    let code = super::run::spawn(&image[..length], args, name, ram, session);
     if code != 0 {
         say(b"CMD ERRORLEVEL ");
         say(&[code.wrapping_add(b'0')]);
@@ -327,4 +329,8 @@ fn say(text: &[u8]) {
 
 fn env() -> &'static mut [Binding; ROWS] {
     unsafe { &mut *core::ptr::addr_of_mut!(ENV) }
+}
+
+fn launch_image() -> &'static mut [u8; 65536] {
+    unsafe { &mut *core::ptr::addr_of_mut!(LAUNCH) }
 }

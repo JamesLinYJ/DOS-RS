@@ -151,7 +151,7 @@ fn show_shell() {
         crate::bios::mscon::con_write_bytes(b"CMD FAULT\r\n");
         return;
     };
-    match drive(&mut cpu, ram, &mut session, 20000) {
+    match drive(&mut cpu, ram, &mut session, 100_000) {
         End::Stopped(_) => {}
         End::Fault(opcode) => {
             crate::bios::mscon::con_write_bytes(b"CMD FAULT ");
@@ -293,8 +293,9 @@ enum Action {
     Exit(u8),
 }
 
-const FILE_BYTES: usize = 16384;
+const FILE_BYTES: usize = 65536;
 
+#[derive(Clone, Copy)]
 struct Opened {
     bytes: usize,
     len: usize,
@@ -303,14 +304,14 @@ struct Opened {
     named: bool,
 }
 
-static mut FILE_POOL: [[u8; FILE_BYTES]; 4] = [[0; FILE_BYTES]; 4];
+static mut FILE_POOL: [[u8; FILE_BYTES]; 8] = [[0; FILE_BYTES]; 8];
 
 fn file_bytes(index: usize) -> &'static mut [u8] {
     unsafe { &mut (*core::ptr::addr_of_mut!(FILE_POOL))[index] }
 }
 
 pub(super) struct Session {
-    opens: [Option<Opened>; 4],
+    opens: [Option<Opened>; 8],
     last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
@@ -325,7 +326,7 @@ pub(super) struct Session {
 impl Session {
     fn new() -> Self {
         Self {
-            opens: [None, None, None, None],
+            opens: [None; 8],
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,
@@ -530,35 +531,28 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         cpu.set_carry(true);
         return;
     };
-    let mut file = [0u8; FILE_BYTES];
-    let length = super::disk::read_file(&name, &mut file)
-        .or_else(|| volume::read_named(volume::IMAGE, &name, &mut file));
+    let Some(slot) = free_handle(session) else {
+        cpu.set_wide(Slot::Accumulator, 4);
+        cpu.set_carry(true);
+        return;
+    };
+    let stored = file_bytes(slot);
+    let length = super::disk::read_file(&name, stored)
+        .or_else(|| volume::read_named(volume::IMAGE, &name, stored));
     let Some(length) = length else {
         cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
         return;
     };
-    let mut slot = 0usize;
-    while slot < session.opens.len() {
-        if session.opens[slot].is_none() {
-            let stored = file_bytes(slot);
-            let count = length.min(stored.len());
-            stored[..count].copy_from_slice(&file[..count]);
-            session.opens[slot] = Some(Opened {
-                bytes: slot,
-                len: count,
-                pos: 0,
-                name,
-                named: true,
-            });
-            cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
-            cpu.set_carry(false);
-            return;
-        }
-        slot += 1;
-    }
-    cpu.set_wide(Slot::Accumulator, 4);
-    cpu.set_carry(true);
+    session.opens[slot] = Some(Opened {
+        bytes: slot,
+        len: length,
+        pos: 0,
+        name,
+        named: true,
+    });
+    cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
+    cpu.set_carry(false);
 }
 
 fn close_file(cpu: &mut CpuState, session: &mut Session) {
@@ -603,10 +597,12 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
 
 fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
     let Some(name) = file_component(&guest_text(cpu, ram)) else {
+        cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
         return;
     };
     if !super::disk::write_file(&name, b"") {
+        cpu.set_wide(Slot::Accumulator, 0x27);
         cpu.set_carry(true);
         return;
     }
@@ -926,6 +922,7 @@ fn place_child(image: &[u8], ram: &mut GuestRam, executable: bool) -> Option<Cpu
 pub(super) fn spawn(
     image: &[u8],
     args: &[u8],
+    program: &[u8; 11],
     ram: &mut GuestRam,
     session: &mut Session,
 ) -> u8 {
@@ -944,6 +941,17 @@ pub(super) fn spawn(
     }) else {
         return 0xFF;
     };
+    if !super::mz::plant_environment(ram, SHELL_CHILD, program) {
+        return 0xFF;
+    }
+    if image.len() > 32 * 1024 {
+        let load_segment = SHELL_CHILD.saturating_add(0x0010);
+        let paragraphs = u16::try_from(image.len().div_ceil(16)).unwrap_or(u16::MAX);
+        let image_end = load_segment.saturating_add(paragraphs).saturating_add(1);
+        if image_end > session.break_at && image_end < super::memory::CONVENTIONAL_END {
+            session.break_at = image_end;
+        }
+    }
     if !args.is_empty() {
         let prefix = SHELL_CHILD;
         let count = args.len().min(126);
@@ -1214,37 +1222,23 @@ fn write_found(ram: &mut GuestRam, session: &Session, name: &[u8; 11]) -> bool {
 }
 
 fn report_space(cpu: &mut CpuState) {
-    if cpu.low(Slot::Data) != 0 {
+    let drive = cpu.low(Slot::Data);
+    if drive > 1 {
         cpu.set_wide(Slot::Accumulator, 0xFFFF);
         cpu.set_carry(true);
         return;
     }
-    let (per_cluster, per_sector, clusters) = space();
+    let Some((per_cluster, per_sector, free_units, total_units)) = super::disk::allocation()
+    else {
+        cpu.set_wide(Slot::Accumulator, 0xFFFF);
+        cpu.set_carry(true);
+        return;
+    };
     cpu.set_wide(Slot::Accumulator, per_cluster);
-    cpu.set_wide(Slot::Base, clusters);
+    cpu.set_wide(Slot::Base, free_units);
     cpu.set_wide(Slot::Count, per_sector);
-    cpu.set_wide(Slot::Data, clusters);
+    cpu.set_wide(Slot::Data, total_units);
     cpu.set_carry(false);
-}
-
-fn space() -> (u16, u16, u16) {
-    let image = volume::IMAGE;
-    let per_sector = u16::from_le_bytes([image[11], image[12]]);
-    if per_sector == 0 {
-        return (0, 0, 0);
-    }
-    let per_cluster = u16::from(image[13]);
-    let reserved = u16::from_le_bytes([image[14], image[15]]);
-    let fats = u16::from(image[16]);
-    let root_entries = u16::from_le_bytes([image[17], image[18]]);
-    let total = u16::from_le_bytes([image[19], image[20]]);
-    let per_fat = u16::from_le_bytes([image[22], image[23]]);
-    let root_bytes = u32::from(root_entries).saturating_mul(32);
-    let root_sectors = root_bytes.div_ceil(u32::from(per_sector)) as u16;
-    let data_at = reserved
-        .saturating_add(fats.saturating_mul(per_fat))
-        .saturating_add(root_sectors);
-    (per_cluster, per_sector, total.saturating_sub(data_at))
 }
 
 fn bytes_at(ram: &GuestRam, segment: u16, mut offset: u16) -> [u8; 64] {

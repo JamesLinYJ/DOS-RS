@@ -1,11 +1,12 @@
-//! Mutable FAT12 volume for the command shell.
+//! Mutable volume for the command shell.
 //!
 //! The image is copied once. Later creates, deletes, and renames change this
-//! copy. Cluster numbers still use [`crate::dos::fat`].
+//! copy. Cluster numbers still use [`crate::dos::fat`]. A highest cluster of
+//! 4086 or more is a 16-bit table; below that the entries are 12-bit.
 
 use super::volume;
 
-const CAPACITY: usize = 256 * 1024;
+const CAPACITY: usize = 352 * 1024;
 const FAT_ROOM: usize = 1024;
 
 struct Disk {
@@ -26,6 +27,42 @@ struct Map {
     root_entries: usize,
     data_sector: usize,
     max_cluster: u16,
+}
+
+/// Sectors per cluster, bytes per sector, free units, and total units.
+///
+/// The scan matches `DISK_INFO`: cluster 2 through the highest cluster, with
+/// a zero entry counted free. The total is one less than the highest cluster.
+pub fn allocation() -> Option<(u16, u16, u16, u16)> {
+    let disk = storage();
+    let map = layout(disk)?;
+    if map.max_cluster < 2 {
+        return None;
+    }
+    let sectors_per_cluster = u16::from(*disk.bytes.get(13)?);
+    let bytes_per_sector = u16::from_le_bytes([*disk.bytes.get(11)?, *disk.bytes.get(12)?]);
+    if sectors_per_cluster == 0 || bytes_per_sector == 0 {
+        return None;
+    }
+    let fat = disk.bytes.get(map.fat_at..map.fat_at + map.fat_bytes)?;
+    let mut free = 0u16;
+    let mut left = map.max_cluster.wrapping_sub(1);
+    let mut cluster = 2u16;
+    while left != 0 {
+        match crate::dos::fat::unpack(fat, map.max_cluster, cluster) {
+            Some(0) => free = free.wrapping_add(1),
+            Some(_) => {}
+            None => return None,
+        }
+        cluster = cluster.wrapping_add(1);
+        left = left.wrapping_sub(1);
+    }
+    Some((
+        sectors_per_cluster,
+        bytes_per_sector,
+        free,
+        map.max_cluster.wrapping_sub(1),
+    ))
 }
 
 pub fn boot() {
@@ -69,7 +106,7 @@ pub fn read_file(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
 }
 
 pub fn write_file(name: &[u8; 11], data: &[u8]) -> bool {
-    if data.len() > 32 * 512 {
+    if data.len() > 128 * 512 {
         return false;
     }
     let disk = storage();

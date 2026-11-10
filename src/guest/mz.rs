@@ -51,7 +51,7 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
     if !ram.store(prefix, 2, limit[0]) || !ram.store(prefix, 3, limit[1]) {
         return None;
     }
-    if !plant_environment(ram, prefix) {
+    if !plant_environment(ram, prefix, b"GUEST   EXE") {
         return None;
     }
     let mut cpu = CpuState::at_com(prefix);
@@ -62,7 +62,7 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
     Some(cpu)
 }
 
-fn plant_environment(ram: &mut GuestRam, prefix: u16) -> bool {
+pub(super) fn plant_environment(ram: &mut GuestRam, prefix: u16, program: &[u8; 11]) -> bool {
     const ENV_SEGMENT: u16 = 0x0600;
     let segment = ENV_SEGMENT.to_le_bytes();
     if !ram.store(prefix, 0x2C, segment[0]) || !ram.store(prefix, 0x2D, segment[1]) {
@@ -71,10 +71,28 @@ fn plant_environment(ram: &mut GuestRam, prefix: u16) -> bool {
     if !ram.store(prefix, 0x80, 1) || !ram.store(prefix, 0x81, b'\r') {
         return false;
     }
-    let text = b"PATH=\\\0\0\x01\0C:\\GUEST.EXE\0";
+    let mut text = [0u8; 40];
+    let mut length = 0usize;
+    for byte in b"PATH=\\\0\0\x01\0C:\\" {
+        text[length] = *byte;
+        length += 1;
+    }
+    let mut index = 0usize;
+    while index < 8 && program[index] != b' ' {
+        text[length] = program[index];
+        length += 1;
+        index += 1;
+    }
+    text[length] = b'.';
+    length += 1;
+    text[length] = program[8];
+    text[length + 1] = program[9];
+    text[length + 2] = program[10];
+    length += 3;
+    text[length] = 0;
     let mut offset = 0u16;
-    for byte in text {
-        if !ram.store(ENV_SEGMENT, offset, *byte) {
+    while usize::from(offset) <= length {
+        if !ram.store(ENV_SEGMENT, offset, text[usize::from(offset)]) {
             return false;
         }
         offset = offset.wrapping_add(1);
