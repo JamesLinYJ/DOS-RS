@@ -219,9 +219,9 @@ fn read_sectors(cyl: u16, head: u8, sector: u8, count: u8, drive: u8, buf: &mut 
     };
     #[cfg(target_arch = "x86_64")]
     let flags = unsafe {
-        let mut ax = ax_in;
-        let mut cx = cx_in;
-        let mut dx = dx_in;
+        let mut eax = u32::from(ax_in);
+        let mut ecx = u32::from(cx_in);
+        let mut edx = u32::from(dx_in);
         let flags: u64;
         asm!(
             "push rbx",
@@ -229,14 +229,15 @@ fn read_sectors(cyl: u16, head: u8, sector: u8, count: u8, drive: u8, buf: &mut 
             "int 0x13",
             "pop rbx",
             "pushfq",
-            "pop {fl}",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
+            "pop rsi",
+            inout("eax") eax,
+            inout("ecx") ecx,
+            inout("edx") edx,
             ptr = in(reg) buf.as_mut_ptr(),
-            fl = lateout(reg) flags,
+            lateout("rsi") flags,
+            clobber_abi("C"),
         );
-        let _ = (ax, cx, dx);
+        let _ = (eax, ecx, edx);
         flags
     };
     if flags & 1 != 0 { Err(()) } else { Ok(()) }
@@ -253,13 +254,12 @@ fn write_sysmsg() {
             break;
         }
         unsafe {
+            let ax_in = u32::from(byte) | 0x0E00;
             asm!(
-                "mov al, {b}",
-                "mov ah, 0x0e",
                 "mov bx, 7",
                 "int 0x10",
-                b = in(reg_byte) byte,
-                lateout("rax") _,
+                in("eax") ax_in,
+                clobber_abi("C"),
             );
         }
     }
@@ -269,13 +269,13 @@ fn int16_wait() -> u16 {
     #[cfg(target_arch = "x86")]
     let ax = unsafe {
         let ax: u32;
-        asm!("xor ah, ah", "int 0x16", lateout("eax") ax);
+        asm!("xor ah, ah", "int 0x16", lateout("eax") ax, clobber_abi("C"));
         ax as u16
     };
     #[cfg(target_arch = "x86_64")]
     let ax = unsafe {
         let ax: u64;
-        asm!("xor ah, ah", "int 0x16", lateout("rax") ax);
+        asm!("xor eax, eax", "int 0x16", lateout("rax") ax, clobber_abi("C"));
         ax as u16
     };
     ax

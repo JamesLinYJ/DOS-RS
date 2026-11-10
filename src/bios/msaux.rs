@@ -72,22 +72,21 @@ fn int14_send(al: u8) -> u8 {
             port = in(reg) port,
             lateout("eax") ax,
             lateout("edx") _,
+            clobber_abi("C"),
         );
         ax as u64
     };
     #[cfg(target_arch = "x86_64")]
     let ax = unsafe {
-        let ax: u64;
+        let mut ax = u64::from(al) | 0x0100;
         let port = u32::from(super::msbio1::get_dx());
         asm!(
-            "mov al, {byte}",
-            "mov ah, 1",
             "mov dx, {port:x}",
             "int 0x14",
-            byte = in(reg_byte) al,
             port = in(reg) port,
-            lateout("rax") ax,
+            inout("rax") ax,
             lateout("rdx") _,
+            clobber_abi("C"),
         );
         ax
     };

@@ -127,6 +127,7 @@ fn boot(gate: usize) -> ! {
         }
         cmd::command::tcmd2a::print_default_prompt();
         puts("\n");
+        let _ran = cmd::command::tmisc1::dispatch(b"VER");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
@@ -302,6 +303,7 @@ fn invoke_int21() -> VersionLine {
             lateout("ebx") bx,
             lateout("ecx") cx,
             lateout("edx") flags,
+            clobber_abi("C"),
         );
         (ax, bx, cx, flags)
     };
@@ -313,7 +315,7 @@ fn invoke_int21() -> VersionLine {
         let flags: u64;
         asm!(
             "stc",
-            "mov ah, 0x30",
+            "mov eax, 0x3000",
             "int 0x21",
             "mov r8, rax",
             "mov r9, rcx",
@@ -325,6 +327,7 @@ fn invoke_int21() -> VersionLine {
             lateout("rax") bx,
             lateout("r9") cx,
             lateout("r10") flags,
+            clobber_abi("C"),
         );
         (ax, bx, cx, flags)
     };

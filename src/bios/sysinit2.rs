@@ -147,6 +147,7 @@ fn dos_int(ah: u8, dx: u32) {
             "int 0x21",
             inout("eax") ax,
             inout("edx") edx,
+            clobber_abi("C"),
         );
     }
     #[cfg(target_arch = "x86_64")]
@@ -155,6 +156,7 @@ fn dos_int(ah: u8, dx: u32) {
             "int 0x21",
             inout("eax") ax,
             inout("edx") edx,
+            clobber_abi("C"),
         );
     }
     let _ = (ax, edx);

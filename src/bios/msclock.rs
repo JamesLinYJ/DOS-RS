@@ -188,21 +188,23 @@ fn int1a_write(ticks_hi: u16, ticks_lo: u16) {
             inout("ax") ax,
             inout("cx") cx,
             inout("dx") dx,
+            clobber_abi("C"),
         );
         let _ = (ax, cx, dx);
     }
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        let mut ax: u16 = 0x0100;
-        let mut cx = ticks_hi;
-        let mut dx = ticks_lo;
+        let mut eax: u32 = 0x0100;
+        let mut ecx: u32 = u32::from(ticks_hi);
+        let mut edx: u32 = u32::from(ticks_lo);
         asm!(
             "int 0x1a",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
+            inout("eax") eax,
+            inout("ecx") ecx,
+            inout("edx") edx,
+            clobber_abi("C"),
         );
-        let _ = (ax, cx, dx);
+        let _ = (eax, ecx, edx);
     }
 }
 
@@ -218,22 +220,23 @@ fn int1a_read(ticks_hi: u16, ticks_lo: u16) -> (u16, u16, u8) {
             inout("ax") ax,
             inout("cx") cx,
             inout("dx") dx,
+            clobber_abi("C"),
         );
         (ax, cx, dx)
     };
     #[cfg(target_arch = "x86_64")]
     let (ax, cx, dx) = unsafe {
-        let mut ax: u16 = 0;
-        let mut cx: u16 = ticks_hi;
-        let mut dx: u16 = ticks_lo;
+        let mut eax: u32 = 0;
+        let mut ecx: u32 = u32::from(ticks_hi);
+        let mut edx: u32 = u32::from(ticks_lo);
         asm!(
-            "xor ah, ah",
             "int 0x1a",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
+            inout("eax") eax,
+            inout("ecx") ecx,
+            inout("edx") edx,
+            clobber_abi("C"),
         );
-        (ax, cx, dx)
+        (eax as u16, ecx as u16, edx as u16)
     };
     (cx, dx, ax as u8)
 }

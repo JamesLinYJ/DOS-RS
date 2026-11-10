@@ -377,9 +377,10 @@ fn int13_into(
 ) -> bool {
     let cx = (cyl & 0xff) << 8 | u16::from(sector & 0x3f) | ((cyl & 0x300) >> 2);
     let dx = u16::from(drive) | (u16::from(head) << 8);
-    let mut ax = (u16::from(ah_cmd) << 8) | u16::from(count);
+    let ax = (u16::from(ah_cmd) << 8) | u16::from(count);
     #[cfg(target_arch = "x86")]
     let flags = unsafe {
+        let mut ax = ax;
         let mut cx = cx;
         let mut dx = dx;
         let flags: u32;
@@ -399,8 +400,9 @@ fn int13_into(
     };
     #[cfg(target_arch = "x86_64")]
     let flags = unsafe {
-        let mut cx = cx;
-        let mut dx = dx;
+        let mut eax = u32::from(ax);
+        let mut ecx = u32::from(cx);
+        let mut edx = u32::from(dx);
         let flags: u64;
         asm!(
             "push rbx",
@@ -408,14 +410,15 @@ fn int13_into(
             "int 0x13",
             "pop rbx",
             "pushfq",
-            "pop {fl}",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
+            "pop rsi",
+            inout("eax") eax,
+            inout("ecx") ecx,
+            inout("edx") edx,
             ptr = in(reg) buf.as_mut_ptr(),
-            fl = lateout(reg) flags,
+            lateout("rsi") flags,
+            clobber_abi("C"),
         );
-        let _ = (ax, cx, dx);
+        let _ = (eax, ecx, edx);
         flags
     };
     flags & 1 != 0
@@ -565,21 +568,22 @@ fn int13(ah_cmd: u8, count: u8) -> (u8, bool) {
     };
     #[cfg(target_arch = "x86_64")]
     let (ax, flags) = unsafe {
-        let mut ax = ax_in;
-        let mut cx = cx;
-        let mut dx = dx;
+        let mut eax = u32::from(ax_in);
+        let mut ecx = u32::from(cx);
+        let mut edx = u32::from(dx);
         let flags: u64;
         asm!(
             "int 0x13",
             "pushfq",
-            "pop {fl}",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
-            fl = lateout(reg) flags,
+            "pop rsi",
+            inout("eax") eax,
+            inout("ecx") ecx,
+            inout("edx") edx,
+            lateout("rsi") flags,
+            clobber_abi("C"),
         );
-        let _ = (ax, cx, dx);
-        (ax, flags as u32)
+        let _ = (eax, ecx, edx);
+        (eax as u16, flags as u32)
     };
     (((ax >> 8) & 0xff) as u8, (flags & 1) != 0)
 }

@@ -177,6 +177,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "Microsoft DOS             Version 4.0" "$out"; then
+		echo "$name missing VER line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

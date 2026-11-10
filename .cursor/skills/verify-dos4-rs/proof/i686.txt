@@ -23,3 +23,6 @@ Unrecognized command in CONFIG.SYS
 CMDOK
 COMSPEC=\COMMAND.COM
 A>
+
+Microsoft DOS             Version 4.0
+

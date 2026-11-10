@@ -127,16 +127,16 @@ fn prn_op(ah_cmd: u8, al: u8) -> (u8, bool) {
 }
 
 fn int17(ah_cmd: u8, al: u8) -> u8 {
-    let mut ax = (u16::from(ah_cmd) << 8) | u16::from(al);
+    let mut eax = u32::from(ah_cmd) << 8 | u32::from(al);
     #[cfg(target_arch = "x86")]
     unsafe {
-        asm!("int 0x17", inout("ax") ax);
+        asm!("int 0x17", inout("eax") eax, clobber_abi("C"));
     }
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!("int 0x17", inout("ax") ax);
+        asm!("int 0x17", inout("eax") eax, clobber_abi("C"));
     }
-    ((ax >> 8) & 0xff) as u8
+    ((eax >> 8) & 0xff) as u8
 }
 
 #[no_mangle]

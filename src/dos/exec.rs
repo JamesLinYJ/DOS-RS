@@ -76,25 +76,28 @@ fn name_is_command(name: *const u8) -> bool {
 /// INT 21h AH=4Bh AL=0. True when the exec loaded `COMMAND.COM`.
 pub fn invoke() -> bool {
     let name = b"COMMAND.COM\0";
-    let mut ax: u16 = 0x4B00;
     let dx = name.as_ptr() as u32;
     #[cfg(target_arch = "x86")]
     let ax = unsafe {
+        let mut eax: u32 = 0x4B00;
         core::arch::asm!(
             "int 0x21",
-            inout("ax") ax,
+            inout("eax") eax,
             in("edx") dx,
+            clobber_abi("C"),
         );
-        ax
+        eax as u16
     };
     #[cfg(target_arch = "x86_64")]
     let ax = unsafe {
+        let mut eax: u32 = 0x4B00;
         core::arch::asm!(
             "int 0x21",
-            inout("ax") ax,
+            inout("eax") eax,
             in("edx") dx,
+            clobber_abi("C"),
         );
-        ax
+        eax as u16
     };
     ax & 0xff == 0 && command_payload().is_some()
 }

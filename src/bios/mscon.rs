@@ -277,10 +277,11 @@ fn trans_ptr() -> *const u8 {
 
 fn int29(al: u8) {
     unsafe {
+        let ax_in = u32::from(al);
         asm!(
-            "mov al, {al}",
+            "mov eax, {v:e}",
             "int 0x29",
-            al = in(reg_byte) al,
+            v = in(reg) ax_in,
             lateout("eax") _,
             // The handler calls Rust. Caller-saved registers do not survive it.
             clobber_abi("C"),
@@ -301,21 +302,21 @@ fn int16(ah: u8) -> (u16, bool) {
             ah = in(reg_byte) ah,
             lateout("eax") ax,
             lateout("edx") flags,
+            clobber_abi("C"),
         );
         (ax, flags)
     };
     #[cfg(target_arch = "x86_64")]
     let (ax, flags) = unsafe {
-        let ax: u64;
+        let mut ax = u64::from(ah) << 8;
         let flags: u64;
         asm!(
-            "mov ah, {ah}",
             "int 0x16",
             "pushfq",
             "pop rdx",
-            ah = in(reg_byte) ah,
-            lateout("rax") ax,
+            inout("rax") ax,
             lateout("rdx") flags,
+            clobber_abi("C"),
         );
         (ax, flags)
     };
@@ -336,18 +337,20 @@ extern "C" fn bios_outchr(al: usize) {
             "pop ebx",
             al = in(reg_byte) al,
             lateout("eax") _,
+            clobber_abi("C"),
         );
         #[cfg(target_arch = "x86_64")]
-        asm!(
-            "mov al, {al}",
-            "mov ah, 0x0e",
-            "push rbx",
-            "mov bx, 7",
-            "int 0x10",
-            "pop rbx",
-            al = in(reg_byte) al,
-            lateout("rax") _,
-        );
+        {
+            let ax_in = u64::from(al) | 0x0E00;
+            asm!(
+                "push rbx",
+                "mov bx, 7",
+                "int 0x10",
+                "pop rbx",
+                in("rax") ax_in,
+                clobber_abi("C"),
+            );
+        }
     }
 }
 
