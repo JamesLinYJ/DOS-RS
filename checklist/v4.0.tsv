@@ -166,7 +166,7 @@ v4.0/src/CMD/DISKCOMP/COMPINIT.ASM	text	partial	src/cmd/diskcomp/compinit.rs
 v4.0/src/CMD/DISKCOMP/DCMPMACR.INC	text	partial	src/cmd/diskcomp/dcmpmacr.rs
 v4.0/src/CMD/DISKCOMP/DCOMPMS.INC	text	partial	src/cmd/diskcomp/dcompms.rs
 v4.0/src/CMD/DISKCOMP/DCOMPPAR.ASM	text	partial	src/cmd/diskcomp/dcomppar.rs
-v4.0/src/CMD/DISKCOMP/DCOMPP.ASM	text	untranslated	src/cmd/diskcomp/dcompp.rs
+v4.0/src/CMD/DISKCOMP/DCOMPP.ASM	text	partial	src/cmd/diskcomp/dcompp.rs
 v4.0/src/CMD/DISKCOMP/DCOMPSM.ASM	text	untranslated	src/cmd/diskcomp/dcompsm.rs
 v4.0/src/CMD/DISKCOMP/DISKCOMP.ASM	text	untranslated	src/cmd/diskcomp/diskcomp.rs
 v4.0/src/CMD/DISKCOMP/DISKCOMP.EQU	text	untranslated	src/cmd/diskcomp/diskcomp.rs

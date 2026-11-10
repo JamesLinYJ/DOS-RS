@@ -436,6 +436,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcomp::dcompms::show();
         // End of line is accepted before a nonzero code is an error.
         cmd::diskcomp::dcomppar::show();
+        // Drive-only syntax and switches are the included parser pieces.
+        cmd::diskcomp::dcompp::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
