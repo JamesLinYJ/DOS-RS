@@ -779,8 +779,8 @@ v4.0/src/DOS/CREATE.ASM	text	untranslated	src/dos/create.rs
 v4.0/src/DOS/CRIT.ASM	text	partial	src/dos/crit.rs
 v4.0/src/DOS/CTRLC.ASM	text	partial	src/dos/ctrlc.rs
 v4.0/src/DOS/DELETE.ASM	text	untranslated	src/dos/delete.rs
-v4.0/src/DOS/DEV.ASM	text	untranslated	src/dos/dev.rs
-v4.0/src/DOS/DINFO.ASM	text	untranslated	src/dos/dinfo.rs
+v4.0/src/DOS/DEV.ASM	text	partial	src/dos/dev.rs
+v4.0/src/DOS/DINFO.ASM	text	partial	src/dos/dinfo.rs
 v4.0/src/DOS/DIR2.ASM	text	untranslated	src/dos/dir2.rs
 v4.0/src/DOS/DIR.ASM	text	untranslated	src/dos/dir.rs
 v4.0/src/DOS/DIRCALL.ASM	text	untranslated	src/dos/dircall.rs

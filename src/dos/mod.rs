@@ -21,6 +21,8 @@ pub mod fcbio2;
 pub mod fat;
 pub mod file;
 pub mod getset;
+pub mod dev;
+pub mod dinfo;
 pub mod disk;
 pub mod handle;
 pub mod ioctl;

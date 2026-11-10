@@ -227,6 +227,10 @@ fn boot(gate: usize) -> ! {
         dos::abort::show();
         // INT 24h: write-protect on the FAT, then ignore, retry, fail, and abort.
         dos::ctrlc::show();
+        // Device request header, the >32 MB block error, and a file read at EOF.
+        dos::dev::show();
+        // Free and total clusters from the boot FAT.
+        dos::dinfo::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
