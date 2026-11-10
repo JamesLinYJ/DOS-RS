@@ -131,33 +131,9 @@ pub fn badfil(name: &[u8]) {
 }
 
 fn print_dollar(text: &[u8]) {
-    dos_int(0x09, text.as_ptr() as u32);
+    crate::dos::cpmio::write_dollar_string(text.as_ptr() as u32);
 }
 
 fn con_out(byte: u8) {
-    dos_int(0x02, u32::from(byte));
-}
-
-fn dos_int(ah: u8, dx: u32) {
-    let mut ax = u32::from(ah) << 8;
-    let mut edx = dx;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") ax,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") ax,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    let _ = (ax, edx);
+    crate::dos::cpmio2::out_char(byte);
 }

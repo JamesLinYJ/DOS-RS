@@ -31,7 +31,7 @@ pub fn breakdown(len: u16, pos: u16, sector_size: u16) -> Pieces {
         }
     }
     let first = ax;
-    let sectors = if sector_size == 0 { 0 } else { bx / sector_size };
+    let sectors = bx.checked_div(sector_size).unwrap_or(0);
     let mut last = if sector_size == 0 { 0 } else { bx % sector_size };
     let mut sectors = sectors;
     if last | first == 0 && sectors == 1 {

@@ -9,6 +9,7 @@
 #[derive(Clone, Copy)]
 pub struct Dpb {
     pub drive: u8,
+    #[allow(dead_code)]
     pub unit: u8,
     pub sector_size: u16,
     pub cluster_mask: u8,
@@ -21,6 +22,7 @@ pub struct Dpb {
     pub fat_size: u16,
     pub dir_sector: u16,
     pub media: u8,
+    #[allow(dead_code)]
     pub first_access: u8,
     pub next_free: u16,
     pub free_cnt: i16,
@@ -77,7 +79,7 @@ pub fn set_dpb(bpb: &[u8], drive: u8, unit: u8) -> Dpb {
     dx >>= 5;
     ax = ax.wrapping_sub(1).wrapping_add(dx);
     let per_sector = dx;
-    let dir_sectors = if per_sector == 0 { 0 } else { ax / per_sector };
+    let dir_sectors = ax.checked_div(per_sector).unwrap_or(0);
     let disk_size = word(bpb, &mut si);
     dpb.media = bpb[si];
     si += 1;

@@ -153,7 +153,7 @@ pub fn find_first(name: *const u8, attr: u8) -> u16 {
         SATTR = attr;
         STAR = text == b"*.*" || text == b"*";
         if !STAR {
-            match pack(&text) {
+            match pack(text) {
                 Some(pat) => PAT = pat,
                 None => return NO_MORE,
             }
@@ -175,7 +175,9 @@ pub fn find_next() -> u16 {
         if !visible(ent) {
             continue;
         }
-        let matched = unsafe { STAR || ent.name.eq_ignore_ascii_case(&PAT) };
+        #[allow(clippy::deref_addrof)]
+        let pat = unsafe { *(&raw const PAT) };
+        let matched = unsafe { STAR } || ent.name.eq_ignore_ascii_case(&pat);
         if !matched {
             continue;
         }

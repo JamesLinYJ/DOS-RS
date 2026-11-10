@@ -54,11 +54,11 @@ fn any(pattern: &[u8; 11]) -> bool {
 
 pub fn show() {
     // COMMAND.COM has been renamed to FOO.COM by the time this probe runs.
-    let foo = search::pack(b"FOO.COM").unwrap_or(packed(b"FOO.COM"));
+    let sample = search::pack(b"FOO.COM").unwrap_or(packed(b"FOO.COM"));
     let bar = packed(b"BAR?????.COM");
     let missing = search::pack(b"ZZZ.COM").unwrap_or(packed(b"ZZZ.COM"));
     crate::bios::mscon::con_write_bytes(b"DIRSCAN FOO ");
-    crate::bios::mscon::con_write_bytes(if any(&foo) { b"HIT BAR " } else { b"MISS BAR " });
+    crate::bios::mscon::con_write_bytes(if any(&sample) { b"HIT BAR " } else { b"MISS BAR " });
     crate::bios::mscon::con_write_bytes(if any(&bar) { b"HIT ZZZ " } else { b"MISS ZZZ " });
     crate::bios::mscon::con_write_bytes(if any(&missing) { b"HIT\r\n" } else { b"MISS\r\n" });
 }

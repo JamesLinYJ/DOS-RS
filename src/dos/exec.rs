@@ -34,7 +34,7 @@ pub fn command_payload() -> Option<&'static [u8]> {
     let fats = IMAGE[16] as usize;
     let root_entries = u16::from_le_bytes([IMAGE[17], IMAGE[18]]) as usize;
     let spf = u16::from_le_bytes([IMAGE[22], IMAGE[23]]) as usize;
-    let root_sectors = (root_entries * 32 + 511) / 512;
+    let root_sectors = (root_entries * 32).div_ceil(512);
     let root = (reserved + fats * spf) * bps;
     let data = root + root_sectors * bps;
     let mut offset = root;
@@ -89,31 +89,7 @@ pub fn dispatch(al: u8, name: *const u8) -> Result<(), u16> {
 
 /// INT 21h AH=4Bh AL=0. True when the exec loaded `COMMAND.COM`.
 pub fn invoke() -> bool {
-    let name = b"COMMAND.COM\0";
-    let dx = name.as_ptr() as u32;
-    #[cfg(target_arch = "x86")]
-    let ax = unsafe {
-        let mut eax: u32 = 0x4B00;
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") dx,
-            clobber_abi("C"),
-        );
-        eax as u16
-    };
-    #[cfg(target_arch = "x86_64")]
-    let ax = unsafe {
-        let mut eax: u32 = 0x4B00;
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") dx,
-            clobber_abi("C"),
-        );
-        eax as u16
-    };
-    ax & 0xff == 0 && command_payload().is_some()
+    dispatch(0, c"COMMAND.COM".as_ptr().cast()).is_ok() && command_payload().is_some()
 }
 
 pub fn show() {
@@ -149,18 +125,11 @@ pub fn com_load() -> (u16, u16) {
     (0x0100, sp)
 }
 
-fn call(al: u8, name: &[u8]) -> u16 {
-    let mut eax = 0x4B00u32 | u32::from(al);
-    let edx = name.as_ptr() as u32;
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
+fn call(subfunction: u8, name: &[u8]) -> u16 {
+    match dispatch(subfunction, name.as_ptr()) {
+        Ok(()) => 0,
+        Err(code) => code,
     }
-    eax as u16
 }
 
 fn put_hex16(value: u16) {

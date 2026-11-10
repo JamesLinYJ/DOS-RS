@@ -4,8 +4,6 @@
 //! `PathPos`). `ON` sets the echo bit and `OFF` clears it. A blank tail
 //! prints message 1057. Any other tail is printed from 82h, then message 1070.
 
-use core::arch::asm;
-
 use crate::bios::mscon::con_write_bytes;
 
 /// `RDATA.ASM` `ECHOFLAG`. The low bit is on.
@@ -63,33 +61,17 @@ pub fn verify_cmd(tail: &[u8]) {
     }
 }
 
-fn dos_verify_set(al: u8) {
-    let mut eax = 0x2E00u32 | u32::from(al);
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
+fn dos_verify_set(flag: u8) {
+    crate::dos::getset::set_verify(flag);
 }
 
 fn dos_verify_get() -> u8 {
-    let mut eax = 0x5400u32;
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
-    (eax & 0xff) as u8
+    crate::dos::getset::get_verify()
 }
 
-fn dos_break(al: u8, dl: u8) -> u8 {
-    let mut eax = 0x3300u32 | u32::from(al);
-    let mut edx = u32::from(dl);
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    (edx & 0xff) as u8
+fn dos_break(subfunction: u8, flag: u8) -> u8 {
+    let (_result, flag) = crate::dos::disp::set_ctrl_c(subfunction, flag);
+    flag
 }
 
 /// `ECHO`. `line` is the text `cmd_copy` stored at 81h, including the CR.

@@ -4,8 +4,6 @@
 //! A date or time on the line is AH=2Bh or AH=2Dh. There is no keyboard, so
 //! the prompt that would follow a blank line is the Enter that ends it.
 
-use core::arch::asm;
-
 use crate::bios::mscon::con_write_bytes;
 
 const WEEK: &[u8] = b"SunMonTueWedThuFriSat";
@@ -57,72 +55,19 @@ pub fn time_cmd(tail: &[u8]) {
 }
 
 fn get_date() -> (u16, u8, u8, u8) {
-    let mut eax = 0x2A00u32;
-    let mut ecx = 0u32;
-    let mut edx = 0u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    (ecx as u16, (edx >> 8) as u8, edx as u8, eax as u8)
+    crate::int21::current_date()
 }
 
 fn set_date(year: u16, month: u8, day: u8) -> u8 {
-    let mut eax = 0x2B00u32;
-    let mut ecx = u32::from(year);
-    let mut edx = (u32::from(month) << 8) | u32::from(day);
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u8
+    crate::int21::store_date(year, month, day)
 }
 
 fn get_time() -> (u8, u8, u8, u8) {
-    let mut eax = 0x2C00u32;
-    let mut ecx = 0u32;
-    let mut edx = 0u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    (
-        (ecx >> 8) as u8,
-        ecx as u8,
-        (edx >> 8) as u8,
-        edx as u8,
-    )
+    crate::int21::current_time()
 }
 
 fn set_time(hour: u8, minute: u8, second: u8, hundredth: u8) -> u8 {
-    let mut eax = 0x2D00u32;
-    let mut ecx = (u32::from(hour) << 8) | u32::from(minute);
-    let mut edx = (u32::from(second) << 8) | u32::from(hundredth);
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u8
+    crate::int21::store_time(hour, minute, second, hundredth)
 }
 
 fn parse_date(tail: &[u8]) -> Option<(u8, u8, u16)> {

@@ -92,38 +92,7 @@ pub fn show() {
 }
 
 fn query() -> (u16, u16, u16) {
-    let mut eax = 0x5900u32;
-    let mut ecx = 0u32;
-    let mut edx = 0u32;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        core::arch::asm!(
-            "push ebx",
-            "xor ebx, ebx",
-            "int 0x21",
-            "mov edx, ebx",
-            "pop ebx",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!(
-            "push rbx",
-            "xor ebx, ebx",
-            "int 0x21",
-            "mov edx, ebx",
-            "pop rbx",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    (eax as u16, edx as u16, ecx as u16)
+    get()
 }
 
 fn put_hex16(value: u16) {

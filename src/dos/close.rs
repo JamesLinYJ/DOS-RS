@@ -54,191 +54,39 @@ pub fn show() {
 }
 
 fn open_name(name: *const u8) -> u16 {
-    let mut eax = 0x3D00u32;
-    let edx = name as u32;
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    crate::dos::handle::open_asciiz(name).unwrap_or(0xffff)
 }
 
-fn lseek(handle: u16, method: u8, dx: u16, cx: u16) -> (u16, u16) {
-    let mut eax = 0x4200u32 | u32::from(method);
-    let mut ecx = u32::from(cx);
-    let mut edx = u32::from(dx);
-    let ebx = u32::from(handle);
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        core::arch::asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            h = in(reg) ebx,
-            clobber_abi("C"),
-        );
+fn lseek(handle: u16, method: u8, low: u16, high: u16) -> (u16, u16) {
+    match crate::dos::handle::seek(handle, method, low, high) {
+        Ok(pos) => (pos as u16, (pos >> 16) as u16),
+        Err(code) => (code, 0),
     }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            h = in(reg) ebx,
-            clobber_abi("C"),
-        );
-    }
-    (eax as u16, edx as u16)
 }
 
 fn read_one(handle: u16, dst: *mut u8) -> u16 {
-    let mut eax = 0x3F00u32;
-    let ebx = u32::from(handle);
-    let ecx = 1u32;
-    let edx = dst as u32;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        core::arch::asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    crate::dos::handle::read(handle, dst, 1) as u16
 }
 
 fn write_one(handle: u16, src: *const u8) -> u16 {
-    let mut eax = 0x4000u32;
-    let ebx = u32::from(handle);
-    let ecx = 1u32;
-    let edx = src as u32;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        core::arch::asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    crate::dos::handle::write(handle, src, 1) as u16
 }
 
 fn close_handle(handle: u16) -> u16 {
-    let mut eax = 0x3E00u32;
-    let ebx = u32::from(handle);
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        core::arch::asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    crate::dos::handle::close(handle)
 }
 
 fn chmod_get(name: *const u8) -> Option<u8> {
-    let mut eax = 0x4300u32;
-    let mut ecx = 0u32;
-    let edx = name as u32;
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    if eax as u16 == 0 {
-        Some(ecx as u8)
-    } else {
-        None
-    }
+    let index = crate::dos::search::lookup_asciiz(name)?;
+    Some(crate::dos::search::slot(index).attr)
 }
 
 fn chmod_set(name: *const u8, attr: u8) -> u16 {
-    let mut eax = 0x4301u32;
-    let ecx = u32::from(attr);
-    let edx = name as u32;
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    let Some(index) = crate::dos::search::lookup_asciiz(name) else {
+        return 2;
+    };
+    crate::dos::search::set_attr(index, attr);
+    0
 }
 
 fn put_hex16(value: u16) {

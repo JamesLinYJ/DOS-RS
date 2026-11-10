@@ -81,7 +81,7 @@ pub fn rmdir(name: *const u8) -> u16 {
     };
     if !search::cwd_is_root() {
         let cwd = search::cwd_text();
-        if cwd.len() > 3 && cwd[3..].eq_ignore_ascii_case(&trim(&packed)) {
+        if cwd.len() > 3 && cwd[3..].eq_ignore_ascii_case(trim(&packed)) {
             return CURRENT;
         }
     }
@@ -216,36 +216,13 @@ pub fn show() {
     crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
-fn dos_name(ah: u8, name: *const u8) -> u16 {
-    let mut eax = u32::from(ah) << 8;
-    let edx = name as u32;
-    unsafe {
-        core::arch::asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+fn dos_name(_function: u8, name: *const u8) -> u16 {
+    mkdir(name)
 }
 
 fn dos_cwd(drive: u8) -> u16 {
-    let mut eax = 0x4700u32;
     let mut buf = [0u8; 8];
-    let esi = buf.as_mut_ptr() as u32;
-    let edx = u32::from(drive);
-    unsafe {
-        core::arch::asm!(
-            "mov esi, {p:e}",
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            p = in(reg) esi,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    getcwd(buf.as_mut_ptr(), drive)
 }
 
 fn put_dec(mut value: u16) {

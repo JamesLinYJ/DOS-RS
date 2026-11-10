@@ -5,8 +5,6 @@
 //! a hard error. `MAPERROR` uses the `ERRIN`/`ERROUT` bytes in `MSBDATA.INC`.
 //! Timeout `80h` becomes AL=2. `ERR$CNT` stores status `8102h`.
 
-use core::arch::{asm, global_asm};
-
 const STATUS: usize = 3;
 const COUNT: usize = 18;
 const ROMREAD: u8 = 2;
@@ -362,11 +360,11 @@ pub fn read_sector0(buffer: &mut [u8]) -> u16 {
 /// Read cylinder 0, head 0, sector 1 of drive 0. That is logical sector 0
 /// of the floppy image. The hard-disk BDS is left alone.
 pub fn read_floppy_boot(buffer: &mut [u8; 512]) -> bool {
-    let carry = int13_into(ROMREAD, 1, 1, 0, 0, 0, buffer);
+    let carry = read_chs(ROMREAD, 1, 1, 0, 0, 0, buffer);
     !carry && buffer[510] == 0x55 && buffer[511] == 0xAA
 }
 
-fn int13_into(
+pub(crate) fn read_chs(
     ah_cmd: u8,
     count: u8,
     sector: u8,
@@ -375,53 +373,10 @@ fn int13_into(
     drive: u8,
     buf: &mut [u8],
 ) -> bool {
-    let cx = (cyl & 0xff) << 8 | u16::from(sector & 0x3f) | ((cyl & 0x300) >> 2);
-    let dx = u16::from(drive) | (u16::from(head) << 8);
-    let ax = (u16::from(ah_cmd) << 8) | u16::from(count);
-    #[cfg(target_arch = "x86")]
-    let flags = unsafe {
-        let mut ax = ax;
-        let mut cx = cx;
-        let mut dx = dx;
-        let flags: u32;
-        let ptr = buf.as_mut_ptr() as u32;
-        asm!(
-            "int 0x13",
-            "pushfd",
-            "pop {fl}",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
-            in("ebx") ptr,
-            fl = lateout(reg) flags,
-        );
-        let _ = (ax, cx, dx);
-        flags
-    };
-    #[cfg(target_arch = "x86_64")]
-    let flags = unsafe {
-        let mut eax = u32::from(ax);
-        let mut ecx = u32::from(cx);
-        let mut edx = u32::from(dx);
-        let flags: u64;
-        asm!(
-            "push rbx",
-            "mov ebx, {ptr:e}",
-            "int 0x13",
-            "pop rbx",
-            "pushfq",
-            "pop rsi",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            ptr = in(reg) buf.as_mut_ptr(),
-            lateout("rsi") flags,
-            clobber_abi("C"),
-        );
-        let _ = (eax, ecx, edx);
-        flags
-    };
-    flags & 1 != 0
+    let packed_sector = (cyl & 0xff) << 8 | u16::from(sector & 0x3f) | ((cyl & 0x300) >> 2);
+    let drive_head = u16::from(drive) | (u16::from(head) << 8);
+    let (_status, carry) = disk_service(ah_cmd, count, packed_sector, drive_head, buf.as_mut_ptr());
+    carry
 }
 
 fn diskrd() -> bool {
@@ -460,17 +415,12 @@ fn diskrd() -> bool {
 }
 
 fn block() -> bool {
-    let (seclim, cursec, count, fixed) = unsafe {
+    let (seclim, cursec, count) = unsafe {
         let disk = &*core::ptr::addr_of!(DISK);
-        (
-            disk.bds.seclim as u8,
-            disk.cursec,
-            disk.seccnt,
-            disk.bds.flags & FNON_REMOVABLE != 0,
-        )
+        (disk.bds.seclim as u8, disk.cursec, disk.seccnt)
     };
     let on_track = seclim.wrapping_add(1).wrapping_sub(cursec) as u16;
-    let this = if fixed { count.min(on_track) } else { count.min(on_track) };
+    let this = count.min(on_track);
     disk_io(this)
 }
 
@@ -543,173 +493,57 @@ fn int13(ah_cmd: u8, count: u8) -> (u8, bool) {
     let cyl = disk().curtrk;
     let head = disk().curhd;
     let drive = disk().bds.drivenum;
-    let mut cx = ((cyl & 0xff) << 8) | u16::from(sector & 0x3f) | ((cyl & 0x300) >> 2);
-    let _ = cx;
-    cx = (u16::from(sector & 0x3f)) | ((cyl & 0xff) << 8);
-    let dx = u16::from(drive) | (u16::from(head) << 8);
-    let ax_in = u16::from(ah_cmd) << 8 | u16::from(count);
-    #[cfg(target_arch = "x86")]
-    let (ax, flags) = unsafe {
-        let mut ax = ax_in;
-        let mut cx = cx;
-        let mut dx = dx;
-        let flags: u32;
-        asm!(
-            "int 0x13",
-            "pushfd",
-            "pop {fl}",
-            inout("ax") ax,
-            inout("cx") cx,
-            inout("dx") dx,
-            fl = lateout(reg) flags,
-        );
-        let _ = (ax, cx, dx);
-        (ax, flags)
-    };
-    #[cfg(target_arch = "x86_64")]
-    let (ax, flags) = unsafe {
-        let mut eax = u32::from(ax_in);
-        let mut ecx = u32::from(cx);
-        let mut edx = u32::from(dx);
-        let flags: u64;
-        asm!(
-            "int 0x13",
-            "pushfq",
-            "pop rsi",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            inout("edx") edx,
-            lateout("rsi") flags,
-            clobber_abi("C"),
-        );
-        let _ = (eax, ecx, edx);
-        (eax as u16, flags as u32)
-    };
-    (((ax >> 8) & 0xff) as u8, (flags & 1) != 0)
+    let packed_sector = (u16::from(sector & 0x3f)) | ((cyl & 0xff) << 8);
+    let drive_head = u16::from(drive) | (u16::from(head) << 8);
+    disk_service(ah_cmd, count, packed_sector, drive_head, core::ptr::null_mut())
 }
 
-/// INT 13h. Hard disks (DL bit 7) time out. Drive 0 reads `disks/msload.img`.
+fn disk_service(command: u8, count: u8, packed_sector: u16, drive_head: u16, buffer: *mut u8) -> (u8, bool) {
+    let call = (u32::from(command) << 8) | u32::from(count);
+    let result = bios_int13_regs(call, buffer as u32, u32::from(packed_sector), u32::from(drive_head));
+    let status = ((result >> 8) & 0xff) as u8;
+    (status, result & 0x1_0000 != 0)
+}
+
+/// Disk service. Hard disks time out. Drive 0 reads `disks/msload.img`.
 ///
-/// Return value: low 16 bits are AX, bit 16 is carry.
-#[no_mangle]
-extern "C" fn bios_int13_regs(ax: u32, bx: u32, cx: u32, dx: u32) -> u32 {
-    let ah = ((ax >> 8) & 0xff) as u8;
-    let al = (ax & 0xff) as u8;
-    let drive = (dx & 0xff) as u8;
+/// The low 16 bits are the status word. Bit 16 is the carry flag.
+fn bios_int13_regs(call: u32, buffer: u32, packed_sector: u32, drive_head: u32) -> u32 {
+    let command = ((call >> 8) & 0xff) as u8;
+    let count = (call & 0xff) as u8;
+    let drive = (drive_head & 0xff) as u8;
     if drive & 0x80 != 0 {
         return (0x80u32 << 8) | (1 << 16);
     }
-    if ah == 0 {
+    if command == 0 {
         return 0;
     }
-    if ah != 2 || al == 0 {
+    if command != 2 || count == 0 {
         return (0x01u32 << 8) | (1 << 16);
     }
-    let sector = (cx & 0x3f) as u32;
-    let cyl = ((cx >> 8) & 0xff) | ((cx & 0xc0) << 2);
-    let head = (dx >> 8) & 0xff;
-    const SPT: u32 = 18;
+    let sector = packed_sector & 0x3f;
+    let cylinder = ((packed_sector >> 8) & 0xff) | ((packed_sector & 0xc0) << 2);
+    let head = (drive_head >> 8) & 0xff;
+    const SECTORS_PER_TRACK: u32 = 18;
     const HEADS: u32 = 2;
     if sector == 0 {
         return (0x04u32 << 8) | (1 << 16);
     }
-    let lba = (cyl * HEADS + head) * SPT + (sector - 1);
+    let lba = (cylinder * HEADS + head) * SECTORS_PER_TRACK + (sector - 1);
     let image = msload_image();
     let start = lba as usize * 512;
-    let bytes = al as usize * 512;
+    let bytes = count as usize * 512;
     if start.saturating_add(bytes) > image.len() {
         return (0x04u32 << 8) | (1 << 16);
     }
     unsafe {
-        core::ptr::copy_nonoverlapping(
-            image[start..].as_ptr(),
-            bx as *mut u8,
-            bytes,
-        );
+        core::ptr::copy_nonoverlapping(image[start..].as_ptr(), buffer as *mut u8, bytes);
     }
-    u32::from(al)
+    u32::from(count)
 }
 
 fn msload_image() -> &'static [u8] {
     include_bytes!("../../disks/msload.img")
-}
-
-#[cfg(target_arch = "x86")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code32
-.global int13_gate
-int13_gate:
-    pushad
-    mov eax, [esp + 28]
-    mov ebx, [esp + 16]
-    mov ecx, [esp + 24]
-    mov edx, [esp + 20]
-    push edx
-    push ecx
-    push ebx
-    push eax
-    call bios_int13_regs
-    add esp, 16
-    mov [esp + 28], eax
-    popad
-    test eax, 0x10000
-    jz 1f
-    or dword ptr [esp + 8], 1
-    jmp 2f
-1:
-    and dword ptr [esp + 8], 0xfffffffe
-2:
-    and eax, 0xffff
-    iretd
-"#
-);
-
-#[cfg(target_arch = "x86_64")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code64
-.global int13_gate
-int13_gate:
-    push rax
-    push rbx
-    push rcx
-    push rdx
-    push r12
-    mov r12, rsp
-    and rsp, -16
-    mov edi, [r12 + 32]
-    mov esi, [r12 + 24]
-    mov edx, [r12 + 16]
-    mov ecx, [r12 + 8]
-    call bios_int13_regs
-    mov rsp, r12
-    pop r12
-    mov [rsp + 24], rax
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-    test rax, 0x10000
-    jz 1f
-    or qword ptr [rsp + 16], 1
-    jmp 2f
-1:
-    and qword ptr [rsp + 16], 0xfffffffffffffffe
-2:
-    and rax, 0xffff
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn int13_gate();
-}
-
-pub fn int13_gate_addr() -> usize {
-    int13_gate as *const () as usize
 }
 
 fn disk() -> &'static Disk {

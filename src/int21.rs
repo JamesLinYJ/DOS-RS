@@ -574,7 +574,7 @@ fn weekday(year: u16, month: u8, day: u8) -> u8 {
 }
 
 fn date_ok(year: u16, month: u8, day: u8) -> bool {
-    if year < 1980 || year > 2099 || month == 0 || month > 12 || day == 0 {
+    if !(1980..=2099).contains(&year) || !(1..=12).contains(&month) || day == 0 {
         return false;
     }
     let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
@@ -623,4 +623,38 @@ fn in_range_stub(frame: &mut LogicalFrame) {
 /// Sets AL to 0. Leaves AH and every other register alone. Does not build an [`ErrorCode`].
 fn out_of_range(frame: &mut LogicalFrame) {
     frame.set_al(Al::ZERO);
+}
+
+pub fn current_date() -> (u16, u8, u8, u8) {
+    let (year, month, day) = unsafe { (YEAR, MONTH, DAY) };
+    (year, month, day, weekday(year, month, day))
+}
+
+pub fn store_date(year: u16, month: u8, day: u8) -> u8 {
+    if !date_ok(year, month, day) {
+        return 0xff;
+    }
+    unsafe {
+        YEAR = year;
+        MONTH = month;
+        DAY = day;
+    }
+    0
+}
+
+pub fn current_time() -> (u8, u8, u8, u8) {
+    unsafe { (HOUR, MINUTE, SECOND, HUNDREDTH) }
+}
+
+pub fn store_time(hour: u8, minute: u8, second: u8, hundredth: u8) -> u8 {
+    if hour >= 24 || minute >= 60 || second >= 60 || hundredth >= 100 {
+        return 0xff;
+    }
+    unsafe {
+        HOUR = hour;
+        MINUTE = minute;
+        SECOND = second;
+        HUNDREDTH = hundredth;
+    }
+    0
 }

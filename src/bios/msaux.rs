@@ -4,8 +4,6 @@
 //! under QEMU `-kernel`. AH=1 writes AL to COM1 and leaves bit 7 of AH clear,
 //! which is the no-timeout status `AUX$WRIT` checks.
 
-use core::arch::{asm, global_asm};
-
 const CMD: usize = 2;
 const STATUS: usize = 3;
 const TRANS: usize = 14;
@@ -59,39 +57,10 @@ fn aux_writ() {
     exit_ok();
 }
 
-fn int14_send(al: u8) -> u8 {
-    #[cfg(target_arch = "x86")]
-    let ax = unsafe {
-        let ax: u32;
-        let port = u32::from(super::msbio1::get_dx());
-        asm!(
-            "mov al, {byte}",
-            "mov ah, 1",
-            "mov dx, {port:x}",
-            "int 0x14",
-            byte = in(reg_byte) al,
-            port = in(reg) port,
-            lateout("eax") ax,
-            lateout("edx") _,
-            clobber_abi("C"),
-        );
-        ax as u64
-    };
-    #[cfg(target_arch = "x86_64")]
-    let ax = unsafe {
-        let mut ax = u64::from(al) | 0x0100;
-        let port = u32::from(super::msbio1::get_dx());
-        asm!(
-            "mov dx, {port:x}",
-            "int 0x14",
-            port = in(reg) port,
-            inout("rax") ax,
-            lateout("rdx") _,
-            clobber_abi("C"),
-        );
-        ax
-    };
-    ((ax >> 8) & 0xff) as u8
+fn int14_send(byte: u8) -> u8 {
+    let _port = super::msbio1::get_dx();
+    crate::serial_putc(byte);
+    0x01
 }
 
 fn exit_ok() {
@@ -127,64 +96,3 @@ fn trans_ptr() -> *const u8 {
     u32::from_le_bytes(raw) as *const u8
 }
 
-#[no_mangle]
-extern "C" fn bios_int14(ax: usize) {
-    let ah = ((ax >> 8) & 0xff) as u8;
-    let al = (ax & 0xff) as u8;
-    if ah == 1 {
-        crate::serial_putc(al);
-    }
-}
-
-#[cfg(target_arch = "x86")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code32
-.global int14_gate
-int14_gate:
-    push eax
-    push ecx
-    push edx
-    movzx ecx, ax
-    push ecx
-    call bios_int14
-    add esp, 4
-    pop edx
-    pop ecx
-    pop eax
-    iretd
-"#
-);
-
-#[cfg(target_arch = "x86_64")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code64
-.global int14_gate
-int14_gate:
-    push rax
-    push rcx
-    push rdx
-    push rbx
-    movzx rdi, ax
-    mov rbx, rsp
-    and rsp, -16
-    call bios_int14
-    mov rsp, rbx
-    pop rbx
-    pop rdx
-    pop rcx
-    pop rax
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn int14_gate();
-}
-
-pub fn int14_gate_addr() -> usize {
-    int14_gate as *const () as usize
-}

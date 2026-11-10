@@ -72,10 +72,6 @@ pub fn fat_sec_read(dpb: &Dpb, sector: u32, dst: &mut [u8]) -> bool {
 
 /// `DirRead` for the root. `dir_start` 0 means the directory is the linear
 /// run at `dir_sec`, not a cluster chain.
-pub fn dir_block(dir_start: u16, dir_sec: u32, block: u16) -> u32 {
-    if dir_start == 0 {
-        dir_sec.wrapping_add(u32::from(block))
-    } else {
-        dir_sec.wrapping_add(u32::from(block))
-    }
+pub fn dir_block(_dir_start: u16, dir_sec: u32, block: u16) -> u32 {
+    dir_sec.wrapping_add(u32::from(block))
 }

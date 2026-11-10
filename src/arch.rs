@@ -118,6 +118,7 @@ impl GateToken {
         Self { _priv: () }
     }
 
+    #[allow(clippy::let_unit_value)]
     pub(crate) fn seal(&self) {
         let _ = self._priv;
     }
@@ -288,7 +289,7 @@ int21_gate:
 "#
 );
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn dispatch_from_trap(trap: *mut TrapFrame) {
     let trap = unsafe { &mut *trap };
     let token = GateToken::mint();
@@ -382,4 +383,108 @@ fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFra
     trap.rbp = regs.bp;
     trap.ds = regs.ds;
     trap.es = regs.es;
+}
+
+pub fn code_selector() -> u16 {
+    let selector: u16;
+    unsafe {
+        core::arch::asm!(
+            "mov {sel:x}, cs",
+            sel = out(reg) selector,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    selector
+}
+
+pub fn load_idt(descriptor: *const u8) {
+    unsafe {
+        core::arch::asm!(
+            "lidt [{ptr}]",
+            ptr = in(reg) descriptor,
+            options(readonly, nostack, preserves_flags)
+        );
+    }
+}
+
+/// The one software interrupt. AH=30h, carry set on entry.
+/// Returns the version word, the OEM word, the serial word, and carry.
+pub fn get_version() -> (u16, u16, u16, bool) {
+    #[cfg(target_arch = "x86")]
+    let (version, oem, serial, flags) = unsafe {
+        let version: u32;
+        let oem: u32;
+        let serial: u32;
+        let flags: u32;
+        core::arch::asm!(
+            "stc",
+            "mov ah, 0x30",
+            "int 0x21",
+            "pushfd",
+            "pop edx",
+            lateout("eax") version,
+            lateout("ebx") oem,
+            lateout("ecx") serial,
+            lateout("edx") flags,
+            clobber_abi("C"),
+        );
+        (version, oem, serial, flags)
+    };
+    #[cfg(target_arch = "x86_64")]
+    let (version, oem, serial, flags) = unsafe {
+        let version: u64;
+        let oem: u64;
+        let serial: u64;
+        let flags: u64;
+        core::arch::asm!(
+            "stc",
+            "mov eax, 0x3000",
+            "int 0x21",
+            "mov r8, rax",
+            "mov r9, rcx",
+            "pushfq",
+            "pop r10",
+            "push rbx",
+            "pop rax",
+            lateout("r8") version,
+            lateout("rax") oem,
+            lateout("r9") serial,
+            lateout("r10") flags,
+            clobber_abi("C"),
+        );
+        (version, oem, serial, flags)
+    };
+    (version as u16, oem as u16, serial as u16, flags & 1 == 1)
+}
+
+pub fn halt() -> ! {
+    loop {
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack, preserves_flags));
+        }
+    }
+}
+
+pub fn outb(port: u16, value: u8) {
+    unsafe {
+        core::arch::asm!(
+            "out dx, al",
+            in("dx") port,
+            in("al") value,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+}
+
+pub fn inb(port: u16) -> u8 {
+    let value: u8;
+    unsafe {
+        core::arch::asm!(
+            "in al, dx",
+            out("al") value,
+            in("dx") port,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    value
 }

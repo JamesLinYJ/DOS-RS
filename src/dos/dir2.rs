@@ -29,7 +29,9 @@ const DEVICES: [Device; 6] = [
 pub struct Srch {
     pub last_ent: u16,
     pub ent_free: u16,
+    #[allow(dead_code)]
     pub ent_last: u16,
+    #[allow(dead_code)]
     pub vol_id: u8,
 }
 
@@ -156,7 +158,7 @@ pub fn get_path(wfp: &[u8], sattrib: u8) -> Result<u8, ()> {
 pub fn show() {
     let con = chk_dev(b"CON", 0);
     let nul = chk_dev(b"NUL", 0);
-    let foo = chk_dev(b"FOO.COM", 0);
+    let sample = chk_dev(b"FOO.COM", 0);
     let vol = chk_dev(b"CON", ATTR_VOLUME);
     let dir_ok = match_attributes(0x10, 0x10);
     let file_ok = match_attributes(0, 0x10);
@@ -169,7 +171,7 @@ pub fn show() {
     put_hex8(con.unwrap_or(0));
     crate::bios::mscon::con_write_bytes(b" NUL");
     put_hex8(nul.unwrap_or(0));
-    crate::bios::mscon::con_write_bytes(if foo.is_none() { b" ND" } else { b" DV" });
+    crate::bios::mscon::con_write_bytes(if sample.is_none() { b" ND" } else { b" DV" });
     crate::bios::mscon::con_write_bytes(if vol.is_none() { b" VOLND" } else { b" VOLDV" });
     crate::bios::mscon::con_write_bytes(b" MAT");
     crate::bios::mscon::con_write_bytes(if file_ok { b"1" } else { b"0" });

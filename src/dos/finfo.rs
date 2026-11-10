@@ -78,7 +78,7 @@ pub fn get_fast_path(flag: u8) -> u8 {
 }
 
 pub fn show() {
-    let foo = get_file_info(b"FOO.COM");
+    let sample = get_file_info(b"FOO.COM");
     let _ = super::dircall::dos_mkdir(b"A:\\TEMP\0");
     let dir = get_file_info(b"TEMP");
     let _ = super::dircall::dos_rmdir(b"A:\\TEMP\0");
@@ -88,7 +88,7 @@ pub fn show() {
     let set = set_file_attribute(b"FOO.COM", 0x21);
     let fast = get_fast_path(FAST_OPEN_SET | FAST_YES);
     crate::bios::mscon::con_write_bytes(b"FINFO ");
-    match foo {
+    match sample {
         Ok(info) => {
             crate::bios::mscon::con_write_bytes(b"AT");
             put_hex8(info.attr);

@@ -18,7 +18,7 @@ pub fn boot_max_cluster() -> u16 {
     let root = u16::from_le_bytes([IMAGE[17], IMAGE[18]]) as usize;
     let total = u16::from_le_bytes([IMAGE[19], IMAGE[20]]) as usize;
     let spf = u16::from_le_bytes([IMAGE[22], IMAGE[23]]) as usize;
-    let root_secs = (root * 32 + bps - 1) / bps;
+    let root_secs = (root * 32).div_ceil(bps);
     let data = total - reserved - fats * spf - root_secs;
     (data / spc) as u16 + 1
 }

@@ -3,8 +3,6 @@
 //! The names come from INT 21h AH=4Eh and AH=4Fh. Delete, rename, copy,
 //! and the directory calls are the matching DOS functions.
 
-use core::arch::asm;
-
 use crate::bios::mscon::con_write_bytes;
 
 pub fn name_exists(name: &[u8]) -> bool {
@@ -270,69 +268,21 @@ pub fn stamp_command() {
 }
 
 fn attr_get(name: *const u8) -> Option<u8> {
-    let mut eax = 0x4300u32;
-    let mut ecx = 0u32;
-    let edx = name as u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            inout("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    if eax as u16 == 0 { Some(ecx as u8) } else { None }
+    let index = crate::dos::search::lookup_asciiz(name)?;
+    Some(crate::dos::search::slot(index).attr)
 }
 
 fn attr_set(name: *const u8, attr: u8) -> u16 {
-    let mut eax = 0x4301u32;
-    let ecx = u32::from(attr);
-    let edx = name as u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    let Some(index) = crate::dos::search::lookup_asciiz(name) else {
+        return 2;
+    };
+    crate::dos::search::set_attr(index, attr);
+    0
 }
 
 fn file_time_set(handle: u16, time: u16, date: u16) {
-    let mut eax = 0x5701u32;
-    let ebx = u32::from(handle);
-    let ecx = u32::from(time);
-    let edx = u32::from(date);
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) ebx,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
+    if let Some(index) = crate::dos::handle::opened_index(handle) {
+        crate::dos::search::set_stamp(index, time, date);
     }
 }
 
@@ -360,152 +310,62 @@ fn asciiz_token(name: &[u8]) -> [u8; 16] {
 }
 
 fn open_read(name: *const u8) -> u16 {
-    let mut eax = 0x3D00u32;
-    let edx = name as u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    crate::dos::handle::open_asciiz(name).unwrap_or(0xffff)
 }
 
 fn read_bytes(handle: u16, dst: *mut u8, count: usize) -> usize {
-    let mut eax = 0x3F00u32;
-    let handle = u32::from(handle);
-    let ecx = count as u32;
-    let edx = dst as u32;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) handle,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) handle,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    (eax as usize).min(count)
+    crate::dos::handle::read(handle, dst, count).min(count)
 }
 
 fn write_bytes(handle: u16, src: *const u8, count: usize) -> usize {
-    let mut eax = 0x4000u32;
-    let handle = u32::from(handle);
-    let ecx = count as u32;
-    let edx = src as u32;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) handle,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) handle,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as usize
+    crate::dos::handle::write(handle, src, count)
 }
 
 fn set_dta(ptr: *mut u8) {
-    let _ = dos_dx(0x1a, ptr as *const u8, 0);
+    crate::dos::search::set_dta(ptr);
 }
 
-fn dos_ax(ah: u8) -> u16 {
-    let mut eax = u32::from(ah) << 8;
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
+fn dos_ax(function: u8) -> u16 {
+    if function == 0x4f {
+        crate::dos::search::find_next()
+    } else {
+        1
     }
-    eax as u16
 }
 
-fn dos_dx(ah: u8, dx: *const u8, cx: u16) -> u16 {
-    let mut eax = u32::from(ah) << 8;
-    let edx = dx as u32;
-    let ecx = u32::from(cx);
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            in("ecx") ecx,
-            clobber_abi("C"),
-        );
+fn dos_dx(function: u8, name: *const u8, attr: u16) -> u16 {
+    match function {
+        0x1a => {
+            crate::dos::search::set_dta(name as *mut u8);
+            0
+        }
+        0x39 => crate::dos::path::mkdir(name),
+        0x3a => crate::dos::path::rmdir(name),
+        0x3b => crate::dos::path::chdir(name),
+        0x3c => crate::dos::file::create(name),
+        0x41 => crate::dos::file::delete(name),
+        0x4e => crate::dos::search::find_first(name, attr as u8),
+        _ => 1,
     }
-    eax as u16
 }
 
-fn dos_si(ah: u8, si: *mut u8) -> u16 {
-    let mut eax = u32::from(ah) << 8;
-    let ptr = si as u32;
-    unsafe {
-        asm!(
-            "mov esi, {p:e}",
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") 0u32,
-            p = in(reg) ptr,
-            clobber_abi("C"),
-        );
+fn dos_si(function: u8, buf: *mut u8) -> u16 {
+    if function == 0x47 {
+        crate::dos::path::getcwd(buf, 0)
+    } else {
+        1
     }
-    eax as u16
 }
 
-fn dos_di(ah: u8, dx: *const u8, di: *const u8) -> u16 {
-    let mut eax = u32::from(ah) << 8;
-    let edx = dx as u32;
-    let dest = di as u32;
-    unsafe {
-        asm!(
-            "mov edi, {d:e}",
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            d = in(reg) dest,
-            clobber_abi("C"),
-        );
+fn dos_di(function: u8, source: *const u8, dest: *const u8) -> u16 {
+    if function == 0x56 {
+        crate::dos::file::rename(source, dest)
+    } else {
+        1
     }
-    eax as u16
 }
 
+#[allow(dead_code)]
 fn pack_name(name: &[u8]) -> Option<[u8; 11]> {
     let mut out = [b' '; 11];
     let mut dot = name.len();
@@ -535,6 +395,7 @@ fn pack_name(name: &[u8]) -> Option<[u8; 11]> {
     Some(out)
 }
 
+#[allow(dead_code)]
 fn up(byte: u8) -> u8 {
     if byte.is_ascii_lowercase() {
         byte - 0x20

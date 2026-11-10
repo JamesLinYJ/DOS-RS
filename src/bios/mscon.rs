@@ -5,8 +5,6 @@
 //! QEMU `-kernel`, so AH=`0x0E` writes AL to COM1. Other AH values return.
 //! There is no ROM keyboard, so `int 0x16` returns AX=0 with ZF set.
 
-use core::arch::{asm, global_asm};
-
 const CMDLEN: usize = 0;
 const UNIT: usize = 1;
 const CMD: usize = 2;
@@ -276,194 +274,21 @@ fn trans_ptr() -> *const u8 {
     u32::from_le_bytes(raw) as *const u8
 }
 
-fn int29(al: u8) {
-    unsafe {
-        let ax_in = u32::from(al);
-        asm!(
-            "mov eax, {v:e}",
-            "int 0x29",
-            v = in(reg) ax_in,
-            lateout("eax") _,
-            // The handler calls Rust. Caller-saved registers do not survive it.
-            clobber_abi("C"),
-        );
-    }
+fn int29(byte: u8) {
+    teletype(byte);
 }
 
-fn int16(ah: u8) -> (u16, bool) {
-    #[cfg(target_arch = "x86")]
-    let (ax, flags) = unsafe {
-        let ax: u32;
-        let flags: u32;
-        asm!(
-            "mov ah, {ah}",
-            "int 0x16",
-            "pushfd",
-            "pop edx",
-            ah = in(reg_byte) ah,
-            lateout("eax") ax,
-            lateout("edx") flags,
-            clobber_abi("C"),
-        );
-        (ax, flags)
-    };
-    #[cfg(target_arch = "x86_64")]
-    let (ax, flags) = unsafe {
-        let mut ax = u64::from(ah) << 8;
-        let flags: u64;
-        asm!(
-            "int 0x16",
-            "pushfq",
-            "pop rdx",
-            inout("rax") ax,
-            lateout("rdx") flags,
-            clobber_abi("C"),
-        );
-        (ax, flags)
-    };
-    ((ax as u16), (flags & 0x40) != 0)
+fn int16(_command: u8) -> (u16, bool) {
+    (0, true)
 }
 
-#[no_mangle]
-extern "C" fn bios_outchr(al: usize) {
-    let al = al as u8;
-    unsafe {
-        #[cfg(target_arch = "x86")]
-        asm!(
-            "mov al, {al}",
-            "mov ah, 0x0e",
-            "push ebx",
-            "mov bx, 7",
-            "int 0x10",
-            "pop ebx",
-            al = in(reg_byte) al,
-            lateout("eax") _,
-            clobber_abi("C"),
-        );
-        #[cfg(target_arch = "x86_64")]
-        {
-            let ax_in = u64::from(al) | 0x0E00;
-            asm!(
-                "push rbx",
-                "mov bx, 7",
-                "int 0x10",
-                "pop rbx",
-                in("rax") ax_in,
-                clobber_abi("C"),
-            );
-        }
-    }
+#[allow(dead_code)]
+fn bios_outchr(byte: usize) {
+    teletype(byte as u8);
 }
 
-#[no_mangle]
-extern "C" fn bios_int10(ax: usize) {
-    let ah = ((ax >> 8) & 0xff) as u8;
-    let al = (ax & 0xff) as u8;
-    if ah == 0x0e {
-        crate::serial_putc(al);
-    }
-}
-
-#[cfg(target_arch = "x86")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code32
-.global int29_gate
-int29_gate:
-    push eax
-    push ecx
-    push edx
-    movzx ecx, al
-    push ecx
-    call bios_outchr
-    add esp, 4
-    pop edx
-    pop ecx
-    pop eax
-    iretd
-.global int10_gate
-int10_gate:
-    push eax
-    push ecx
-    push edx
-    movzx ecx, ax
-    push ecx
-    call bios_int10
-    add esp, 4
-    pop edx
-    pop ecx
-    pop eax
-    iretd
-.global int16_gate
-int16_gate:
-    xor eax, eax
-    or dword ptr [esp + 8], 0x40
-    iretd
-"#
-);
-
-#[cfg(target_arch = "x86_64")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code64
-.global int29_gate
-int29_gate:
-    push rax
-    push rcx
-    push rdx
-    push rbx
-    movzx rdi, al
-    mov rbx, rsp
-    and rsp, -16
-    call bios_outchr
-    mov rsp, rbx
-    pop rbx
-    pop rdx
-    pop rcx
-    pop rax
-    iretq
-.global int10_gate
-int10_gate:
-    push rax
-    push rcx
-    push rdx
-    push rbx
-    movzx rdi, ax
-    mov rbx, rsp
-    and rsp, -16
-    call bios_int10
-    mov rsp, rbx
-    pop rbx
-    pop rdx
-    pop rcx
-    pop rax
-    iretq
-.global int16_gate
-int16_gate:
-    xor eax, eax
-    or qword ptr [rsp + 16], 0x40
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn int29_gate();
-    fn int10_gate();
-    fn int16_gate();
-}
-
-pub fn int29_gate_addr() -> usize {
-    int29_gate as *const () as usize
-}
-
-pub fn int10_gate_addr() -> usize {
-    int10_gate as *const () as usize
-}
-
-pub fn int16_gate_addr() -> usize {
-    int16_gate as *const () as usize
+fn teletype(byte: u8) {
+    crate::serial_putc(byte);
 }
 
 #[allow(dead_code)]

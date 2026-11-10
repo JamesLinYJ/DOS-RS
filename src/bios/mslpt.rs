@@ -5,8 +5,6 @@
 //! COM1 and returns AH=0. AH=2 returns AH=80h, not busy and no error.
 //! `WAIT_COUNT` starts at 50h for each of the four devices.
 
-use core::arch::{asm, global_asm};
-
 const STATUS: usize = 3;
 const MAJOR: usize = 13;
 const MINOR: usize = 14;
@@ -126,86 +124,19 @@ fn prn_op(ah_cmd: u8, al: u8) -> (u8, bool) {
     (ah, zf)
 }
 
-fn int17(ah_cmd: u8, al: u8) -> u8 {
-    let mut eax = u32::from(ah_cmd) << 8 | u32::from(al);
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!("int 0x17", inout("eax") eax, clobber_abi("C"));
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!("int 0x17", inout("eax") eax, clobber_abi("C"));
-    }
-    ((eax >> 8) & 0xff) as u8
+fn int17(command: u8, byte: u8) -> u8 {
+    printer(command, byte)
 }
 
-#[no_mangle]
-extern "C" fn bios_int17(ax: usize) -> u8 {
-    let ah = ((ax >> 8) & 0xff) as u8;
-    let al = (ax & 0xff) as u8;
-    if ah == 0 {
-        crate::serial_putc(al);
+fn printer(command: u8, byte: u8) -> u8 {
+    if command == 0 {
+        crate::serial_putc(byte);
         0
-    } else if ah == 2 {
+    } else if command == 2 {
         NOT_BUSY
     } else {
         0
     }
-}
-
-#[cfg(target_arch = "x86")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code32
-.global int17_gate
-int17_gate:
-    push eax
-    push ecx
-    push edx
-    movzx ecx, ax
-    push ecx
-    call bios_int17
-    add esp, 4
-    mov [esp + 9], al
-    pop edx
-    pop ecx
-    pop eax
-    iretd
-"#
-);
-
-#[cfg(target_arch = "x86_64")]
-global_asm!(
-    r#"
-.section .text, "ax"
-.code64
-.global int17_gate
-int17_gate:
-    push rax
-    push rcx
-    push rdx
-    push rbx
-    movzx rdi, ax
-    mov rbx, rsp
-    and rsp, -16
-    call bios_int17
-    mov rsp, rbx
-    pop rbx
-    pop rdx
-    pop rcx
-    mov [rsp + 1], al
-    pop rax
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn int17_gate();
-}
-
-pub fn int17_gate_addr() -> usize {
-    int17_gate as *const () as usize
 }
 
 fn write_word(pkt: *mut u8, offset: usize, value: u16) {

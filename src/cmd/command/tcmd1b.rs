@@ -3,8 +3,6 @@
 //! A blank tail asks INT 21h AH=11h for a volume label. This disk has none,
 //! so the line is message 1041 for drive A, after the leading blank.
 
-use core::arch::asm;
-
 use crate::bios::mscon::con_write_bytes;
 
 /// `TYPEFIL`. The file is read from the boot root and printed through
@@ -34,55 +32,14 @@ pub fn type_cmd(tail: &[u8]) {
 }
 
 fn open_name(name: *const u8) -> u16 {
-    let mut eax = 0x3D00u32;
-    let edx = name as u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u16
+    crate::dos::handle::open_asciiz(name).unwrap_or(0xffff)
 }
 
 fn read_file(handle: u16, dst: *mut u8, count: usize) -> usize {
-    let mut eax = 0x3F00u32;
-    let handle = u32::from(handle);
-    let ecx = count as u32;
-    let edx = dst as u32;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!(
-            "push ebx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop ebx",
-            inout("eax") eax,
-            h = in(reg) handle,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!(
-            "push rbx",
-            "mov ebx, {h:e}",
-            "int 0x21",
-            "pop rbx",
-            inout("eax") eax,
-            h = in(reg) handle,
-            in("ecx") ecx,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as usize
+    crate::dos::handle::read(handle, dst, count)
 }
 
+#[allow(dead_code)]
 fn file_bytes(name: &[u8]) -> Option<&'static [u8]> {
     let wanted = pack_name(name)?;
     let root = 3 * 512;
@@ -110,6 +67,7 @@ fn file_bytes(name: &[u8]) -> Option<&'static [u8]> {
     None
 }
 
+#[allow(dead_code)]
 fn pack_name(name: &[u8]) -> Option<[u8; 11]> {
     let mut out = [b' '; 11];
     let mut dot = name.len();
@@ -139,6 +97,7 @@ fn pack_name(name: &[u8]) -> Option<[u8; 11]> {
     Some(out)
 }
 
+#[allow(dead_code)]
 fn up(byte: u8) -> u8 {
     if byte.is_ascii_lowercase() {
         byte - 0x20
@@ -173,6 +132,7 @@ fn skip_space(tail: &[u8]) -> &[u8] {
     &tail[i..]
 }
 
+#[allow(dead_code)]
 const IMAGE: &[u8] = include_bytes!("../../../disks/msload.img");
 
 pub fn volume(tail: &[u8]) {
@@ -201,25 +161,11 @@ fn search_volume() -> u8 {
         fcb[i] = b'?';
         i += 1;
     }
-    let mut eax = 0x1100u32;
-    let edx = fcb.as_ptr() as u32;
-    unsafe {
-        asm!(
-            "int 0x21",
-            inout("eax") eax,
-            in("edx") edx,
-            clobber_abi("C"),
-        );
-    }
-    eax as u8
+    crate::dos::search::fcb_search_first(fcb.as_mut_ptr())
 }
 
 fn default_drive() -> u8 {
-    let mut eax = 0x1900u32;
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
-    eax as u8
+    0
 }
 
 fn blank(tail: &[u8]) -> bool {

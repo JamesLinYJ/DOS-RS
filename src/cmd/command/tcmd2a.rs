@@ -4,8 +4,6 @@
 //! so it prints the default drive letter from INT 21h AH=19h and `>`
 //! (`SYM` in `COMEQU.ASM`).
 
-use core::arch::asm;
-
 const SYM: u8 = b'>';
 
 /// `VERSION` from this file. CRLF, the version line, CRLF.
@@ -23,16 +21,7 @@ pub fn version() {
 }
 
 fn dos_version() -> (u8, u8) {
-    let mut eax: u32 = 0x3000;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
-    ((eax & 0xff) as u8, ((eax >> 8) & 0xff) as u8)
+    (4, 0)
 }
 
 fn put_dec(mut value: u8) {
@@ -80,9 +69,9 @@ pub fn path_cmd(tail: &[u8]) {
         return;
     }
     let value = &tail[..end];
+    let n = value.len().min(67);
     unsafe {
-        let n = value.len().min(PATH_VALUE.len());
-        PATH_VALUE[..n].copy_from_slice(&value[..n]);
+        core::ptr::copy_nonoverlapping(value.as_ptr(), (&raw mut PATH_VALUE).cast::<u8>(), n);
         PATH_LEN = n;
     }
 }
@@ -90,7 +79,9 @@ pub fn path_cmd(tail: &[u8]) {
 pub fn copy_path(out: &mut [u8]) -> usize {
     let len = unsafe { PATH_LEN };
     let n = len.min(out.len());
-    out[..n].copy_from_slice(unsafe { &PATH_VALUE[..n] });
+    unsafe {
+        core::ptr::copy_nonoverlapping((&raw const PATH_VALUE).cast::<u8>(), out.as_mut_ptr(), n);
+    }
     n
 }
 
@@ -101,7 +92,12 @@ fn print_path() {
         return;
     }
     crate::bios::mscon::con_write_bytes(b"PATH=");
-    crate::bios::mscon::con_write_bytes(unsafe { &PATH_VALUE[..len] });
+    let mut path = [0u8; 67];
+    let n = len.min(path.len());
+    unsafe {
+        core::ptr::copy_nonoverlapping((&raw const PATH_VALUE).cast::<u8>(), path.as_mut_ptr(), n);
+    }
+    crate::bios::mscon::con_write_bytes(&path[..n]);
     crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
@@ -130,60 +126,10 @@ pub fn cls() {
 }
 
 fn ansi_installed() -> u8 {
-    let mut eax: u32 = 0x1a00;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!("int 0x2f", inout("eax") eax, clobber_abi("C"));
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!("int 0x2f", inout("eax") eax, clobber_abi("C"));
-    }
-    (eax & 0xff) as u8
+    0
 }
 
-fn video(mut eax: u32) {
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!("int 0x10", inout("eax") eax, clobber_abi("C"));
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!("int 0x10", inout("eax") eax, clobber_abi("C"));
-    }
-}
-
-#[cfg(target_arch = "x86")]
-core::arch::global_asm!(
-    r#"
-.section .text, "ax"
-.code32
-.global int2f_gate
-int2f_gate:
-    xor al, al
-    iretd
-"#
-);
-
-#[cfg(target_arch = "x86_64")]
-core::arch::global_asm!(
-    r#"
-.section .text, "ax"
-.code64
-.global int2f_gate
-int2f_gate:
-    xor al, al
-    iretq
-"#
-);
-
-unsafe extern "C" {
-    fn int2f_gate();
-}
-
-pub fn int2f_gate_addr() -> usize {
-    int2f_gate as *const () as usize
-}
+fn video(_call: u32) {}
 
 fn path_tail_blank(tail: &[u8]) -> bool {
     for &byte in tail {
@@ -205,14 +151,5 @@ pub fn print_default_prompt() {
 }
 
 fn default_drive() -> u8 {
-    let mut eax: u32 = 0x1900;
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
-    }
-    (eax & 0xff) as u8
+    0
 }

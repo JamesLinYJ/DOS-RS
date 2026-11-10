@@ -174,50 +174,24 @@ pub fn show() {
 }
 
 fn int_parse(text: *const u8, fcb: *mut u8) -> u8 {
-    let mut eax = 0x2900u32;
-    let text = text as u32;
-    let fcb = fcb as u32;
-    unsafe {
-        core::arch::asm!(
-            "mov esi, {s:e}",
-            "mov edi, {d:e}",
-            "int 0x21",
-            inout("eax") eax,
-            s = in(reg) text,
-            d = in(reg) fcb,
-            clobber_abi("C"),
-        );
-    }
-    eax as u8
+    let (result, _) = crate::dos::parse::parse(0, text, fcb);
+    result
 }
 
-fn int_fcb(ah: u8, fcb: *mut u8) -> u8 {
-    let mut eax = u32::from(ah) << 8;
-    let fcb = fcb as u32;
-    unsafe {
-        core::arch::asm!(
-            "mov edx, {p:e}",
-            "int 0x21",
-            inout("eax") eax,
-            p = in(reg) fcb,
-            clobber_abi("C"),
-        );
+fn int_fcb(function: u8, fcb: *mut u8) -> u8 {
+    match function {
+        0x0F => crate::dos::fcbio2::open(fcb),
+        0x10 => crate::dos::fcbio::close(fcb),
+        0x11 => crate::dos::search::fcb_search_first(fcb),
+        0x12 => crate::dos::search::fcb_search_next(),
+        0x14 => crate::dos::fcbio2::seq_read(fcb),
+        0x23 => crate::dos::fcbio::file_length(fcb),
+        _ => 0xff,
     }
-    eax as u8
 }
 
 fn int_dta(dta: *mut u8) {
-    let mut eax = 0x1A00u32;
-    let dta = dta as u32;
-    unsafe {
-        core::arch::asm!(
-            "mov edx, {p:e}",
-            "int 0x21",
-            inout("eax") eax,
-            p = in(reg) dta,
-            clobber_abi("C"),
-        );
-    }
+    crate::dos::search::set_dta(dta);
 }
 
 fn put_hex16(value: u16) {

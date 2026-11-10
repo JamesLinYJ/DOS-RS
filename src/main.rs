@@ -5,8 +5,6 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
-
 mod arch;
 mod bios;
 mod cmd;
@@ -14,7 +12,7 @@ mod dos;
 mod int21;
 
 /// Multiboot calls this. It does not return.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kmain() -> ! {
     boot(arch::gate_addr())
 }
@@ -273,9 +271,9 @@ fn banner() -> &'static str {
 
 /// Low 16 bits and carry after `int 0x21` returns to the caller.
 struct VersionLine {
-    ax: u16,
-    bx: u16,
-    cx: u16,
+    version: u16,
+    oem: u16,
+    serial: u16,
     carry: bool,
 }
 
@@ -381,22 +379,11 @@ static mut IDT: [IdtEntry; 256] = [IdtEntry::empty(); 256];
 ///
 /// An interrupt gate clears IF on entry.
 fn load_idt(gate: usize) {
-    let selector: u16;
-    unsafe {
-        asm!("mov {sel:x}, cs", sel = out(reg) selector, options(nomem, nostack, preserves_flags));
-    }
+    let selector = arch::code_selector();
     let entry = IdtEntry::interrupt(gate, selector);
     unsafe {
         let idt = &raw mut IDT;
-        (*idt)[0x10] = IdtEntry::interrupt(bios::mscon::int10_gate_addr(), selector);
-        (*idt)[0x2F] = IdtEntry::interrupt(cmd::command::tcmd2a::int2f_gate_addr(), selector);
-        (*idt)[0x13] = IdtEntry::interrupt(bios::msdisk::int13_gate_addr(), selector);
-        (*idt)[0x1A] = IdtEntry::interrupt(bios::msclock::int1a_gate_addr(), selector);
-        (*idt)[0x14] = IdtEntry::interrupt(bios::msaux::int14_gate_addr(), selector);
-        (*idt)[0x17] = IdtEntry::interrupt(bios::mslpt::int17_gate_addr(), selector);
-        (*idt)[0x16] = IdtEntry::interrupt(bios::mscon::int16_gate_addr(), selector);
         (*idt)[0x21] = entry;
-        (*idt)[0x29] = IdtEntry::interrupt(bios::mscon::int29_gate_addr(), selector);
         let ptr = IdtPtr {
             limit: (core::mem::size_of_val(&*idt) - 1) as u16,
             #[cfg(target_arch = "x86")]
@@ -404,7 +391,7 @@ fn load_idt(gate: usize) {
             #[cfg(target_arch = "x86_64")]
             base: idt as u64,
         };
-        asm!("lidt [{ptr}]", ptr = in(reg) &ptr, options(readonly, nostack, preserves_flags));
+        arch::load_idt(&raw const ptr as *const u8);
     }
 }
 
@@ -413,56 +400,8 @@ fn load_idt(gate: usize) {
 /// This is the only invocation. It does not call `int21::entry`.
 /// Carry is set first so the serial line can show that AH=30h left it set.
 fn invoke_int21() -> VersionLine {
-    #[cfg(target_arch = "x86")]
-    let (ax, bx, cx, flags) = unsafe {
-        let ax: u32;
-        let bx: u32;
-        let cx: u32;
-        let flags: u32;
-        asm!(
-            "stc",
-            "mov ah, 0x30",
-            "int 0x21",
-            "pushfd",
-            "pop edx",
-            lateout("eax") ax,
-            lateout("ebx") bx,
-            lateout("ecx") cx,
-            lateout("edx") flags,
-            clobber_abi("C"),
-        );
-        (ax, bx, cx, flags)
-    };
-    #[cfg(target_arch = "x86_64")]
-    let (ax, bx, cx, flags) = unsafe {
-        let ax: u64;
-        let bx: u64;
-        let cx: u64;
-        let flags: u64;
-        asm!(
-            "stc",
-            "mov eax, 0x3000",
-            "int 0x21",
-            "mov r8, rax",
-            "mov r9, rcx",
-            "pushfq",
-            "pop r10",
-            "push rbx",
-            "pop rax",
-            lateout("r8") ax,
-            lateout("rax") bx,
-            lateout("r9") cx,
-            lateout("r10") flags,
-            clobber_abi("C"),
-        );
-        (ax, bx, cx, flags)
-    };
-    VersionLine {
-        ax: ax as u16,
-        bx: bx as u16,
-        cx: cx as u16,
-        carry: flags & 1 == 1,
-    }
+    let (version, oem, serial, carry) = arch::get_version();
+    VersionLine { version, oem, serial, carry }
 }
 
 fn puts(text: &str) {
@@ -506,11 +445,11 @@ fn put_hex16(mut value: u16) {
 /// Prints the low 16 bits of AX, BX, and CX, and the carry bit.
 fn puts_result(line: &VersionLine) {
     puts("AX=");
-    put_hex16(line.ax);
+    put_hex16(line.version);
     puts(" BX=");
-    put_hex16(line.bx);
+    put_hex16(line.oem);
     puts(" CX=");
-    put_hex16(line.cx);
+    put_hex16(line.serial);
     puts(" CF=");
     putc(if line.carry { b'1' } else { b'0' });
     puts("\n");
@@ -522,30 +461,15 @@ fn puts_result(line: &VersionLine) {
 /// The smoke script maps 33 to process status 0.
 fn debug_exit() -> ! {
     outb(0xF4, 0x10);
-    loop {
-        unsafe {
-            asm!("hlt", options(nomem, nostack, preserves_flags));
-        }
-    }
+    arch::halt()
 }
 
 fn outb(port: u16, value: u8) {
-    unsafe {
-        asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
-    }
+    arch::outb(port, value);
 }
 
 fn inb(port: u16) -> u8 {
-    let value: u8;
-    unsafe {
-        asm!(
-            "in al, dx",
-            out("al") value,
-            in("dx") port,
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-    value
+    arch::inb(port)
 }
 
 #[panic_handler]
