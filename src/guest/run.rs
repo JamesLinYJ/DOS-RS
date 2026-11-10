@@ -1101,19 +1101,24 @@ fn write_console(cpu: &mut CpuState, ram: &GuestRam) {
     let count = cpu.wide(Slot::Count);
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
-    let mut text = [0u8; 80];
-    let mut length = 0usize;
     let mut seen = 0u16;
-    while seen < count && length < text.len() {
-        let Some(byte) = ram.load(segment, offset) else {
+    while seen < count {
+        let mut text = [0u8; 64];
+        let mut length = 0usize;
+        while seen < count && length < text.len() {
+            let Some(byte) = ram.load(segment, offset) else {
+                break;
+            };
+            text[length] = byte;
+            length += 1;
+            seen += 1;
+            offset = offset.wrapping_add(1);
+        }
+        if length == 0 {
             break;
-        };
-        text[length] = byte;
-        length += 1;
-        seen += 1;
-        offset = offset.wrapping_add(1);
+        }
+        crate::bios::mscon::con_write_bytes(&text[..length]);
     }
-    crate::bios::mscon::con_write_bytes(&text[..length]);
     cpu.set_wide(Slot::Accumulator, seen);
     cpu.set_carry(false);
 }
@@ -1829,20 +1834,23 @@ fn dos_name(text: &[u8; 64]) -> Option<[u8; 11]> {
 fn print_marked(cpu: &CpuState, ram: &GuestRam) {
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
-    let mut text = [0u8; 80];
+    let mut text = [0u8; 64];
     let mut length = 0usize;
-    while length < text.len() {
-        let Some(byte) = ram.load(segment, offset) else {
-            break;
-        };
+    while let Some(byte) = ram.load(segment, offset) {
         if byte == b'$' {
             break;
         }
         text[length] = byte;
         length += 1;
         offset = offset.wrapping_add(1);
+        if length == text.len() {
+            crate::bios::mscon::con_write_bytes(&text);
+            length = 0;
+        }
     }
-    crate::bios::mscon::con_write_bytes(&text[..length]);
+    if length > 0 {
+        crate::bios::mscon::con_write_bytes(&text[..length]);
+    }
 }
 
 fn put_hex8(value: u8) {
