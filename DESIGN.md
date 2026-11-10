@@ -184,4 +184,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `MENUBLD.EXE` still prints `Couldn't open  menu creation files.` when the tail is empty. The shell then runs `MENUBLD.EXE MENU.MNU USAMS.MSG`. It reads the menu, the message file, and `USAMS.IDX`, and writes `MENUM.C`. The line is `All four files have been opened for menu creation.`, the directory line is `CMD DIR MENUM.C`, and the file contains `menu-ok`.
 
+`BUILDMSG.EXE` still prints `Allocatable memory size is 606208` and returns status 1 when the tail is empty. The shell then runs `BUILDMSG.EXE USAMS BMSG.SKL`. The message file has a `BMSG` class, so the index contains it. The builder writes `BMSG.CTL` and the include files. The line is `Created include file [BMSG.CLA]`, the directory line is `CMD DIR BMSG.CTL`, and the file begins `$M_NUM_CLS  EQU 1`.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

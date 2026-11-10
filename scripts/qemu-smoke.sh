@@ -1272,7 +1272,10 @@ run_one() {
 		|| grep -q "D4005" "$out" \
 		|| ! grep -q "All four files have been opened for menu creation." "$out" \
 		|| ! grep -q "CMD DIR MENUM.C" "$out" \
-		|| ! grep -q "menu-ok" "$out"; then
+		|| ! grep -q "menu-ok" "$out" \
+		|| ! grep -q "Created include file \[BMSG.CLA\]" "$out" \
+		|| ! grep -q "CMD DIR BMSG.CTL" "$out" \
+		|| ! grep -q "\$M_NUM_CLS  EQU 1" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

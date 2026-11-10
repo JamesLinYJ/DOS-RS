@@ -344,6 +344,23 @@ CMD DIR MENUM.C
 CMD TYPE /* menu-ok */
 int menu(void) { return 1; }
 
+BuildMsg - PSP at b817
+Program memory size is 0
+Allocatable memory size is 606208
+Processing [BMSG.SKL]
+ Utility Name = [BMSG]
+ Loading messages from USAMS.MSG
+ (Available message memory space: 32000 bytes)
+ (Still available message memory space: 28000 bytes)
+ Created include file [BMSG.CLA]
+ Created include file [BMSG.CL1]
+ Created include file [BMSG.CL2]
+ Completed [BMSG.CLA]
+ Completed [BMSG.CL1]
+ Completed [BMSG.CL2]
+CMD DIR BMSG.CTL
+CMD TYPE $M_NUM_CLS  EQU 1
+
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
