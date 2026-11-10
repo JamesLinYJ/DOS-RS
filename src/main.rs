@@ -422,6 +422,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debequ::show();
         // A zero marker selects the write-protect messages.
         cmd::debug::deberr::show();
+        // A failed load is displayed and the carry is kept.
+        cmd::debug::debmes::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

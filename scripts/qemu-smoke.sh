@@ -1089,6 +1089,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBMES SV00 FT002D N003B SM00004242 XR0067 SB002C SS0122 SX8310 A6 A7 F0008 CFF H0001 K0000 I00 B0000 NF0002 C01 H0002 CP002A K06 DR000E W01 P20 UA20 DA93 W04 DK00 WR23 DL41 EN6466626662726270 AB0050 OB0051 EZ03 PF00 PF01 LD00 ND00 LD01 DY01" "$out"; then
+		echo "$name missing debugger messages" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
