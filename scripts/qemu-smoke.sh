@@ -1260,6 +1260,8 @@ run_one() {
 		|| ! grep -q "Microsoft (R) Overlay Linker  Version 3.65" "$out" \
 		|| ! grep -q "LINKED OK" "$out" \
 		|| ! grep -q "Copyright (C) Microsoft Corp 1983-1988.  All rights reserved." "$out" \
+		|| ! grep -qF 'A:\HELLO.COM' "$out" \
+		|| grep -qF 'A:\\HELLO.COM' "$out" \
 		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out" \
 		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \
 		|| ! grep -q "nmake-wrote" "$out" \
@@ -1400,7 +1402,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q '  A       A:\\\\HELLO.COM' "$out"; then
+	if ! grep -q '  A       A:\\HELLO.COM' "$out"; then
 		echo "$name missing attrib" >&2
 		cat "$out" >&2
 		rm -f "$out"

@@ -555,7 +555,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x47 => {
-            write_root(cpu, ram);
+            current_directory(cpu, ram, session);
             Action::Continue
         }
         0x44 => {
@@ -1944,12 +1944,30 @@ fn read_attribute(cpu: &mut CpuState, ram: &GuestRam) {
     cpu.set_carry(true);
 }
 
-fn write_root(cpu: &mut CpuState, ram: &mut GuestRam) {
+fn current_directory(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let drive = cpu.low(Slot::Data);
+    if drive > 1 {
+        fail(cpu, session, 15);
+        return;
+    }
+    let mut path = [0u8; 64];
+    let length = super::disk::current_path(&mut path);
     let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Source);
-    let stored = ram.store(segment, offset, b'\\')
-        && ram.store(segment, offset.wrapping_add(1), 0);
-    cpu.set_carry(!stored);
+    let mut offset = cpu.wide(Slot::Source);
+    let mut index = 0usize;
+    while index < length {
+        if !ram.store(segment, offset, path[index]) {
+            fail(cpu, session, 5);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+        index += 1;
+    }
+    if ram.store(segment, offset, 0) {
+        cpu.set_carry(false);
+    } else {
+        fail(cpu, session, 5);
+    }
 }
 
 fn find_first(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {

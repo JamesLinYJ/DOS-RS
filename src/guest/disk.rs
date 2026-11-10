@@ -599,6 +599,81 @@ fn parent_of(disk: &Disk, map: &Map, cluster: u16) -> u16 {
         .unwrap_or(0)
 }
 
+pub fn current_path(out: &mut [u8]) -> usize {
+    let disk = storage();
+    if disk.cwd < 2 {
+        return 0;
+    }
+    let Some(map) = layout(disk) else {
+        return 0;
+    };
+    let mut names = [[b' '; 11]; 16];
+    let mut depth = 0usize;
+    let mut cluster = disk.cwd;
+    while cluster >= 2 && depth < names.len() {
+        let parent = parent_of(disk, &map, cluster);
+        let Some(name) = named_in(disk, &map, parent, cluster) else {
+            break;
+        };
+        names[depth] = name;
+        depth += 1;
+        cluster = parent;
+    }
+    let mut used = 0usize;
+    while depth > 0 {
+        depth -= 1;
+        if used > 0 {
+            if used >= out.len() {
+                break;
+            }
+            out[used] = b'\\';
+            used += 1;
+        }
+        used = write_component(out, used, &names[depth]);
+    }
+    used
+}
+
+fn named_in(disk: &Disk, map: &Map, parent: u16, cluster: u16) -> Option<[u8; 11]> {
+    let mut index = 0usize;
+    let limit = entry_count(map, parent);
+    while index < limit {
+        let raw = entry(disk, map, parent, index)?;
+        if raw[0] == 0 {
+            return None;
+        }
+        let start = u16::from_le_bytes([raw[26], raw[27]]);
+        let dot = raw[..11] == *b".          " || raw[..11] == *b"..         ";
+        if raw[0] != 0xE5 && raw[11] & 0x08 == 0 && !dot && start == cluster {
+            let mut name = [b' '; 11];
+            name.copy_from_slice(&raw[..11]);
+            return Some(name);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn write_component(out: &mut [u8], mut used: usize, name: &[u8; 11]) -> usize {
+    let mut index = 0usize;
+    while index < 8 && name[index] != b' ' && used < out.len() {
+        out[used] = name[index];
+        used += 1;
+        index += 1;
+    }
+    if name[8] != b' ' && used < out.len() {
+        out[used] = b'.';
+        used += 1;
+        index = 8;
+        while index < 11 && name[index] != b' ' && used < out.len() {
+            out[used] = name[index];
+            used += 1;
+            index += 1;
+        }
+    }
+    used
+}
+
 pub fn canonical(text: &[u8]) -> Option<[u8; 11]> {
     let mut name = [b' '; 11];
     let mut extension = false;
