@@ -891,6 +891,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "IPARSE DT00 TM00 CX00 KY00 V200 V300 QU00 DR00" "$out"; then
+		echo "$name missing init parser" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PARSE2 0102010000000000 0002010000000000 0102020010001000 0102020000000000 0102400000000001 0102010000000002 0100000000000000 0100010000000000  IX0016" "$out"; then
+		echo "$name missing argument array" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

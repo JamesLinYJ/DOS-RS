@@ -106,9 +106,9 @@ v4.0/src/CMD/COMMAND/ENVDATA.ASM	text	translated	src/cmd/command/envdata.rs
 v4.0/src/CMD/COMMAND/FORDATA.ASM	text	partial	src/cmd/command/fordata.rs
 v4.0/src/CMD/COMMAND/IFEQU.ASM	text	partial	src/cmd/command/ifequ.rs
 v4.0/src/CMD/COMMAND/INIT.ASM	text	partial	src/cmd/command/init.rs
-v4.0/src/CMD/COMMAND/IPARSE.ASM	text	untranslated	src/cmd/command/iparse.rs
+v4.0/src/CMD/COMMAND/IPARSE.ASM	text	partial	src/cmd/command/iparse.rs
 v4.0/src/CMD/COMMAND/MAKEFILE	text	untranslated	src/cmd/command/makefile.rs
-v4.0/src/CMD/COMMAND/PARSE2.ASM	text	untranslated	src/cmd/command/parse2.rs
+v4.0/src/CMD/COMMAND/PARSE2.ASM	text	partial	src/cmd/command/parse2.rs
 v4.0/src/CMD/COMMAND/PATH1.ASM	text	untranslated	src/cmd/command/path1.rs
 v4.0/src/CMD/COMMAND/PATH2.ASM	text	untranslated	src/cmd/command/path2.rs
 v4.0/src/CMD/COMMAND/RDATA.ASM	text	untranslated	src/cmd/command/rdata.rs

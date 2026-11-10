@@ -357,6 +357,9 @@ fn boot(gate: usize) -> ! {
         cmd::command::ifequ::show();
         // Startup switches: /C stops the scan, and /MSG needs /P.
         cmd::command::init::show();
+        // The init parser leaves dates, drives, and quotes off.
+        cmd::command::iparse::show();
+        cmd::command::parse2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
