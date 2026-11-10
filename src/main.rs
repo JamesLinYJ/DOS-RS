@@ -418,6 +418,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debdata::show();
         // The version must be at least 40h before a page call runs.
         cmd::debug::debems::show();
+        // The two-letter names keep the first letter in the low byte.
+        cmd::debug::debequ::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

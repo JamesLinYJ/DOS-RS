@@ -7,3 +7,4 @@ pub mod debcom3;
 pub mod debconst;
 pub mod debdata;
 pub mod debems;
+pub mod debequ;
