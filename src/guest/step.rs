@@ -115,6 +115,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             }
         }
         0xA8 => test_byte(cpu, ram, opcode),
+        0xA9 => test_word(cpu, ram, opcode),
         0xA4 => {
             if copy_string(cpu, ram) {
                 Outcome::Continue
@@ -148,7 +149,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xD3 => shift_by_count(cpu, ram, override_segment, true, opcode),
         0xD7 => translate(cpu, ram, opcode),
         0xE4 => read_port(cpu, ram, opcode),
-        0xE2 => loop_count(cpu, ram, opcode),
+        0xE0..=0xE2 => loop_count(cpu, ram, opcode),
         0xE3 => jump_count(cpu, ram, opcode),
         0xE8 => call_near(cpu, ram, opcode),
         0xE9 => jump_near(cpu, ram, opcode),
@@ -1362,7 +1363,13 @@ fn loop_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     };
     let count = cpu.wide(Slot::Count).wrapping_sub(1);
     cpu.set_wide(Slot::Count, count);
-    if count != 0 {
+    let zero = cpu.flags() & 0x40 != 0;
+    let branch = match opcode {
+        0xE0 => count != 0 && !zero,
+        0xE1 => count != 0 && zero,
+        _ => count != 0,
+    };
+    if branch {
         cpu.set_instruction(cpu.instruction().wrapping_add(byte as i8 as u16));
     }
     Outcome::Continue
@@ -1469,6 +1476,18 @@ fn test_byte(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
         return Outcome::Fault(opcode);
     };
     cpu.apply_result_flags(byte_logic(cpu.low(Slot::Accumulator) & immediate));
+    Outcome::Continue
+}
+
+fn test_word(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+    let Some(low) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(high) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let immediate = u16::from_le_bytes([low, high]);
+    cpu.apply_result_flags(logic_flags(cpu.wide(Slot::Accumulator) & immediate));
     Outcome::Continue
 }
 
