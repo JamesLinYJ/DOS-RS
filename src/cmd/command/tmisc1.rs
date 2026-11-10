@@ -27,6 +27,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tucode::break_cmd(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"VERIFY") {
+        tucode::verify_cmd(rest);
+        return true;
+    }
     false
 }
 

@@ -9,3 +9,4 @@ pub mod cpmio;
 pub mod cpmio2;
 pub mod disp;
 pub mod exec;
+pub mod getset;

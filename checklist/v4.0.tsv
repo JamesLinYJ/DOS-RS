@@ -800,7 +800,7 @@ v4.0/src/DOS/FCBIO2.ASM	text	untranslated	src/dos/fcbio2.rs
 v4.0/src/DOS/FCBIO.ASM	text	untranslated	src/dos/fcbio.rs
 v4.0/src/DOS/FILE.ASM	text	untranslated	src/dos/file.rs
 v4.0/src/DOS/FINFO.ASM	text	untranslated	src/dos/finfo.rs
-v4.0/src/DOS/GETSET.ASM	text	untranslated	src/dos/getset.rs
+v4.0/src/DOS/GETSET.ASM	text	partial	src/dos/getset.rs
 v4.0/src/DOS/HANDLE.ASM	text	untranslated	src/dos/handle.rs
 v4.0/src/DOS/HIGHSW.ASM	text	untranslated	src/dos/highsw.rs
 v4.0/src/DOS/IFS.ASM	text	untranslated	src/dos/ifs.rs

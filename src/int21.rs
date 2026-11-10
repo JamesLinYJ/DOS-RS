@@ -163,9 +163,11 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
+    slots[0x2E] = set_verify_on_write as fn(&mut LogicalFrame);
     slots[0x30] = get_version as fn(&mut LogicalFrame);
     slots[0x33] = set_ctrl_c_trapping as fn(&mut LogicalFrame);
     slots[0x4B] = exec_program as fn(&mut LogicalFrame);
+    slots[0x54] = get_verify_on_write as fn(&mut LogicalFrame);
     slots
 };
 
@@ -214,6 +216,16 @@ fn exec_program(frame: &mut LogicalFrame) {
     if !crate::dos::exec::image_has_command(frame.dx as u32 as *const u8) {
         frame.set_al(Al(2));
     }
+}
+
+/// AH=2Eh. `$SET_VERIFY_ON_WRITE`. AL bit 0 is the flag.
+fn set_verify_on_write(frame: &mut LogicalFrame) {
+    crate::dos::getset::set_verify((frame.ax & 0xff) as u8);
+}
+
+/// AH=54h. `$GET_VERIFY_ON_WRITE`. AL comes back as the flag.
+fn get_verify_on_write(frame: &mut LogicalFrame) {
+    frame.set_al(Al(crate::dos::getset::get_verify()));
 }
 
 /// AH=33h. `$SET_CTRL_C_TRAPPING`.

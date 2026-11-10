@@ -141,6 +141,11 @@ fn boot(gate: usize) -> ! {
         let _break = cmd::command::tmisc1::dispatch(b"BREAK\r");
         let _break_on = cmd::command::tmisc1::dispatch(b"BREAK ON\r");
         let _break_again = cmd::command::tmisc1::dispatch(b"BREAK\r");
+        // `VERIFY` reads VERFLG. It starts clear. ON stores AL bit 0 through
+        // AH=2Eh, and the next AH=54h read prints message 1056 as on.
+        let _verify = cmd::command::tmisc1::dispatch(b"VERIFY\r");
+        let _verify_on = cmd::command::tmisc1::dispatch(b"VERIFY ON\r");
+        let _verify_again = cmd::command::tmisc1::dispatch(b"VERIFY\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

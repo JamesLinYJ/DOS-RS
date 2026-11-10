@@ -45,6 +45,39 @@ pub fn break_cmd(tail: &[u8]) {
     }
 }
 
+/// `VERIFY`. ON and OFF call INT 21h AH=2Eh. A blank tail reads the flag
+/// with AH=54h and prints message 1056.
+pub fn verify_cmd(tail: &[u8]) {
+    match on_off(tail) {
+        OnOff::On => dos_verify_set(1),
+        OnOff::Off => dos_verify_set(0),
+        OnOff::Blank => {
+            let al = dos_verify_get();
+            con_write_bytes(b"VERIFY is ");
+            con_write_bytes(if al & 1 == 0 { OFF_TEXT } else { ON_TEXT });
+            crlf2();
+        }
+        OnOff::Other => {
+            con_write_bytes(b"Must specify ON or OFF\r\n");
+        }
+    }
+}
+
+fn dos_verify_set(al: u8) {
+    let mut eax = 0x2E00u32 | u32::from(al);
+    unsafe {
+        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
+    }
+}
+
+fn dos_verify_get() -> u8 {
+    let mut eax = 0x5400u32;
+    unsafe {
+        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
+    }
+    (eax & 0xff) as u8
+}
+
 fn dos_break(al: u8, dl: u8) -> u8 {
     let mut eax = 0x3300u32 | u32::from(al);
     let mut edx = u32::from(dl);

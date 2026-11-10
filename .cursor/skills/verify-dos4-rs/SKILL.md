@@ -37,7 +37,7 @@ The harness is `scripts/qemu-smoke.sh`. It boots `target/i686-unknown-none/relea
 PROOF_DIR=.cursor/skills/verify-dos4-rs/proof scripts/qemu-smoke.sh
 ```
 
-The script passes `-display none -serial stdio -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04 -m 64`, attaches `disks/msload.img` as a raw floppy, and uses a 15 second `timeout`. Read the feature file before driving. The stable strings are `dos4-rs i686`, `dos4-rs x86_64`, `AX=0004 BX=FF00 CX=0000 CF=1`, `BIOS`, `AUX`, `DSK8102`, `DSKF55AA`, `MED0001`, `CLK00000000`, `CLKP000000012400`, `CLKW0001000D`, `PRN`, `PRNS`, `PRNR0050`, `LOADOK`, `LOAD0200`, `PRNT0001`, `SYN0030`, `PAR0002`, `BUF0002`, `Unrecognized command in CONFIG.SYS`, `CMDOK`, `COMSPEC=\COMMAND.COM`, `A>`, `Microsoft DOS             Version 4.0`, `ECHO is on`, `hello`, `ECHO is off`, `BREAK is off`, and `BREAK is on`. A successful load must not print `Bad or missing Command Interpreter`.
+The script passes `-display none -serial stdio -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04 -m 64`, attaches `disks/msload.img` as a raw floppy, and uses a 15 second `timeout`. Read the feature file before driving. The stable strings are `dos4-rs i686`, `dos4-rs x86_64`, `AX=0004 BX=FF00 CX=0000 CF=1`, `BIOS`, `AUX`, `DSK8102`, `DSKF55AA`, `MED0001`, `CLK00000000`, `CLKP000000012400`, `CLKW0001000D`, `PRN`, `PRNS`, `PRNR0050`, `LOADOK`, `LOAD0200`, `PRNT0001`, `SYN0030`, `PAR0002`, `BUF0002`, `Unrecognized command in CONFIG.SYS`, `CMDOK`, `COMSPEC=\COMMAND.COM`, `A>`, `Microsoft DOS             Version 4.0`, `ECHO is on`, `hello`, `ECHO is off`, `BREAK is off`, `BREAK is on`, `VERIFY is off`, and `VERIFY is on`. A successful load must not print `Bad or missing Command Interpreter`.
 
 ## Evidence
 
