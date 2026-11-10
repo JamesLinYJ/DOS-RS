@@ -44,6 +44,7 @@ pub mod ioctl;
 pub mod kstrin;
 pub mod isearch;
 pub mod lock;
+pub mod r#macro;
 pub mod misc;
 pub mod mscode;
 pub mod mscpmio;

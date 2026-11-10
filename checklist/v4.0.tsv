@@ -809,7 +809,7 @@ v4.0/src/DOS/ISEARCH.ASM	text	partial	src/dos/isearch.rs
 v4.0/src/DOS/KSTRIN.ASM	text	partial	src/dos/kstrin.rs
 v4.0/src/DOS/LOCK.ASM	text	untranslated	src/dos/lock.rs
 v4.0/src/DOS/MACRO2.ASM	text	untranslated	src/dos/macro2.rs
-v4.0/src/DOS/MACRO.ASM	text	untranslated	src/dos/macro.rs
+v4.0/src/DOS/MACRO.ASM	text	partial	src/dos/macro.rs
 v4.0/src/DOS/MAKEFILE	text	untranslated	src/dos/makefile.rs
 v4.0/src/DOS/MISC2.ASM	text	untranslated	src/dos/misc2.rs
 v4.0/src/DOS/MISC.ASM	text	partial	src/dos/misc.rs

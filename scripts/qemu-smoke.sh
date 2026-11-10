@@ -771,6 +771,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MACRO A7USE A8CLR A70F AS111E DP02 DPNO ICA4000 IC0000 CD00 CDNO U0 U1 UP111F U601 L01 V00 E1A SP0F SPOK NUL00" "$out"; then
+		echo "$name missing drive macros" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

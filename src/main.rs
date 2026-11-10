@@ -325,6 +325,8 @@ fn boot(gate: usize) -> ! {
         dos::dispatch::show();
         // Country tables: code page 437, and 82h maps to E.
         dos::dosmes::show();
+        // Drive macros: functions 7 and 8 update in-use, and A is unit 0.
+        dos::r#macro::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
