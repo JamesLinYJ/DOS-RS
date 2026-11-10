@@ -275,3 +275,8 @@ BIOS 1A 0001
 COMPRESS FF0541
 EXE2BIN File not found
 exec: can't run HELLO.COM
+DBOF Syntax: DBOF Source-file Target-file Hex-start Hex-length
+   Source-file: file specification that data is to come from.
+   Target-file: file specification that data is to go to. 
+     Hex-start: offset into the file where data starts (up to 8 hex digits)
+    Hex-length: length of the data to get (up to 4 hex digits)

@@ -34,6 +34,7 @@ pub fn show() {
     crate::bios::mscon::con_write_bytes(b"EXE2BIN ");
     show_image(b"EXE2BIN EXE", EXE_PREFIX, true, 20000);
     show_exec();
+    show_image(b"DBOF    EXE", EXE_PREFIX, true, 60000);
 }
 
 fn show_exec() {

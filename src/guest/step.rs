@@ -59,6 +59,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0x6E => output_string(cpu, ram, opcode),
         0x70..=0x7F => branch(cpu, ram, opcode, false),
         0x80 => add_immediate(cpu, ram, override_segment, opcode),
+        0x84 | 0x85 => test_operands(cpu, ram, override_segment, opcode),
         0x81 | 0x83 => alter_word(cpu, ram, override_segment, opcode),
         0x88 | 0x89 => move_into_operand(cpu, ram, override_segment, opcode),
         0x8A | 0x8B => move_from_operand(cpu, ram, override_segment, opcode),
@@ -1431,6 +1432,36 @@ fn exchange_operand(
             Outcome::Fault(opcode)
         }
     }
+}
+
+fn test_operands(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
+    let wide = opcode & 1 == 1;
+    let Some(modrm) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
+        return Outcome::Fault(opcode);
+    };
+    let reg = (modrm >> 3) & 7;
+    if wide {
+        let Some(other) = read_word(cpu, ram, &operand) else {
+            return Outcome::Fault(opcode);
+        };
+        cpu.apply_result_flags(logic_flags(cpu.wide(Slot::from_index(reg)) & other));
+    } else {
+        let (slot, high) = byte_half(reg);
+        let left = if high { cpu.high(slot) } else { cpu.low(slot) };
+        let Some(other) = read_byte(cpu, ram, &operand) else {
+            return Outcome::Fault(opcode);
+        };
+        cpu.apply_result_flags(byte_logic(left & other));
+    }
+    Outcome::Continue
 }
 
 fn test_byte(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
