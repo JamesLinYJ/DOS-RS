@@ -1,5 +1,10 @@
 //! Resident command pieces from `CMD/COMMAND`.
 
+pub mod comequ;
+pub mod command1;
+pub mod command2;
+pub mod comseg;
+pub mod comsw;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;

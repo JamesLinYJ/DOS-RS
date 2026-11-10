@@ -341,6 +341,12 @@ fn boot(gate: usize) -> ! {
         dos::msinit::show();
         // Allowed errors per call. The dispatch vectors stay where they are.
         dos::ms_table::show();
+        // Command equates, Ctrl-C, and the transient reload checks.
+        cmd::command::comequ::show();
+        cmd::command::command1::show();
+        cmd::command::command2::show();
+        cmd::command::comseg::show();
+        cmd::command::comsw::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

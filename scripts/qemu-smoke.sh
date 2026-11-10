@@ -819,6 +819,36 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COMEQU SYM3E PG0019 NL01 WL05 CB0080 NT000A EC40 EA00 EB01 IW4E49 DW4F44 SD8003 SC801C Y01 N00 ELFFFF EI0D RN01 RS03 RF05 RD06 DA07 TM08 OK00 II01 IS02 IC04 FA08 RY10 IG20 AR0040" "$out"; then
+		echo "$name missing command equates" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "CMD1 EX02E5 EX08E3 EX0BE2 EX05E6 EX01E1 K0000000000000000000000 K0100000000000000000000 K0000000000000000000000 K0200000000000000000000 K0200000000000000000000 K0000000000000000000000 K0300000000000000000001 K0400000000000000000001 K0301000000000000000001 K0304000000000100000001 K0405000000000000000001 K0307000200000200000001 K03000000FFFF0000000000" "$out"; then
+		echo "$name missing resident control" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "CMD2 00010200 C0000 C0009 S0081 CP0080 SZ0001 SZ0001 SZ0002 FT00 FT01 AL3000 AL2000 ALF000 RM00 RM01 RM00 CL10 IN01 D5C D2F VF00 VF01 SC00 SC01 SM01 SM00" "$out"; then
+		echo "$name missing transient reload" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "COMSEG R08 T04 RAFC TA08 OR12345678 OT9ABC" "$out"; then
+		echo "$name missing command segments" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "COMSW IBFFFF CR0000 MS0000 BFFFFF IN0000 KN0000" "$out"; then
+		echo "$name missing command switches" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
