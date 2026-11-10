@@ -261,6 +261,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "IOCTL H06 REM00 FIX01" "$out"; then
+		echo "$name missing IOCTL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PATHLEN 4 OK 67 BAD" "$out"; then
+		echo "$name missing path length" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "03-04-84 01:02" "$out"; then
 		echo "$name missing file time" >&2
 		cat "$out" >&2

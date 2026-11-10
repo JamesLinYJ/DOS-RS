@@ -213,6 +213,10 @@ fn boot(gate: usize) -> ! {
         dos::fat::media_show();
         // Drive parameter block, buffer cache, and the sector read under it.
         dos::buf::show();
+        // `$IOCTL` on a closed handle, then removable and fixed drives.
+        dos::ioctl::show();
+        // `Check_PathLen`: `\SUB` fits, 67 bytes does not.
+        dos::path::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

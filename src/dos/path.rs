@@ -104,6 +104,43 @@ pub fn getcwd(buf: *mut u8) -> u16 {
     0
 }
 
+/// `DIRSTRLEN` from `INC/CURDIR.INC`. `Check_PathLen` carries when the
+/// string is shorter than this.
+pub const DIR_STR_LEN: usize = 64 + 3;
+
+pub fn path_fits(text: &[u8]) -> bool {
+    text.len() < DIR_STR_LEN
+}
+
+pub fn show() {
+    let short = b"\\SUB";
+    let mut long = [b'A'; DIR_STR_LEN];
+    long[0] = b'\\';
+    crate::bios::mscon::con_write_bytes(b"PATHLEN ");
+    put_dec(short.len() as u16);
+    crate::bios::mscon::con_write_bytes(if path_fits(short) { b" OK " } else { b" BAD " });
+    put_dec(long.len() as u16);
+    crate::bios::mscon::con_write_bytes(if path_fits(&long) { b" OK\r\n" } else { b" BAD\r\n" });
+}
+
+fn put_dec(mut value: u16) {
+    let mut buf = [0u8; 5];
+    let mut n = 0usize;
+    if value == 0 {
+        crate::bios::mscon::con_write_bytes(b"0");
+        return;
+    }
+    while value != 0 {
+        buf[n] = b'0' + (value % 10) as u8;
+        n += 1;
+        value /= 10;
+    }
+    while n != 0 {
+        n -= 1;
+        crate::bios::mscon::con_write_bytes(&buf[n..n + 1]);
+    }
+}
+
 fn leaf(name: *const u8) -> Option<[u8; 11]> {
     let raw = search::read_asciiz(name);
     let mut len = search::asciiz_len(&raw);

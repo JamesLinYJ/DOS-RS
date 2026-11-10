@@ -19,6 +19,7 @@ pub mod file;
 pub mod getset;
 pub mod disk;
 pub mod handle;
+pub mod ioctl;
 pub mod misc;
 pub mod parse;
 pub mod path;

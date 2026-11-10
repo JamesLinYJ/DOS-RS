@@ -185,6 +185,7 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x3A] = rmdir as fn(&mut LogicalFrame);
     slots[0x3B] = chdir as fn(&mut LogicalFrame);
     slots[0x43] = file_attributes as fn(&mut LogicalFrame);
+    slots[0x44] = ioctl as fn(&mut LogicalFrame);
     slots[0x57] = file_times as fn(&mut LogicalFrame);
     slots[0x3C] = create_file as fn(&mut LogicalFrame);
     slots[0x3D] = open_handle as fn(&mut LogicalFrame);
@@ -379,6 +380,17 @@ static mut HOUR: u8 = 0;
 static mut MINUTE: u8 = 0;
 static mut SECOND: u8 = 0;
 static mut HUNDREDTH: u8 = 0;
+
+/// AH=44h. AL=0 and AL=8 are the slices of `$IOCTL` this boot uses.
+fn ioctl(frame: &mut LogicalFrame) {
+    let al = (frame.ax & 0xff) as u8;
+    let (ax, dx, al_out) = crate::dos::ioctl::on_frame(al, frame.bx as u16);
+    frame.store_ax(DosWord(if al == 8 { u16::from(al_out) } else { ax }));
+    frame.store_dx(DosWord(dx));
+    if al == 8 && ax == 0 {
+        frame.set_al(Al(al_out));
+    }
+}
 
 /// AH=43h. AL=0 reads the attribute into CX. AL=1 stores CX into the directory entry.
 ///
