@@ -311,6 +311,8 @@ fn boot(gate: usize) -> ! {
         dos::srvcall::show();
         // Alternate vectors: escape is 1Bh and terminate lives at F0h.
         dos::stdasw::show();
+        // Standard data: debug is off, and alternate vectors are off.
+        dos::stddata::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

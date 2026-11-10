@@ -729,6 +729,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "STDDATA DBG00 INSFFFF IBM0000 AV0000 RB0000 HM0000 ESC1B CAN18" "$out"; then
+		echo "$name missing standard data" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
