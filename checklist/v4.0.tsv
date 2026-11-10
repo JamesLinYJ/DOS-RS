@@ -826,7 +826,7 @@ v4.0/src/DOS/MSHALO.ASM	text	untranslated	src/dos/mshalo.rs
 v4.0/src/DOS/MSINIT.ASM	text	untranslated	src/dos/msinit.rs
 v4.0/src/DOS/MSIOCTL.ASM	text	partial	src/dos/msioctl.rs
 v4.0/src/DOS/MSPROC.ASM	text	partial	src/dos/msproc.rs
-v4.0/src/DOS/MSSW.ASM	text	untranslated	src/dos/mssw.rs
+v4.0/src/DOS/MSSW.ASM	text	partial	src/dos/mssw.rs
 v4.0/src/DOS/MS_TABLE.ASM	text	untranslated	src/dos/ms_table.rs
 v4.0/src/DOS/NSTDOS.ASM	text	untranslated	src/dos/nstdos.rs
 v4.0/src/DOS/OPEN.ASM	text	untranslated	src/dos/open.rs

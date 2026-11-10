@@ -263,6 +263,8 @@ fn boot(gate: usize) -> ! {
         dos::stdioctl::show();
         // Wait, Ctrl-C exit, keep, stay resident, and abort.
         dos::msproc::show();
+        // IBM process switches: escape is null and DOS stays low.
+        dos::mssw::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
