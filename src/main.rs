@@ -420,6 +420,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debems::show();
         // The two-letter names keep the first letter in the low byte.
         cmd::debug::debequ::show();
+        // A zero marker selects the write-protect messages.
+        cmd::debug::deberr::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

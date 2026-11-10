@@ -8,3 +8,4 @@ pub mod debconst;
 pub mod debdata;
 pub mod debems;
 pub mod debequ;
+pub mod deberr;

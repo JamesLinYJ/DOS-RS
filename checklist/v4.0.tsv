@@ -152,7 +152,7 @@ v4.0/src/CMD/DEBUG/DEBCONST.ASM	text	partial	src/cmd/debug/debconst.rs
 v4.0/src/CMD/DEBUG/DEBDATA.ASM	text	partial	src/cmd/debug/debdata.rs
 v4.0/src/CMD/DEBUG/DEBEMS.ASM	text	partial	src/cmd/debug/debems.rs
 v4.0/src/CMD/DEBUG/DEBEQU.ASM	text	partial	src/cmd/debug/debequ.rs
-v4.0/src/CMD/DEBUG/DEBERR.ASM	text	untranslated	src/cmd/debug/deberr.rs
+v4.0/src/CMD/DEBUG/DEBERR.ASM	text	partial	src/cmd/debug/deberr.rs
 v4.0/src/CMD/DEBUG/DEBMES.ASM	text	untranslated	src/cmd/debug/debmes.rs
 v4.0/src/CMD/DEBUG/DEBUASM.ASM	text	untranslated	src/cmd/debug/debuasm.rs
 v4.0/src/CMD/DEBUG/DEBUG.ASM	text	untranslated	src/cmd/debug/debug.rs

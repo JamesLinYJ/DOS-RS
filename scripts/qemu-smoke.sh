@@ -1083,6 +1083,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBERR JP00 WR40 RD3F RS0D L41 M02 L42 M01 L41 M04 L43 M03 L41 M01 L40 M02 TP00 RL00" "$out"; then
+		echo "$name missing disk errors" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
