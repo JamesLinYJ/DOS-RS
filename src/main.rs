@@ -428,6 +428,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debuasm::show();
         // X runs expanded memory because the system-version switch is off.
         cmd::debug::debug::show();
+        // A 720 KB drive compares only with another 720 KB drive.
+        cmd::diskcomp::compinit::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
