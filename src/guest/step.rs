@@ -1434,18 +1434,24 @@ fn shift_once(
     let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
         return Outcome::Fault(opcode);
     };
-    if (modrm >> 3) & 7 != 5 {
-        return Outcome::Fault(opcode);
-    }
-    let Some(mut value) = read_byte(cpu, ram, &operand) else {
+    let operation = (modrm >> 3) & 7;
+    let Some(value) = read_byte(cpu, ram, &operand) else {
         return Outcome::Fault(opcode);
     };
-    let carried = value & 1 != 0;
-    value >>= 1;
-    if !write_byte(cpu, ram, &operand, value) {
+    let carry_in = cpu.flags() & 1 != 0;
+    let (result, carried) = match operation {
+        0 => ((value << 1) | u8::from(value & 0x80 != 0), value & 0x80 != 0),
+        1 => ((value >> 1) | ((value & 1) << 7), value & 1 != 0),
+        2 => ((value << 1) | u8::from(carry_in), value & 0x80 != 0),
+        3 => ((value >> 1) | (u8::from(carry_in) << 7), value & 1 != 0),
+        4 | 6 => (value << 1, value & 0x80 != 0),
+        5 => (value >> 1, value & 1 != 0),
+        _ => (((value as i8) >> 1) as u8, value & 1 != 0),
+    };
+    if !write_byte(cpu, ram, &operand, result) {
         return Outcome::Fault(opcode);
     }
-    cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
+    cpu.apply_result_flags(sized_flags(u16::from(result), 0x0080));
     cpu.set_carry(carried);
     Outcome::Continue
 }

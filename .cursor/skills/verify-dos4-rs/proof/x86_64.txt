@@ -283,6 +283,16 @@ NMAKE : warning U4013: tools initialization file not found
 CMD COPY OK
 CMD TYPE nmake-wrote
 
+Microsoft (R) Macro Assembler Version 5.10 
+Copyright (C) Microsoft Corp 1981, 
+  47526 + 481331 Bytes symbol space free
+
+      0 Warning Errors
+      0 Severe  Errors
+
+Microsoft (R) Overlay Linker  Version 3.65   
+Copyright (C) Microsoft Corp 19LINK : warning L4021: no stack segment
+MASM OK
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
