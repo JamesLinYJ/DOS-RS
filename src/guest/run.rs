@@ -341,14 +341,16 @@ struct Opened {
     access: u8,
 }
 
-static mut FILE_POOL: [[u8; FILE_BYTES]; 8] = [[0; FILE_BYTES]; 8];
+const HANDLE_SLOTS: usize = 20;
+
+static mut FILE_POOL: [[u8; FILE_BYTES]; HANDLE_SLOTS] = [[0; FILE_BYTES]; HANDLE_SLOTS];
 
 fn file_bytes(index: usize) -> &'static mut [u8] {
     unsafe { &mut (*core::ptr::addr_of_mut!(FILE_POOL))[index] }
 }
 
 pub(super) struct Session {
-    opens: [Option<Opened>; 8],
+    opens: [Option<Opened>; HANDLE_SLOTS],
     last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
@@ -363,7 +365,7 @@ pub(super) struct Session {
 impl Session {
     fn new() -> Self {
         Self {
-            opens: [None; 8],
+            opens: [None; HANDLE_SLOTS],
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,

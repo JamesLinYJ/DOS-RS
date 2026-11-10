@@ -1253,7 +1253,8 @@ run_one() {
 		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \
 		|| ! grep -q "nmake-wrote" "$out" \
 		|| ! grep -q "Microsoft (R) Macro Assembler Version 5.10" "$out" \
-		|| ! grep -q "MASM OK" "$out"; then
+		|| ! grep -q "MASM OK" "$out" \
+		|| ! grep -q "c1ok" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

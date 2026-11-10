@@ -293,6 +293,7 @@ Copyright (C) Microsoft Corp 1981,
 Microsoft (R) Overlay Linker  Version 3.65   
 Copyright (C) Microsoft Corp 19LINK : warning L4021: no stack segment
 MASM OK
+CMD TYPE edc1ok
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK

@@ -166,4 +166,6 @@ The guest volume is 2513 sectors. Eight sectors of FAT hold the table, and the h
 
 `MASM.EXE` is the macro assembler from that same tree, `v4.0/src/TOOLS/MASM.EXE`, under the same MIT license. A byte shift by one covers rotate, rotate-through-carry, logical shift, and arithmetic shift, in either direction. The shell runs `MASM.EXE MASMIN,MASMOUT,,;` on `MASMIN.ASM`, then `LINK.EXE MASMOUT.OBJ,MASMOK.EXE;` and `MASMOK.EXE`. The assembler prints `Microsoft (R) Macro Assembler Version 5.10`. The linked program prints `MASM OK`.
 
+`C1.EXE` is the C front end from that same tree, `v4.0/src/TOOLS/C1.EXE`, under the same MIT license. A guest can keep twenty files open at once, so the front end can hold its intermediate files and still open the source. The shell runs `C1.EXE -f TINY.C`. The flag names the source, and `TYPE sy` shows the symbol `c1ok` from that compile.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.
