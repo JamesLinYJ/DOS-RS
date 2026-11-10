@@ -265,6 +265,8 @@ fn boot(gate: usize) -> ! {
         dos::msproc::show();
         // IBM process switches: escape is null and DOS stays low.
         dos::mssw::show();
+        // IBM absolute disk read: BIOS status 2 becomes 80h.
+        dos::mscode::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -41,6 +41,7 @@ pub mod ioctl;
 pub mod isearch;
 pub mod lock;
 pub mod misc;
+pub mod mscode;
 pub mod msioctl;
 pub mod msproc;
 pub mod mssw;
