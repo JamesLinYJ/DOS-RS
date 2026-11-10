@@ -303,6 +303,8 @@ fn boot(gate: usize) -> ! {
         dos::proc::show();
         // Rename: same drive, question-mark names, and a freed source.
         dos::rename::show();
+        // Segment checks: DS against SS or CS, and list walks that stop at FFFFh.
+        dos::segcheck::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

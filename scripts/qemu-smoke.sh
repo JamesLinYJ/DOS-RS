@@ -705,6 +705,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "SEGCHECK DS01 CS00 ES01 DP00 DP01 SF00 SF01 NP00 OW01 ZR01 BU01 BE00" "$out"; then
+		echo "$name missing segment check" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
