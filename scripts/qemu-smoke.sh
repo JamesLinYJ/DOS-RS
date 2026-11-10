@@ -783,6 +783,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MISC2 EQ1 NE0 CP415C42 RAW61 LN03 UC41 U8245 TDOK TD05BAD NET1 LOC0 SNET1 ID00 ID03 FV0000 FV1234 MSG0000 MSG0004 FSFFFF FIA" "$out"; then
+		echo "$name missing string helpers" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

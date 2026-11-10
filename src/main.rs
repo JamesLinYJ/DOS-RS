@@ -329,6 +329,8 @@ fn boot(gate: usize) -> ! {
         dos::r#macro::show();
         // Path canonicalization: slash, drive letters, and dot-dot backup.
         dos::macro2::show();
+        // String compare folds case and slash, and a full table index is rejected.
+        dos::misc2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

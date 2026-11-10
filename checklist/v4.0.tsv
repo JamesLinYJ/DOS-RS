@@ -811,7 +811,7 @@ v4.0/src/DOS/LOCK.ASM	text	untranslated	src/dos/lock.rs
 v4.0/src/DOS/MACRO2.ASM	text	partial	src/dos/macro2.rs
 v4.0/src/DOS/MACRO.ASM	text	partial	src/dos/macro.rs
 v4.0/src/DOS/MAKEFILE	text	untranslated	src/dos/makefile.rs
-v4.0/src/DOS/MISC2.ASM	text	untranslated	src/dos/misc2.rs
+v4.0/src/DOS/MISC2.ASM	text	partial	src/dos/misc2.rs
 v4.0/src/DOS/MISC.ASM	text	partial	src/dos/misc.rs
 v4.0/src/DOS/MKNODE.ASM	text	untranslated	src/dos/mknode.rs
 v4.0/src/DOS/MS_CODE.ASM	text	partial	src/dos/ms_code.rs

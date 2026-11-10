@@ -47,6 +47,7 @@ pub mod lock;
 pub mod r#macro;
 pub mod macro2;
 pub mod misc;
+pub mod misc2;
 pub mod mscode;
 pub mod mscpmio;
 pub mod msctrlc;
