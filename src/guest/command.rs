@@ -122,7 +122,7 @@ fn show_file(rest: &[u8]) {
         return;
     };
     let mut body = [0u8; 256];
-    let Some(length) = disk::read_file(&name, &mut body) else {
+    let Some(length) = disk::read_head(&name, &mut body) else {
         say(b"CMD TYPE FAIL\r\n");
         return;
     };

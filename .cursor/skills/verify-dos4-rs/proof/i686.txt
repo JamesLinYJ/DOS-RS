@@ -297,6 +297,17 @@ CMD TYPE g%@efprintfdc1okihmain
 
 Microsoft (R) Overlay Linker  Version 3.65   
 Copyright (C) Microsoft Corp 19C2 OK
+
+IBM Library Manager/2 Version 1.01
+(C) Copyright IBM Corporation 1984, 1988
+(C) Copyright Microsoft Corp 1983, 1988.  All rights reserved.
+
+CMD DIR LIB2.LST
+CMD TYPE __aFFaldiv........affaldiv          __aFFalmul........affalmul
+__aFFalrem........affalrem          __aFFalshl........affalshl
+__aFFalshr........affalshr          __aFFauldiv.......affauldi
+__aFFaulmul.......affalmul          __aFFaulrem.......affaulre
+
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK

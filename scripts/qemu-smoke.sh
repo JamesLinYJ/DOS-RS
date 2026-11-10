@@ -1255,7 +1255,9 @@ run_one() {
 		|| ! grep -q "Microsoft (R) Macro Assembler Version 5.10" "$out" \
 		|| ! grep -q "MASM OK" "$out" \
 		|| ! grep -q "c1ok" "$out" \
-		|| ! grep -q "C2 OK" "$out"; then
+		|| ! grep -q "C2 OK" "$out" \
+		|| ! grep -q "IBM Library Manager/2 Version 1.01" "$out" \
+		|| ! grep -q "CMD DIR LIB2.LST" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
