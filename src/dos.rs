@@ -41,6 +41,7 @@ pub mod ioctl;
 pub mod isearch;
 pub mod lock;
 pub mod misc;
+pub mod msioctl;
 pub mod ms_code;
 pub mod parse;
 pub mod path;

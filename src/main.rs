@@ -257,6 +257,8 @@ fn boot(gate: usize) -> ! {
         dos::extattr::show();
         // IFS service: enter and leave DOS, stack size, and a path copy.
         dos::ifs::show();
+        // IBM IOCTL build: the switch is true and the media-id call is 66h.
+        dos::msioctl::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
