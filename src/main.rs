@@ -253,6 +253,8 @@ fn boot(gate: usize) -> ! {
         dos::highsw::show();
         // Internal directory search: one file, then no further match.
         dos::isearch::show();
+        // Extended attributes: maximum size, a short buffer, and a set.
+        dos::extattr::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

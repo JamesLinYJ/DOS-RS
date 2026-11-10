@@ -16,6 +16,7 @@ pub mod cpmio;
 pub mod cpmio2;
 pub mod disp;
 pub mod exec;
+pub mod extattr;
 pub mod fcb;
 pub mod fcbio;
 pub mod fcbio2;
