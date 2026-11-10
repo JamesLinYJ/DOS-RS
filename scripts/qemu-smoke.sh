@@ -1257,7 +1257,8 @@ run_one() {
 		|| ! grep -q "c1ok" "$out" \
 		|| ! grep -q "C2 OK" "$out" \
 		|| ! grep -q "IBM Library Manager/2 Version 1.01" "$out" \
-		|| ! grep -q "CMD DIR LIB2.LST" "$out"; then
+		|| ! grep -q "CMD DIR LIB2.LST" "$out" \
+		|| ! grep -q "06EH,06DH,061H,06BH,065H" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

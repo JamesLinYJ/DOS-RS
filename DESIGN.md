@@ -172,4 +172,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `LIB2.EXE` is the library manager from `v4.0/src/LIB/LIB.EXE`, under the same MIT license. It is not the 3.10 tool. The shell runs `LIB2.EXE LIBH.LIB, LIB2.LST;`. It reads the library and writes the cross-reference. The banner is `IBM Library Manager/2 Version 1.01`, and the new file is `CMD DIR LIB2.LST`.
 
+`DBOF.EXE` still prints its syntax line when launched with an empty tail. Later the shell runs `DBOF.EXE MAKEIN.TXT DBOFOUT.TXT 0 B`. That reads eleven bytes of `nmake-wrote` and writes them as `db` bytes. `TYPE` shows `06EH,06DH,061H,06BH,065H`.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.
