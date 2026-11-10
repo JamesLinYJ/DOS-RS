@@ -122,7 +122,7 @@ v4.0/src/CMD/COMMAND/TCMD2A.ASM	text	partial	src/cmd/command/tcmd2a.rs
 v4.0/src/CMD/COMMAND/TCMD2B.ASM	text	partial	src/cmd/command/tcmd2b.rs
 v4.0/src/CMD/COMMAND/TCODE.ASM	text	partial	src/cmd/command/tcode.rs
 v4.0/src/CMD/COMMAND/TDATA.ASM	text	partial	src/cmd/command/tdata.rs
-v4.0/src/CMD/COMMAND/TENV2.ASM	text	untranslated	src/cmd/command/tenv2.rs
+v4.0/src/CMD/COMMAND/TENV2.ASM	text	partial	src/cmd/command/tenv2.rs
 v4.0/src/CMD/COMMAND/TENV.ASM	text	partial	src/cmd/command/tenv.rs
 v4.0/src/CMD/COMMAND/TFOR.ASM	text	untranslated	src/cmd/command/tfor.rs
 v4.0/src/CMD/COMMAND/TMISC1.ASM	text	partial	src/cmd/command/tmisc1.rs

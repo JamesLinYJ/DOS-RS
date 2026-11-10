@@ -374,6 +374,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tcmd2b::show();
         // Pipes outrank FOR, which outranks batch. A bare drive changes drives.
         cmd::command::tcode::show();
+        // MKDIR reports an existing directory only after access denied.
+        cmd::command::tenv2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

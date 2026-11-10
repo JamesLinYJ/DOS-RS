@@ -945,6 +945,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TENV2 CD00 CD01 CD00 CD01 CD06 CD02 CD03 CD07 MK01 MK00 MK02 MK04 MK02 MK02 MK03 RM01 RM02 RM00 RM02 RM02 RM03 PC00 PC01 PC01 PC00 FC444952 FC434F4D4D414E442E434F4D EQ01 EQ00" "$out"; then
+		echo "$name missing directory commands" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
