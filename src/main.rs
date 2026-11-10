@@ -333,6 +333,8 @@ fn boot(gate: usize) -> ! {
         dos::misc2::show();
         // New directory nodes: the root cannot grow, and a second label is rejected.
         dos::mknode::show();
+        // Initialized data: debug marker, 128-byte sectors, and sharer slots.
+        dos::msconst::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

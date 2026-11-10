@@ -57,6 +57,7 @@ pub mod msioctl;
 pub mod msproc;
 pub mod mssw;
 pub mod ms_code;
+pub mod msconst;
 pub mod nstdos;
 pub mod open;
 pub mod parse;
