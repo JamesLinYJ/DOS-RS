@@ -128,6 +128,6 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 
 `EXE2BIN.EXE` is the same tree's converter, `v4.0/src/TOOLS/EXE2BIN.EXE`, under that same MIT license. With an empty command tail it prints `File not found`. The kernel writes `EXE2BIN ` first, so the serial check is `EXE2BIN File not found`.
 
-`EXEC.EXE` is the Microsoft C 5.10 launcher from that tree, `v4.0/src/TOOLS/EXEC.EXE`, under the same MIT license. The prefix carries an empty environment and the tail ` HELLO.COM`. The runtime prints `exec: can't run HELLO.COM`.
+`EXEC.EXE` is the Microsoft C 5.10 launcher from that tree, `v4.0/src/TOOLS/EXEC.EXE`, under the same MIT license. The prefix carries `PATH=\` and the tail ` HELLO.COM`. Its child exec loads that program, and the serial log shows `GUEST HELLO COM` from the child.
 
 `DBOF.EXE` is the dump-binary tool from that same tree, `v4.0/src/TOOLS/DBOF.EXE`, under the same MIT license. With an empty command tail it prints `DBOF Syntax: DBOF Source-file Target-file Hex-start Hex-length`.

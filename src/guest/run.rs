@@ -13,7 +13,7 @@ use super::volume;
 const COM_SEGMENT: u16 = 0x0100;
 const EXE_PREFIX: u16 = 0x0300;
 const RUN_SEGMENT: u16 = 0x0500;
-const CHILD_SEGMENT: u16 = 0x0700;
+const LAUNCH_SEGMENT: u16 = 0x1600;
 const SHELL_SEGMENT: u16 = 0x0900;
 const SHELL_CHILD: u16 = 0x0B00;
 const WIDE_SEGMENT: u16 = 0x0D00;
@@ -596,10 +596,16 @@ fn write_console(cpu: &mut CpuState, ram: &GuestRam) {
 fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if cpu.low(Slot::Accumulator) != 0 {
         cpu.set_carry(true);
+        cpu.set_wide(Slot::Accumulator, 1);
         return;
     }
-    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+    let text = guest_text(cpu, ram);
+    let block_segment = cpu.selector(Segment::Extra);
+    let block_offset = cpu.wide(Slot::Base);
+    let environment = environment_segment(ram, block_segment, block_offset);
+    let Some(name) = resolve_program(&text, ram, environment) else {
         cpu.set_carry(true);
+        cpu.set_wide(Slot::Accumulator, 2);
         return;
     };
     let mut image = [0u8; 512];
@@ -611,22 +617,197 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let executable = image.first() == Some(&b'M') && image.get(1) == Some(&b'Z');
     let Some(mut child) = place_child(&image[..length], ram, executable) else {
         cpu.set_carry(true);
+        cpu.set_wide(Slot::Accumulator, 8);
         return;
     };
-    match drive(&mut child, ram, session, 64) {
+    copy_command_tail(ram, block_segment, block_offset);
+    match drive(&mut child, ram, session, 512) {
         End::Stopped(code) => {
             session.last_code = u16::from(code);
+            cpu.set_wide(Slot::Accumulator, 0);
             cpu.set_carry(false);
         }
-        _ => cpu.set_carry(true),
+        _ => {
+            cpu.set_wide(Slot::Accumulator, 1);
+            cpu.set_carry(true);
+        }
+    }
+}
+
+fn environment_segment(ram: &GuestRam, segment: u16, offset: u16) -> u16 {
+    let Some(low) = ram.load(segment, offset) else {
+        return 0;
+    };
+    let Some(high) = ram.load(segment, offset.wrapping_add(1)) else {
+        return 0;
+    };
+    let given = u16::from_le_bytes([low, high]);
+    if given != 0 {
+        return given;
+    }
+    let Some(parent) = ram.load(segment, 0x002C) else {
+        return 0;
+    };
+    let Some(parent_high) = ram.load(segment, 0x002D) else {
+        return 0;
+    };
+    u16::from_le_bytes([parent, parent_high])
+}
+
+fn resolve_program(text: &[u8; 64], ram: &GuestRam, environment: u16) -> Option<[u8; 11]> {
+    if let Some(name) = file_component(text)
+        && volume::listed(volume::IMAGE, &name)
+    {
+        return Some(name);
+    }
+    if directory_named(text) {
+        return None;
+    }
+    let name = file_component(text)?;
+    if path_lists(ram, environment, &name) {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+fn directory_named(text: &[u8; 64]) -> bool {
+    let mut index = 0usize;
+    while index < text.len() && text[index] != 0 {
+        if text[index] == b'\\' || text[index] == b'/' || text[index] == b':' {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn file_component(text: &[u8; 64]) -> Option<[u8; 11]> {
+    let mut start = 0usize;
+    let mut end = 0usize;
+    while end < text.len() && text[end] != 0 {
+        if text[end] == b'\\' || text[end] == b'/' || text[end] == b':' {
+            start = end + 1;
+        }
+        end += 1;
+    }
+    if start >= end {
+        return None;
+    }
+    let mut bare = [0u8; 64];
+    let mut index = 0usize;
+    while start < end && index + 1 < bare.len() {
+        bare[index] = text[start];
+        index += 1;
+        start += 1;
+    }
+    dos_name(&bare)
+}
+
+fn path_lists(ram: &GuestRam, segment: u16, name: &[u8; 11]) -> bool {
+    if segment == 0 || !volume::listed(volume::IMAGE, name) {
+        return false;
+    }
+    let mut offset = 0u16;
+    while offset < 0x1000 {
+        if path_key(ram, segment, offset) {
+            return path_value(ram, segment, offset.wrapping_add(5));
+        }
+        let Some(byte) = ram.load(segment, offset) else {
+            return false;
+        };
+        if byte == 0 {
+            return false;
+        }
+        while offset < 0x1000 {
+            let Some(next) = ram.load(segment, offset) else {
+                return false;
+            };
+            offset = offset.wrapping_add(1);
+            if next == 0 {
+                break;
+            }
+        }
+    }
+    false
+}
+
+fn path_key(ram: &GuestRam, segment: u16, offset: u16) -> bool {
+    let key = b"PATH=";
+    let mut index = 0usize;
+    while index < key.len() {
+        let Some(byte) = ram.load(segment, offset.wrapping_add(index as u16)) else {
+            return false;
+        };
+        let folded = if byte.is_ascii_lowercase() {
+            byte.wrapping_sub(b'a').wrapping_add(b'A')
+        } else {
+            byte
+        };
+        if folded != key[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+fn path_value(ram: &GuestRam, segment: u16, mut offset: u16) -> bool {
+    let mut used = false;
+    while offset < 0x1000 {
+        let Some(byte) = ram.load(segment, offset) else {
+            return false;
+        };
+        if byte == 0 {
+            return used;
+        }
+        if byte != b';' {
+            used = true;
+        }
+        offset = offset.wrapping_add(1);
+    }
+    false
+}
+
+fn copy_command_tail(ram: &mut GuestRam, segment: u16, offset: u16) {
+    let Some(tail_low) = ram.load(segment, offset.wrapping_add(2)) else {
+        return;
+    };
+    let Some(tail_high) = ram.load(segment, offset.wrapping_add(3)) else {
+        return;
+    };
+    let Some(tail_segment_low) = ram.load(segment, offset.wrapping_add(4)) else {
+        return;
+    };
+    let Some(tail_segment_high) = ram.load(segment, offset.wrapping_add(5)) else {
+        return;
+    };
+    let tail_offset = u16::from_le_bytes([tail_low, tail_high]);
+    let tail_segment = u16::from_le_bytes([tail_segment_low, tail_segment_high]);
+    let Some(count) = ram.load(tail_segment, tail_offset) else {
+        return;
+    };
+    if !ram.store(LAUNCH_SEGMENT, 0x80, count) {
+        return;
+    }
+    let mut index = 0u16;
+    while index <= u16::from(count) && index < 0x7E {
+        let Some(byte) = ram.load(tail_segment, tail_offset.wrapping_add(1).wrapping_add(index))
+        else {
+            return;
+        };
+        if !ram.store(LAUNCH_SEGMENT, 0x81u16.wrapping_add(index), byte) {
+            return;
+        }
+        index = index.wrapping_add(1);
     }
 }
 
 fn place_child(image: &[u8], ram: &mut GuestRam, executable: bool) -> Option<CpuState> {
     if executable {
-        super::mz::load(image, ram, CHILD_SEGMENT)
+        super::mz::load(image, ram, LAUNCH_SEGMENT)
     } else {
-        place_com(image, ram, CHILD_SEGMENT)
+        place_com(image, ram, LAUNCH_SEGMENT)
     }
 }
 

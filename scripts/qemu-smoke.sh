@@ -1304,7 +1304,17 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "exec: can't run HELLO.COM" "$out"; then
+	if grep -q "exec: can't run HELLO.COM" "$out"; then
+		echo "$name exec failed" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! awk '
+		/EXE2BIN File not found/ { seen = 1 }
+		seen && /GUEST HELLO COM/ { hit = 1 }
+		END { exit hit ? 0 : 1 }
+	' "$out"; then
 		echo "$name missing exec" >&2
 		cat "$out" >&2
 		rm -f "$out"

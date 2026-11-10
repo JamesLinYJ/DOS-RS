@@ -71,7 +71,7 @@ fn plant_environment(ram: &mut GuestRam, prefix: u16) -> bool {
     if !ram.store(prefix, 0x80, 1) || !ram.store(prefix, 0x81, b'\r') {
         return false;
     }
-    let text = b"\0\x01\0C:\\GUEST.EXE\0";
+    let text = b"PATH=\\\0\0\x01\0C:\\GUEST.EXE\0";
     let mut offset = 0u16;
     for byte in text {
         if !ram.store(ENV_SEGMENT, offset, *byte) {
