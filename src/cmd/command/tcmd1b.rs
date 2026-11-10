@@ -15,16 +15,69 @@ pub fn type_cmd(tail: &[u8]) {
         con_write_bytes(b"File not found\r\n");
         return;
     }
-    let Some(bytes) = file_bytes(name) else {
+    let mut named = [0u8; 13];
+    let n = name.len().min(12);
+    named[..n].copy_from_slice(&name[..n]);
+    let handle = open_name(named.as_ptr());
+    if handle == 0xffff {
         con_write_bytes(b"File not found\r\n");
         return;
-    };
+    }
+    let mut buf = [0u8; 64];
+    let got = read_file(handle, buf.as_mut_ptr(), buf.len()).min(buf.len());
     let mut index = 0usize;
-    while index < bytes.len() && bytes[index] != 0x1a && bytes[index] != 0 {
-        con_write_bytes(&bytes[index..index + 1]);
+    while index < got && buf[index] != 0x1a && buf[index] != 0 {
+        con_write_bytes(&buf[index..index + 1]);
         index += 1;
     }
     con_write_bytes(b"\r\n");
+}
+
+fn open_name(name: *const u8) -> u16 {
+    let mut eax = 0x3D00u32;
+    let edx = name as u32;
+    unsafe {
+        asm!(
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
+}
+
+fn read_file(handle: u16, dst: *mut u8, count: usize) -> usize {
+    let mut eax = 0x3F00u32;
+    let handle = u32::from(handle);
+    let ecx = count as u32;
+    let edx = dst as u32;
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        asm!(
+            "mov ebx, {h:e}",
+            "int 0x21",
+            inout("eax") eax,
+            h = in(reg) handle,
+            in("ecx") ecx,
+            in("edx") edx,
+            lateout("ebx") _,
+            clobber_abi("C"),
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        asm!(
+            "mov ebx, {h:e}",
+            "int 0x21",
+            inout("eax") eax,
+            h = in(reg) handle,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    eax as usize
 }
 
 fn file_bytes(name: &[u8]) -> Option<&'static [u8]> {

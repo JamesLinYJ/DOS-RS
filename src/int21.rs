@@ -169,6 +169,8 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x11] = dir_search_first as fn(&mut LogicalFrame);
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
+    slots[0x3D] = open_handle as fn(&mut LogicalFrame);
+    slots[0x3F] = read_handle as fn(&mut LogicalFrame);
     slots[0x2A] = get_date as fn(&mut LogicalFrame);
     slots[0x2B] = set_date as fn(&mut LogicalFrame);
     slots[0x2C] = get_time as fn(&mut LogicalFrame);
@@ -242,6 +244,20 @@ static mut HOUR: u8 = 0;
 static mut MINUTE: u8 = 0;
 static mut SECOND: u8 = 0;
 static mut HUNDREDTH: u8 = 0;
+
+/// AH=3Dh. AX is handle 5, or 0xFFFF when the name is not in the root.
+fn open_handle(frame: &mut LogicalFrame) {
+    match crate::dos::handle::open_asciiz(frame.dx as *const u8) {
+        Some(handle) => frame.store_ax(DosWord(handle)),
+        None => frame.store_ax(DosWord(0xffff)),
+    }
+}
+
+/// AH=3Fh. AX is the number of bytes copied to DX.
+fn read_handle(frame: &mut LogicalFrame) {
+    let n = crate::dos::handle::read(frame.bx as u16, frame.dx as *mut u8, frame.cx as usize);
+    frame.store_ax(DosWord(n as u16));
+}
 
 /// AH=2Ah. CX is the year, DH the month, DL the day, AL the weekday.
 fn get_date(frame: &mut LogicalFrame) {
