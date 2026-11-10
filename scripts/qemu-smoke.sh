@@ -699,6 +699,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "RENAME NET11 DRV11 NF02 KEEP03 DL05 DV05 SH20 DP03 DF03 DZ03 DD05 BD05 EX05 CD05 SF00 RNFILE    DOC MVE5" "$out"; then
+		echo "$name missing rename" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

@@ -57,6 +57,7 @@ pub mod parse;
 pub mod path;
 pub mod print;
 pub mod proc;
+pub mod rename;
 pub mod rom;
 pub mod search;
 pub mod shrprint;
