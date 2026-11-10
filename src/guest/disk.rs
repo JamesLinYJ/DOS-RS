@@ -248,6 +248,28 @@ pub fn change_dir(path: &[u8]) -> bool {
     true
 }
 
+pub fn attribute(name: &[u8; 11]) -> Option<u8> {
+    let disk = storage();
+    let map = layout(disk)?;
+    Some(find(disk, &map, disk.cwd, name)?.attr)
+}
+
+pub fn set_attribute(name: &[u8; 11], attr: u8) -> bool {
+    let disk = storage();
+    let Some(map) = layout(disk) else {
+        return false;
+    };
+    let Some(found) = find(disk, &map, disk.cwd, name) else {
+        return false;
+    };
+    if found.attr & 0x10 != 0 {
+        return false;
+    }
+    let mut raw = found.raw;
+    raw[11] = attr & 0x27;
+    write_entry(disk, &map, found.dir, found.index, &raw)
+}
+
 pub fn exists(name: &[u8; 11]) -> bool {
     let disk = storage();
     let Some(map) = layout(disk) else {

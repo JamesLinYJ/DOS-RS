@@ -174,4 +174,6 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `DBOF.EXE` still prints its syntax line when launched with an empty tail. Later the shell runs `DBOF.EXE MAKEIN.TXT DBOFOUT.TXT 0 B`. That reads eleven bytes of `nmake-wrote` and writes them as `db` bytes. `TYPE` shows `06EH,06DH,061H,06BH,065H`.
 
+`BUILDIDX.EXE` still prints `Incorrect number of parms  given to BUILDIDX.` when the tail is empty. Later the shell runs `BUILDIDX.EXE USAMS.MSG` on `USA-MS.MSG`. It reads the message file, rewrites it, and writes the index. The lines are `Message file updated.` and `Index file updated.` A child keeps only the handles it inherited, and a file write is stored when the handle is closed.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

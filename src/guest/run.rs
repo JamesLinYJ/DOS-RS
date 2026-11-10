@@ -339,6 +339,7 @@ struct Opened {
     named: bool,
     console: bool,
     access: u8,
+    dirty: bool,
 }
 
 const HANDLE_SLOTS: usize = 20;
@@ -618,18 +619,27 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         named: true,
         console: false,
         access,
+        dirty: false,
     });
     cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
     cpu.set_carry(false);
+}
+
+fn flush_opened(opened: &Opened) -> bool {
+    if !opened.dirty || !opened.named || opened.console {
+        return true;
+    }
+    super::disk::write_file(&opened.name, &file_bytes(opened.bytes)[..opened.len])
 }
 
 fn close_file(cpu: &mut CpuState, session: &mut Session) {
     let handle = cpu.wide(Slot::Base);
     if handle >= 3 {
         let index = usize::from(handle - 3);
-        if let Some(slot) = session.opens.get_mut(index) {
-            *slot = None;
-            cpu.set_carry(false);
+        if let Some(opened) = session.opens[index] {
+            let stored = flush_opened(&opened);
+            session.opens[index] = None;
+            cpu.set_carry(!stored);
             return;
         }
     }
@@ -707,6 +717,7 @@ fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         named: true,
         console: false,
         access: 2,
+        dirty: false,
     });
     cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
     cpu.set_carry(false);
@@ -728,6 +739,7 @@ fn duplicate(cpu: &mut CpuState, session: &mut Session) {
             named: false,
             console: true,
             access: if source == 0 { 0 } else { 1 },
+            dirty: false,
         }
     } else {
         let Some(found) = session
@@ -812,14 +824,12 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         offset = offset.wrapping_add(1);
         seen += 1;
     }
-    let stored = super::disk::write_file(&opened.name, &file_bytes(opened.bytes)[..opened.len]);
-    if stored {
-        cpu.set_wide(Slot::Accumulator, seen);
-        cpu.set_carry(false);
-    } else {
-        cpu.set_wide(Slot::Accumulator, 0x27);
-        cpu.set_carry(true);
+    if count == 0 {
+        opened.len = opened.pos;
     }
+    opened.dirty = true;
+    cpu.set_wide(Slot::Accumulator, seen);
+    cpu.set_carry(false);
 }
 
 fn write_console(cpu: &mut CpuState, ram: &GuestRam) {
@@ -1153,10 +1163,26 @@ pub(super) fn spawn(
             return 0xFF;
         }
     }
-    let code = match drive(&mut cpu, ram, session, 2_000_000) {
+    let mut inherited = [false; HANDLE_SLOTS];
+    let mut slot = 0usize;
+    while slot < HANDLE_SLOTS {
+        inherited[slot] = session.opens[slot].is_some();
+        slot += 1;
+    }
+    let code = match drive(&mut cpu, ram, session, 8_000_000) {
         End::Stopped(code) => code,
         _ => 0xFF,
     };
+    slot = 0;
+    while slot < HANDLE_SLOTS {
+        if !inherited[slot] {
+            if let Some(opened) = session.opens[slot] {
+                let _ = flush_opened(&opened);
+            }
+            session.opens[slot] = None;
+        }
+        slot += 1;
+    }
     session.break_at = arena;
     code
 }
@@ -1312,21 +1338,27 @@ fn seek_file(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn read_attribute(cpu: &mut CpuState, ram: &GuestRam) {
-    if cpu.low(Slot::Accumulator) != 0 {
-        cpu.set_carry(true);
-        return;
-    }
     let Some(name) = file_component(&guest_text(cpu, ram)) else {
         cpu.set_carry(true);
         return;
     };
-    let Some(attr) = volume::attribute(volume::IMAGE, &name) else {
-        cpu.set_wide(Slot::Accumulator, 2);
-        cpu.set_carry(true);
+    let action = cpu.low(Slot::Accumulator);
+    if action == 0 {
+        let Some(attr) = super::disk::attribute(&name) else {
+            cpu.set_wide(Slot::Accumulator, 2);
+            cpu.set_carry(true);
+            return;
+        };
+        cpu.set_wide(Slot::Count, u16::from(attr));
+        cpu.set_carry(false);
         return;
-    };
-    cpu.set_wide(Slot::Count, u16::from(attr));
-    cpu.set_carry(false);
+    }
+    if action == 1 && super::disk::set_attribute(&name, cpu.low(Slot::Count)) {
+        cpu.set_carry(false);
+        return;
+    }
+    cpu.set_wide(Slot::Accumulator, 5);
+    cpu.set_carry(true);
 }
 
 fn write_root(cpu: &mut CpuState, ram: &mut GuestRam) {

@@ -311,6 +311,10 @@ __aFFaulmul.......affalmul          __aFFaulrem.......affaulre
 CMD TYPE 	db	06EH,06DH,061H,06BH,065H,02DH,077H,072H
 	db	06FH,074H,065H
 
+Index file and message file are of different levels.
+Message file and index file will be updated.
+Message file updated.
+Index file updated.
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
