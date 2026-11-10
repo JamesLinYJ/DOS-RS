@@ -18,7 +18,7 @@ struct Binding {
     live: bool,
 }
 
-static mut LAUNCH: [u8; 131072] = [0; 131072];
+static mut LAUNCH: [u8; 262144] = [0; 262144];
 
 static mut ENV: [Binding; ROWS] = [Binding {
     name: [0; 8],
@@ -121,7 +121,7 @@ fn show_file(rest: &[u8]) {
         say(b"CMD TYPE FAIL\r\n");
         return;
     };
-    let mut body = [0u8; 64];
+    let mut body = [0u8; 256];
     let Some(length) = disk::read_file(&name, &mut body) else {
         say(b"CMD TYPE FAIL\r\n");
         return;
@@ -331,6 +331,6 @@ fn env() -> &'static mut [Binding; ROWS] {
     unsafe { &mut *core::ptr::addr_of_mut!(ENV) }
 }
 
-fn launch_image() -> &'static mut [u8; 131072] {
+fn launch_image() -> &'static mut [u8; 262144] {
     unsafe { &mut *core::ptr::addr_of_mut!(LAUNCH) }
 }

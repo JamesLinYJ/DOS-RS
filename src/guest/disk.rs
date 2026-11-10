@@ -6,8 +6,8 @@
 
 use super::volume;
 
-const CAPACITY: usize = 2560 * 512;
-const FAT_ROOM: usize = 4096;
+const CAPACITY: usize = 4096 * 512;
+const FAT_ROOM: usize = 8192;
 
 struct Disk {
     bytes: [u8; CAPACITY],

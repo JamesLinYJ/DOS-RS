@@ -1254,7 +1254,8 @@ run_one() {
 		|| ! grep -q "nmake-wrote" "$out" \
 		|| ! grep -q "Microsoft (R) Macro Assembler Version 5.10" "$out" \
 		|| ! grep -q "MASM OK" "$out" \
-		|| ! grep -q "c1ok" "$out"; then
+		|| ! grep -q "c1ok" "$out" \
+		|| ! grep -q "C2 OK" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

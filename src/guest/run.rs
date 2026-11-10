@@ -328,7 +328,7 @@ enum Action {
     Exit(u8),
 }
 
-const FILE_BYTES: usize = 65536;
+const FILE_BYTES: usize = 262144;
 
 #[derive(Clone, Copy)]
 struct Opened {
