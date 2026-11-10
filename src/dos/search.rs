@@ -91,6 +91,18 @@ pub(crate) fn cwd_is_root() -> bool {
     unsafe { CWD_LEN == 3 }
 }
 
+pub(crate) fn walk(mut visit: impl FnMut(usize, Ent)) {
+    ensure();
+    let mut index = 0usize;
+    while index < SLOTS {
+        let ent = slot(index);
+        if ent.live {
+            visit(index, ent);
+        }
+        index += 1;
+    }
+}
+
 pub(crate) fn for_live(mut visit: impl FnMut([u8; 11])) {
     ensure();
     unsafe {

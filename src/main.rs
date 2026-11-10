@@ -251,6 +251,8 @@ fn boot(gate: usize) -> ! {
         dos::finfo::show();
         // Microsoft build switches: escape, cancel, and high memory.
         dos::highsw::show();
+        // Internal directory search: one file, then no further match.
+        dos::isearch::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

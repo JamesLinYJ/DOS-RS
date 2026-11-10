@@ -549,6 +549,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "ISEARCH DR01 AT21 E5E5 Q01 NF12 NX12 PN03 DVFFFF" "$out"; then
+		echo "$name missing internal search" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
