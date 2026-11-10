@@ -388,6 +388,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tranmsg::show();
         // Transient bytes stay in source order, including shared names.
         cmd::command::tspc::show();
+        // /E accepts 160 through 32768. /C is not the last switch.
+        cmd::command::uinit::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

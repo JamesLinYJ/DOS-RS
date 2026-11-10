@@ -133,7 +133,7 @@ v4.0/src/CMD/COMMAND/TPRINTF.ASM	text	partial	src/cmd/command/tprintf.rs
 v4.0/src/CMD/COMMAND/TRANMSG.ASM	text	partial	src/cmd/command/tranmsg.rs
 v4.0/src/CMD/COMMAND/TSPC.ASM	text	partial	src/cmd/command/tspc.rs
 v4.0/src/CMD/COMMAND/TUCODE.ASM	text	partial	src/cmd/command/tucode.rs
-v4.0/src/CMD/COMMAND/UINIT.ASM	text	untranslated	src/cmd/command/uinit.rs
+v4.0/src/CMD/COMMAND/UINIT.ASM	text	partial	src/cmd/command/uinit.rs
 v4.0/src/CMD/COMP/COMP1.ASM	text	untranslated	src/cmd/comp/comp1.rs
 v4.0/src/CMD/COMP/COMP2.ASM	text	untranslated	src/cmd/comp/comp2.rs
 v4.0/src/CMD/COMP/COMPEQ.INC	text	untranslated	src/cmd/comp/compeq.rs
