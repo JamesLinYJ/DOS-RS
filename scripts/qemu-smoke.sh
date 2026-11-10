@@ -969,6 +969,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TPRINTF HD01 CLFF CT00 CP0F000010 SR00000010 ID00 EX00 ER00 HD02 CLFF CT00 CP11112222 SR00000000 ID00 EX00 ER00 HD01 CLFF CT00 CP0F000300 SR00000200 ID01 EX01 ER00 HD01 CLFF CT00 NS EX00 ER00 HD01 CLFF CT00 NS EX00 ER03 CD0005 HD02 CLFF CT00 NS EX00 ER01 HD01 CLFF CT00 NS EX00 ER02 SZ0B" "$out"; then
+		echo "$name missing message printing" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
