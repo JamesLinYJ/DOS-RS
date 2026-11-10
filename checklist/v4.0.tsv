@@ -817,7 +817,7 @@ v4.0/src/DOS/MKNODE.ASM	text	untranslated	src/dos/mknode.rs
 v4.0/src/DOS/MS_CODE.ASM	text	partial	src/dos/ms_code.rs
 v4.0/src/DOS/MSCODE.ASM	text	partial	src/dos/mscode.rs
 v4.0/src/DOS/MSCONST.ASM	text	untranslated	src/dos/msconst.rs
-v4.0/src/DOS/MSCPMIO.ASM	text	untranslated	src/dos/mscpmio.rs
+v4.0/src/DOS/MSCPMIO.ASM	text	partial	src/dos/mscpmio.rs
 v4.0/src/DOS/MSCTRLC.ASM	text	partial	src/dos/msctrlc.rs
 v4.0/src/DOS/MSDISP.ASM	text	untranslated	src/dos/msdisp.rs
 v4.0/src/DOS/MSDOS.LNK	text	untranslated	src/dos/msdos.rs

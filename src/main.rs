@@ -269,6 +269,8 @@ fn boot(gate: usize) -> ! {
         dos::mscode::show();
         // Ctrl-C: same stack retries, carry on a new stack aborts.
         dos::msctrlc::show();
+        // Console input with no echo, including a zero scan code.
+        dos::mscpmio::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
