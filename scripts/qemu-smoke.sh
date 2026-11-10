@@ -1232,7 +1232,8 @@ run_one() {
 		|| ! grep -q "EXT EXE" "$out" \
 		|| ! grep -q "CMD ERRORLEVEL 3" "$out" \
 		|| ! grep -q "CMD DIR SELECT.DAT" "$out" \
-		|| ! grep -q $'CMD TYPE \xff\x05A' "$out"; then
+		|| ! grep -q $'CMD TYPE \xff\x05A' "$out" \
+		|| ! grep -q "EXEFIX 1234 0010" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

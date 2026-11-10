@@ -112,7 +112,7 @@ Both boot targets run the same interpreter. x86_64 has no virtual-8086 mode, so 
 Taken from [Compat16](https://github.com/JamesLinYJ/Compat16), read-only, and not modified:
 
 - `crates/guest` `Registers` is one owned struct. Guest numbers are never host registers. The kernel stores the same eight words, four selectors, the instruction pointer, and the flags in `CpuState`. The field names here are roles, because register names stay in `src/arch.rs`.
-- `crates/cpu` `RealModeSegments` forms a linear address as `segment * 16 + offset`, with a 16-bit offset. A failed add is an error, not a wrapped host pointer. `GuestMemory` checks the range before it reads or writes. `src/guest/memory.rs` is that contract for a 128 KiB prefix of the real-mode space.
+- `crates/cpu` `RealModeSegments` forms a linear address as `segment * 16 + offset`, with a 16-bit offset. A failed add is an error, not a wrapped host pointer. `GuestMemory` checks the range before it reads or writes. `src/guest/memory.rs` keeps the whole real-mode megabyte. The twentieth address bit stays undriven, so a sum past `0xFFFFF` folds back into that megabyte. Conventional memory is the first 640KiB: a new program prefix is told that memory ends at paragraph `0xA000`, and allocation stops there. The bytes from `0xA0000` through `0xFFFFF` stay addressable for segment arithmetic and are not offered as free DOS memory.
 - `StepOutcome::Interrupt` means the instruction pointer already sits past the interrupt instruction. The owner, not the decoder, performs the service. `INT 21h` in `src/guest/run.rs` is that owner: print one byte, print a dollar-terminated string, or stop with the low half of the accumulator as the return code.
 - `read_register` / `write_register` select a word by a three-bit index and a width. Byte indices 0 through 3 are the low half. Indices 4 through 7 are the high half. The same index map is in `CpuState`.
 
@@ -139,3 +139,7 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 `ATTRIB.EXE` is the attribute utility from that same tree, `v4.0/src/TOOLS/ATTRIB.EXE`, under the same MIT license. The tail ` HELLO.COM` makes it read that file's attribute and print `  A       A:\\HELLO.COM`.
 
 `EXEMOD.EXE` is the header utility from that same tree, `v4.0/src/TOOLS/EXEMOD.EXE`, under the same MIT license. The tail ` HELLO.EXE /h` makes it print that file's header, including `.EXE size (bytes)                     3D              61`.
+
+`EXEPACK.EXE` is the compressor from that same tree, `v4.0/src/TOOLS/EXEPACK.EXE`, under the same MIT license. With the real-mode map in place, a shell run on `EXEFIX.EXE` prints the utility banner. The pack then stops: the instruction stream reaches opcode `8D` with a register form, which is not an effective address, so no finished packed file is produced.
+
+`EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

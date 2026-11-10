@@ -1,10 +1,15 @@
 //! Checked guest RAM.
 //!
-//! A real-mode address is `segment * 16 + offset`. The add must fit in 32
-//! bits. The byte must also sit inside this buffer. The buffer is not a host
-//! pointer handed to guest code.
+//! A real-mode address is `segment * 16 + offset`. The twentieth address bit
+//! is not driven, so the sum is folded into the first megabyte. Conventional
+//! memory is the first 640KiB of that map. The byte must sit inside this
+//! buffer. The buffer is not a host pointer handed to guest code.
 
-pub const RAM_BYTES: usize = 0x20000;
+/// One megabyte, the real-mode space with the high address bit folded in.
+pub const RAM_BYTES: usize = 0x100000;
+
+/// First paragraph past conventional memory. 640KiB.
+pub const CONVENTIONAL_END: u16 = 0xA000;
 
 pub struct GuestRam {
     bytes: [u8; RAM_BYTES],
@@ -19,9 +24,10 @@ pub fn storage() -> &'static mut GuestRam {
 }
 
 pub fn real_linear(segment: u16, offset: u16) -> Option<u32> {
-    u32::from(segment)
+    let sum = u32::from(segment)
         .checked_mul(16)?
-        .checked_add(u32::from(offset))
+        .checked_add(u32::from(offset))?;
+    Some(sum & 0x000F_FFFF)
 }
 
 impl GuestRam {

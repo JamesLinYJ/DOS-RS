@@ -68,7 +68,7 @@ fn show_tailed(name: &[u8; 11], tail: &[u8], limit: u16) {
     if !ram.store(EXE_PREFIX, 0x81u16.wrapping_add(index), b'\r') {
         return;
     }
-    match drive(&mut cpu, ram, &mut session, limit) {
+    match drive(&mut cpu, ram, &mut session, u32::from(limit)) {
         End::Stopped(_) => {}
         End::Fault(opcode) => {
             crate::bios::mscon::con_write_bytes(b"GUEST FAULT ");
@@ -161,6 +161,24 @@ fn show_shell() {
         End::Other => crate::bios::mscon::con_write_bytes(b"CMD INT\r\n"),
         End::Loop => crate::bios::mscon::con_write_bytes(b"CMD LOOP\r\n"),
     }
+    report_header(b"PACKME  EXE");
+}
+
+fn report_header(name: &[u8; 11]) {
+    let mut body = [0u8; 32];
+    let Some(length) = super::disk::read_head(name, &mut body) else {
+        return;
+    };
+    if length < 14 {
+        return;
+    }
+    crate::bios::mscon::con_write_bytes(b"EXEFIX ");
+    put_hex8(body[13]);
+    put_hex8(body[12]);
+    crate::bios::mscon::con_write_bytes(b" ");
+    put_hex8(body[11]);
+    put_hex8(body[10]);
+    crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
 fn show_image(name: &[u8; 11], segment: u16, executable: bool, limit: u16) {
@@ -177,7 +195,7 @@ fn show_image(name: &[u8; 11], segment: u16, executable: bool, limit: u16) {
         crate::bios::mscon::con_write_bytes(b"GUEST FAULT\r\n");
         return;
     };
-    match drive(&mut cpu, ram, &mut session, limit) {
+    match drive(&mut cpu, ram, &mut session, u32::from(limit)) {
         End::Stopped(_) => {}
         End::Fault(opcode) => {
             crate::bios::mscon::con_write_bytes(b"GUEST FAULT ");
@@ -213,8 +231,8 @@ enum End {
     Loop,
 }
 
-fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u16) -> End {
-    let mut steps = 0u16;
+fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u32) -> End {
+    let mut steps = 0u32;
     while steps < limit {
         steps += 1;
         match step::step(cpu, ram) {
@@ -243,12 +261,20 @@ enum Action {
     Exit(u8),
 }
 
+const FILE_BYTES: usize = 16384;
+
 struct Opened {
-    bytes: [u8; 512],
+    bytes: usize,
     len: usize,
     pos: usize,
     name: [u8; 11],
     named: bool,
+}
+
+static mut FILE_POOL: [[u8; FILE_BYTES]; 4] = [[0; FILE_BYTES]; 4];
+
+fn file_bytes(index: usize) -> &'static mut [u8] {
+    unsafe { &mut (*core::ptr::addr_of_mut!(FILE_POOL))[index] }
 }
 
 pub(super) struct Session {
@@ -407,7 +433,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
         }
         0x48 => {
             let asked = cpu.wide(Slot::Base);
-            let room = 0x2000u16.saturating_sub(session.break_at);
+            let room = super::memory::CONVENTIONAL_END.saturating_sub(session.break_at);
             if asked == 0 || asked > room {
                 cpu.set_wide(Slot::Base, room);
                 cpu.set_wide(Slot::Accumulator, 8);
@@ -434,7 +460,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
         0x4A => {
             let block = cpu.selector(Segment::Extra);
             let asked = cpu.wide(Slot::Base);
-            let room = 0x2000u16.saturating_sub(block);
+            let room = super::memory::CONVENTIONAL_END.saturating_sub(block);
             if asked == 0 || asked > room {
                 cpu.set_wide(Slot::Base, room);
                 cpu.set_wide(Slot::Accumulator, 8);
@@ -467,13 +493,15 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
 }
 
 fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
-    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+    let Some(name) = file_component(&guest_text(cpu, ram)) else {
         cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
         return;
     };
-    let mut file = [0u8; 512];
-    let Some(length) = volume::read_named(volume::IMAGE, &name, &mut file) else {
+    let mut file = [0u8; FILE_BYTES];
+    let length = super::disk::read_file(&name, &mut file)
+        .or_else(|| volume::read_named(volume::IMAGE, &name, &mut file));
+    let Some(length) = length else {
         cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
         return;
@@ -481,9 +509,12 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
     let mut slot = 0usize;
     while slot < session.opens.len() {
         if session.opens[slot].is_none() {
+            let stored = file_bytes(slot);
+            let count = length.min(stored.len());
+            stored[..count].copy_from_slice(&file[..count]);
             session.opens[slot] = Some(Opened {
-                bytes: file,
-                len: length,
+                bytes: slot,
+                len: count,
                 pos: 0,
                 name,
                 named: true,
@@ -526,7 +557,7 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     };
     let mut moved = 0u16;
     while usize::from(moved) < requested && opened.pos < opened.len {
-        let byte = opened.bytes[opened.pos];
+        let byte = file_bytes(opened.bytes)[opened.pos];
         if !ram.store(segment, offset, byte) {
             break;
         }
@@ -539,7 +570,7 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
 }
 
 fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
-    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+    let Some(name) = file_component(&guest_text(cpu, ram)) else {
         cpu.set_carry(true);
         return;
     };
@@ -552,8 +583,9 @@ fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         cpu.set_carry(true);
         return;
     };
+    file_bytes(slot).fill(0);
     session.opens[slot] = Some(Opened {
-        bytes: [0; 512],
+        bytes: slot,
         len: 0,
         pos: 0,
         name,
@@ -597,13 +629,13 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
     let mut offset = cpu.wide(Slot::Data);
     let mut seen = 0u16;
     while seen < count {
-        if opened.pos >= opened.bytes.len() {
+        if opened.pos >= FILE_BYTES {
             break;
         }
         let Some(byte) = ram.load(segment, offset) else {
             break;
         };
-        opened.bytes[opened.pos] = byte;
+        file_bytes(opened.bytes)[opened.pos] = byte;
         opened.pos += 1;
         if opened.pos > opened.len {
             opened.len = opened.pos;
@@ -611,7 +643,7 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         offset = offset.wrapping_add(1);
         seen += 1;
     }
-    let stored = super::disk::write_file(&opened.name, &opened.bytes[..opened.len]);
+    let stored = super::disk::write_file(&opened.name, &file_bytes(opened.bytes)[..opened.len]);
     if stored {
         cpu.set_wide(Slot::Accumulator, seen);
         cpu.set_carry(false);
@@ -900,7 +932,7 @@ pub(super) fn spawn(
             return 0xFF;
         }
     }
-    match drive(&mut cpu, ram, session, 20000) {
+    match drive(&mut cpu, ram, session, 60000) {
         End::Stopped(code) => code,
         _ => 0xFF,
     }

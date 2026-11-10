@@ -47,7 +47,7 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
     if !ram.store(prefix, 0, 0xCD) || !ram.store(prefix, 1, 0x20) {
         return None;
     }
-    let limit = 0x2000u16.to_le_bytes();
+    let limit = super::memory::CONVENTIONAL_END.to_le_bytes();
     if !ram.store(prefix, 2, limit[0]) || !ram.store(prefix, 3, limit[1]) {
         return None;
     }

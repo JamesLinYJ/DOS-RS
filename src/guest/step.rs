@@ -58,7 +58,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0x6C => input_string(cpu, ram, opcode),
         0x6E => output_string(cpu, ram, opcode),
         0x70..=0x7F => branch(cpu, ram, opcode, false),
-        0x80 => add_immediate(cpu, ram, override_segment, opcode),
+        0x80 | 0x82 => add_immediate(cpu, ram, override_segment, opcode),
         0x84 | 0x85 => test_operands(cpu, ram, override_segment, opcode),
         0x81 | 0x83 => alter_word(cpu, ram, override_segment, opcode),
         0x88 | 0x89 => move_into_operand(cpu, ram, override_segment, opcode),

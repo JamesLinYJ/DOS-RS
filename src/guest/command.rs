@@ -213,7 +213,7 @@ fn launch_named(
         run_batch(&body[..length], ram, session, depth + 1);
         return;
     }
-    let mut image = [0u8; 4096];
+    let mut image = [0u8; 16384];
     let Some(length) = disk::read_file(name, &mut image) else {
         say(b"CMD RUN FAIL\r\n");
         return;
