@@ -53,6 +53,28 @@ fn put_dec(mut value: u8) {
     }
 }
 
+/// `PATH` with no argument. `print_path` sees the empty value after `PATH=`
+/// and prints message 1049. A tail that is not blank is the setter, which
+/// is still the rest of this procedure.
+pub fn path_cmd(tail: &[u8]) {
+    if !path_tail_blank(tail) {
+        return;
+    }
+    crate::bios::mscon::con_write_bytes(b"No Path\r\n");
+}
+
+fn path_tail_blank(tail: &[u8]) -> bool {
+    for &byte in tail {
+        if byte == b'\r' || byte == b'\n' || byte == 0 {
+            return true;
+        }
+        if byte != b' ' && byte != b'\t' {
+            return false;
+        }
+    }
+    true
+}
+
 /// One trip through `print_prompt` when no `PROMPT` string is set.
 pub fn print_default_prompt() {
     let drive = default_drive();

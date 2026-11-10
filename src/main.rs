@@ -146,6 +146,9 @@ fn boot(gate: usize) -> ! {
         let _verify = cmd::command::tmisc1::dispatch(b"VERIFY\r");
         let _verify_on = cmd::command::tmisc1::dispatch(b"VERIFY ON\r");
         let _verify_again = cmd::command::tmisc1::dispatch(b"VERIFY\r");
+        // Bare PATH. The environment value after PATH= is a NUL, so
+        // print_path takes the empty path and prints message 1049.
+        let _path = cmd::command::tmisc1::dispatch(b"PATH\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

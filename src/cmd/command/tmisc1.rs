@@ -19,6 +19,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tcmd2a::version();
         return true;
     }
+    if name.eq_ignore_ascii_case(b"PATH") {
+        tcmd2a::path_cmd(rest);
+        return true;
+    }
     if name.eq_ignore_ascii_case(b"ECHO") {
         tucode::echo(rest);
         return true;
