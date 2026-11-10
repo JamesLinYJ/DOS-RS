@@ -434,6 +434,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcomp::dcmpmacr::show();
         // Strike-a-key clears the buffer before a silent read.
         cmd::diskcomp::dcompms::show();
+        // End of line is accepted before a nonzero code is an error.
+        cmd::diskcomp::dcomppar::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

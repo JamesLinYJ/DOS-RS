@@ -1125,6 +1125,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DCOMPPAR MN00 MX02 SW01 KW00 FL0101 FN0000 TY03 TGFF CP0081 OR0000 NS02 S00 T00 AFF EFF STFFFF EX00 MN0000 K00 S01 T02 AFF EFF STFFFF EX00 MN0000 K00 S00 T00 A01 EFF STFFFF EX00 MN0000 K00 S00 T00 AFF E01 STFFFF EX00 MN0000 K00 S00 T00 AFF EFF ST0004 EX01 MN0009 K01 S00 T00 AFF EFF ST0004 EX01 MN0003 K00" "$out"; then
+		echo "$name missing compare parser" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
