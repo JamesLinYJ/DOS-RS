@@ -135,3 +135,5 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 `EXEFIX.EXE` is the header fixer from that same tree, `v4.0/src/TOOLS/EXEFIX.EXE`, under the same MIT license. With an empty command tail it prints `usage: exefix <file> <max-alloc> <min-alloc>`.
 
 `CONVERT.EXE` is the file converter from that same tree, `v4.0/src/TOOLS/CONVERT.EXE`, under the same MIT license. With an empty command tail it prints `Usage: Convert [file]`.
+
+`ATTRIB.EXE` is the attribute utility from that same tree, `v4.0/src/TOOLS/ATTRIB.EXE`, under the same MIT license. The tail ` HELLO.COM` makes it read that file's attribute and print `  A       A:\\HELLO.COM`.

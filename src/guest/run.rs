@@ -37,6 +37,46 @@ pub fn show() {
     show_image(b"DBOF    EXE", EXE_PREFIX, true, 60000);
     show_image(b"EXEFIX  EXE", EXE_PREFIX, true, 60000);
     show_image(b"CONVERT EXE", EXE_PREFIX, true, 60000);
+    show_tailed(b"ATTRIB  EXE", b" HELLO.COM", 60000);
+}
+
+fn show_tailed(name: &[u8; 11], tail: &[u8], limit: u16) {
+    let mut image = [0u8; 16384];
+    let Some(length) = volume::read_named(volume::IMAGE, name, &mut image) else {
+        crate::bios::mscon::con_write_bytes(b"GUEST MISSING\r\n");
+        return;
+    };
+    let ram = memory::storage();
+    ram.clear();
+    let mut session = Session::new();
+    session.prefix = EXE_PREFIX;
+    let Some(mut cpu) = place(&image[..length], ram, EXE_PREFIX, true) else {
+        crate::bios::mscon::con_write_bytes(b"GUEST FAULT\r\n");
+        return;
+    };
+    if !ram.store(EXE_PREFIX, 0x80, tail.len() as u8) {
+        return;
+    }
+    let mut index = 0u16;
+    while usize::from(index) < tail.len() {
+        if !ram.store(EXE_PREFIX, 0x81u16.wrapping_add(index), tail[usize::from(index)]) {
+            return;
+        }
+        index = index.wrapping_add(1);
+    }
+    if !ram.store(EXE_PREFIX, 0x81u16.wrapping_add(index), b'\r') {
+        return;
+    }
+    match drive(&mut cpu, ram, &mut session, limit) {
+        End::Stopped(_) => {}
+        End::Fault(opcode) => {
+            crate::bios::mscon::con_write_bytes(b"GUEST FAULT ");
+            put_hex8(opcode);
+            crate::bios::mscon::con_write_bytes(b"\r\n");
+        }
+        End::Other => crate::bios::mscon::con_write_bytes(b"GUEST INT\r\n"),
+        End::Loop => crate::bios::mscon::con_write_bytes(b"GUEST LOOP\r\n"),
+    }
 }
 
 fn show_exec() {
@@ -48,6 +88,7 @@ fn show_exec() {
     let ram = memory::storage();
     ram.clear();
     let mut session = Session::new();
+    session.prefix = EXE_PREFIX;
     let Some(mut cpu) = place(&image[..length], ram, EXE_PREFIX, true) else {
         crate::bios::mscon::con_write_bytes(b"EXEC FAULT\r\n");
         return;
@@ -104,6 +145,7 @@ fn show_shell() {
     let ram = memory::storage();
     ram.clear();
     let mut session = Session::new();
+    session.prefix = SHELL_SEGMENT;
     let Some(mut cpu) = place(&image[..length], ram, SHELL_SEGMENT, false) else {
         crate::bios::mscon::con_write_bytes(b"CMD FAULT\r\n");
         return;
@@ -129,6 +171,7 @@ fn show_image(name: &[u8; 11], segment: u16, executable: bool, limit: u16) {
     let ram = memory::storage();
     ram.clear();
     let mut session = Session::new();
+    session.prefix = segment;
     let Some(mut cpu) = place(&image[..length], ram, segment, executable) else {
         crate::bios::mscon::con_write_bytes(b"GUEST FAULT\r\n");
         return;
@@ -212,6 +255,7 @@ pub(super) struct Session {
     last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
+    prefix: u16,
     block: u16,
     break_at: u16,
     vector_segment: [u16; 256],
@@ -226,6 +270,7 @@ impl Session {
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,
+            prefix: 0,
             block: 0,
             break_at: GUEST_BLOCK,
             vector_segment: [0; 256],
@@ -990,7 +1035,7 @@ fn read_attribute(cpu: &mut CpuState, ram: &GuestRam) {
         cpu.set_carry(true);
         return;
     }
-    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+    let Some(name) = file_component(&guest_text(cpu, ram)) else {
         cpu.set_carry(true);
         return;
     };
@@ -1012,7 +1057,7 @@ fn write_root(cpu: &mut CpuState, ram: &mut GuestRam) {
 }
 
 fn find_first(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+    let Some(name) = file_component(&guest_text(cpu, ram)) else {
         cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
         return;
@@ -1024,6 +1069,14 @@ fn find_first(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
     }
     cpu.set_wide(Slot::Accumulator, 0);
     cpu.set_carry(false);
+}
+
+fn dta_target(session: &Session) -> (u16, u16) {
+    if session.dta_segment == 0 && session.dta_offset == 0 && session.prefix != 0 {
+        (session.prefix, 0x80)
+    } else {
+        (session.dta_segment, session.dta_offset)
+    }
 }
 
 fn write_found(ram: &mut GuestRam, session: &Session, name: &[u8; 11]) -> bool {
@@ -1051,10 +1104,17 @@ fn write_found(ram: &mut GuestRam, session: &Session, name: &[u8; 11]) -> bool {
     length += 1;
     shown[length] = b'$';
     length += 1;
-    let mut offset = session.dta_offset.wrapping_add(30);
+    shown[length] = 0;
+    length += 1;
+    let (segment, base) = dta_target(session);
+    let attr = volume::attribute(volume::IMAGE, name).unwrap_or(0x20);
+    if !ram.store(segment, base.wrapping_add(0x15), attr) {
+        return false;
+    }
+    let mut offset = base.wrapping_add(30);
     let mut cursor = 0usize;
     while cursor < length {
-        if !ram.store(session.dta_segment, offset, shown[cursor]) {
+        if !ram.store(segment, offset, shown[cursor]) {
             return false;
         }
         offset = offset.wrapping_add(1);
