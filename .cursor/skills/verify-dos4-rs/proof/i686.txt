@@ -52,3 +52,5 @@ COMMAND  COM
 File not found
 Directory of  A:\
 COMMAND  COM
+Directory of  A:\
+FOO      COM

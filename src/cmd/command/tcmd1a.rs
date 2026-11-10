@@ -63,6 +63,40 @@ pub fn dir_cmd(tail: &[u8]) {
     }
 }
 
+pub fn rename_cmd(tail: &[u8]) {
+    let src = token(tail);
+    let rest = skip_token(tail);
+    let dst = token(rest);
+    if src.is_empty() || dst.is_empty() || !blank(skip_token(rest)) {
+        con_write_bytes(b"Duplicate file name or file not found\r\n");
+        return;
+    }
+    let (Some(from), Some(to)) = (pack_name(src), pack_name(dst)) else {
+        con_write_bytes(b"Duplicate file name or file not found\r\n");
+        return;
+    };
+    ensure();
+    let mut index = 0usize;
+    while index < 16 {
+        let live = unsafe { ROOT[index].live };
+        if live && unsafe { ROOT[index].name.eq_ignore_ascii_case(&to) } {
+            con_write_bytes(b"Duplicate file name or file not found\r\n");
+            return;
+        }
+        index += 1;
+    }
+    index = 0;
+    while index < 16 {
+        let live = unsafe { ROOT[index].live };
+        if live && unsafe { ROOT[index].name.eq_ignore_ascii_case(&from) } {
+            unsafe { ROOT[index].name = to }
+            return;
+        }
+        index += 1;
+    }
+    con_write_bytes(b"Duplicate file name or file not found\r\n");
+}
+
 pub fn erase_cmd(tail: &[u8]) {
     let name = token(tail);
     if name.is_empty() || !blank(skip_token(tail)) {
