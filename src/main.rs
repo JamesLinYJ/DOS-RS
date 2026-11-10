@@ -148,7 +148,12 @@ fn boot(gate: usize) -> ! {
         let _verify_again = cmd::command::tmisc1::dispatch(b"VERIFY\r");
         // Bare PATH. The environment value after PATH= is a NUL, so
         // print_path takes the empty path and prints message 1049.
+        // The next line stores `\DOS`. A second bare PATH prints it.
         let _path = cmd::command::tmisc1::dispatch(b"PATH\r");
+        let _path_set = cmd::command::tmisc1::dispatch(b"PATH \\DOS\r");
+        let _path_show = cmd::command::tmisc1::dispatch(b"PATH\r");
+        // CLS asks INT 2Fh and clears through INT 10h.
+        let _cls = cmd::command::tmisc1::dispatch(b"CLS\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
@@ -285,6 +290,7 @@ fn load_idt(gate: usize) {
     unsafe {
         let idt = &raw mut IDT;
         (*idt)[0x10] = IdtEntry::interrupt(bios::mscon::int10_gate_addr(), selector);
+        (*idt)[0x2F] = IdtEntry::interrupt(cmd::command::tcmd2a::int2f_gate_addr(), selector);
         (*idt)[0x13] = IdtEntry::interrupt(bios::msdisk::int13_gate_addr(), selector);
         (*idt)[0x1A] = IdtEntry::interrupt(bios::msclock::int1a_gate_addr(), selector);
         (*idt)[0x14] = IdtEntry::interrupt(bios::msaux::int14_gate_addr(), selector);
