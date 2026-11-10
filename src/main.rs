@@ -406,6 +406,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::compsm::show();
         // A blank line leaves assemble mode. INT 3 stays one byte.
         cmd::debug::debasm::show();
+        // A range that lands on the segment boundary is kept.
+        cmd::debug::debcom1::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
