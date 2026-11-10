@@ -448,6 +448,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcopy::dcopyms::show();
         // The only switch is /1, and drive text is capitalized by character.
         cmd::diskcopy::dcopypar::show();
+        // File-table capitalization is included with drive syntax.
+        cmd::diskcopy::dcopyp::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

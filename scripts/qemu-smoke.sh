@@ -1167,6 +1167,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DCOPYP F00 D00 T00 L00 C01 X00 R01 Q00 N00 K00 S01 100 200 300 I00 B01" "$out"; then
+		echo "$name missing copy parser switches" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
