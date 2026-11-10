@@ -376,6 +376,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tcode::show();
         // MKDIR reports an existing directory only after access denied.
         cmd::command::tenv2::show();
+        // FOR rejects a nested loop before it removes pipes.
+        cmd::command::tfor::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
