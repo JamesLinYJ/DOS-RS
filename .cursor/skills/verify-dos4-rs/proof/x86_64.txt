@@ -57,3 +57,11 @@ FOO      COM
 Directory of  A:\
 BAR      COM
 FOO      COM
+Directory of  A:\
+BAR      COM
+FOO      COM
+SUB      <DIR>
+Directory of  A:\SUB
+Directory of  A:\
+BAR      COM
+FOO      COM

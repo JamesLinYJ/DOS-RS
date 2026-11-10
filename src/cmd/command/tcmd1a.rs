@@ -11,13 +11,17 @@ const IMAGE: &[u8] = include_bytes!("../../../disks/msload.img");
 struct Ent {
     name: [u8; 11],
     live: bool,
+    dir: bool,
 }
 
 static mut ROOT: [Ent; 16] = [Ent {
     name: [0; 11],
     live: false,
+    dir: false,
 }; 16];
 static mut READY: bool = false;
+static mut CWD: [u8; 32] = *b"A:\\\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+static mut CWD_LEN: usize = 3;
 
 fn ensure() {
     unsafe {
@@ -49,18 +53,135 @@ pub fn dir_cmd(tail: &[u8]) {
         return;
     }
     ensure();
-    con_write_bytes(b"Directory of  A:\\\r\n");
+    con_write_bytes(b"Directory of  ");
+    con_write_bytes(unsafe { &CWD[..CWD_LEN] });
+    con_write_bytes(b"\r\n");
+    if unsafe { CWD_LEN != 3 } {
+        return;
+    }
     let mut index = 0usize;
     while index < 16 {
-        let (live, name) = unsafe { (ROOT[index].live, ROOT[index].name) };
+        let (live, name, dir) = unsafe { (ROOT[index].live, ROOT[index].name, ROOT[index].dir) };
         if live {
             con_write_bytes(&name[..8]);
             con_write_bytes(b" ");
-            con_write_bytes(&name[8..11]);
+            if dir {
+                con_write_bytes(b"<DIR>");
+            } else {
+                con_write_bytes(&name[8..11]);
+            }
             con_write_bytes(b"\r\n");
         }
         index += 1;
     }
+}
+
+pub fn mkdir_cmd(tail: &[u8]) {
+    let name = token(tail);
+    if name.is_empty() || !blank(skip_token(tail)) {
+        con_write_bytes(b"Invalid directory\r\n");
+        return;
+    }
+    let Some(packed) = pack_name(name) else {
+        con_write_bytes(b"Invalid directory\r\n");
+        return;
+    };
+    ensure();
+    if find_live(&packed).is_some() {
+        con_write_bytes(b"Directory already exists\r\n");
+        return;
+    }
+    let mut index = 0usize;
+    while index < 16 {
+        if unsafe { !ROOT[index].live } {
+            unsafe {
+                ROOT[index].name = packed;
+                ROOT[index].live = true;
+                ROOT[index].dir = true;
+            }
+            return;
+        }
+        index += 1;
+    }
+    con_write_bytes(b"Unable to create directory\r\n");
+}
+
+pub fn chdir_cmd(tail: &[u8]) {
+    let name = token(tail);
+    if name.is_empty() || name == b"\\" {
+        unsafe {
+            CWD[..3].copy_from_slice(b"A:\\");
+            CWD_LEN = 3;
+        }
+        return;
+    }
+    let Some(packed) = pack_name(name) else {
+        con_write_bytes(b"Invalid directory\r\n");
+        return;
+    };
+    ensure();
+    let Some(index) = find_live(&packed) else {
+        con_write_bytes(b"Invalid directory\r\n");
+        return;
+    };
+    if unsafe { !ROOT[index].dir } {
+        con_write_bytes(b"Invalid directory\r\n");
+        return;
+    }
+    unsafe {
+        CWD[..3].copy_from_slice(b"A:\\");
+        let n = packed.len().min(8);
+        let mut end = 0usize;
+        while end < n && packed[end] != b' ' {
+            CWD[3 + end] = packed[end];
+            end += 1;
+        }
+        CWD_LEN = 3 + end;
+    }
+}
+
+pub fn rmdir_cmd(tail: &[u8]) {
+    let name = token(tail);
+    let Some(packed) = pack_name(name) else {
+        con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
+        return;
+    };
+    ensure();
+    if unsafe { CWD_LEN > 3 } {
+        let cur = unsafe { &CWD[3..CWD_LEN] };
+        if cur.eq_ignore_ascii_case(&trim_name(&packed)) {
+            con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
+            return;
+        }
+    }
+    let Some(index) = find_live(&packed) else {
+        con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
+        return;
+    };
+    if unsafe { !ROOT[index].dir } {
+        con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
+        return;
+    }
+    unsafe { ROOT[index].live = false }
+}
+
+fn find_live(packed: &[u8; 11]) -> Option<usize> {
+    let mut index = 0usize;
+    while index < 16 {
+        if unsafe { ROOT[index].live && ROOT[index].name.eq_ignore_ascii_case(packed) } {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn trim_name(packed: &[u8; 11]) -> &[u8] {
+    let mut end = 8usize;
+    while end > 0 && packed[end - 1] == b' ' {
+        end -= 1;
+    }
+    &packed[..end]
 }
 
 pub fn copy_cmd(tail: &[u8]) {
@@ -102,6 +223,7 @@ pub fn copy_cmd(tail: &[u8]) {
             unsafe {
                 ROOT[index].name = to;
                 ROOT[index].live = true;
+                ROOT[index].dir = false;
             }
             return;
         }

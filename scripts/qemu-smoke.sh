@@ -321,6 +321,24 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "SUB      <DIR>" "$out"; then
+		echo "$name missing MD" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Directory of  A:\\\\SUB" "$out"; then
+		echo "$name missing CD" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if [ "$(grep -c "SUB      <DIR>" "$out")" -ne 1 ]; then
+		echo "$name missing RD" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

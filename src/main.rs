@@ -180,6 +180,14 @@ fn boot(gate: usize) -> ! {
         // COPY adds BAR.COM. The next DIR lists it.
         let _copy = cmd::command::tmisc1::dispatch(b"COPY FOO.COM BAR.COM\r");
         let _copied = cmd::command::tmisc1::dispatch(b"DIR\r");
+        // MD makes SUB, CD prints it as the directory header, RD removes it.
+        let _md = cmd::command::tmisc1::dispatch(b"MD SUB\r");
+        let _md_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
+        let _cd = cmd::command::tmisc1::dispatch(b"CD SUB\r");
+        let _cd_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
+        let _cd_up = cmd::command::tmisc1::dispatch(b"CD \\\r");
+        let _rd = cmd::command::tmisc1::dispatch(b"RD SUB\r");
+        let _rd_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

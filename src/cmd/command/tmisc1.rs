@@ -55,6 +55,18 @@ pub fn dispatch(line: &[u8]) -> bool {
         tcmd1b::type_cmd(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"MD") || name.eq_ignore_ascii_case(b"MKDIR") {
+        tcmd1a::mkdir_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"CD") || name.eq_ignore_ascii_case(b"CHDIR") {
+        tcmd1a::chdir_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"RD") || name.eq_ignore_ascii_case(b"RMDIR") {
+        tcmd1a::rmdir_cmd(rest);
+        return true;
+    }
     if name.eq_ignore_ascii_case(b"COPY") {
         tcmd1a::copy_cmd(rest);
         return true;
