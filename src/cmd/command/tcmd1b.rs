@@ -7,6 +7,118 @@ use core::arch::asm;
 
 use crate::bios::mscon::con_write_bytes;
 
+/// `TYPEFIL`. The file is read from the boot root and printed through
+/// the first `0x1A` or NUL. A missing name is "File not found".
+pub fn type_cmd(tail: &[u8]) {
+    let name = token(tail);
+    if name.is_empty() || !blank(skip_token(tail)) {
+        con_write_bytes(b"File not found\r\n");
+        return;
+    }
+    let Some(bytes) = file_bytes(name) else {
+        con_write_bytes(b"File not found\r\n");
+        return;
+    };
+    let mut index = 0usize;
+    while index < bytes.len() && bytes[index] != 0x1a && bytes[index] != 0 {
+        con_write_bytes(&bytes[index..index + 1]);
+        index += 1;
+    }
+    con_write_bytes(b"\r\n");
+}
+
+fn file_bytes(name: &[u8]) -> Option<&'static [u8]> {
+    let wanted = pack_name(name)?;
+    let root = 3 * 512;
+    let mut index = 0usize;
+    while index < 16 {
+        let entry = &IMAGE[root + index * 32..root + index * 32 + 32];
+        if entry[0] == 0 {
+            break;
+        }
+        if entry[0] != 0xe5 && entry[..11].eq_ignore_ascii_case(&wanted) {
+            let cluster = u16::from_le_bytes([entry[26], entry[27]]) as usize;
+            let size = u32::from_le_bytes([entry[28], entry[29], entry[30], entry[31]]) as usize;
+            if cluster < 2 {
+                return None;
+            }
+            let start = (4 + (cluster - 2)) * 512;
+            let end = start.saturating_add(size).min(IMAGE.len());
+            if start >= IMAGE.len() {
+                return None;
+            }
+            return Some(&IMAGE[start..end]);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn pack_name(name: &[u8]) -> Option<[u8; 11]> {
+    let mut out = [b' '; 11];
+    let mut dot = name.len();
+    let mut i = 0usize;
+    while i < name.len() {
+        if name[i] == b'.' {
+            dot = i;
+            break;
+        }
+        i += 1;
+    }
+    if dot == 0 || dot > 8 {
+        return None;
+    }
+    let mut n = 0usize;
+    while n < dot {
+        out[n] = up(name[n]);
+        n += 1;
+    }
+    if dot < name.len() {
+        let mut e = 0usize;
+        while e < 3 && dot + 1 + e < name.len() {
+            out[8 + e] = up(name[dot + 1 + e]);
+            e += 1;
+        }
+    }
+    Some(out)
+}
+
+fn up(byte: u8) -> u8 {
+    if byte.is_ascii_lowercase() {
+        byte - 0x20
+    } else {
+        byte
+    }
+}
+
+fn token(tail: &[u8]) -> &[u8] {
+    let tail = skip_space(tail);
+    let mut end = 0usize;
+    while end < tail.len() && tail[end] != b' ' && tail[end] != b'\t' && tail[end] != b'\r' && tail[end] != b'\n' && tail[end] != 0 {
+        end += 1;
+    }
+    &tail[..end]
+}
+
+fn skip_token(tail: &[u8]) -> &[u8] {
+    let tail = skip_space(tail);
+    let mut end = 0usize;
+    while end < tail.len() && tail[end] != b' ' && tail[end] != b'\t' && tail[end] != b'\r' && tail[end] != b'\n' && tail[end] != 0 {
+        end += 1;
+    }
+    &tail[end..]
+}
+
+fn skip_space(tail: &[u8]) -> &[u8] {
+    let mut i = 0usize;
+    while i < tail.len() && (tail[i] == b' ' || tail[i] == b'\t') {
+        i += 1;
+    }
+    &tail[i..]
+}
+
+const IMAGE: &[u8] = include_bytes!("../../../disks/msload.img");
+
 pub fn volume(tail: &[u8]) {
     if !blank(tail) {
         con_write_bytes(b"Syntax error\r\n");

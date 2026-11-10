@@ -51,6 +51,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tpipe::time_cmd(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"TYPE") {
+        tcmd1b::type_cmd(rest);
+        return true;
+    }
     if name.eq_ignore_ascii_case(b"DIR") {
         tcmd1a::dir_cmd(rest);
         return true;

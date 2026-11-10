@@ -291,6 +291,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if [ "$(grep -o "\\\\COMMAND.COM" "$out" | wc -l)" -lt 2 ]; then
+		echo "$name missing TYPE" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "File not found" "$out"; then
+		echo "$name missing TYPE error" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

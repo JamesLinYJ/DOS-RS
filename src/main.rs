@@ -168,6 +168,9 @@ fn boot(gate: usize) -> ! {
         let _vol = cmd::command::tmisc1::dispatch(b"VOL\r");
         // DIR lists the boot root. The names are the 8.3 fields.
         let _dir = cmd::command::tmisc1::dispatch(b"DIR\r");
+        // TYPE prints the file bytes. NONE is the missing-file line.
+        let _typed = cmd::command::tmisc1::dispatch(b"TYPE COMMAND.COM\r");
+        let _type_miss = cmd::command::tmisc1::dispatch(b"TYPE NONE\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
