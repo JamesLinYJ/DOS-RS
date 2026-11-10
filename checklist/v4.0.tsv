@@ -787,7 +787,7 @@ v4.0/src/DOS/DIRCALL.ASM	text	untranslated	src/dos/dircall.rs
 v4.0/src/DOS/DISK2.ASM	text	untranslated	src/dos/disk2.rs
 v4.0/src/DOS/DISK3.ASM	text	untranslated	src/dos/disk3.rs
 v4.0/src/DOS/DISK.ASM	text	untranslated	src/dos/disk.rs
-v4.0/src/DOS/DISP.ASM	text	untranslated	src/dos/disp.rs
+v4.0/src/DOS/DISP.ASM	text	partial	src/dos/disp.rs
 v4.0/src/DOS/DISPATCH.ASM	text	untranslated	src/dos/dispatch.rs
 v4.0/src/DOS/DOSMES.ASM	text	untranslated	src/dos/dosmes.rs
 v4.0/src/DOS/DOSPRINT.ASM	text	untranslated	src/dos/dosprint.rs

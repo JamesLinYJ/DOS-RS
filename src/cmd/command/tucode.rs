@@ -4,6 +4,8 @@
 //! `PathPos`). `ON` sets the echo bit and `OFF` clears it. A blank tail
 //! prints message 1057. Any other tail is printed from 82h, then message 1070.
 
+use core::arch::asm;
+
 use crate::bios::mscon::con_write_bytes;
 
 /// `RDATA.ASM` `ECHOFLAG`. The low bit is on.
@@ -13,11 +15,48 @@ const ECHO_IS: &[u8] = b"ECHO is ";
 const ON_TEXT: &[u8] = b"on";
 const OFF_TEXT: &[u8] = b"off";
 
-enum OnOff {
+pub(crate) enum OnOff {
     On,
     Off,
     Blank,
     Other,
+}
+
+/// `CNTRLC` / `BREAK`. ON and OFF call INT 21h AH=33h AL=1. A blank tail
+/// reads the flag with AL=0 and prints message 1055. Anything else is
+/// message 1047.
+pub fn break_cmd(tail: &[u8]) {
+    match on_off(tail) {
+        OnOff::On => {
+            dos_break(1, 1);
+        }
+        OnOff::Off => {
+            dos_break(1, 0);
+        }
+        OnOff::Blank => {
+            let dl = dos_break(0, 0);
+            con_write_bytes(b"BREAK is ");
+            con_write_bytes(if dl & 1 == 0 { OFF_TEXT } else { ON_TEXT });
+            crlf2();
+        }
+        OnOff::Other => {
+            con_write_bytes(b"Must specify ON or OFF\r\n");
+        }
+    }
+}
+
+fn dos_break(al: u8, dl: u8) -> u8 {
+    let mut eax = 0x3300u32 | u32::from(al);
+    let mut edx = u32::from(dl);
+    unsafe {
+        asm!(
+            "int 0x21",
+            inout("eax") eax,
+            inout("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    (edx & 0xff) as u8
 }
 
 /// `ECHO`. `line` is the text `cmd_copy` stored at 81h, including the CR.
@@ -68,7 +107,7 @@ fn skip_one(tail: &[u8]) -> &[u8] {
 
 /// `ON_OFF`. Leading blanks, tabs, and one `=` are skipped. The word has to
 /// be `ON` or `OFF` and the rest of the line has to be empty.
-fn on_off(tail: &[u8]) -> OnOff {
+pub(crate) fn on_off(tail: &[u8]) -> OnOff {
     let mut index = 0usize;
     while index < tail.len() {
         let byte = tail[index];

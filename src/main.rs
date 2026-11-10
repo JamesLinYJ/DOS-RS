@@ -135,6 +135,12 @@ fn boot(gate: usize) -> ! {
         let _echo_text = cmd::command::tmisc1::dispatch(b"ECHO hello\r");
         let _echo_off = cmd::command::tmisc1::dispatch(b"ECHO OFF\r");
         let _echo_again = cmd::command::tmisc1::dispatch(b"ECHO\r");
+        // `BREAK` with an empty tail reads CntCFlag. It starts clear, so the
+        // line is message 1055 with "off". ON stores DL=1, and the next read
+        // prints "on".
+        let _break = cmd::command::tmisc1::dispatch(b"BREAK\r");
+        let _break_on = cmd::command::tmisc1::dispatch(b"BREAK ON\r");
+        let _break_again = cmd::command::tmisc1::dispatch(b"BREAK\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

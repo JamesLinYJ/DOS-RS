@@ -140,6 +140,11 @@ impl LogicalFrame {
     fn set_al(&mut self, al: Al) {
         self.ax = (self.ax & !0xFF) | u64::from(al.0);
     }
+
+    /// Replaces bits 0..8 of DX. DH and bits 16..63 stay as they were.
+    fn set_dl(&mut self, dl: u8) {
+        self.dx = (self.dx & !0xFF) | u64::from(dl);
+    }
 }
 
 /// Major 4 in AL, minor 0 in AH. The word is `0x0004`.
@@ -159,6 +164,7 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
     slots[0x30] = get_version as fn(&mut LogicalFrame);
+    slots[0x33] = set_ctrl_c_trapping as fn(&mut LogicalFrame);
     slots[0x4B] = exec_program as fn(&mut LogicalFrame);
     slots
 };
@@ -208,6 +214,15 @@ fn exec_program(frame: &mut LogicalFrame) {
     if !crate::dos::exec::image_has_command(frame.dx as u32 as *const u8) {
         frame.set_al(Al(2));
     }
+}
+
+/// AH=33h. `$SET_CTRL_C_TRAPPING`.
+fn set_ctrl_c_trapping(frame: &mut LogicalFrame) {
+    let al = (frame.ax & 0xff) as u8;
+    let dl = (frame.dx & 0xff) as u8;
+    let (new_al, new_dl) = crate::dos::disp::set_ctrl_c(al, dl);
+    frame.set_al(Al(new_al));
+    frame.set_dl(new_dl);
 }
 
 /// AH=30h. AL is ignored.

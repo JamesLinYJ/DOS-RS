@@ -23,6 +23,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tucode::echo(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"BREAK") {
+        tucode::break_cmd(rest);
+        return true;
+    }
     false
 }
 

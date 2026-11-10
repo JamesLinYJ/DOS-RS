@@ -201,6 +201,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "BREAK is off" "$out"; then
+		echo "$name missing BREAK off" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "BREAK is on" "$out"; then
+		echo "$name missing BREAK on" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

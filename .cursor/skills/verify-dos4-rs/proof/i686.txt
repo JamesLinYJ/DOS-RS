@@ -29,3 +29,5 @@ Microsoft DOS             Version 4.0
 ECHO is on
 hello
 ECHO is off
+BREAK is off
+BREAK is on
