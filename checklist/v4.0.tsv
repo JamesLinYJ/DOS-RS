@@ -179,7 +179,7 @@ v4.0/src/CMD/DISKCOPY/DCOPYPAR.ASM	text	partial	src/cmd/diskcopy/dcopypar.rs
 v4.0/src/CMD/DISKCOPY/DCOPYP.ASM	text	partial	src/cmd/diskcopy/dcopyp.rs
 v4.0/src/CMD/DISKCOPY/DCOPYSM.ASM	text	partial	src/cmd/diskcopy/dcopysm.rs
 v4.0/src/CMD/DISKCOPY/DCPYMACR.INC	text	partial	src/cmd/diskcopy/dcpymacr.rs
-v4.0/src/CMD/DISKCOPY/DISKCOPY.ASM	text	untranslated	src/cmd/diskcopy/diskcopy.rs
+v4.0/src/CMD/DISKCOPY/DISKCOPY.ASM	text	partial	src/cmd/diskcopy/diskcopy.rs
 v4.0/src/CMD/DISKCOPY/DISKCOPY.EQU	text	untranslated	src/cmd/diskcopy/diskcopy.rs
 v4.0/src/CMD/DISKCOPY/DISKCOPY.LNK	text	untranslated	src/cmd/diskcopy/diskcopy.rs
 v4.0/src/CMD/DISKCOPY/DISKCOPY.SKL	text	untranslated	src/cmd/diskcopy/diskcopy.rs

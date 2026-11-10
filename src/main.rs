@@ -454,6 +454,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcopy::dcopysm::show();
         // A function alone leaves the low byte in place.
         cmd::diskcopy::dcpymacr::show();
+        // A 40-track source is not formatted onto 15-sector media.
+        cmd::diskcopy::diskcopy::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
