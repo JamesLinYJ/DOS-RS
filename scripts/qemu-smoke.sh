@@ -933,6 +933,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TCMD2B CT00 CT00 CT00 CT00 CT83 CP00 CP07 CP02 CP01 CP03 CP04 CP05 CP06 TN2E00 TN413A2E TN433A2E TN464F4F EX00 EX01 EL01 EL00" "$out"; then
+		echo "$name missing console and code page" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
