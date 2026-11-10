@@ -789,7 +789,7 @@ v4.0/src/DOS/DISK3.ASM	text	partial	src/dos/disk3.rs
 v4.0/src/DOS/DISK.ASM	text	partial	src/dos/disk.rs
 v4.0/src/DOS/DISP.ASM	text	partial	src/dos/disp.rs
 v4.0/src/DOS/DISPATCH.ASM	text	partial	src/dos/dispatch.rs
-v4.0/src/DOS/DOSMES.ASM	text	untranslated	src/dos/dosmes.rs
+v4.0/src/DOS/DOSMES.ASM	text	partial	src/dos/dosmes.rs
 v4.0/src/DOS/DOSPRINT.ASM	text	partial	src/dos/dosprint.rs
 v4.0/src/DOS/DUP.ASM	text	untranslated	src/dos/dup.rs
 v4.0/src/DOS/EXEC.ASM	text	partial	src/dos/exec.rs

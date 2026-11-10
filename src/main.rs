@@ -323,6 +323,8 @@ fn boot(gate: usize) -> ! {
         dos::util::show();
         // Dispatch notes: memory is section 4, and call 18h is not listed.
         dos::dispatch::show();
+        // Country tables: code page 437, and 82h maps to E.
+        dos::dosmes::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

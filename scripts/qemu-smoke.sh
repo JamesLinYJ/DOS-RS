@@ -765,6 +765,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DOSMES OEMFF IB00 CP01B5 ENT06 US0001 DT00 CUR24 TH2C DEC2E DB0000 MA41 M8245 FA01 FS00 FD00 CL41 CH43 ES53 IB4D" "$out"; then
+		echo "$name missing country tables" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
