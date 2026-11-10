@@ -423,6 +423,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DUP REF0002" "$out"; then
+		echo "$name missing DUP" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "DIRSCAN FOO HIT BAR HIT ZZZ MISS" "$out"; then
 		echo "$name missing directory scan" >&2
 		cat "$out" >&2

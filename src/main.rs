@@ -215,6 +215,8 @@ fn boot(gate: usize) -> ! {
         dos::buf::show();
         // `MetaCompare` from DIR.ASM against the live root.
         dos::dir::show();
+        // `DOS_DUP` increments the local SFT reference count.
+        dos::dup::show();
         // IOCTL on a closed handle, removable media, and the path checks.
         dos::ioctl::show();
         // Exec rejects AL=2, misses a name, and loads COMMAND.COM as a COM file.

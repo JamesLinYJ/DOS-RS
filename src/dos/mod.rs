@@ -26,6 +26,7 @@ pub mod dir;
 pub mod dir2;
 pub mod dircall;
 pub mod dinfo;
+pub mod dup;
 pub mod disk;
 pub mod handle;
 pub mod ioctl;
