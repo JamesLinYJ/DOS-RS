@@ -531,6 +531,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "FINFO AT21 TM0841 DT0864 SZ0010 DIR10 DV02 BAD05 CL07 AC04 LC01 SET21 FO80" "$out"; then
+		echo "$name missing file info" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "HIGHSW MSFFFF IBM0000 HIFFFF ESC1B CX18 PRN0000 EXTFFFF" "$out"; then
+		echo "$name missing high switches" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

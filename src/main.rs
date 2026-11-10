@@ -247,6 +247,10 @@ fn boot(gate: usize) -> ! {
         dos::disk2::show();
         // Divide a sector number, shift it to a cluster, and check a buffer.
         dos::disk3::show();
+        // File time, date, size, and an attribute DOS will not store.
+        dos::finfo::show();
+        // Microsoft build switches: escape, cancel, and high memory.
+        dos::highsw::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
