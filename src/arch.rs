@@ -242,6 +242,7 @@ global_asm!(
 .code64
 .global int21_gate
 int21_gate:
+    sub rsp, 128
     sub rsp, 112
     mov [rsp + 0], rax
     mov [rsp + 8], rbx
@@ -250,15 +251,15 @@ int21_gate:
     mov [rsp + 32], rsi
     mov [rsp + 40], rdi
     mov [rsp + 48], rbp
-    mov rax, [rsp + 112]
+    mov rax, [rsp + 240]
     mov [rsp + 72], rax
-    mov rax, [rsp + 120]
+    mov rax, [rsp + 248]
     mov [rsp + 80], rax
-    mov rax, [rsp + 128]
+    mov rax, [rsp + 256]
     mov [rsp + 88], rax
-    mov rax, [rsp + 136]
+    mov rax, [rsp + 264]
     mov [rsp + 96], rax
-    mov rax, [rsp + 144]
+    mov rax, [rsp + 272]
     mov [rsp + 104], rax
     xor rax, rax
     mov ax, ds
@@ -282,7 +283,7 @@ int21_gate:
     mov rdi, [rsp + 40]
     mov rbp, [rsp + 48]
     mov rax, [rsp + 0]
-    add rsp, 112
+    add rsp, 240
     iretq
 "#
 );

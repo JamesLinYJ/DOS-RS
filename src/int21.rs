@@ -176,6 +176,7 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x3C] = create_file as fn(&mut LogicalFrame);
     slots[0x3D] = open_handle as fn(&mut LogicalFrame);
     slots[0x3F] = read_handle as fn(&mut LogicalFrame);
+    slots[0x40] = write_handle as fn(&mut LogicalFrame);
     slots[0x41] = delete_file as fn(&mut LogicalFrame);
     slots[0x47] = get_cwd as fn(&mut LogicalFrame);
     slots[0x4E] = find_first as fn(&mut LogicalFrame);
@@ -313,6 +314,12 @@ fn open_handle(frame: &mut LogicalFrame) {
         Some(handle) => frame.store_ax(DosWord(handle)),
         None => frame.store_ax(DosWord(0xffff)),
     }
+}
+
+/// AH=40h. AX is the number of bytes copied from DX into the open file.
+fn write_handle(frame: &mut LogicalFrame) {
+    let n = crate::dos::handle::write(frame.bx as u16, frame.dx as *const u8, frame.cx as usize);
+    frame.store_ax(DosWord(n as u16));
 }
 
 /// AH=3Fh. AX is the number of bytes copied to DX.

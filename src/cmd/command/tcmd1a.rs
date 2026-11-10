@@ -102,8 +102,19 @@ pub fn copy_cmd(tail: &[u8]) {
         con_write_bytes(b"File cannot be copied onto itself\r\n");
         return;
     }
+    let src_handle = open_read(source.as_ptr());
+    let mut buf = [0u8; 32];
+    let got = if src_handle == 0xffff {
+        0
+    } else {
+        read_bytes(src_handle, buf.as_mut_ptr(), buf.len())
+    };
     if dos_dx(0x3c, dest.as_ptr(), 0) != 0 {
         con_write_bytes(b"File creation error\r\n");
+        return;
+    }
+    if got != 0 {
+        let _ = write_bytes(5, buf.as_ptr(), got);
     }
 }
 
@@ -183,6 +194,92 @@ fn asciiz_token(name: &[u8]) -> [u8; 16] {
     let n = name.len().min(15);
     out[..n].copy_from_slice(&name[..n]);
     out
+}
+
+fn open_read(name: *const u8) -> u16 {
+    let mut eax = 0x3D00u32;
+    let edx = name as u32;
+    unsafe {
+        asm!(
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
+}
+
+fn read_bytes(handle: u16, dst: *mut u8, count: usize) -> usize {
+    let mut eax = 0x3F00u32;
+    let handle = u32::from(handle);
+    let ecx = count as u32;
+    let edx = dst as u32;
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        asm!(
+            "push ebx",
+            "mov ebx, {h:e}",
+            "int 0x21",
+            "pop ebx",
+            inout("eax") eax,
+            h = in(reg) handle,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        asm!(
+            "push rbx",
+            "mov ebx, {h:e}",
+            "int 0x21",
+            "pop rbx",
+            inout("eax") eax,
+            h = in(reg) handle,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    (eax as usize).min(count)
+}
+
+fn write_bytes(handle: u16, src: *const u8, count: usize) -> usize {
+    let mut eax = 0x4000u32;
+    let handle = u32::from(handle);
+    let ecx = count as u32;
+    let edx = src as u32;
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        asm!(
+            "push ebx",
+            "mov ebx, {h:e}",
+            "int 0x21",
+            "pop ebx",
+            inout("eax") eax,
+            h = in(reg) handle,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        asm!(
+            "push rbx",
+            "mov ebx, {h:e}",
+            "int 0x21",
+            "pop rbx",
+            inout("eax") eax,
+            h = in(reg) handle,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    eax as usize
 }
 
 fn set_dta(ptr: *mut u8) {

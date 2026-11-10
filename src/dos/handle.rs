@@ -8,6 +8,9 @@ const IMAGE: &[u8] = include_bytes!("../../disks/msload.img");
 static mut OFF: usize = 0;
 static mut LEFT: usize = 0;
 static mut OPEN: bool = false;
+static mut OWNED: bool = false;
+static mut OWNED_AT: usize = 0;
+static mut OWNED_POS: usize = 0;
 
 pub fn open_asciiz(name: *const u8) -> Option<u16> {
     let mut raw = [0u8; 12];
@@ -23,6 +26,33 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
         }
     }
     let packed = pack(&raw[..len])?;
+    if let Some(index) = crate::dos::search::find_packed(&packed) {
+        let ent = crate::dos::search::slot(index);
+        if ent.dir {
+            return None;
+        }
+        if ent.owned {
+            unsafe {
+                OWNED = true;
+                OWNED_AT = index;
+                OWNED_POS = 0;
+                OPEN = true;
+            }
+            return Some(5);
+        }
+        if ent.cluster >= 2 {
+            let start = (4 + (ent.cluster as usize - 2)) * 512;
+            if start < IMAGE.len() {
+                unsafe {
+                    OFF = start;
+                    LEFT = (ent.size as usize).min(IMAGE.len() - start);
+                    OPEN = true;
+                    OWNED = false;
+                }
+                return Some(5);
+            }
+        }
+    }
     let root = 3 * 512;
     let mut index = 0usize;
     while index < 16 {
@@ -44,6 +74,7 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
                 OFF = start;
                 LEFT = size.min(IMAGE.len() - start);
                 OPEN = true;
+                OWNED = false;
             }
             return Some(5);
         }
@@ -52,9 +83,47 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
     None
 }
 
+pub fn bind_owned(index: usize) {
+    unsafe {
+        OWNED = true;
+        OWNED_AT = index;
+        OWNED_POS = 0;
+        OPEN = true;
+    }
+}
+
+pub fn write(handle: u16, src: *const u8, count: usize) -> usize {
+    if handle != 5 || unsafe { !OPEN || !OWNED } {
+        return 0;
+    }
+    let index = unsafe { OWNED_AT };
+    let mut ent = crate::dos::search::slot(index);
+    let mut n = 0usize;
+    while n < count && (ent.data_len as usize) < ent.data.len() {
+        ent.data[ent.data_len as usize] = unsafe { *src.add(n) };
+        ent.data_len += 1;
+        n += 1;
+    }
+    crate::dos::search::set_slot(index, ent);
+    n
+}
+
 pub fn read(handle: u16, dst: *mut u8, count: usize) -> usize {
     if handle != 5 || unsafe { !OPEN } {
         return 0;
+    }
+    if unsafe { OWNED } {
+        let ent = crate::dos::search::slot(unsafe { OWNED_AT });
+        let pos = unsafe { OWNED_POS };
+        let avail = (ent.data_len as usize).saturating_sub(pos);
+        let n = count.min(avail);
+        let mut i = 0usize;
+        while i < n {
+            unsafe { *dst.add(i) = ent.data[pos + i] }
+            i += 1;
+        }
+        unsafe { OWNED_POS += n }
+        return n;
     }
     let n = count.min(unsafe { LEFT });
     let off = unsafe { OFF };

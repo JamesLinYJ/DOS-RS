@@ -291,7 +291,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if [ "$(grep -o "\\\\COMMAND.COM" "$out" | wc -l)" -lt 2 ]; then
+	if [ "$(grep -o "\\\\COMMAND.COM" "$out" | wc -l)" -lt 3 ]; then
 		echo "$name missing TYPE" >&2
 		cat "$out" >&2
 		rm -f "$out"

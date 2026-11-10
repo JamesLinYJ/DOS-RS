@@ -12,12 +12,22 @@ pub(crate) struct Ent {
     pub name: [u8; 11],
     pub live: bool,
     pub dir: bool,
+    pub owned: bool,
+    pub data: [u8; 32],
+    pub data_len: u8,
+    pub cluster: u16,
+    pub size: u16,
 }
 
 static mut ROOT: [Ent; SLOTS] = [Ent {
     name: [0; 11],
     live: false,
     dir: false,
+    owned: false,
+    data: [0; 32],
+    data_len: 0,
+    cluster: 0,
+    size: 0,
 }; SLOTS];
 static mut READY: bool = false;
 static mut CWD: [u8; 32] = *b"A:\\\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
@@ -45,6 +55,8 @@ pub(crate) fn ensure() {
                 name.copy_from_slice(&entry[..11]);
                 ROOT[index].name = name;
                 ROOT[index].live = true;
+                ROOT[index].cluster = u16::from_le_bytes([entry[26], entry[27]]);
+                ROOT[index].size = u16::from_le_bytes([entry[28], entry[29]]);
             }
             index += 1;
         }

@@ -53,8 +53,14 @@ pub fn create(name: *const u8) -> u16 {
             name: packed,
             live: true,
             dir: false,
+            owned: true,
+            data: [0; 32],
+            data_len: 0,
+            cluster: 0,
+            size: 0,
         },
     );
+    crate::dos::handle::bind_owned(index);
     0
 }
 

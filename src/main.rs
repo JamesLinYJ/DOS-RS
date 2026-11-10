@@ -180,6 +180,8 @@ fn boot(gate: usize) -> ! {
         // COPY adds BAR.COM. The next DIR lists it.
         let _copy = cmd::command::tmisc1::dispatch(b"COPY FOO.COM BAR.COM\r");
         let _copied = cmd::command::tmisc1::dispatch(b"DIR\r");
+        // The copy wrote the source bytes. TYPE reads them back with AH=3Fh.
+        let _copy_type = cmd::command::tmisc1::dispatch(b"TYPE BAR.COM\r");
         // MD makes SUB, CD prints it as the directory header, RD removes it.
         let _md = cmd::command::tmisc1::dispatch(b"MD SUB\r");
         let _md_dir = cmd::command::tmisc1::dispatch(b"DIR\r");

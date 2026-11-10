@@ -25,6 +25,11 @@ pub fn mkdir(name: *const u8) -> u16 {
             name: packed,
             live: true,
             dir: true,
+            owned: false,
+            data: [0; 32],
+            data_len: 0,
+            cluster: 0,
+            size: 0,
         },
     );
     0

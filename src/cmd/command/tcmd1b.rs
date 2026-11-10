@@ -55,21 +55,24 @@ fn read_file(handle: u16, dst: *mut u8, count: usize) -> usize {
     #[cfg(target_arch = "x86")]
     unsafe {
         asm!(
+            "push ebx",
             "mov ebx, {h:e}",
             "int 0x21",
+            "pop ebx",
             inout("eax") eax,
             h = in(reg) handle,
             in("ecx") ecx,
             in("edx") edx,
-            lateout("ebx") _,
             clobber_abi("C"),
         );
     }
     #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
+            "push rbx",
             "mov ebx, {h:e}",
             "int 0x21",
+            "pop rbx",
             inout("eax") eax,
             h = in(reg) handle,
             in("ecx") ecx,

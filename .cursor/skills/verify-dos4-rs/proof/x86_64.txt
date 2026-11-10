@@ -48,7 +48,7 @@ Current time is  01:02:03.04
 Directory of  A:\
 IO       SYS
 COMMAND  COM
-ÿ
+\COMMAND.COM
 File not found
 Directory of  A:\
 COMMAND  COM
@@ -57,6 +57,7 @@ FOO      COM
 Directory of  A:\
 BAR      COM
 FOO      COM
+\COMMAND.COM
 Directory of  A:\
 BAR      COM
 FOO      COM
