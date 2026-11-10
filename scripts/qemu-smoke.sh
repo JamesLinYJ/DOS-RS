@@ -1244,8 +1244,8 @@ run_one() {
 		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out" \
 		|| ! grep -qF "usage: cl [ option... ] filename... [ -link linkoption... ]" "$out" \
 		|| ! grep -q "Microsoft (R) Library Manager  Version 3.10" "$out" \
-		|| ! grep -q "LIB : error U2152: LIB.LST : cannot create listing" "$out" \
-		|| ! grep -q "CMD ERRORLEVEL 2" "$out"; then
+		|| ! grep -q "CMD DIR LIB.LST" "$out" \
+		|| ! grep -q "LIB LST __aFFaldiv" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

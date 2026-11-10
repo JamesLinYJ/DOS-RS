@@ -106,6 +106,10 @@ pub fn read_file(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
 }
 
 pub fn write_file(name: &[u8; 11], data: &[u8]) -> bool {
+    write_named(name, data, 0x20)
+}
+
+pub fn write_named(name: &[u8; 11], data: &[u8], attr: u8) -> bool {
     if data.len() > 128 * 512 {
         return false;
     }
@@ -132,7 +136,7 @@ pub fn write_file(name: &[u8; 11], data: &[u8]) -> bool {
     }
     let mut raw = [0u8; 32];
     raw[..11].copy_from_slice(name);
-    raw[11] = 0x20;
+    raw[11] = attr & 0x27;
     raw[26..28].copy_from_slice(&cluster.to_le_bytes());
     let Ok(size) = u32::try_from(data.len()) else {
         return false;

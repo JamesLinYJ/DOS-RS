@@ -163,6 +163,29 @@ fn show_shell() {
     }
     report_header(b"PACKME  EXE");
     report_packed();
+    report_listing();
+}
+
+fn report_listing() {
+    let mut body = [0u8; 256];
+    let Some(length) = super::disk::read_head(b"LIB     LST", &mut body) else {
+        return;
+    };
+    crate::bios::mscon::con_write_bytes(b"LIB LST ");
+    let mut index = 0usize;
+    let mut shown = 0usize;
+    while index < length && shown < 48 {
+        let byte = body[index];
+        if byte == b'\r' || byte == b'\n' {
+            break;
+        }
+        if (0x20..0x7F).contains(&byte) {
+            crate::bios::mscon::con_write_bytes(&[byte]);
+            shown += 1;
+        }
+        index += 1;
+    }
+    crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
 fn report_packed() {
@@ -302,6 +325,8 @@ struct Opened {
     pos: usize,
     name: [u8; 11],
     named: bool,
+    console: bool,
+    access: u8,
 }
 
 static mut FILE_POOL: [[u8; FILE_BYTES]; 8] = [[0; FILE_BYTES]; 8];
@@ -464,6 +489,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             device_control(cpu);
             Action::Continue
         }
+        0x45 => {
+            duplicate(cpu, session);
+            Action::Continue
+        }
         0x48 => {
             let asked = cpu.wide(Slot::Base);
             let room = super::memory::CONVENTIONAL_END.saturating_sub(session.break_at);
@@ -526,6 +555,12 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
 }
 
 fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
+    let access = cpu.low(Slot::Accumulator) & 7;
+    if access > 2 {
+        cpu.set_wide(Slot::Accumulator, 12);
+        cpu.set_carry(true);
+        return;
+    }
     let Some(name) = file_component(&guest_text(cpu, ram)) else {
         cpu.set_wide(Slot::Accumulator, 2);
         cpu.set_carry(true);
@@ -550,6 +585,8 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         pos: 0,
         name,
         named: true,
+        console: false,
+        access,
     });
     cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
     cpu.set_carry(false);
@@ -578,9 +615,15 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         return;
     }
     let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
+        cpu.set_wide(Slot::Accumulator, 6);
         cpu.set_carry(true);
         return;
     };
+    if opened.access == 1 {
+        cpu.set_wide(Slot::Accumulator, 5);
+        cpu.set_carry(true);
+        return;
+    }
     let mut moved = 0u16;
     while usize::from(moved) < requested && opened.pos < opened.len {
         let byte = file_bytes(opened.bytes)[opened.pos];
@@ -601,7 +644,8 @@ fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         cpu.set_carry(true);
         return;
     };
-    if !super::disk::write_file(&name, b"") {
+    let attr = (cpu.wide(Slot::Count) as u8) & 0x27;
+    if !super::disk::write_named(&name, b"", attr) {
         cpu.set_wide(Slot::Accumulator, 0x27);
         cpu.set_carry(true);
         return;
@@ -618,7 +662,44 @@ fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         pos: 0,
         name,
         named: true,
+        console: false,
+        access: 2,
     });
+    cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
+    cpu.set_carry(false);
+}
+
+fn duplicate(cpu: &mut CpuState, session: &mut Session) {
+    let source = cpu.wide(Slot::Base);
+    let Some(slot) = free_handle(session) else {
+        cpu.set_wide(Slot::Accumulator, 4);
+        cpu.set_carry(true);
+        return;
+    };
+    let opened = if source < 3 {
+        Opened {
+            bytes: 0,
+            len: 0,
+            pos: 0,
+            name: [b' '; 11],
+            named: false,
+            console: true,
+            access: if source == 0 { 0 } else { 1 },
+        }
+    } else {
+        let Some(found) = session
+            .opens
+            .get(usize::from(source - 3))
+            .copied()
+            .flatten()
+        else {
+            cpu.set_wide(Slot::Accumulator, 6);
+            cpu.set_carry(true);
+            return;
+        };
+        found
+    };
+    session.opens[slot] = Some(opened);
     cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
     cpu.set_carry(false);
 }
@@ -641,17 +722,34 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         return;
     }
     if handle < 3 {
+        cpu.set_wide(Slot::Accumulator, 6);
+        cpu.set_carry(true);
+        return;
+    }
+    let Some(found) = session
+        .opens
+        .get(usize::from(handle - 3))
+        .copied()
+        .flatten()
+    else {
+        cpu.set_wide(Slot::Accumulator, 6);
+        cpu.set_carry(true);
+        return;
+    };
+    if found.console {
+        write_console(cpu, ram);
+        return;
+    }
+    if !found.named || found.access == 0 {
+        cpu.set_wide(Slot::Accumulator, 5);
         cpu.set_carry(true);
         return;
     }
     let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
+        cpu.set_wide(Slot::Accumulator, 6);
         cpu.set_carry(true);
         return;
     };
-    if !opened.named {
-        cpu.set_carry(true);
-        return;
-    }
     let count = cpu.wide(Slot::Count);
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
@@ -676,6 +774,7 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         cpu.set_wide(Slot::Accumulator, seen);
         cpu.set_carry(false);
     } else {
+        cpu.set_wide(Slot::Accumulator, 0x27);
         cpu.set_carry(true);
     }
 }
