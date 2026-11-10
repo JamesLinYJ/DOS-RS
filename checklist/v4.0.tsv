@@ -174,7 +174,7 @@ v4.0/src/CMD/DISKCOMP/DISKCOMP.LNK	text	untranslated	src/cmd/diskcomp/diskcomp.r
 v4.0/src/CMD/DISKCOMP/DISKCOMP.SKL	text	untranslated	src/cmd/diskcomp/diskcomp.rs
 v4.0/src/CMD/DISKCOMP/MAKEFILE	text	untranslated	src/cmd/diskcomp/makefile.rs
 v4.0/src/CMD/DISKCOPY/COPYINIT.ASM	text	partial	src/cmd/diskcopy/copyinit.rs
-v4.0/src/CMD/DISKCOPY/DCOPYMS.INC	text	untranslated	src/cmd/diskcopy/dcopyms.rs
+v4.0/src/CMD/DISKCOPY/DCOPYMS.INC	text	partial	src/cmd/diskcopy/dcopyms.rs
 v4.0/src/CMD/DISKCOPY/DCOPYPAR.ASM	text	untranslated	src/cmd/diskcopy/dcopypar.rs
 v4.0/src/CMD/DISKCOPY/DCOPYP.ASM	text	untranslated	src/cmd/diskcopy/dcopyp.rs
 v4.0/src/CMD/DISKCOPY/DCOPYSM.ASM	text	untranslated	src/cmd/diskcopy/dcopysm.rs

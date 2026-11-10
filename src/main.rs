@@ -444,6 +444,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcomp::diskcomp::show();
         // Copy fills twelve lists and does not patch a 386.
         cmd::diskcopy::copyinit::show();
+        // There is no message 24. A serial field is right aligned and zero padded.
+        cmd::diskcopy::dcopyms::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
