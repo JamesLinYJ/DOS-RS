@@ -807,6 +807,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MSINIT FT0084 WN04 TG5872 SW000A ID0006 AL8005 PG0000 PG0001 PG0001 PG0002 PG1000 I21111100AB I2900000000 I2F222200AB EA CE3333 SG00AB HM00 AV0000 JFN00 N11 AR5A OW0000 SZ9F00 CN0003 CK02 IN05 MX0201 UN03 SK01 MV01 MV00 L0221 LFFFF FAFF SH00AB000E" "$out"; then
+		echo "$name missing DOS initialization" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

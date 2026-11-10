@@ -337,6 +337,8 @@ fn boot(gate: usize) -> ! {
         dos::msconst::show();
         // ROM cartridges are scanned from C000 and stop at F000.
         dos::mshalo::show();
+        // Init walks the fake-version list and stops the device chain at the clock.
+        dos::msinit::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
