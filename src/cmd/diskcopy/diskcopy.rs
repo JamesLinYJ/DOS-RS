@@ -44,6 +44,17 @@ const YESNO_CALL: u16 = 0x6523;
 const FORTY_TRACKS: u8 = 0x27;
 const SERIAL_LOW_AT: u16 = 0;
 const SERIAL_HIGH_AT: u16 = 2;
+const EQUATES: &[u16] = &[
+    0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0004, 0x0005, 0x0006, 0x0007, 0x0008, 0x0009, 0x000A,
+    0x0001, 0x0000, 0x0001, 0x0000, 0x0000, 0x0001, 0x0001, 0x0002, 0x0000, 0x0001, 0x0002, 0x0020,
+    0x00E0, 0x0008, 0x0009, 0x000E, 0x000F, 0x0000, 0x0001, 0x0002, 0x5F02, 0x001C, 0x0002, 0xFFFF,
+    0xFFFF, 0x1000, 0xFFFF, 0x0001, 0x0000, 0xFFF7, 0x0001, 0x0000, 0x005C, 0x005D, 0x006C, 0x006D,
+    0x0080, 0x0100, 0x0001, 0x0009, 0x0009, 0x0019, 0x0030, 0x0044, 0x351E, 0x251E, 0x3523, 0x2523,
+    0x4408, 0x0002, 0x0040, 0x5F00, 0x5F01, 0x002A, 0x0003, 0x0059, 0x002A, 0x002C, 0x004C, 0x0065,
+    0x0023, 0x0000, 0x0001, 0x0002, 0x000D, 0x0008, 0x0061, 0x0041, 0x0062, 0x0042, 0x0060, 0x0040,
+    0x000F, 0x0000, 0x0001, 0x0004, 0x0004, 0x0005, 0x0000, 0x0001, 0x0000, 0x0001, 0x0002, 0x00FF,
+    0x00FF, 0x0000, 0x0020, 0x0001, 0x0002, 0xADC1, 0x00FF, 0x002F,
+];
 
 struct Geometry {
     total: u16,
@@ -719,7 +730,37 @@ pub fn show() {
     put_hex16(SERIAL_HIGH_AT);
     write_volume(shown_serial(false, 0x0406, 0x11CB));
     write_volume(shown_serial(true, 0x0406, 0x11CB));
-    crate::bios::mscon::con_write_bytes(b" PA\r\n");
+    crate::bios::mscon::con_write_bytes(b" PA EQ");
+    put_hex16(EQUATES.len() as u16);
+    crate::bios::mscon::con_write_bytes(b" SM");
+    put_hex32(equate_sum());
+    crate::bios::mscon::con_write_bytes(b" FN");
+    put_hex16(EQUATES[35]);
+    crate::bios::mscon::con_write_bytes(b" RM");
+    put_hex16(EQUATES[37]);
+    crate::bios::mscon::con_write_bytes(b" CS");
+    put_hex16(EQUATES[24]);
+    crate::bios::mscon::con_write_bytes(b" DC");
+    put_hex16(EQUATES[60]);
+    crate::bios::mscon::con_write_bytes(b" IV");
+    put_hex16(EQUATES[41]);
+    crate::bios::mscon::con_write_bytes(b" BF");
+    put_hex16(EQUATES[89]);
+    crate::bios::mscon::con_write_bytes(b" MX");
+    put_hex16(EQUATES[101]);
+    crate::bios::mscon::con_write_bytes(b" CA");
+    put_hex16(EQUATES[96]);
+    crate::bios::mscon::con_write_bytes(b"\r\n");
+}
+
+fn equate_sum() -> u32 {
+    let mut sum = 0u32;
+    let mut index = 0usize;
+    while index < EQUATES.len() {
+        sum = sum.wrapping_add(u32::from(EQUATES[index]));
+        index += 1;
+    }
+    sum
 }
 
 fn write_exit(loaded: bool, ready: bool, broken: bool) {
@@ -900,6 +941,11 @@ fn write_volume(serial: Option<(u16, u16)>) {
             put_hex16(low);
         }
     }
+}
+
+fn put_hex32(value: u32) {
+    put_hex16((value >> 16) as u16);
+    put_hex16(value as u16);
 }
 
 fn put_hex16(value: u16) {
