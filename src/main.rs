@@ -368,6 +368,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::rdata::show();
         // Critical errors: ignore is checked before retry, and /F fails.
         cmd::command::rucode::show();
+        // IF checks NOT, then ERRORLEVEL, then EXIST, then a string.
+        cmd::command::tbatch2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

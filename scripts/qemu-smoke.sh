@@ -927,6 +927,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TBATCH2 KW01 KW02 KW03 KW00 EQ01 EQ00 SY01 LV01 LV00 NV01 NC0101 NC0200 GL03 GL0B GL00 LB01 LB00 SH0002 NX0002 CA20464F4F" "$out"; then
+		echo "$name missing batch conditionals" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
