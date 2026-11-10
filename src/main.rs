@@ -271,6 +271,8 @@ fn boot(gate: usize) -> ! {
         dos::msctrlc::show();
         // Console input with no echo, including a zero scan code.
         dos::mscpmio::show();
+        // DOS printf: hex, newline, character, and string.
+        dos::dosprint::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
