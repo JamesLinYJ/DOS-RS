@@ -257,6 +257,10 @@ Creating .C files for  using  file of messages.
 
 Couldn't open  menu creation files. 
 CMD ERRORLEVEL 1
+At lest one filespec ( for .SKL ) needed.
+
+	Two must be given if default message file is not wonted.
+CMD ERRORLEVEL 1
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 OP LEA 10

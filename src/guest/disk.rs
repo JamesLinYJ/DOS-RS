@@ -5,7 +5,8 @@
 
 use super::volume;
 
-const CAPACITY: usize = 176 * 1024;
+const CAPACITY: usize = 256 * 1024;
+const FAT_ROOM: usize = 1024;
 
 struct Disk {
     bytes: [u8; CAPACITY],
@@ -337,13 +338,28 @@ fn clear_entry(disk: &mut Disk, map: &Map, dir: u16, index: usize) -> bool {
     write_entry(disk, map, dir, index, &raw)
 }
 
+fn take_fat(disk: &Disk, map: &Map) -> Option<[u8; FAT_ROOM]> {
+    if map.fat_bytes == 0 || map.fat_bytes > FAT_ROOM {
+        return None;
+    }
+    let mut fat = [0u8; FAT_ROOM];
+    fat[..map.fat_bytes].copy_from_slice(disk.bytes.get(map.fat_at..map.fat_at + map.fat_bytes)?);
+    Some(fat)
+}
+
+fn put_fat(disk: &mut Disk, map: &Map, fat: &[u8; FAT_ROOM]) -> bool {
+    let Some(slot) = disk.bytes.get_mut(map.fat_at..map.fat_at + map.fat_bytes) else {
+        return false;
+    };
+    slot.copy_from_slice(&fat[..map.fat_bytes]);
+    true
+}
+
 fn copy_cluster(disk: &Disk, map: &Map, cluster: u16, size: usize, out: &mut [u8]) -> Option<usize> {
     if size > out.len() || cluster < 2 {
         return None;
     }
-    let fat_len = map.fat_bytes.min(512);
-    let mut fat = [0u8; 512];
-    fat[..fat_len].copy_from_slice(disk.bytes.get(map.fat_at..map.fat_at + fat_len)?);
+    let fat = take_fat(disk, map)?;
     let mut current = cluster;
     let mut filled = 0usize;
     while filled < size {
@@ -390,18 +406,13 @@ fn alloc_chain(disk: &mut Disk, map: &Map, count: usize) -> Option<u16> {
 }
 
 fn link_cluster(disk: &mut Disk, map: &Map, cluster: u16, next: u16) -> bool {
-    let mut fat = [0u8; 512];
-    let fat_len = map.fat_bytes.min(512);
-    let Some(source) = disk.bytes.get(map.fat_at..map.fat_at + fat_len) else {
+    let Some(mut fat) = take_fat(disk, map) else {
         return false;
     };
-    fat[..fat_len].copy_from_slice(source);
     if !crate::dos::fat::pack(&mut fat, map.max_cluster, cluster, next) {
         return false;
     }
-    let end = map.fat_at + fat_len;
-    disk.bytes[map.fat_at..end].copy_from_slice(&fat[..fat_len]);
-    true
+    put_fat(disk, map, &fat)
 }
 
 fn store_chain(disk: &mut Disk, map: &Map, cluster: u16, data: &[u8]) -> bool {
@@ -423,12 +434,9 @@ fn store_chain(disk: &mut Disk, map: &Map, cluster: u16, data: &[u8]) -> bool {
         if filled >= data.len() {
             return true;
         }
-        let mut fat = [0u8; 512];
-        let fat_len = map.fat_bytes.min(512);
-        let Some(source) = disk.bytes.get(map.fat_at..map.fat_at + fat_len) else {
+        let Some(fat) = take_fat(disk, map) else {
             return false;
         };
-        fat[..fat_len].copy_from_slice(source);
         let Some(next) = crate::dos::fat::unpack(&fat, map.max_cluster, current) else {
             return false;
         };
@@ -440,18 +448,16 @@ fn store_chain(disk: &mut Disk, map: &Map, cluster: u16, data: &[u8]) -> bool {
 }
 
 fn alloc(disk: &mut Disk, map: &Map) -> Option<u16> {
-    let mut fat = [0u8; 512];
-    fat[..map.fat_bytes.min(512)].copy_from_slice(
-        disk.bytes.get(map.fat_at..map.fat_at + map.fat_bytes.min(512))?,
-    );
+    let mut fat = take_fat(disk, map)?;
     let mut cluster = 2u16;
     while cluster <= map.max_cluster {
         if crate::dos::fat::unpack(&fat, map.max_cluster, cluster) == Some(0) {
             if !crate::dos::fat::pack(&mut fat, map.max_cluster, cluster, 0x0FFF) {
                 return None;
             }
-            let end = map.fat_at + map.fat_bytes.min(512);
-            disk.bytes[map.fat_at..end].copy_from_slice(&fat[..map.fat_bytes.min(512)]);
+            if !put_fat(disk, map, &fat) {
+                return None;
+            }
             if let Some(base) = cluster_at(map, cluster)
                 && let Some(slot) = disk.bytes.get_mut(base..base + map.bytes_per_sector)
             {
@@ -468,12 +474,9 @@ fn free_cluster(disk: &mut Disk, map: &Map, cluster: u16) {
     if cluster < 2 {
         return;
     }
-    let mut fat = [0u8; 512];
-    let fat_len = map.fat_bytes.min(512);
-    let Some(source) = disk.bytes.get(map.fat_at..map.fat_at + fat_len) else {
+    let Some(mut fat) = take_fat(disk, map) else {
         return;
     };
-    fat[..fat_len].copy_from_slice(source);
     let mut current = cluster;
     let mut guard = 0u16;
     while current >= 2 && guard < map.max_cluster {
@@ -485,8 +488,7 @@ fn free_cluster(disk: &mut Disk, map: &Map, cluster: u16) {
         current = next;
         guard += 1;
     }
-    let end = map.fat_at + fat_len;
-    disk.bytes[map.fat_at..end].copy_from_slice(&fat[..fat_len]);
+    let _ = put_fat(disk, map, &fat);
 }
 
 fn format_directory(disk: &mut Disk, map: &Map, cluster: u16, parent: u16) -> bool {
