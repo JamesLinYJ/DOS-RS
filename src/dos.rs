@@ -61,4 +61,5 @@ pub mod stddisp;
 pub mod stdctrlc;
 pub mod stdcode;
 pub mod stdcpmio;
+pub mod stddosme;
 pub mod stdtable;

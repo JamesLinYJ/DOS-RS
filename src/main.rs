@@ -289,6 +289,8 @@ fn boot(gate: usize) -> ! {
         dos::stdcode::show();
         // Standard console I/O: escape is 1Bh and a ready A is returned.
         dos::stdcpmio::show();
+        // OEM message constants: OEM number FF and code page 437.
+        dos::stddosme::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
