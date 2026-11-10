@@ -519,6 +519,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DISK2 BD019C 0001 004C EX0000 0000 0200 LK0021" "$out"; then
+		echo "$name missing DISK2" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "DISK3 DIV0004 0000 0000 SHR0002 EOF0026 CL01 AC04 FULL0027 HIT" "$out"; then
+		echo "$name missing DISK3" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

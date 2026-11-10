@@ -30,6 +30,8 @@ pub mod delete;
 pub mod dinfo;
 pub mod dup;
 pub mod disk;
+pub mod disk2;
+pub mod disk3;
 pub mod handle;
 pub mod ioctl;
 pub mod misc;

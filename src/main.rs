@@ -243,6 +243,10 @@ fn boot(gate: usize) -> ! {
         dos::create::show();
         // Delete misses a name, refuses a directory and a read-only file, then marks E5.
         dos::delete::show();
+        // Split a read into partial sectors, and report a lock violation.
+        dos::disk2::show();
+        // Divide a sector number, shift it to a cluster, and check a buffer.
+        dos::disk3::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
