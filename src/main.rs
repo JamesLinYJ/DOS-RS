@@ -188,6 +188,8 @@ fn boot(gate: usize) -> ! {
         let _cd_up = cmd::command::tmisc1::dispatch(b"CD \\\r");
         let _rd = cmd::command::tmisc1::dispatch(b"RD SUB\r");
         let _rd_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
+        // PROMPT $P$G expands the current directory and the greater-than sign.
+        let _prompt = cmd::command::tmisc1::dispatch(b"PROMPT $P$G\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

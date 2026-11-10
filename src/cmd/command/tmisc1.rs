@@ -39,6 +39,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tucode::verify_cmd(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"PROMPT") {
+        tenv::prompt_cmd(rest);
+        return true;
+    }
     if name.eq_ignore_ascii_case(b"SET") {
         tenv::set_cmd(rest);
         return true;

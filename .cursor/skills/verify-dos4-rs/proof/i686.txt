@@ -65,3 +65,4 @@ Directory of  A:\SUB
 Directory of  A:\
 BAR      COM
 FOO      COM
+A:\>

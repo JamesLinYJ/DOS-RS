@@ -27,6 +27,57 @@ static mut VARS: [Slot; SLOTS] = [Slot {
     used: false,
 }; SLOTS];
 
+static mut PROMPT: [u8; 64] = [0; 64];
+static mut PROMPT_LEN: usize = 0;
+static mut PROMPT_SET: bool = false;
+
+/// `ADD_PROMPT`. `$P` is the current directory and `$G` is `>`.
+pub fn prompt_cmd(tail: &[u8]) {
+    let tail = skip_space(tail);
+    if blank(tail) {
+        unsafe { PROMPT_SET = false }
+        return;
+    }
+    let mut end = 0usize;
+    while end < tail.len() && tail[end] != b'\r' && tail[end] != b'\n' && tail[end] != 0 {
+        end += 1;
+    }
+    let n = end.min(64);
+    unsafe {
+        PROMPT[..n].copy_from_slice(&tail[..n]);
+        PROMPT_LEN = n;
+        PROMPT_SET = true;
+    }
+    print_prompt();
+}
+
+fn print_prompt() {
+    let (set, len) = unsafe { (PROMPT_SET, PROMPT_LEN) };
+    if !set {
+        con_write_bytes(b"A>");
+        return;
+    }
+    let text = unsafe { &PROMPT[..len] };
+    let mut i = 0usize;
+    while i < text.len() {
+        if text[i] == b'$' && i + 1 < text.len() {
+            let code = up(text[i + 1]);
+            if code == b'P' {
+                con_write_bytes(super::tcmd1a::cwd_text());
+            } else if code == b'G' {
+                con_write_bytes(b">");
+            } else if code == b'$' {
+                con_write_bytes(b"$");
+            }
+            i += 2;
+        } else {
+            con_write_bytes(&text[i..i + 1]);
+            i += 1;
+        }
+    }
+    con_write_bytes(b"\r\n");
+}
+
 pub fn set_cmd(tail: &[u8]) {
     let tail = skip_space(tail);
     if blank(tail) {

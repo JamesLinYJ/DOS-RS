@@ -47,6 +47,10 @@ fn ensure() {
     }
 }
 
+pub fn cwd_text() -> &'static [u8] {
+    unsafe { &CWD[..CWD_LEN] }
+}
+
 pub fn dir_cmd(tail: &[u8]) {
     if !blank(tail) {
         con_write_bytes(b"File not found\r\n");
