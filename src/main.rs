@@ -416,6 +416,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debconst::show();
         // The create-process dword keeps offset 100h beside the segment.
         cmd::debug::debdata::show();
+        // The version must be at least 40h before a page call runs.
+        cmd::debug::debems::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

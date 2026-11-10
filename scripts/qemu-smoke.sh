@@ -1071,6 +1071,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBEMS FN40 FN42 FN43 FN44 FN45 FN46 FN4B FN4D FR5800 LM40 HT00FF PE MP ST DA AL EL MP AL EL EL NI NI NI OK OK ER80 ER00 ER83 ER00 ER00 ERFF PG10 HD0007 PGFF HD0007 MP440200010ABC DA45000B UP000A UF0003 UA0007 UP0001 UF0002 UAFFFF SK HU0004 HT00FF SK SGE000 PH03 RH0001 RP0002 RH0003 RP0004 RC02 RC00" "$out"; then
+		echo "$name missing expanded memory" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

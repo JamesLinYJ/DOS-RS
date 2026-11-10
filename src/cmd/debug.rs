@@ -6,3 +6,4 @@ pub mod debcom2;
 pub mod debcom3;
 pub mod debconst;
 pub mod debdata;
+pub mod debems;
