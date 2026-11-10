@@ -915,6 +915,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "RDATA EC010100 SU01 EX01 VFFFFF IN01 SW2D DR2F XAFFFF PM00 SG0000 BT0000 PF00 AP00 DSFF NS00 LT41 RD7264 WR7774 EN12" "$out"; then
+		echo "$name missing resident data" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

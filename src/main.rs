@@ -364,6 +364,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::path1::show();
         // .COM outranks .EXE and .BAT. A named extension stops the search.
         cmd::command::path2::show();
+        // Resident flags: echo starts on, and the last command looks external.
+        cmd::command::rdata::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
