@@ -5,3 +5,4 @@ pub mod comp2;
 pub mod compeq;
 pub mod compms;
 pub mod compp;
+pub mod comppar;

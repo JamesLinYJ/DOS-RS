@@ -1023,6 +1023,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "COMPPAR MN00 MX02 SW00 KW00 FL0201 FN0001 TY05 TGFF NV00 AT0081 OC0000 PC0000 PL0040 P1464F4F P2424152 DN P1 P24E414D45 DN EX0009 TK4241442A LV01 ELFFFF" "$out"; then
+		echo "$name missing compare parameters" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

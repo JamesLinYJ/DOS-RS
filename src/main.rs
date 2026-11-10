@@ -400,6 +400,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::compms::show();
         // COMP parses files, drives, and switches. Dates and numbers stay off.
         cmd::comp::compp::show();
+        // A matching ordinal is the first file. Any other ordinal is the second.
+        cmd::comp::comppar::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
