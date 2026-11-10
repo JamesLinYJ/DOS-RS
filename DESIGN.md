@@ -148,4 +148,6 @@ Opcode `8D` with a register source is not a memory operand. Compat16's `execute_
 
 `BUILDMSG.EXE` is the message builder from that same tree, `v4.0/src/TOOLS/BUILDMSG.EXE`, under the same MIT license. The volume is 343 sectors so this tool and the packed output both fit. The shell runs it with an empty tail. It prints `BuildMsg - PSP at 0000` and `Allocatable memory size is 605952`, then returns status 1.
 
+`MENUBLD.EXE` is the menu builder from that same tree, `v4.0/src/TOOLS/MENUBLD.EXE`, under the same MIT license. The shell runs it with an empty tail. It prints `Couldn't open  menu creation files.` and returns status 1.
+
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

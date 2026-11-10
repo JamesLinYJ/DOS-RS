@@ -252,6 +252,11 @@ Processing []
   OutRegs:
   AX:0002 BX:11F0 CX:0001 DX:3A43 SI:28EE DI:0001 DS:0F5A ES:0082
 CMD ERRORLEVEL 1
+Creating .C files for  using  file of messages. 
+
+
+Couldn't open  menu creation files. 
+CMD ERRORLEVEL 1
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 OP LEA 10
