@@ -153,6 +153,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "Unrecognized command in CONFIG.SYS" "$out"; then
+		echo "$name missing CONFIG command line" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "BUF0002" "$out"; then
 		echo "$name missing default buffers" >&2
 		cat "$out" >&2

@@ -96,6 +96,12 @@ fn boot(gate: usize) -> ! {
     puts("BUF");
     put_hex16(bios::sysinit1::default_buffers(false, false, false));
     puts("\n");
+    if bios::sysinit1::config_line(b"BUFFERS=2\r") == Ok(Some(2))
+        && bios::sysinit1::config_line(b"FOO\r").is_err()
+    {
+        bios::mscon::con_write_bytes(bios::sysimes::BADOPM);
+        bios::mscon::con_write_bytes(b"\r\n");
+    }
     if bios::sysinit1::round_mem(17, 0, 0x100).is_ok()
         && bios::sysinit2::skip_comment(b"; note\nBUFFERS=4\n") == 7
     {

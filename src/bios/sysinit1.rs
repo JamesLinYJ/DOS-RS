@@ -13,6 +13,17 @@ pub fn com_err() {
 
 /// `ParaRound`. Add 15, rotate the carry in, then shift right three more
 /// times. That is a paragraph round-up, including a 16-bit overflow.
+/// A CONFIG line. `BUFFERS=` updates the count. Anything else is the
+/// unrecognized-command path, which prints `BADOPM`.
+pub fn config_line(line: &[u8]) -> Result<Option<u16>, ()> {
+    let upper = b"BUFFERS=";
+    if line.len() >= upper.len() && line[..upper.len()].eq_ignore_ascii_case(upper) {
+        let count = super::sysinit2::get_num(&line[upper.len()..])?;
+        return Ok(Some(count));
+    }
+    Err(())
+}
+
 /// Default buffer count from the allocation path. Unset stays 2. A removable
 /// drive larger than 360KB raises it to 3. A fixed disk is ignored.
 pub fn default_buffers(already_set: bool, slash_x: bool, large_removable: bool) -> u16 {

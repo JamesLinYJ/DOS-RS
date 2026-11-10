@@ -19,4 +19,6 @@ SYN0030
 PAR0002
 BUF0002
 
+Unrecognized command in CONFIG.SYS
+
 Bad or missing Command Interpreter
