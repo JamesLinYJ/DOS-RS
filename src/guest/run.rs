@@ -359,6 +359,7 @@ pub(super) struct Session {
     prefix: u16,
     block: u16,
     break_at: u16,
+    drive: u8,
     /// First paragraph past the bytes of the program now running.
     image_limit: u16,
     /// Paragraph where that program asked to end its own memory block.
@@ -378,6 +379,7 @@ impl Session {
             prefix: 0,
             block: 0,
             break_at: GUEST_BLOCK,
+            drive: 0,
             image_limit: 0,
             kept_end: 0,
             vector_segment: [0; 256],
@@ -423,7 +425,16 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x19 => {
-            cpu.set_low(Slot::Accumulator, 0);
+            cpu.set_low(Slot::Accumulator, session.drive);
+            cpu.set_carry(false);
+            Action::Continue
+        }
+        0x0E => {
+            let requested = cpu.low(Slot::Data);
+            if requested < 2 {
+                session.drive = requested;
+            }
+            cpu.set_low(Slot::Accumulator, 2);
             cpu.set_carry(false);
             Action::Continue
         }
