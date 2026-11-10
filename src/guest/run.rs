@@ -38,6 +38,7 @@ pub fn show() {
     show_image(b"EXEFIX  EXE", EXE_PREFIX, true, 60000);
     show_image(b"CONVERT EXE", EXE_PREFIX, true, 60000);
     show_tailed(b"ATTRIB  EXE", b" HELLO.COM", 60000);
+    show_tailed(b"EXEMOD  EXE", b" HELLO.EXE /h", 60000);
 }
 
 fn show_tailed(name: &[u8; 11], tail: &[u8], limit: u16) {

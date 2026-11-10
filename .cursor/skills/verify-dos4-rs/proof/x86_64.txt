@@ -284,3 +284,19 @@ usage: exefix <file> <max-alloc> <min-alloc>
 Usage: Convert [file]
   A       A:\\HELLO.COM
 $
+
+Microsoft (R) EXE File Header Utility  Version 4.02
+Copyright (C) Microsoft Corp 1985-1987.  All rights reserved.
+
+HELLO.EXE                          (hex)           (dec)
+
+.EXE size (bytes)                     3D              61
+Minimum load size (bytes)             1D              29
+Overlay number                         0               0
+Initial CS:IP                  0000:0000
+Initial SS:SP                  0000:0200             512
+Minimum allocation (para)              0               0
+Maximum allocation (para)           FFFF           65535
+Header size (para)                     2               2
+Relocation table offset               1C              28
+Relocation entries                     1               1

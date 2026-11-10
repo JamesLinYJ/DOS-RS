@@ -137,3 +137,5 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 `CONVERT.EXE` is the file converter from that same tree, `v4.0/src/TOOLS/CONVERT.EXE`, under the same MIT license. With an empty command tail it prints `Usage: Convert [file]`.
 
 `ATTRIB.EXE` is the attribute utility from that same tree, `v4.0/src/TOOLS/ATTRIB.EXE`, under the same MIT license. The tail ` HELLO.COM` makes it read that file's attribute and print `  A       A:\\HELLO.COM`.
+
+`EXEMOD.EXE` is the header utility from that same tree, `v4.0/src/TOOLS/EXEMOD.EXE`, under the same MIT license. The tail ` HELLO.EXE /h` makes it print that file's header, including `.EXE size (bytes)                     3D              61`.

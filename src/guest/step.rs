@@ -989,7 +989,15 @@ fn shift_word_once(
     let Some(value) = read_word(cpu, ram, &operand) else {
         return Outcome::Fault(opcode);
     };
+    let carry_in = cpu.flags() & 1 != 0;
     let (result, carried) = match operation {
+        0 => (
+            (value << 1) | u16::from(value & 0x8000 != 0),
+            value & 0x8000 != 0,
+        ),
+        1 => ((value >> 1) | ((value & 1) << 15), value & 1 != 0),
+        2 => ((value << 1) | u16::from(carry_in), value & 0x8000 != 0),
+        3 => ((value >> 1) | (u16::from(carry_in) << 15), value & 1 != 0),
         4 => (value << 1, value & 0x8000 != 0),
         5 => (value >> 1, value & 1 != 0),
         7 => ((value as i16 >> 1) as u16, value & 1 != 0),
@@ -1260,6 +1268,35 @@ fn multiply_byte(
         4 => {
             let product = u16::from(cpu.low(Slot::Accumulator)).wrapping_mul(u16::from(value));
             cpu.set_wide(Slot::Accumulator, product);
+            Outcome::Continue
+        }
+        6 => {
+            if value == 0 {
+                return Outcome::Fault(opcode);
+            }
+            let dividend = cpu.wide(Slot::Accumulator);
+            let quotient = dividend / u16::from(value);
+            if quotient > 0xFF {
+                return Outcome::Fault(opcode);
+            }
+            let remainder = (dividend % u16::from(value)) as u8;
+            cpu.set_low(Slot::Accumulator, quotient as u8);
+            cpu.set_high(Slot::Accumulator, remainder);
+            Outcome::Continue
+        }
+        7 => {
+            let divisor = value as i8;
+            if divisor == 0 {
+                return Outcome::Fault(opcode);
+            }
+            let dividend = cpu.wide(Slot::Accumulator) as i16;
+            let quotient = dividend / i16::from(divisor);
+            if quotient < i16::from(i8::MIN) || quotient > i16::from(i8::MAX) {
+                return Outcome::Fault(opcode);
+            }
+            let remainder = (dividend % i16::from(divisor)) as i8;
+            cpu.set_low(Slot::Accumulator, quotient as u8);
+            cpu.set_high(Slot::Accumulator, remainder as u8);
             Outcome::Continue
         }
         _ => Outcome::Fault(opcode),
@@ -1612,7 +1649,7 @@ fn shift_by_count(
         return Outcome::Fault(opcode);
     };
     let operation = (modrm >> 3) & 7;
-    if operation != 4 && operation != 5 && operation != 7 {
+    if operation > 5 && operation != 7 {
         return Outcome::Fault(opcode);
     }
     let mut times = cpu.low(Slot::Count) & 0x1F;
@@ -1622,15 +1659,36 @@ fn shift_by_count(
             return Outcome::Fault(opcode);
         };
         while times != 0 {
-            if operation == 4 {
-                carry = value & 0x8000 != 0;
-                value <<= 1;
-            } else if operation == 7 {
-                carry = value & 1 != 0;
-                value = (value as i16 >> 1) as u16;
-            } else {
-                carry = value & 1 != 0;
-                value >>= 1;
+            let incoming = carry;
+            match operation {
+                0 => {
+                    carry = value & 0x8000 != 0;
+                    value = (value << 1) | u16::from(carry);
+                }
+                1 => {
+                    carry = value & 1 != 0;
+                    value = (value >> 1) | (u16::from(carry) << 15);
+                }
+                2 => {
+                    carry = value & 0x8000 != 0;
+                    value = (value << 1) | u16::from(incoming);
+                }
+                3 => {
+                    carry = value & 1 != 0;
+                    value = (value >> 1) | (u16::from(incoming) << 15);
+                }
+                4 => {
+                    carry = value & 0x8000 != 0;
+                    value <<= 1;
+                }
+                7 => {
+                    carry = value & 1 != 0;
+                    value = (value as i16 >> 1) as u16;
+                }
+                _ => {
+                    carry = value & 1 != 0;
+                    value >>= 1;
+                }
             }
             times -= 1;
         }
@@ -1723,11 +1781,55 @@ fn unary_word(
             cpu.apply_result_flags(flags);
             Outcome::Continue
         }
+        4 => {
+            let product = u32::from(cpu.wide(Slot::Accumulator)).wrapping_mul(u32::from(value));
+            cpu.set_wide(Slot::Accumulator, product as u16);
+            cpu.set_wide(Slot::Data, (product >> 16) as u16);
+            let wide = product > 0xFFFF;
+            cpu.set_carry(wide);
+            let mut flags = cpu.flags();
+            if wide {
+                flags |= 0x0800;
+            } else {
+                flags &= !0x0800;
+            }
+            cpu.set_flags(flags);
+            Outcome::Continue
+        }
         5 => {
             let product = i32::from(cpu.wide(Slot::Accumulator) as i16)
                 .wrapping_mul(i32::from(value as i16));
             cpu.set_wide(Slot::Accumulator, product as u16);
             cpu.set_wide(Slot::Data, (product >> 16) as u16);
+            Outcome::Continue
+        }
+        6 => {
+            if value == 0 {
+                return Outcome::Fault(opcode);
+            }
+            let dividend = (u32::from(cpu.wide(Slot::Data)) << 16)
+                | u32::from(cpu.wide(Slot::Accumulator));
+            let quotient = dividend / u32::from(value);
+            if quotient > 0xFFFF {
+                return Outcome::Fault(opcode);
+            }
+            cpu.set_wide(Slot::Accumulator, quotient as u16);
+            cpu.set_wide(Slot::Data, (dividend % u32::from(value)) as u16);
+            Outcome::Continue
+        }
+        7 => {
+            let divisor = value as i16;
+            if divisor == 0 {
+                return Outcome::Fault(opcode);
+            }
+            let dividend = ((u32::from(cpu.wide(Slot::Data)) << 16)
+                | u32::from(cpu.wide(Slot::Accumulator))) as i32;
+            let quotient = dividend / i32::from(divisor);
+            if quotient < i32::from(i16::MIN) || quotient > i32::from(i16::MAX) {
+                return Outcome::Fault(opcode);
+            }
+            cpu.set_wide(Slot::Accumulator, quotient as u16);
+            cpu.set_wide(Slot::Data, (dividend % i32::from(divisor)) as u16);
             Outcome::Continue
         }
         _ => Outcome::Fault(opcode),
