@@ -315,6 +315,15 @@ Index file and message file are of different levels.
 Message file and index file will be updated.
 Message file updated.
 Index file updated.
+Creating .CT? files for MORE.SKL using USAMS.MSG file of messages. 
+
+SKL, MSG and IDX files have been opened for reading.
+Writing to MORE.clA
+Message files for MORE.SKL completed.
+CMD DIR MORE.CLA
+CMD TYPE ; MORE.clA 
+
+
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK

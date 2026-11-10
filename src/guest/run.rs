@@ -666,8 +666,20 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         cpu.set_carry(true);
         return;
     }
+    let mut limit = requested;
+    if &opened.name[8..11] == b"SKL" {
+        let mut index = opened.pos;
+        let end = opened.len.min(opened.pos.saturating_add(requested));
+        while index < end {
+            index += 1;
+            if file_bytes(opened.bytes)[index - 1] == b'\n' {
+                break;
+            }
+        }
+        limit = index - opened.pos;
+    }
     let mut moved = 0u16;
-    while usize::from(moved) < requested && opened.pos < opened.len {
+    while usize::from(moved) < limit && opened.pos < opened.len {
         let byte = file_bytes(opened.bytes)[opened.pos];
         if !ram.store(segment, offset, byte) {
             break;

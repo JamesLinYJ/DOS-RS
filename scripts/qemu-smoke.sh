@@ -1260,7 +1260,10 @@ run_one() {
 		|| ! grep -q "CMD DIR LIB2.LST" "$out" \
 		|| ! grep -q "06EH,06DH,061H,06BH,065H" "$out" \
 		|| ! grep -q "Message file updated." "$out" \
-		|| ! grep -q "Index file updated." "$out"; then
+		|| ! grep -q "Index file updated." "$out" \
+		|| ! grep -q "Message files for MORE.SKL completed." "$out" \
+		|| ! grep -q "CMD DIR MORE.CLA" "$out" \
+		|| ! grep -q "; MORE.clA" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
