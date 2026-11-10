@@ -307,6 +307,8 @@ fn boot(gate: usize) -> ! {
         dos::segcheck::show();
         // Sharing: slot 1 checks, slot 2 closes, and only reply 1 retries.
         dos::share::show();
+        // Server call: functions 7 through 9 skip the ids, and 11 returns the table.
+        dos::srvcall::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

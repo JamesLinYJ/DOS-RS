@@ -717,6 +717,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "SRVCALL F6U0006 NSABCD N9ABCD F0A U0042 P0043 TB0B IDABCD U0007 ER0001 LC01 SHFF CPY06 SK01 SG02 EE0020 AC04 CL05 LO07 PT1234 ES5678 AD0003 SW8010 CM0001 NM05 CU03 CP04 GL09 NO SP1125" "$out"; then
+		echo "$name missing server call" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
