@@ -283,6 +283,8 @@ fn boot(gate: usize) -> ! {
         dos::stdtable::show();
         // Standard dispatch: F8h installs an OEM handler, F9h fails until then.
         dos::stddisp::show();
+        // Standard Ctrl-C: Ctrl-N turns the printer off, Ctrl-C breaks.
+        dos::stdctrlc::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

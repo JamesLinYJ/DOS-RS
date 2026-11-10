@@ -844,7 +844,7 @@ v4.0/src/DOS/SRVCALL.ASM	text	untranslated	src/dos/srvcall.rs
 v4.0/src/DOS/STDASW.ASM	text	untranslated	src/dos/stdasw.rs
 v4.0/src/DOS/STDCODE.ASM	text	untranslated	src/dos/stdcode.rs
 v4.0/src/DOS/STDCPMIO.ASM	text	untranslated	src/dos/stdcpmio.rs
-v4.0/src/DOS/STDCTRLC.ASM	text	untranslated	src/dos/stdctrlc.rs
+v4.0/src/DOS/STDCTRLC.ASM	text	partial	src/dos/stdctrlc.rs
 v4.0/src/DOS/STDDATA.ASM	text	untranslated	src/dos/stddata.rs
 v4.0/src/DOS/STDDISP.ASM	text	partial	src/dos/stddisp.rs
 v4.0/src/DOS/STDDOSME.ASM	text	untranslated	src/dos/stddosme.rs

@@ -58,4 +58,5 @@ pub mod search;
 pub mod stdioctl;
 pub mod stdproc;
 pub mod stddisp;
+pub mod stdctrlc;
 pub mod stdtable;
