@@ -2,3 +2,4 @@
 
 pub mod debasm;
 pub mod debcom1;
+pub mod debcom2;

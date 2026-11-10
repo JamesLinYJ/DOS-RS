@@ -1047,6 +1047,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBCOM2 FG4E5620555020454920504C204E5A204E4120504F204E4320 STF202 OVFA02 DPFFFF CYF203 NCF202 RG00 RG0C RG0D RGFF UA41 UZ5A U77B U660 DL01 DL01 DL00 DL01 DL01 HX01 EX01 CM00" "$out"; then
+		echo "$name missing registers and flags" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

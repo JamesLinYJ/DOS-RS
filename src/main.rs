@@ -408,6 +408,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debasm::show();
         // A range that lands on the segment boundary is kept.
         cmd::debug::debcom1::show();
+        // Flag names run from the high bit. The same bit twice is an error.
+        cmd::debug::debcom2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
