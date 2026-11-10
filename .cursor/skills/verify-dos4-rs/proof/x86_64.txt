@@ -36,6 +36,8 @@ VERIFY is on
 No Path
 PATH=\DOS
 CLS
+ATTR A COMMAND.COM
+ATTR AR COMMAND.COM
 PATH=\DOS
 COMSPEC=\COMMAND.COM
 FOO=BAR
@@ -46,26 +48,26 @@ Current time is  01:02:03.04
 
  Volume in drive A has no label
 Directory of  A:\
-IO       SYS
-COMMAND  COM
+IO       SYS 01-01-80 00:00
+COMMAND  COM 03-04-84 01:02
 \COMMAND.COM
 File not found
 Directory of  A:\
-COMMAND  COM
+COMMAND  COM 03-04-84 01:02
 Directory of  A:\
-FOO      COM
+FOO      COM 03-04-84 01:02
 Directory of  A:\
-BAR      COM
-FOO      COM
+BAR      COM 01-01-80 00:00
+FOO      COM 03-04-84 01:02
 \COMMAND.COM
 Directory of  A:\
-BAR      COM
-FOO      COM
-SUB      <DIR>
+BAR      COM 01-01-80 00:00
+FOO      COM 03-04-84 01:02
+SUB      <DIR> 01-01-80 00:00
 Directory of  A:\SUB
 Directory of  A:\
-BAR      COM
-FOO      COM
+BAR      COM 01-01-80 00:00
+FOO      COM 03-04-84 01:02
 A:\>
 ifok
 Batch file missing

@@ -42,6 +42,7 @@ pub const COMTAB: &[(&[u8], u8)] = &[
     (b"IF", F_SWITCH_ALLOWED),
     (b"FOR", F_SWITCH_ALLOWED),
     (b"CLS", 0),
+    (b"ATTRIB", F_SWITCH_ALLOWED),
     (b"TRUENAME", F_SWITCH_ALLOWED | F_CHECK_DRIVE),
 ];
 

@@ -11,6 +11,7 @@ static mut OPEN: bool = false;
 static mut OWNED: bool = false;
 static mut OWNED_AT: usize = 0;
 static mut OWNED_POS: usize = 0;
+static mut OPEN_AT: usize = usize::MAX;
 
 pub fn open_asciiz(name: *const u8) -> Option<u16> {
     let mut raw = [0u8; 12];
@@ -35,6 +36,7 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
             unsafe {
                 OWNED = true;
                 OWNED_AT = index;
+                OPEN_AT = index;
                 OWNED_POS = 0;
                 OPEN = true;
             }
@@ -48,6 +50,7 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
                     LEFT = (ent.size as usize).min(IMAGE.len() - start);
                     OPEN = true;
                     OWNED = false;
+                    OPEN_AT = index;
                 }
                 return Some(5);
             }
@@ -75,6 +78,7 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
                 LEFT = size.min(IMAGE.len() - start);
                 OPEN = true;
                 OWNED = false;
+                OPEN_AT = index;
             }
             return Some(5);
         }
@@ -87,9 +91,17 @@ pub fn bind_owned(index: usize) {
     unsafe {
         OWNED = true;
         OWNED_AT = index;
+        OPEN_AT = index;
         OWNED_POS = 0;
         OPEN = true;
     }
+}
+
+pub fn opened_index(handle: u16) -> Option<usize> {
+    if handle != 5 || unsafe { !OPEN || OPEN_AT == usize::MAX } {
+        return None;
+    }
+    Some(unsafe { OPEN_AT })
 }
 
 pub fn write(handle: u16, src: *const u8, count: usize) -> usize {

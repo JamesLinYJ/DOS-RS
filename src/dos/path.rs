@@ -30,6 +30,9 @@ pub fn mkdir(name: *const u8) -> u16 {
             data_len: 0,
             cluster: 0,
             size: 0,
+            attr: 0x10,
+            time: 0,
+            date: 0x0021,
         },
     );
     0

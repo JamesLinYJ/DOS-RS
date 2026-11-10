@@ -154,6 +154,11 @@ fn boot(gate: usize) -> ! {
         let _path_show = cmd::command::tmisc1::dispatch(b"PATH\r");
         // CLS asks INT 2Fh and clears through INT 10h.
         let _cls = cmd::command::tmisc1::dispatch(b"CLS\r");
+        // AH=43h. Archive comes from the directory attribute. +R sets bit 0.
+        let _attr = cmd::command::tmisc1::dispatch(b"ATTRIB COMMAND.COM\r");
+        let _attr_set = cmd::command::tmisc1::dispatch(b"ATTRIB +R COMMAND.COM\r");
+        // AH=57h stores 1984-03-04 01:02, then DIR prints that stamp.
+        cmd::command::tcmd1a::stamp_command();
         // SET with no tail lists the block. FOO=BAR is stored, then listed.
         let _set = cmd::command::tmisc1::dispatch(b"SET FOO=BAR\r");
         let _set_show = cmd::command::tmisc1::dispatch(b"SET\r");

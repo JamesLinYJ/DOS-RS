@@ -173,6 +173,8 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x39] = mkdir as fn(&mut LogicalFrame);
     slots[0x3A] = rmdir as fn(&mut LogicalFrame);
     slots[0x3B] = chdir as fn(&mut LogicalFrame);
+    slots[0x43] = file_attributes as fn(&mut LogicalFrame);
+    slots[0x57] = file_times as fn(&mut LogicalFrame);
     slots[0x3C] = create_file as fn(&mut LogicalFrame);
     slots[0x3D] = open_handle as fn(&mut LogicalFrame);
     slots[0x3F] = read_handle as fn(&mut LogicalFrame);
@@ -307,6 +309,50 @@ static mut HOUR: u8 = 0;
 static mut MINUTE: u8 = 0;
 static mut SECOND: u8 = 0;
 static mut HUNDREDTH: u8 = 0;
+
+/// AH=43h. AL=0 reads the attribute into CX. AL=1 stores CX into the directory entry.
+///
+/// `GET_FILE_INFO` and `SET_FILE_ATTRIBUTE` in `DOS/FINFO.ASM`. AX is 2 when
+/// the name is not in the root.
+fn file_attributes(frame: &mut LogicalFrame) {
+    let al = (frame.ax & 0xff) as u8;
+    let Some(index) = crate::dos::search::lookup_asciiz(frame.dx as *const u8) else {
+        frame.store_ax(DosWord(2));
+        return;
+    };
+    if al == 0 {
+        let ent = crate::dos::search::slot(index);
+        let attr = if ent.attr != 0 { ent.attr } else { 0x20 };
+        frame.store_cx(DosWord(u16::from(attr)));
+        frame.store_ax(DosWord(0));
+    } else if al == 1 {
+        crate::dos::search::set_attr(index, frame.cx as u8);
+        frame.store_ax(DosWord(0));
+    } else {
+        frame.store_ax(DosWord(1));
+    }
+}
+
+/// AH=57h. AL=0 returns the open file's time in CX and date in DX.
+/// AL=1 stores CX and DX. A zero date stays 1980-01-01 until this call sets one.
+fn file_times(frame: &mut LogicalFrame) {
+    let al = (frame.ax & 0xff) as u8;
+    let Some(index) = crate::dos::handle::opened_index(frame.bx as u16) else {
+        frame.store_ax(DosWord(6));
+        return;
+    };
+    if al == 0 {
+        let ent = crate::dos::search::slot(index);
+        frame.store_cx(DosWord(ent.time));
+        frame.store_dx(DosWord(if ent.date == 0 { 0x0021 } else { ent.date }));
+        frame.store_ax(DosWord(0));
+    } else if al == 1 {
+        crate::dos::search::set_stamp(index, frame.cx as u16, frame.dx as u16);
+        frame.store_ax(DosWord(0));
+    } else {
+        frame.store_ax(DosWord(1));
+    }
+}
 
 /// AH=3Dh. AX is handle 5, or 0xFFFF when the name is not in the root.
 fn open_handle(frame: &mut LogicalFrame) {

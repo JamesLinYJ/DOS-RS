@@ -17,6 +17,9 @@ pub(crate) struct Ent {
     pub data_len: u8,
     pub cluster: u16,
     pub size: u16,
+    pub attr: u8,
+    pub time: u16,
+    pub date: u16,
 }
 
 static mut ROOT: [Ent; SLOTS] = [Ent {
@@ -28,6 +31,9 @@ static mut ROOT: [Ent; SLOTS] = [Ent {
     data_len: 0,
     cluster: 0,
     size: 0,
+    attr: 0,
+    time: 0,
+    date: 0,
 }; SLOTS];
 static mut READY: bool = false;
 static mut CWD: [u8; 32] = *b"A:\\\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
@@ -57,6 +63,9 @@ pub(crate) fn ensure() {
                 ROOT[index].live = true;
                 ROOT[index].cluster = u16::from_le_bytes([entry[26], entry[27]]);
                 ROOT[index].size = u16::from_le_bytes([entry[28], entry[29]]);
+                ROOT[index].attr = entry[11];
+                ROOT[index].time = u16::from_le_bytes([entry[22], entry[23]]);
+                ROOT[index].date = u16::from_le_bytes([entry[24], entry[25]]);
             }
             index += 1;
         }
@@ -162,7 +171,13 @@ fn visible(ent: Ent) -> bool {
     if !ent.live {
         return false;
     }
-    let file_attr = if ent.dir { 0x10u8 } else { 0x20 };
+    let file_attr = if ent.attr != 0 {
+        ent.attr
+    } else if ent.dir {
+        0x10
+    } else {
+        0x20
+    };
     let sattr = unsafe { SATTR };
     file_attr & 0x1e & !sattr == 0
 }
@@ -174,7 +189,19 @@ fn write_dta(ent: Ent, index: usize) {
     }
     unsafe {
         *dta.add(1) = (index as u8).wrapping_add(1);
-        *dta.add(0x15) = if ent.dir { 0x10 } else { 0x20 };
+        *dta.add(0x15) = if ent.attr != 0 {
+            ent.attr
+        } else if ent.dir {
+            0x10
+        } else {
+            0x20
+        };
+        let time = ent.time.to_le_bytes();
+        let date = ent.date.to_le_bytes();
+        *dta.add(0x16) = time[0];
+        *dta.add(0x17) = time[1];
+        *dta.add(0x18) = date[0];
+        *dta.add(0x19) = date[1];
         let mut at = 0x1eusize;
         let mut n = 0usize;
         while n < 8 && ent.name[n] != b' ' {
@@ -255,6 +282,29 @@ pub(crate) fn asciiz_len(raw: &[u8]) -> usize {
         len += 1;
     }
     len
+}
+
+pub(crate) fn lookup_asciiz(name: *const u8) -> Option<usize> {
+    ensure();
+    let raw = read_asciiz(name);
+    let text = &raw[..asciiz_len(&raw)];
+    let text = text.strip_prefix(b"A:\\").unwrap_or(text);
+    let text = text.strip_prefix(b"A:").unwrap_or(text);
+    let packed = pack(text)?;
+    find_packed(&packed)
+}
+
+pub(crate) fn set_attr(index: usize, attr: u8) {
+    let mut ent = slot(index);
+    ent.attr = attr;
+    set_slot(index, ent);
+}
+
+pub(crate) fn set_stamp(index: usize, time: u16, date: u16) {
+    let mut ent = slot(index);
+    ent.time = time;
+    ent.date = date;
+    set_slot(index, ent);
 }
 
 fn up(byte: u8) -> u8 {

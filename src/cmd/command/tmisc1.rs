@@ -107,6 +107,10 @@ pub fn dispatch(line: &[u8]) -> bool {
         tcmd1a::dir_cmd(rest);
         return true;
     }
+    if name.eq_ignore_ascii_case(b"ATTRIB") {
+        tcmd1a::attrib_cmd(rest);
+        return true;
+    }
     if name.eq_ignore_ascii_case(b"VOL") {
         tcmd1b::volume(rest);
         return true;

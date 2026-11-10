@@ -178,7 +178,170 @@ fn print_dta(dta: &[u8]) {
     } else {
         con_write_bytes(&ext);
     }
+    let time = u16::from_le_bytes([dta[0x16], dta[0x17]]);
+    let mut date = u16::from_le_bytes([dta[0x18], dta[0x19]]);
+    if date == 0 {
+        date = 0x0021;
+    }
+    con_write_bytes(b" ");
+    put_stamp(time, date);
     con_write_bytes(b"\r\n");
+}
+
+fn put_stamp(time: u16, date: u16) {
+    let month = ((date >> 5) & 0x0f) as u8;
+    let day = (date & 0x1f) as u8;
+    let year = ((date >> 9) as u8).wrapping_add(80);
+    put_two(month);
+    con_write_bytes(b"-");
+    put_two(day);
+    con_write_bytes(b"-");
+    put_two(year);
+    con_write_bytes(b" ");
+    put_two(((time >> 11) & 0x1f) as u8);
+    con_write_bytes(b":");
+    put_two(((time >> 5) & 0x3f) as u8);
+}
+
+fn put_two(value: u8) {
+    con_write_bytes(&[b'0' + value / 10, b'0' + value % 10]);
+}
+
+/// `ATTRIB` from the external utility, driven by INT 21h AH=43h.
+///
+/// A bare name prints the attribute letters. `+R` sets the read-only bit.
+pub fn attrib_cmd(tail: &[u8]) {
+    let tail = skip_blank(tail);
+    let (mask_on, mask_off, name) = if tail.first() == Some(&b'+') || tail.first() == Some(&b'-') {
+        let set = tail[0] == b'+';
+        let bit = match tail.get(1).copied().unwrap_or(0).to_ascii_uppercase() {
+            b'R' => 0x01u8,
+            b'A' => 0x20,
+            b'H' => 0x02,
+            b'S' => 0x04,
+            _ => {
+                con_write_bytes(b"Invalid parameter\r\n");
+                return;
+            }
+        };
+        let name = token(skip_token(tail));
+        if set {
+            (bit, 0, name)
+        } else {
+            (0, bit, name)
+        }
+    } else {
+        (0, 0, token(tail))
+    };
+    if name.is_empty() {
+        con_write_bytes(b"Parameter format not correct\r\n");
+        return;
+    }
+    let named = asciiz_token(name);
+    let Some(attr) = attr_get(named.as_ptr()) else {
+        con_write_bytes(b"File not found\r\n");
+        return;
+    };
+    let attr = (attr | mask_on) & !mask_off;
+    if mask_on != 0 || mask_off != 0 {
+        let _ = attr_set(named.as_ptr(), attr);
+    }
+    con_write_bytes(b"ATTR ");
+    if attr & 0x20 != 0 {
+        con_write_bytes(b"A");
+    }
+    if attr & 0x01 != 0 {
+        con_write_bytes(b"R");
+    }
+    con_write_bytes(b" ");
+    con_write_bytes(name);
+    con_write_bytes(b"\r\n");
+}
+
+/// Open the file, store CX:DX through AH=57h AL=1, then list the directory.
+pub fn stamp_command() {
+    let name = b"COMMAND.COM\0";
+    let handle = open_read(name.as_ptr());
+    if handle == 0xffff {
+        return;
+    }
+    // 1984-03-04 01:02. DOS date (4<<9)|(3<<5)|4, time (1<<11)|(2<<5)|1.
+    file_time_set(handle, 0x0841, 0x0864);
+}
+
+fn attr_get(name: *const u8) -> Option<u8> {
+    let mut eax = 0x4300u32;
+    let mut ecx = 0u32;
+    let edx = name as u32;
+    unsafe {
+        asm!(
+            "int 0x21",
+            inout("eax") eax,
+            inout("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    if eax as u16 == 0 { Some(ecx as u8) } else { None }
+}
+
+fn attr_set(name: *const u8, attr: u8) -> u16 {
+    let mut eax = 0x4301u32;
+    let ecx = u32::from(attr);
+    let edx = name as u32;
+    unsafe {
+        asm!(
+            "int 0x21",
+            inout("eax") eax,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
+}
+
+fn file_time_set(handle: u16, time: u16, date: u16) {
+    let mut eax = 0x5701u32;
+    let ebx = u32::from(handle);
+    let ecx = u32::from(time);
+    let edx = u32::from(date);
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        asm!(
+            "push ebx",
+            "mov ebx, {h:e}",
+            "int 0x21",
+            "pop ebx",
+            inout("eax") eax,
+            h = in(reg) ebx,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        asm!(
+            "push rbx",
+            "mov ebx, {h:e}",
+            "int 0x21",
+            "pop rbx",
+            inout("eax") eax,
+            h = in(reg) ebx,
+            in("ecx") ecx,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+}
+
+fn skip_blank(tail: &[u8]) -> &[u8] {
+    let mut i = 0usize;
+    while i < tail.len() && (tail[i] == b' ' || tail[i] == b'\t') {
+        i += 1;
+    }
+    &tail[i..]
 }
 
 fn asciiz(buf: &[u8]) -> &[u8] {

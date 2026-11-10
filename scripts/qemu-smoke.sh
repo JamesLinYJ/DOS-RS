@@ -243,6 +243,30 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "01-01-80 00:00" "$out"; then
+		echo "$name missing DIR date" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "ATTR A COMMAND.COM" "$out"; then
+		echo "$name missing ATTRIB" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "ATTR AR COMMAND.COM" "$out"; then
+		echo "$name missing ATTRIB +R" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "03-04-84 01:02" "$out"; then
+		echo "$name missing file time" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "FOO=BAR" "$out"; then
 		echo "$name missing SET" >&2
 		cat "$out" >&2
