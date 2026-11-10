@@ -507,6 +507,18 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "CREATE NW20 TR00 EX50 RO05 AT05 DA05 DIR05 EM02" "$out"; then
+		echo "$name missing CREATE" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "DELETE NF02 DR05 RO05 E500" "$out"; then
+		echo "$name missing DELETE" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

@@ -239,6 +239,10 @@ fn boot(gate: usize) -> ! {
         dos::dir2::show();
         // Make a directory, change to it, remove it, and reject a device and the root.
         dos::dircall::show();
+        // Create a file, refuse a second copy, and reject a read-only replace.
+        dos::create::show();
+        // Delete misses a name, refuses a directory and a read-only file, then marks E5.
+        dos::delete::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
