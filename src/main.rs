@@ -299,6 +299,8 @@ fn boot(gate: usize) -> ! {
         dos::open::show();
         // Printf: segmented string, message out, and a hex number.
         dos::print::show();
+        // Process exit: wait clears the code, and keep holds at least six paragraphs.
+        dos::proc::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

@@ -693,6 +693,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "PROC WT00AB Z0000 EX0022 CC0122 KP2006 K72007 KF0000 OV3000 AB0000 RS06 AT0088 SV000A" "$out"; then
+		echo "$name missing process exit" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

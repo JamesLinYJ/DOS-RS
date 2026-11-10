@@ -833,7 +833,7 @@ v4.0/src/DOS/OPEN.ASM	text	partial	src/dos/open.rs
 v4.0/src/DOS/PARSE.ASM	text	partial	src/dos/parse.rs
 v4.0/src/DOS/PATH.ASM	text	partial	src/dos/path.rs
 v4.0/src/DOS/PRINT.ASM	text	partial	src/dos/print.rs
-v4.0/src/DOS/PROC.ASM	text	untranslated	src/dos/proc.rs
+v4.0/src/DOS/PROC.ASM	text	partial	src/dos/proc.rs
 v4.0/src/DOS/RENAME.ASM	text	untranslated	src/dos/rename.rs
 v4.0/src/DOS/ROM.ASM	text	partial	src/dos/rom.rs
 v4.0/src/DOS/SEARCH.ASM	text	partial	src/dos/search.rs
