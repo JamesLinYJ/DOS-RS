@@ -981,6 +981,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TSPC NX0057 CM0131 RE027D FL02E5 P102E8 P202E9 DS02EE AW02F0 DC02F3 F2034D DF0389 DB03CC XA0439 RM04DC DV04E1 SV0544 AR0666 FN0C30 PS0DF9 DT0E01 TM0E09 DO0E11 XL000D NM4350 FG8000 TY02 VL0002 AT0000 IL000E PG0019 LB000B FS0008 SB0016 ST0100 FB002B EN0E19" "$out"; then
+		echo "$name missing transient layout" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
