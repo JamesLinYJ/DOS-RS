@@ -11,6 +11,7 @@ pub mod copypr2;
 pub mod cparse;
 pub mod fordata;
 pub mod ifequ;
+pub mod init;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;

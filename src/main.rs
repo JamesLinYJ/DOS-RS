@@ -355,6 +355,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::cparse::show();
         cmd::command::fordata::show();
         cmd::command::ifequ::show();
+        // Startup switches: /C stops the scan, and /MSG needs /P.
+        cmd::command::init::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
