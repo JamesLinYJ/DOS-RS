@@ -154,6 +154,28 @@ impl CpuState {
         }
     }
 
+    pub fn set_zero(&mut self, zero: bool) {
+        const ZERO: u16 = 0x0040;
+        if zero {
+            self.flags |= ZERO;
+        } else {
+            self.flags &= !ZERO;
+        }
+    }
+
+    pub fn direction_down(&self) -> bool {
+        self.flags & 0x0400 != 0
+    }
+
+    pub fn set_direction(&mut self, down: bool) {
+        const DIRECTION: u16 = 0x0400;
+        if down {
+            self.flags |= DIRECTION;
+        } else {
+            self.flags &= !DIRECTION;
+        }
+    }
+
     pub fn apply_result_flags(&mut self, computed: u16) {
         self.flags = (self.flags & !ARITH_FLAGS) | (computed & ARITH_FLAGS) | RESERVED_FLAG;
     }

@@ -1236,6 +1236,62 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "OP LEA 10" "$out" \
+		|| ! grep -q "OP XOR 00" "$out" \
+		|| ! grep -q "OP ALU 11" "$out" \
+		|| ! grep -q "OP CMP OK" "$out" \
+		|| ! grep -q "OP MUL 06" "$out" \
+		|| ! grep -q "OP IMUL 0F" "$out" \
+		|| ! grep -q "OP DIR 2F" "$out" \
+		|| ! grep -q "OP STR Z" "$out" \
+		|| ! grep -q "OP REP Z" "$out" \
+		|| ! grep -q "OP LOOP 03" "$out" \
+		|| ! grep -q "OP JCXZ OK" "$out" \
+		|| ! grep -q "OP JMP OK" "$out" \
+		|| ! grep -q "OP ENTER OK" "$out" \
+		|| ! grep -q "OP LEAVE OK" "$out" \
+		|| ! grep -q "OP SLDT 00" "$out" \
+		|| ! grep -q "OP XCHG 02" "$out" \
+		|| ! grep -q "OP CBW FF" "$out" \
+		|| ! grep -q "OP CWD FF" "$out" \
+		|| ! grep -q "OP SHR 04" "$out" \
+		|| ! grep -q "OP INS Z" "$out" \
+		|| ! grep -q "OP OUTS 21" "$out" \
+		|| ! grep -q "OP STC OK" "$out" \
+		|| ! grep -q "OP CLC OK" "$out"; then
+		echo "$name missing guest opcodes" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "INT DRV 00" "$out" \
+		|| ! grep -q "INT DATE 1980" "$out" \
+		|| ! grep -q "INT TIME 00" "$out" \
+		|| ! grep -q "INT FREE 0200" "$out" \
+		|| ! grep -q "INT VEC 1234" "$out" \
+		|| ! grep -q "INT ATTR 20" "$out" \
+		|| ! grep -q "INT SEEK 01" "$out" \
+		|| ! grep -q "INT MAKE OK" "$out" \
+		|| ! grep -q "INT REN OK" "$out" \
+		|| ! grep -q "INT DEL OK" "$out" \
+		|| ! grep -q "INT FIND HELLO.COM" "$out" \
+		|| ! grep -q "INT CWD ROOT" "$out" \
+		|| ! grep -q "INT MEM OK" "$out" \
+		|| ! grep -q "INT DIR OK" "$out"; then
+		echo "$name missing guest dos services" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "BIOS 10 50" "$out" \
+		|| ! grep -q "BIOS 13 55" "$out" \
+		|| ! grep -q "BIOS 16 00" "$out" \
+		|| ! grep -q "BIOS 1A 0001" "$out"; then
+		echo "$name missing guest bios services" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
