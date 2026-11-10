@@ -362,6 +362,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::parse2::show();
         // A complete path is not searched again. Empty PATH pieces are skipped.
         cmd::command::path1::show();
+        // .COM outranks .EXE and .BAT. A named extension stops the search.
+        cmd::command::path2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

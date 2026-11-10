@@ -909,6 +909,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "PATH2 DR01 DR03 DR00 BD00 NC08 NE04 NB04 SB02 SX00 W464F4F2E3F3F3F K464F4F2E434F4D E00 E00 SV0055 SV0056 SV0000 AD02C4" "$out"; then
+		echo "$name missing command lookup" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
