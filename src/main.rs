@@ -404,6 +404,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::comppar::show();
         // A bad DOS version is message 1 in the utility class.
         cmd::comp::compsm::show();
+        // A blank line leaves assemble mode. INT 3 stays one byte.
+        cmd::debug::debasm::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

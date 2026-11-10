@@ -2,3 +2,4 @@
 
 pub mod command;
 pub mod comp;
+pub mod debug;

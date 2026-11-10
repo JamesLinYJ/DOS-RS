@@ -1035,6 +1035,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBASM EM01 IX0003 NFFFFF SH01 SH00 W08 DL00 DX01 CL00 W10 DL01 DX01 CL00 W08 DL00 DX00 CL01 IM21 W10 DL01 DX00 CL01 IM21 ER01 MR0D MRF8" "$out"; then
+		echo "$name missing line assembler" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
