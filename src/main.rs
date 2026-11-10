@@ -223,6 +223,8 @@ fn boot(gate: usize) -> ! {
         dos::ms_code::show();
         // Critical section enter/leave after the sharer patches the leading RET.
         dos::crit::show();
+        // Abort closes every JFN. A later close of handle 5 is invalid.
+        dos::abort::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
