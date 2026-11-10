@@ -1065,6 +1065,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DEBDATA RL0000 LB000A XM000E PG00190000 FR0419 OM0423 FN04280000 FZ04290000 PV04360000 DP0437 CR04730100 BG0475 BF047B AS048A BB0491 PT04E1 EN067B" "$out"; then
+		echo "$name missing debugger data" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

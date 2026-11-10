@@ -414,6 +414,8 @@ fn boot(gate: usize) -> ! {
         cmd::debug::debcom3::show();
         // Sixteen-bit names run AX, CX, DX, BX. IP starts at 100h.
         cmd::debug::debconst::show();
+        // The create-process dword keeps offset 100h beside the segment.
+        cmd::debug::debdata::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
