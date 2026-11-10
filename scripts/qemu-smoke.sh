@@ -759,6 +759,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DISPATCH DSK01 DEV02 MEM04 NET05 GAP03 0E NONE 3F READ 40 WRITE 48 ALLOC 00 CLOSE 2A DEVIO 36 DINFO 18 MISS 4B BARE" "$out"; then
+		echo "$name missing dispatch notes" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

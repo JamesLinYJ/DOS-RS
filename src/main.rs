@@ -321,6 +321,8 @@ fn boot(gate: usize) -> ! {
         dos::time::show();
         // Handles: a slot of FF is unused, and a busy file is reused by its owner.
         dos::util::show();
+        // Dispatch notes: memory is section 4, and call 18h is not listed.
+        dos::dispatch::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

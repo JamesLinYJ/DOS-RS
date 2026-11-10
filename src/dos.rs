@@ -26,6 +26,7 @@ pub mod finfo;
 pub mod getset;
 pub mod dev;
 pub mod dir;
+pub mod dispatch;
 pub mod dir2;
 pub mod dircall;
 pub mod delete;
