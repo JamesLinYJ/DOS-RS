@@ -481,6 +481,7 @@ fn dos_si(ah: u8, si: *mut u8) -> u16 {
             "mov esi, {p:e}",
             "int 0x21",
             inout("eax") eax,
+            in("edx") 0u32,
             p = in(reg) ptr,
             clobber_abi("C"),
         );

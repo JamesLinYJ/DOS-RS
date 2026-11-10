@@ -1,9 +1,8 @@
 //! `$IOCTL` from `DOS/IOCTL.ASM`.
 //!
-//! AL=0 reads device flags for a handle. A closed handle is
-//! `error_invalid_handle` (6). A disk file has no device bit, so DX is 0.
-//! AL=8 asks if a block drive is removable. Drive 1 is the boot floppy.
-//! Drive 3 is treated as a fixed disk. Drive 0 is not a valid unit here.
+//! AL=0 reads the low flag byte of an open handle. A closed handle is
+//! `error_invalid_handle` (6). AL=8 shifts the removable-media busy bit
+//! down to bit 0. Drive 1 is the boot floppy, so that bit is clear.
 
 use core::arch::asm;
 
@@ -51,12 +50,11 @@ pub fn on_frame(al: u8, bx: u16) -> (u16, u16, u8) {
         };
     }
     if al == 8 {
+        // BL is the unit. 0 is the default drive, which is A. 1 is A.
+        // The floppy media check is not busy, so the shifted status is 0.
         let drive = bx as u8;
-        if drive == 1 {
+        if drive == 0 || drive == 1 {
             return (0, 0, 0);
-        }
-        if drive == 3 {
-            return (1, 0, 1);
         }
         return (INVALID_DRIVE, 0, 0);
     }
@@ -66,14 +64,12 @@ pub fn on_frame(al: u8, bx: u16) -> (u16, u16, u8) {
 pub fn show() {
     let (closed, _, _) = query(0, 5, 0);
     let (_, _, removable) = query(8, 0, 1);
-    let (_, _, fixed) = query(8, 0, 3);
     crate::bios::mscon::con_write_bytes(b"IOCTL H");
     put_hex8(closed as u8);
     crate::bios::mscon::con_write_bytes(b" REM");
     put_hex8(removable);
-    crate::bios::mscon::con_write_bytes(b" FIX");
-    put_hex8(fixed);
     crate::bios::mscon::con_write_bytes(b"\r\n");
+    crate::dos::path::show();
 }
 
 fn put_hex8(value: u8) {

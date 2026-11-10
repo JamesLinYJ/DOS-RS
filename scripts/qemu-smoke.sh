@@ -261,18 +261,6 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "IOCTL H06 REM00 FIX01" "$out"; then
-		echo "$name missing IOCTL" >&2
-		cat "$out" >&2
-		rm -f "$out"
-		exit 1
-	fi
-	if ! grep -q "PATHLEN 4 OK 67 BAD" "$out"; then
-		echo "$name missing path length" >&2
-		cat "$out" >&2
-		rm -f "$out"
-		exit 1
-	fi
 	if ! grep -q "03-04-84 01:02" "$out"; then
 		echo "$name missing file time" >&2
 		cat "$out" >&2
@@ -431,6 +419,18 @@ run_one() {
 	fi
 	if ! grep -q "DPB 0200 003D F8 BUF F8FF EV11 HIT DIR IO SC" "$out"; then
 		echo "$name missing buffer or DPB" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "IOCTL H06 REM00" "$out"; then
+		echo "$name missing IOCTL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "PATH E5 LEN05 DR0F" "$out"; then
+		echo "$name missing PATH" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1

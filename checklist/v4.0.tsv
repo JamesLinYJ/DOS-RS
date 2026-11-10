@@ -804,7 +804,7 @@ v4.0/src/DOS/GETSET.ASM	text	partial	src/dos/getset.rs
 v4.0/src/DOS/HANDLE.ASM	text	partial	src/dos/handle.rs
 v4.0/src/DOS/HIGHSW.ASM	text	untranslated	src/dos/highsw.rs
 v4.0/src/DOS/IFS.ASM	text	untranslated	src/dos/ifs.rs
-v4.0/src/DOS/IOCTL.ASM	text	untranslated	src/dos/ioctl.rs
+v4.0/src/DOS/IOCTL.ASM	text	partial	src/dos/ioctl.rs
 v4.0/src/DOS/ISEARCH.ASM	text	untranslated	src/dos/isearch.rs
 v4.0/src/DOS/KSTRIN.ASM	text	untranslated	src/dos/kstrin.rs
 v4.0/src/DOS/LOCK.ASM	text	untranslated	src/dos/lock.rs

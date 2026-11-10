@@ -279,7 +279,10 @@ fn rmdir(frame: &mut LogicalFrame) {
 
 /// AH=47h. SI receives the ASCIIZ path without the drive letter.
 fn get_cwd(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::getcwd(frame.si as *mut u8)));
+    frame.store_ax(DosWord(crate::dos::path::getcwd(
+        frame.si as *mut u8,
+        frame.dx as u8,
+    )));
 }
 
 /// AH=0Fh. DX is the FCB.

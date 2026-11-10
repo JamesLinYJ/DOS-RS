@@ -8,8 +8,14 @@ use super::search::{self, Ent};
 const PATH_NOT_FOUND: u16 = 3;
 const ACCESS: u16 = 5;
 const CURRENT: u16 = 16;
+const INVALID_DRIVE: u16 = 15;
+/// `DIRSTRLEN` in `INC/CURDIR.INC`: 64 + 3.
+const DIR_STR_LEN: usize = 67;
 
 pub fn mkdir(name: *const u8) -> u16 {
+    if path_too_long(name) {
+        return ACCESS;
+    }
     let Some(packed) = leaf(name) else {
         return PATH_NOT_FOUND;
     };
@@ -39,6 +45,9 @@ pub fn mkdir(name: *const u8) -> u16 {
 }
 
 pub fn chdir(name: *const u8) -> u16 {
+    if path_too_long(name) {
+        return PATH_NOT_FOUND;
+    }
     let raw = search::read_asciiz(name);
     let len = search::asciiz_len(&raw);
     let text = &raw[..len];
@@ -88,57 +97,152 @@ pub fn rmdir(name: *const u8) -> u16 {
     0
 }
 
-pub fn getcwd(buf: *mut u8) -> u16 {
+pub fn getcwd(buf: *mut u8, drive: u8) -> u16 {
+    if drive > 1 {
+        return INVALID_DRIVE;
+    }
     let cwd = search::cwd_text();
     let path = if cwd.len() >= 2 && cwd[1] == b':' {
         &cwd[2..]
     } else {
         cwd
     };
-    let mut i = 0usize;
-    while i < path.len() {
-        unsafe { *buf.add(i) = path[i] }
-        i += 1;
-    }
-    unsafe { *buf.add(i) = 0 }
+    copy_dir(path, buf);
     0
 }
 
-/// `DIRSTRLEN` from `INC/CURDIR.INC`. `Check_PathLen` carries when the
-/// string is shorter than this.
-pub const DIR_STR_LEN: usize = 64 + 3;
+/// `$CURRENT_DIR` copy. A `0x05` directory byte is stored as `0xE5`.
+pub fn copy_dir(src: &[u8], dst: *mut u8) {
+    let mut si = 0usize;
+    let mut di = 0usize;
+    if src.is_empty() {
+        unsafe { *dst = 0 }
+        return;
+    }
+    let mut al = src[si];
+    si += 1;
+    if al == 0 {
+        unsafe { *dst = 0 }
+        return;
+    }
+    if al != 0x05 {
+        if al == b'\\' {
+            unsafe { *dst.add(di) = al }
+            di += 1;
+            if si >= src.len() {
+                unsafe { *dst.add(di) = 0 }
+                return;
+            }
+            al = src[si];
+            si += 1;
+        }
+        if al == 0x05 {
+            al = 0xe5;
+        }
+    } else {
+        al = 0xe5;
+    }
+    loop {
+        unsafe { *dst.add(di) = al }
+        di += 1;
+        if al == 0 {
+            return;
+        }
+        if si >= src.len() {
+            unsafe { *dst.add(di) = 0 }
+            return;
+        }
+        al = src[si];
+        si += 1;
+        if al == 0 {
+            continue;
+        }
+        if al == b'\\' {
+            unsafe { *dst.add(di) = al }
+            di += 1;
+            if si >= src.len() {
+                unsafe { *dst.add(di) = 0 }
+                return;
+            }
+            al = src[si];
+            si += 1;
+        }
+        if al == 0x05 {
+            al = 0xe5;
+        }
+    }
+}
 
-pub fn path_fits(text: &[u8]) -> bool {
-    text.len() < DIR_STR_LEN
+/// `Check_PathLen`. The length is above `DIRSTRLEN`.
+pub fn path_too_long(name: *const u8) -> bool {
+    let mut n = 0usize;
+    unsafe {
+        while n <= DIR_STR_LEN {
+            if *name.add(n) == 0 {
+                return false;
+            }
+            n += 1;
+        }
+    }
+    true
 }
 
 pub fn show() {
-    let short = b"\\SUB";
-    let mut long = [b'A'; DIR_STR_LEN];
-    long[0] = b'\\';
-    crate::bios::mscon::con_write_bytes(b"PATHLEN ");
-    put_dec(short.len() as u16);
-    crate::bios::mscon::con_write_bytes(if path_fits(short) { b" OK " } else { b" BAD " });
-    put_dec(long.len() as u16);
-    crate::bios::mscon::con_write_bytes(if path_fits(&long) { b" OK\r\n" } else { b" BAD\r\n" });
+    let sample = b"\\\x05";
+    let mut copied = [0u8; 4];
+    copy_dir(sample, copied.as_mut_ptr());
+    let long = [b'A'; 68];
+    let mut named = [0u8; 69];
+    named[..68].copy_from_slice(&long);
+    let too_long = dos_name(0x39, named.as_ptr());
+    let bad_drive = dos_cwd(2);
+    crate::bios::mscon::con_write_bytes(b"PATH ");
+    put_hex8(copied[1]);
+    crate::bios::mscon::con_write_bytes(b" LEN");
+    put_hex8(too_long as u8);
+    crate::bios::mscon::con_write_bytes(b" DR");
+    put_hex8(bad_drive as u8);
+    crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
-fn put_dec(mut value: u16) {
-    let mut buf = [0u8; 5];
-    let mut n = 0usize;
-    if value == 0 {
-        crate::bios::mscon::con_write_bytes(b"0");
-        return;
+fn dos_name(ah: u8, name: *const u8) -> u16 {
+    let mut eax = u32::from(ah) << 8;
+    let edx = name as u32;
+    unsafe {
+        core::arch::asm!(
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
     }
-    while value != 0 {
-        buf[n] = b'0' + (value % 10) as u8;
-        n += 1;
-        value /= 10;
+    eax as u16
+}
+
+fn dos_cwd(drive: u8) -> u16 {
+    let mut eax = 0x4700u32;
+    let mut buf = [0u8; 8];
+    let esi = buf.as_mut_ptr() as u32;
+    let edx = u32::from(drive);
+    unsafe {
+        core::arch::asm!(
+            "mov esi, {p:e}",
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            p = in(reg) esi,
+            clobber_abi("C"),
+        );
     }
-    while n != 0 {
-        n -= 1;
-        crate::bios::mscon::con_write_bytes(&buf[n..n + 1]);
-    }
+    eax as u16
+}
+
+fn put_hex8(value: u8) {
+    let hex = b"0123456789ABCDEF";
+    crate::bios::mscon::con_write_bytes(&[
+        hex[(value >> 4) as usize],
+        hex[(value & 0x0f) as usize],
+    ]);
 }
 
 fn leaf(name: *const u8) -> Option<[u8; 11]> {
