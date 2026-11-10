@@ -169,7 +169,7 @@ v4.0/src/CMD/DISKCOMP/DCOMPPAR.ASM	text	partial	src/cmd/diskcomp/dcomppar.rs
 v4.0/src/CMD/DISKCOMP/DCOMPP.ASM	text	partial	src/cmd/diskcomp/dcompp.rs
 v4.0/src/CMD/DISKCOMP/DCOMPSM.ASM	text	partial	src/cmd/diskcomp/dcompsm.rs
 v4.0/src/CMD/DISKCOMP/DISKCOMP.ASM	text	partial	src/cmd/diskcomp/diskcomp.rs
-v4.0/src/CMD/DISKCOMP/DISKCOMP.EQU	text	untranslated	src/cmd/diskcomp/diskcomp.rs
+v4.0/src/CMD/DISKCOMP/DISKCOMP.EQU	text	partial	src/cmd/diskcomp/diskcomp.rs
 v4.0/src/CMD/DISKCOMP/DISKCOMP.LNK	text	untranslated	src/cmd/diskcomp/diskcomp.rs
 v4.0/src/CMD/DISKCOMP/DISKCOMP.SKL	text	untranslated	src/cmd/diskcomp/diskcomp.rs
 v4.0/src/CMD/DISKCOMP/MAKEFILE	text	untranslated	src/cmd/diskcomp/makefile.rs

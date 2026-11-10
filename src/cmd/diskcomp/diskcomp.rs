@@ -21,6 +21,13 @@ const SERIAL_AT: usize = 0x27;
 const SERIAL_BYTES: usize = 4;
 const MEDIA_AT: usize = 21;
 const SIGNATURE_AT: usize = 38;
+const EQUATES: &[u16] = &[
+    0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 0x000A, 1, 0, 1, 0, 0, 1, 1, 2, 2, 1, 0, 0x0020, 0x00E0, 8, 9,
+    14, 15, 0, 1, 2, 0x5F02, 0x001C, 2, 0xFFFF, 0xFFFF, 0x1000, 0xFFFF, 1, 0, 0xFFF7, 0x005C, 0x005D,
+    0x006C, 0x006D, 0x0080, 0x0100, 0x004C, 0x0002, 0x0009, 0x0009, 0x0C01, 0x0019, 0x0044, 0x4408,
+    0x0002, 0x0040, 0x5F00, 0x5F01, 0x002A, 0x0003, 0x0065, 0x0023, 1, 2, 0x000D, 0x0008, 0x0061, 0x0041,
+    0x0062, 0x0042, 0x0060, 0x0040, 0x000F, 0x0069, 0, 1, 0x0059, 0, 1, 4, 4, 0, 1, 0,
+];
 
 struct Geometry {
     total: u16,
@@ -359,7 +366,36 @@ pub fn show() {
     put_hex16(sector_index(9));
     crate::bios::mscon::con_write_bytes(b" GN440D080060 ST");
     put_hex16(64 * 8);
-    crate::bios::mscon::con_write_bytes(b" EN0100\r\n");
+    crate::bios::mscon::con_write_bytes(b" EN0100 EQ");
+    put_hex16(EQUATES.len() as u16);
+    crate::bios::mscon::con_write_bytes(b" SM");
+    put_hex32(equate_sum());
+    crate::bios::mscon::con_write_bytes(b" FN");
+    put_hex16(EQUATES[35]);
+    crate::bios::mscon::con_write_bytes(b" RM");
+    put_hex16(EQUATES[37]);
+    crate::bios::mscon::con_write_bytes(b" CS");
+    put_hex16(EQUATES[24]);
+    crate::bios::mscon::con_write_bytes(b" DC");
+    put_hex16(EQUATES[55]);
+    crate::bios::mscon::con_write_bytes(b" IV");
+    put_hex16(EQUATES[41]);
+    crate::bios::mscon::con_write_bytes(b"\r\n");
+}
+
+fn equate_sum() -> u32 {
+    let mut sum = 0u32;
+    let mut index = 0usize;
+    while index < EQUATES.len() {
+        sum = sum.wrapping_add(u32::from(EQUATES[index]));
+        index += 1;
+    }
+    sum
+}
+
+fn put_hex32(value: u32) {
+    put_hex16((value >> 16) as u16);
+    put_hex16(value as u16);
 }
 
 fn write_exit(loaded: bool, ready: bool, broken: bool) {
