@@ -325,6 +325,9 @@ CMD TYPE ; MORE.clA
 
 
 CMD TYPE g%@edlargeokfprintfihmain
+
+Microsoft (R) Overlay Linker  Version 3.65   
+Copyright (C) Microsoft Corp 19L1 OK
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK

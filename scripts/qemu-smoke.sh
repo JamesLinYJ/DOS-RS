@@ -1264,7 +1264,8 @@ run_one() {
 		|| ! grep -q "Message files for MORE.SKL completed." "$out" \
 		|| ! grep -q "CMD DIR MORE.CLA" "$out" \
 		|| ! grep -q "; MORE.clA" "$out" \
-		|| ! grep -q "largeok" "$out"; then
+		|| ! grep -q "largeok" "$out" \
+		|| ! grep -q "L1 OK" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
