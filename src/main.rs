@@ -297,6 +297,8 @@ fn boot(gate: usize) -> ! {
         dos::nstdos::show();
         // Internal open: access, redirector verb, and read-only FCB mode.
         dos::open::show();
+        // Printf: segmented string, message out, and a hex number.
+        dos::print::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

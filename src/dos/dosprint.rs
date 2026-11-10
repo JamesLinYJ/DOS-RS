@@ -1,26 +1,29 @@
 //! `PFMT` from `DOS/DOSPRINT.ASM`.
 //!
 //! `$x` prints four hex digits, `$c` prints one character, and `$s` prints
-//! a zero-terminated string. `\n` is carriage return then line feed. `\t`
-//! is a tab. `$p` prints the user id, a colon, and the process id.
+//! a zero-terminated string. `$S` takes a segment word and then that string.
+//! `\n` is carriage return then line feed. `\t` is a tab. `$p` prints the
+//! user id, a colon, and the process id.
 
 pub enum Piece<'a> {
     Hex(u16),
     Char(u8),
     Text(&'a [u8]),
+    Segment(u16),
 }
 
-/// Format `template` into `out`. Returns how many bytes were stored.
+/// Format `template` into `out`. Returns the byte count and the last `$S` segment.
 pub fn format(
     template: &[u8],
     pieces: &[Piece],
     user: u16,
     process: u16,
     out: &mut [u8],
-) -> usize {
+) -> (usize, u16) {
     let mut source = 0usize;
     let mut piece = 0usize;
     let mut written = 0usize;
+    let mut selector = 0u16;
     while source < template.len() && written < out.len() {
         let byte = template[source];
         source += 1;
@@ -69,12 +72,18 @@ pub fn format(
                 }
                 b's' => {
                     if let Some(Piece::Text(text)) = pieces.get(piece) {
-                        let mut index = 0usize;
-                        while index < text.len() && text[index] != 0 && written < out.len() {
-                            written = push(out, written, text[index]);
-                            index += 1;
-                        }
+                        written = text_out(out, written, text);
                         piece += 1;
+                    }
+                }
+                b'S' => {
+                    if let Some(Piece::Segment(segment)) = pieces.get(piece) {
+                        selector = *segment;
+                        piece += 1;
+                        if let Some(Piece::Text(text)) = pieces.get(piece) {
+                            written = text_out(out, written, text);
+                            piece += 1;
+                        }
                     }
                 }
                 b'p' => {
@@ -87,6 +96,15 @@ pub fn format(
             continue;
         }
         written = push(out, written, byte);
+    }
+    (written, selector)
+}
+
+fn text_out(out: &mut [u8], mut written: usize, text: &[u8]) -> usize {
+    let mut index = 0usize;
+    while index < text.len() && text[index] != 0 && written < out.len() {
+        written = push(out, written, text[index]);
+        index += 1;
     }
     written
 }
@@ -113,7 +131,7 @@ fn hex4(out: &mut [u8], mut written: usize, value: u16) -> usize {
 
 pub fn show() {
     let mut raw = [0u8; 24];
-    let count = format(
+    let (count, _) = format(
         b"X=$x\\n$c$s",
         &[Piece::Hex(0x0a1b), Piece::Char(b'A'), Piece::Text(b"OK")],
         1,

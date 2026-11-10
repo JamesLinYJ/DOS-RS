@@ -5,7 +5,7 @@
 
 pub fn show() {
     let mut raw = [0u8; 16];
-    let count = crate::dos::dosprint::format(b"$p", &[], 1, 2, &mut raw);
+    let (count, _) = crate::dos::dosprint::format(b"$p", &[], 1, 2, &mut raw);
     crate::bios::mscon::con_write_bytes(b"SHRPRINT ");
     crate::bios::mscon::con_write_bytes(&raw[..count]);
     crate::bios::mscon::con_write_bytes(b"\r\n");

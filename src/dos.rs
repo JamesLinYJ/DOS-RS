@@ -55,6 +55,7 @@ pub mod nstdos;
 pub mod open;
 pub mod parse;
 pub mod path;
+pub mod print;
 pub mod rom;
 pub mod search;
 pub mod shrprint;
