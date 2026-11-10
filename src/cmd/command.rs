@@ -23,6 +23,7 @@ pub mod tcmd2b;
 pub mod tcode;
 pub mod tenv2;
 pub mod tfor;
+pub mod tmisc2;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;

@@ -378,6 +378,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tenv2::show();
         // FOR rejects a nested loop before it removes pipes.
         cmd::command::tfor::show();
+        // A switch is consumed before the path is classified.
+        cmd::command::tmisc2::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

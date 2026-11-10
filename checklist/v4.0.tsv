@@ -126,7 +126,7 @@ v4.0/src/CMD/COMMAND/TENV2.ASM	text	partial	src/cmd/command/tenv2.rs
 v4.0/src/CMD/COMMAND/TENV.ASM	text	partial	src/cmd/command/tenv.rs
 v4.0/src/CMD/COMMAND/TFOR.ASM	text	partial	src/cmd/command/tfor.rs
 v4.0/src/CMD/COMMAND/TMISC1.ASM	text	partial	src/cmd/command/tmisc1.rs
-v4.0/src/CMD/COMMAND/TMISC2.ASM	text	untranslated	src/cmd/command/tmisc2.rs
+v4.0/src/CMD/COMMAND/TMISC2.ASM	text	partial	src/cmd/command/tmisc2.rs
 v4.0/src/CMD/COMMAND/TPARSE.ASM	text	untranslated	src/cmd/command/tparse.rs
 v4.0/src/CMD/COMMAND/TPIPE.ASM	text	partial	src/cmd/command/tpipe.rs
 v4.0/src/CMD/COMMAND/TPRINTF.ASM	text	untranslated	src/cmd/command/tprintf.rs
