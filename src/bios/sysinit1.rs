@@ -13,6 +13,19 @@ pub fn com_err() {
 
 /// `ParaRound`. Add 15, rotate the carry in, then shift right three more
 /// times. That is a paragraph round-up, including a 16-bit overflow.
+/// Default buffer count from the allocation path. Unset stays 2. A removable
+/// drive larger than 360KB raises it to 3. A fixed disk is ignored.
+pub fn default_buffers(already_set: bool, slash_x: bool, large_removable: bool) -> u16 {
+    if already_set && !slash_x {
+        return 0xFFFF;
+    }
+    if !large_removable {
+        2
+    } else {
+        3
+    }
+}
+
 /// `ROUND`. Paragraph-round `memlo`, add it to `memhi`, and fail when the
 /// result meets `alloclim`.
 pub fn round_mem(memlo: u16, memhi: u16, alloclim: u16) -> Result<u16, ()> {

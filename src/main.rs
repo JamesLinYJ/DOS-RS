@@ -93,6 +93,9 @@ fn boot(gate: usize) -> ! {
     puts("PAR");
     put_hex16(bios::sysinit1::para_round(17));
     puts("\n");
+    puts("BUF");
+    put_hex16(bios::sysinit1::default_buffers(false, false, false));
+    puts("\n");
     if bios::sysinit1::round_mem(17, 0, 0x100).is_ok()
         && bios::sysinit2::skip_comment(b"; note\nBUFFERS=4\n") == 7
     {

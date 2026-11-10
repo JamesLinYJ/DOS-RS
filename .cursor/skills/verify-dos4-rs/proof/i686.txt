@@ -17,5 +17,6 @@ LOADOK
 LOAD0200
 SYN0030
 PAR0002
+BUF0002
 
 Bad or missing Command Interpreter

@@ -263,6 +263,23 @@ pub fn fixed_disk_paths() -> bool {
         && int2f_13(0x13, 0x1000, 0x2000) == Some(0x1000)
         && int2f_13(0, 0x1000, 0x2000).is_none()
         && !ask_rom_media(disk().bds.flags)
+        && dma_fit(0x1000, 512) == 512
+        && dma_fit(0xff00, 512) == 0x100
+}
+
+/// `BLOCK13` refuses a transfer that crosses a 64KiB physical boundary.
+/// The return value is how many bytes fit before that boundary.
+pub fn dma_fit(addr: u32, bytes: u32) -> u32 {
+    if bytes == 0 {
+        return 0;
+    }
+    let end = addr.wrapping_add(bytes);
+    let crosses = (addr ^ end.wrapping_sub(1)) & 0xffff_0000 != 0;
+    if !crosses {
+        bytes
+    } else {
+        (addr & 0xffff_0000).wrapping_add(0x1_0000).wrapping_sub(addr)
+    }
 }
 
 fn ask_rom_media(flags: u16) -> bool {
