@@ -219,6 +219,8 @@ fn boot(gate: usize) -> ! {
         dos::exec::show();
         // First-fit arena: two blocks, free the first, then a request that does not fit.
         dos::alloc::show();
+        // The last error is the invalid drive, with its class, action, and locus.
+        dos::ms_code::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

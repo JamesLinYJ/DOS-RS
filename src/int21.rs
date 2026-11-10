@@ -209,6 +209,7 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x33] = set_ctrl_c_trapping as fn(&mut LogicalFrame);
     slots[0x4B] = exec_program as fn(&mut LogicalFrame);
     slots[0x54] = get_verify_on_write as fn(&mut LogicalFrame);
+    slots[0x59] = get_extended_error as fn(&mut LogicalFrame);
     slots
 };
 
@@ -277,6 +278,14 @@ fn chdir(frame: &mut LogicalFrame) {
 /// AH=3Ah.
 fn rmdir(frame: &mut LogicalFrame) {
     frame.store_ax(DosWord(crate::dos::path::rmdir(frame.dx as *const u8)));
+}
+
+/// AH=59h. AX is the last error. BH is the class, BL the action, CH the locus.
+fn get_extended_error(frame: &mut LogicalFrame) {
+    let (ax, bx, cx) = crate::dos::ms_code::get();
+    frame.store_ax(DosWord(ax));
+    frame.store_bx(DosWord(bx));
+    frame.store_cx(DosWord(cx));
 }
 
 /// AH=48h. BX is the paragraph count. AX is the memory segment.

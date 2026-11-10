@@ -22,6 +22,7 @@ pub mod disk;
 pub mod handle;
 pub mod ioctl;
 pub mod misc;
+pub mod ms_code;
 pub mod parse;
 pub mod path;
 pub mod rom;

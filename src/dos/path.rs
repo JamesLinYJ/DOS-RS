@@ -99,7 +99,7 @@ pub fn rmdir(name: *const u8) -> u16 {
 
 pub fn getcwd(buf: *mut u8, drive: u8) -> u16 {
     if drive > 1 {
-        return INVALID_DRIVE;
+        return crate::dos::ms_code::sys_ret_err(INVALID_DRIVE);
     }
     let cwd = search::cwd_text();
     let path = if cwd.len() >= 2 && cwd[1] == b':' {

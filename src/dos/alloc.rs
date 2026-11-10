@@ -110,6 +110,7 @@ pub fn alloc(request: u16) -> Result<u16, (u16, u16)> {
         }
         index += 1;
     }
+    let _ = crate::dos::ms_code::sys_ret_err(NOT_ENOUGH);
     Err((NOT_ENOUGH, max))
 }
 
