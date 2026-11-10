@@ -44,6 +44,13 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
         }
         index += 1;
     }
+    if !ram.store(prefix, 0, 0xCD) || !ram.store(prefix, 1, 0x20) {
+        return None;
+    }
+    let limit = 0x2000u16.to_le_bytes();
+    if !ram.store(prefix, 2, limit[0]) || !ram.store(prefix, 3, limit[1]) {
+        return None;
+    }
     let mut cpu = CpuState::at_com(prefix);
     cpu.set_instruction(instruction);
     cpu.set_selector(Segment::Code, load_segment.wrapping_add(code_disp));

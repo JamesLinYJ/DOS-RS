@@ -31,6 +31,8 @@ pub fn show() {
     super::disk::boot();
     show_image(b"COMPRESSCOM", WIDE_SEGMENT, false, 20000);
     show_saved();
+    crate::bios::mscon::con_write_bytes(b"EXE2BIN ");
+    show_image(b"EXE2BIN EXE", EXE_PREFIX, true, 20000);
 }
 
 fn show_saved() {

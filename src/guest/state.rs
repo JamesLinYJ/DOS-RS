@@ -138,6 +138,10 @@ impl CpuState {
         self.flags
     }
 
+    pub fn set_flags(&mut self, value: u16) {
+        self.flags = value | RESERVED_FLAG;
+    }
+
     pub fn instruction(&self) -> u16 {
         self.instruction
     }
