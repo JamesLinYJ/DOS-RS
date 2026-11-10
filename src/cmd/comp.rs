@@ -6,3 +6,4 @@ pub mod compeq;
 pub mod compms;
 pub mod compp;
 pub mod comppar;
+pub mod compsm;

@@ -402,6 +402,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::compp::show();
         // A matching ordinal is the first file. Any other ordinal is the second.
         cmd::comp::comppar::show();
+        // A bad DOS version is message 1 in the utility class.
+        cmd::comp::compsm::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
