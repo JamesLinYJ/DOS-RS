@@ -36,6 +36,7 @@ pub mod disk2;
 pub mod disk3;
 pub mod handle;
 pub mod highsw;
+pub mod ifs;
 pub mod ioctl;
 pub mod isearch;
 pub mod lock;

@@ -803,7 +803,7 @@ v4.0/src/DOS/FINFO.ASM	text	partial	src/dos/finfo.rs
 v4.0/src/DOS/GETSET.ASM	text	partial	src/dos/getset.rs
 v4.0/src/DOS/HANDLE.ASM	text	partial	src/dos/handle.rs
 v4.0/src/DOS/HIGHSW.ASM	text	partial	src/dos/highsw.rs
-v4.0/src/DOS/IFS.ASM	text	untranslated	src/dos/ifs.rs
+v4.0/src/DOS/IFS.ASM	text	partial	src/dos/ifs.rs
 v4.0/src/DOS/IOCTL.ASM	text	partial	src/dos/ioctl.rs
 v4.0/src/DOS/ISEARCH.ASM	text	partial	src/dos/isearch.rs
 v4.0/src/DOS/KSTRIN.ASM	text	untranslated	src/dos/kstrin.rs

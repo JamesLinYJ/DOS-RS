@@ -255,6 +255,8 @@ fn boot(gate: usize) -> ! {
         dos::isearch::show();
         // Extended attributes: maximum size, a short buffer, and a set.
         dos::extattr::show();
+        // IFS service: enter and leave DOS, stack size, and a path copy.
+        dos::ifs::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
