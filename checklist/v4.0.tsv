@@ -771,7 +771,7 @@ v4.0/src/DEV/XMAEM/XMAEM.MAK	text	untranslated	src/dev/xmaem/xmaem.rs
 v4.0/src/DEV/XMAEM/XMAEM.SKL	text	untranslated	src/dev/xmaem/xmaem.rs
 v4.0/src/DOS/ABORT.ASM	text	untranslated	src/dos/abort.rs
 v4.0/src/DOS/ALLOC.ASM	text	untranslated	src/dos/alloc.rs
-v4.0/src/DOS/BUF.ASM	text	untranslated	src/dos/buf.rs
+v4.0/src/DOS/BUF.ASM	text	partial	src/dos/buf.rs
 v4.0/src/DOS/CLOSE.ASM	text	partial	src/dos/close.rs
 v4.0/src/DOS/CPMIO2.ASM	text	partial	src/dos/cpmio2.rs
 v4.0/src/DOS/CPMIO.ASM	text	partial	src/dos/cpmio.rs
@@ -786,7 +786,7 @@ v4.0/src/DOS/DIR.ASM	text	untranslated	src/dos/dir.rs
 v4.0/src/DOS/DIRCALL.ASM	text	untranslated	src/dos/dircall.rs
 v4.0/src/DOS/DISK2.ASM	text	untranslated	src/dos/disk2.rs
 v4.0/src/DOS/DISK3.ASM	text	untranslated	src/dos/disk3.rs
-v4.0/src/DOS/DISK.ASM	text	untranslated	src/dos/disk.rs
+v4.0/src/DOS/DISK.ASM	text	partial	src/dos/disk.rs
 v4.0/src/DOS/DISP.ASM	text	partial	src/dos/disp.rs
 v4.0/src/DOS/DISPATCH.ASM	text	untranslated	src/dos/dispatch.rs
 v4.0/src/DOS/DOSMES.ASM	text	untranslated	src/dos/dosmes.rs
@@ -812,7 +812,7 @@ v4.0/src/DOS/MACRO2.ASM	text	untranslated	src/dos/macro2.rs
 v4.0/src/DOS/MACRO.ASM	text	untranslated	src/dos/macro.rs
 v4.0/src/DOS/MAKEFILE	text	untranslated	src/dos/makefile.rs
 v4.0/src/DOS/MISC2.ASM	text	untranslated	src/dos/misc2.rs
-v4.0/src/DOS/MISC.ASM	text	untranslated	src/dos/misc.rs
+v4.0/src/DOS/MISC.ASM	text	partial	src/dos/misc.rs
 v4.0/src/DOS/MKNODE.ASM	text	untranslated	src/dos/mknode.rs
 v4.0/src/DOS/MS_CODE.ASM	text	untranslated	src/dos/ms_code.rs
 v4.0/src/DOS/MSCODE.ASM	text	untranslated	src/dos/mscode.rs

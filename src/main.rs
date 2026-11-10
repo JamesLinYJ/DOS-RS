@@ -211,6 +211,8 @@ fn boot(gate: usize) -> ! {
         dos::close::show();
         // Media check from the rest of FAT.ASM: unchanged, changed, dirty, error.
         dos::fat::media_show();
+        // Drive parameter block, buffer cache, and the sector read under it.
+        dos::buf::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

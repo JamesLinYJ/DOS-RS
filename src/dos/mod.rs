@@ -5,6 +5,7 @@
 //! and a single character. No new register type is added. The frame stays
 //! in `int21`.
 
+pub mod buf;
 pub mod close;
 pub mod cpmio;
 pub mod cpmio2;
@@ -16,7 +17,9 @@ pub mod fcbio2;
 pub mod fat;
 pub mod file;
 pub mod getset;
+pub mod disk;
 pub mod handle;
+pub mod misc;
 pub mod parse;
 pub mod path;
 pub mod rom;
