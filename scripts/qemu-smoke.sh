@@ -1137,6 +1137,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DCOMPSM NM4449534B434F4D50 CLA CL1 CL2 LD DS CH NU IN M0001 CFF H0002 K0000 I00 M0001 C00 H0002 K0000 I00 NF01 CX0000" "$out"; then
+		echo "$name missing compare messages services" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

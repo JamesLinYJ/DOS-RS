@@ -438,6 +438,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcomp::dcomppar::show();
         // Drive-only syntax and switches are the included parser pieces.
         cmd::diskcomp::dcompp::show();
+        // A wrong DOS version is utility class on the error handle.
+        cmd::diskcomp::dcompsm::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

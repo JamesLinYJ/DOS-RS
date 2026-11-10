@@ -5,3 +5,4 @@ pub mod dcmpmacr;
 pub mod dcompms;
 pub mod dcomppar;
 pub mod dcompp;
+pub mod dcompsm;
