@@ -142,7 +142,7 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 
 Opcode `8D` with a register source is not a memory operand. Compat16's `execute_lea` returns an error for that form. The 8086 manual only defines `8D` for a memory source. On 8086 and 8088 silicon the same encoding copies the most recent effective-address offset into the destination, because the address unit does not replace that offset when the source is a register. The guest follows the silicon.
 
-`EXEPACK.EXE` is the compressor from that same tree, `v4.0/src/TOOLS/EXEPACK.EXE`, under the same MIT license. The shell runs `EXEPACK.EXE EXEFIX.EXE PACKED.EXE`. The written file is 0x28AF bytes and begins with the MZ mark, and it contains the packer's stub text. The serial line is `PACKED 28AF 4D5A OK`. The directory lists `CMD DIR PACKED.EXE`. After that write the compressor does not return to the shell, so the shell reports a non-zero status. The proof of the write is those two lines.
+`EXEPACK.EXE` is the compressor from that same tree, `v4.0/src/TOOLS/EXEPACK.EXE`, under the same MIT license. The shell runs `EXEPACK.EXE EXEFIX.EXE PACKED.EXE`. The written file is 0x28AF bytes and begins with the MZ mark, and it contains the packer's stub text. The serial line is `PACKED 2A00 4D5A OK`. The directory lists `CMD DIR PACKED.EXE`. A far allocation that used to alias the program image now keeps those instruction bytes, so the compressor returns to the shell. The shell does not print `CMD ERRORLEVEL /`.
 
 `BUILDIDX.EXE` is the message-index builder from that same tree, `v4.0/src/TOOLS/BUILDIDX.EXE`, under the same MIT license. The shell runs it with an empty tail, and it prints `Incorrect number of parms  given to BUILDIDX.`
 

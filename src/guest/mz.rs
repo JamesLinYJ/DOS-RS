@@ -20,6 +20,7 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
     let stack_pointer = word(image, 16)?;
     let instruction = word(image, 20)?;
     let code_disp = word(image, 22)?;
+    ram.release_image();
     let load_segment = prefix.wrapping_add(0x0010);
     let payload = image.get(header_bytes..)?;
     for (placed, byte) in payload.iter().enumerate() {

@@ -1235,7 +1235,8 @@ run_one() {
 		|| ! grep -q $'CMD TYPE \xff\x05A' "$out" \
 		|| ! grep -q "EXEFIX 1234 0010" "$out" \
 		|| ! grep -q "CMD DIR PACKED.EXE" "$out" \
-		|| ! grep -q "PACKED 28AF 4D5A OK" "$out" \
+		|| ! grep -q "PACKED 2A00 4D5A OK" "$out" \
+		|| grep -q "CMD ERRORLEVEL /" "$out" \
 		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
 		|| ! grep -q "BuildMsg - PSP at 0000" "$out" \
 		|| ! grep -q "Allocatable memory size is 606208" "$out" \

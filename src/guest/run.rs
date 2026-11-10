@@ -358,6 +358,10 @@ pub(super) struct Session {
     prefix: u16,
     block: u16,
     break_at: u16,
+    /// First paragraph past the bytes of the program now running.
+    image_limit: u16,
+    /// Paragraph where that program asked to end its own memory block.
+    kept_end: u16,
     vector_segment: [u16; 256],
     vector_offset: [u16; 256],
     vector_live: [bool; 256],
@@ -373,6 +377,8 @@ impl Session {
             prefix: 0,
             block: 0,
             break_at: GUEST_BLOCK,
+            image_limit: 0,
+            kept_end: 0,
             vector_segment: [0; 256],
             vector_offset: [0; 256],
             vector_live: [false; 256],
@@ -522,24 +528,16 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x48 => {
-            let asked = cpu.wide(Slot::Base);
-            let room = super::memory::CONVENTIONAL_END.saturating_sub(session.break_at);
-            if asked == 0 || asked > room {
-                cpu.set_wide(Slot::Base, room);
-                cpu.set_wide(Slot::Accumulator, 8);
-                cpu.set_carry(true);
-            } else {
-                let given = session.break_at;
-                session.break_at = session.break_at.wrapping_add(asked);
-                session.block = given;
-                cpu.set_wide(Slot::Accumulator, given);
-                cpu.set_carry(false);
-            }
+            allocate(cpu, ram, session);
             Action::Continue
         }
         0x49 => {
             let owned = cpu.selector(Segment::Extra);
-            if owned >= GUEST_BLOCK && owned < session.break_at {
+            let low = owned >= GUEST_BLOCK && owned < session.break_at;
+            let kept = session.kept_end > session.image_limit
+                && owned >= session.image_limit
+                && owned < session.kept_end;
+            if low || kept || owned == session.block {
                 cpu.set_carry(false);
             } else {
                 cpu.set_wide(Slot::Accumulator, 9);
@@ -548,16 +546,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x4A => {
-            let block = cpu.selector(Segment::Extra);
-            let asked = cpu.wide(Slot::Base);
-            let room = super::memory::CONVENTIONAL_END.saturating_sub(block);
-            if asked == 0 || asked > room {
-                cpu.set_wide(Slot::Base, room);
-                cpu.set_wide(Slot::Accumulator, 8);
-                cpu.set_carry(true);
-            } else {
-                cpu.set_carry(false);
-            }
+            resize_block(cpu, session);
             Action::Continue
         }
         0x4C => Action::Exit(cpu.low(Slot::Accumulator)),
@@ -905,6 +894,9 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         return;
     };
     let arena = session.break_at;
+    let saved_limit = session.image_limit;
+    let saved_kept = session.kept_end;
+    note_image(session, &image[..length], segment.saturating_add(0x0010));
     if length > 32 * 1024 {
         let load_segment = segment.saturating_add(0x0010);
         let image_end = resident_end(&image[..length], load_segment);
@@ -950,6 +942,8 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         slot += 1;
     }
     session.break_at = arena;
+    session.image_limit = saved_limit;
+    session.kept_end = saved_kept;
 }
 
 fn environment_segment(ram: &GuestRam, segment: u16, offset: u16) -> u16 {
@@ -1134,6 +1128,49 @@ fn place_child(
     }
 }
 
+fn allocate(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let asked = cpu.wide(Slot::Base);
+    let origin = session.break_at;
+    let room = super::memory::CONVENTIONAL_END.saturating_sub(origin);
+    if asked == 0 || asked > room {
+        cpu.set_wide(Slot::Base, room);
+        cpu.set_wide(Slot::Accumulator, 8);
+        cpu.set_carry(true);
+        return;
+    }
+    if asked != 0xFFFF && origin < session.image_limit {
+        let span = session.image_limit.saturating_sub(origin);
+        ram.hold_image(origin, span);
+    }
+    session.break_at = origin.wrapping_add(asked);
+    session.block = origin;
+    cpu.set_wide(Slot::Accumulator, origin);
+    cpu.set_carry(false);
+}
+
+fn resize_block(cpu: &mut CpuState, session: &mut Session) {
+    let block = cpu.selector(Segment::Extra);
+    let asked = cpu.wide(Slot::Base);
+    let room = super::memory::CONVENTIONAL_END.saturating_sub(block);
+    if asked == 0 || asked > room {
+        cpu.set_wide(Slot::Base, room);
+        cpu.set_wide(Slot::Accumulator, 8);
+        cpu.set_carry(true);
+        return;
+    }
+    let end = block.saturating_add(asked);
+    if end > session.kept_end {
+        session.kept_end = end;
+    }
+    cpu.set_carry(false);
+}
+
+fn note_image(session: &mut Session, image: &[u8], load_segment: u16) {
+    let paragraphs = u16::try_from(image.len().div_ceil(16)).unwrap_or(u16::MAX);
+    session.image_limit = load_segment.saturating_add(paragraphs).saturating_add(1);
+    session.kept_end = 0;
+}
+
 fn resident_end(image: &[u8], load_segment: u16) -> u16 {
     if image.len() >= 28 && image[0] == b'M' && image[1] == b'Z' {
         let header = u16::from_le_bytes([image[8], image[9]]);
@@ -1187,6 +1224,9 @@ pub(super) fn spawn(
         return 0xFF;
     }
     let arena = session.break_at;
+    let saved_limit = session.image_limit;
+    let saved_kept = session.kept_end;
+    note_image(session, image, SHELL_CHILD.saturating_add(0x0010));
     if image.len() > 32 * 1024 {
         let load_segment = SHELL_CHILD.saturating_add(0x0010);
         let image_end = resident_end(image, load_segment);
@@ -1201,18 +1241,24 @@ pub(super) fn spawn(
             || !ram.store(prefix, 0x81, b' ')
         {
             session.break_at = arena;
+            session.image_limit = saved_limit;
+            session.kept_end = saved_kept;
             return 0xFF;
         }
         let mut index = 0usize;
         while index < count {
             if !ram.store(prefix, 0x82u16.wrapping_add(index as u16), args[index]) {
                 session.break_at = arena;
+                session.image_limit = saved_limit;
+                session.kept_end = saved_kept;
                 return 0xFF;
             }
             index += 1;
         }
         if !ram.store(prefix, 0x82u16.wrapping_add(index as u16), b'\r') {
             session.break_at = arena;
+            session.image_limit = saved_limit;
+            session.kept_end = saved_kept;
             return 0xFF;
         }
     }
@@ -1237,10 +1283,13 @@ pub(super) fn spawn(
         slot += 1;
     }
     session.break_at = arena;
+    session.image_limit = saved_limit;
+    session.kept_end = saved_kept;
     code
 }
 
 fn place_com(image: &[u8], ram: &mut GuestRam, segment: u16) -> Option<CpuState> {
+    ram.release_image();
     if !ram.store(segment, 0, 0xCD) || !ram.store(segment, 1, 0x20) {
         return None;
     }

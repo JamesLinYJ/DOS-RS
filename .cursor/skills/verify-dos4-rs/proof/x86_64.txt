@@ -237,7 +237,6 @@ Microsoft (R) EXE File Compression Utility  Version 4.06
 Copyright (C) Microsoft Corp 1985,1986.  All rights reserved.
 
 
-CMD ERRORLEVEL /
 CMD DIR PACKED.EXE
 Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
 BuildMsg - PSP at 0000
@@ -370,7 +369,7 @@ exec: EXITCODE.COM returned 3
 CMD ERRORLEVEL 3
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
-PACKED 28AF 4D5A OK
+PACKED 2A00 4D5A OK
 LIB LST __aFFaldiv........affaldiv          __aFFalmul..
 OP LEA 10
 OP XOR 00
