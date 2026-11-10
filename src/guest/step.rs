@@ -1131,15 +1131,22 @@ fn adjust_word(
 }
 
 fn store_string_word(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+    if store_word(cpu, ram) {
+        Outcome::Continue
+    } else {
+        Outcome::Fault(opcode)
+    }
+}
+
+fn store_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     let dest = cpu.wide(Slot::Dest);
     let bytes = cpu.wide(Slot::Accumulator).to_le_bytes();
     let segment = cpu.selector(Segment::Extra);
     if !ram.store(segment, dest, bytes[0]) || !ram.store(segment, dest.wrapping_add(1), bytes[1]) {
-        return Outcome::Fault(opcode);
+        return false;
     }
-    let step = if cpu.direction_down() { 2u16.wrapping_neg() } else { 2 };
-    cpu.set_wide(Slot::Dest, dest.wrapping_add(step));
-    Outcome::Continue
+    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
+    true
 }
 
 fn byte_logic(result: u8) -> u16 {
@@ -1872,6 +1879,49 @@ fn compare_string(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     true
 }
 
+fn compare_string_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+    let source = cpu.wide(Slot::Source);
+    let dest = cpu.wide(Slot::Dest);
+    let Some(left) = load_pair(ram, cpu.selector(Segment::Data), source) else {
+        return false;
+    };
+    let Some(right) = load_pair(ram, cpu.selector(Segment::Extra), dest) else {
+        return false;
+    };
+    let (_, flags) = alu::sub16(left, right);
+    cpu.apply_result_flags(flags);
+    cpu.set_wide(Slot::Source, step_width(cpu, source, 2));
+    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
+    true
+}
+
+fn load_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+    let source = cpu.wide(Slot::Source);
+    let Some(value) = load_pair(ram, cpu.selector(Segment::Data), source) else {
+        return false;
+    };
+    cpu.set_wide(Slot::Accumulator, value);
+    cpu.set_wide(Slot::Source, step_width(cpu, source, 2));
+    true
+}
+
+fn scan_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+    let dest = cpu.wide(Slot::Dest);
+    let Some(value) = load_pair(ram, cpu.selector(Segment::Extra), dest) else {
+        return false;
+    };
+    let (_, flags) = alu::sub16(cpu.wide(Slot::Accumulator), value);
+    cpu.apply_result_flags(flags);
+    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
+    true
+}
+
+fn load_pair(ram: &GuestRam, segment: u16, offset: u16) -> Option<u16> {
+    let low = ram.load(segment, offset)?;
+    let high = ram.load(segment, offset.wrapping_add(1))?;
+    Some(u16::from_le_bytes([low, high]))
+}
+
 fn scan_once(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     let dest = cpu.wide(Slot::Dest);
     let Some(value) = ram.load(cpu.selector(Segment::Extra), dest) else {
@@ -1917,12 +1967,13 @@ fn repeat(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
         return Outcome::Fault(opcode);
     };
     let stop_when_zero = opcode == 0xF2;
-    let compare = matches!(next, 0xA6 | 0xAE);
+    let compare = matches!(next, 0xA6 | 0xA7 | 0xAE | 0xAF);
     while cpu.wide(Slot::Count) != 0 {
         let ok = match next {
             0xA4 => copy_string(cpu, ram),
             0xA5 => copy_string_word(cpu, ram),
             0xA6 => compare_string(cpu, ram),
+            0xA7 => compare_string_word(cpu, ram),
             0xAA => {
                 let dest = cpu.wide(Slot::Dest);
                 ram.store(
@@ -1934,7 +1985,10 @@ fn repeat(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
                     true
                 }
             }
+            0xAB => store_word(cpu, ram),
+            0xAD => load_word(cpu, ram),
             0xAE => scan_once(cpu, ram),
+            0xAF => scan_word(cpu, ram),
             _ => return Outcome::Fault(opcode),
         };
         if !ok {

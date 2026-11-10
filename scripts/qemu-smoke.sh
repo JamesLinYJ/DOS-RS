@@ -1241,7 +1241,8 @@ run_one() {
 		|| ! grep -q "Allocatable memory size is 605952" "$out" \
 		|| ! grep -q "CMD ERRORLEVEL 1" "$out" \
 		|| ! grep -q "Couldn't open  menu creation files." "$out" \
-		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out"; then
+		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out" \
+		|| ! grep -qF "usage: cl [ option... ] filename... [ -link linkoption... ]" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

@@ -261,6 +261,11 @@ At lest one filespec ( for .SKL ) needed.
 
 	Two must be given if default message file is not wonted.
 CMD ERRORLEVEL 1
+Microsoft (R) C Optimizing Compiler Version 5.10
+Copyright (c) Microsoft Corp 1984, 1985, 1986, 1987, 1988. All rights reserved.
+
+usage: cl [ option... ] filename... [ -link linkoption... ]
+CMD ERRORLEVEL 1
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 OP LEA 10

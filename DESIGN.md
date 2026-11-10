@@ -150,6 +150,8 @@ Opcode `8D` with a register source is not a memory operand. Compat16's `execute_
 
 `MENUBLD.EXE` is the menu builder from that same tree, `v4.0/src/TOOLS/MENUBLD.EXE`, under the same MIT license. The shell runs it with an empty tail. It prints `Couldn't open  menu creation files.` and returns status 1.
 
-`NOSRVBLD.EXE` is the message-file builder from that same tree, `v4.0/src/TOOLS/NOSRVBLD.EXE`, under the same MIT license. The volume is 400 sectors and the file allocation table is two sectors, so this tool still fits beside the packed output. The shell runs it with an empty tail. It prints `At lest one filespec ( for .SKL ) needed.` and returns status 1.
+`NOSRVBLD.EXE` is the message-file builder from that same tree, `v4.0/src/TOOLS/NOSRVBLD.EXE`, under the same MIT license. The file allocation table is two sectors, so this tool still fits beside the packed output. The shell runs it with an empty tail. It prints `At lest one filespec ( for .SKL ) needed.` and returns status 1.
+
+Repeated word string operations `F3 AB`, `F3 A7`, `F3 AD`, and `F3 AF` store, compare, load, and scan a word on each count. `CL.EXE` is the Microsoft C 5.10 compiler driver from that same tree, `v4.0/src/TOOLS/CL.EXE`, under the same MIT license. The volume is 512 sectors so the driver fits. The shell runs it with an empty tail. It prints `usage: cl [ option... ] filename... [ -link linkoption... ]` and returns status 1.
 
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.
