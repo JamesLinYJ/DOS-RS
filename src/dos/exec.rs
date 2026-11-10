@@ -73,6 +73,20 @@ fn name_is_command(name: *const u8) -> bool {
     unsafe { *name.add(index) == 0 }
 }
 
+const INVALID_FUNCTION: u16 = 1;
+const FILE_NOT_FOUND: u16 = 2;
+
+/// COM files have no `MZ` header. `COMMAND.COM` on this disk is a COM image.
+pub fn dispatch(al: u8, name: *const u8) -> Result<(), u16> {
+    if !function_ok(al) {
+        return Err(INVALID_FUNCTION);
+    }
+    if !image_has_command(name) {
+        return Err(FILE_NOT_FOUND);
+    }
+    Ok(())
+}
+
 /// INT 21h AH=4Bh AL=0. True when the exec loaded `COMMAND.COM`.
 pub fn invoke() -> bool {
     let name = b"COMMAND.COM\0";
@@ -100,4 +114,39 @@ pub fn invoke() -> bool {
         eax as u16
     };
     ax & 0xff == 0 && command_payload().is_some()
+}
+
+pub fn show() {
+    let bad = call(2, b"COMMAND.COM\0");
+    let missing = call(0, b"NONE.COM\0");
+    let loaded = call(0, b"COMMAND.COM\0");
+    let com = (loaded & 0xff) == 0
+        && command_payload().is_some_and(|b| b.len() < 2 || b[0] != b'M' || b[1] != b'Z');
+    crate::bios::mscon::con_write_bytes(b"EXEC FN");
+    put_hex8(bad as u8);
+    crate::bios::mscon::con_write_bytes(b" NF");
+    put_hex8(missing as u8);
+    crate::bios::mscon::con_write_bytes(if com { b" COM\r\n" } else { b" EXE\r\n" });
+}
+
+fn call(al: u8, name: &[u8]) -> u16 {
+    let mut eax = 0x4B00u32 | u32::from(al);
+    let edx = name.as_ptr() as u32;
+    unsafe {
+        core::arch::asm!(
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
+}
+
+fn put_hex8(value: u8) {
+    let hex = b"0123456789ABCDEF";
+    crate::bios::mscon::con_write_bytes(&[
+        hex[(value >> 4) as usize],
+        hex[(value & 0x0f) as usize],
+    ]);
 }

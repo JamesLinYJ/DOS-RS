@@ -215,6 +215,8 @@ fn boot(gate: usize) -> ! {
         dos::buf::show();
         // IOCTL on a closed handle, removable media, and the path checks.
         dos::ioctl::show();
+        // Exec rejects AL=2, misses a name, and loads COMMAND.COM as a COM file.
+        dos::exec::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

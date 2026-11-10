@@ -366,12 +366,9 @@ fn std_con_string_output(frame: &mut LogicalFrame) {
 /// AH=4Bh. AL is the exec function. 0, 1, and 3 load. 2 is rejected.
 fn exec_program(frame: &mut LogicalFrame) {
     let al = (frame.ax & 0xff) as u8;
-    if !crate::dos::exec::function_ok(al) {
-        frame.set_al(Al(1));
-        return;
-    }
-    if !crate::dos::exec::image_has_command(frame.dx as u32 as *const u8) {
-        frame.set_al(Al(2));
+    match crate::dos::exec::dispatch(al, frame.dx as u32 as *const u8) {
+        Ok(_) => frame.set_al(Al(0)),
+        Err(code) => frame.store_ax(DosWord(code)),
     }
 }
 
