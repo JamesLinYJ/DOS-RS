@@ -317,6 +317,8 @@ fn boot(gate: usize) -> ! {
         dos::stdsw::show();
         // Line editor: Ctrl-F is skipped, and escape copies from the template.
         dos::strin::show();
+        // Date and time: 1980 through 2099, with leap day and packed fields.
+        dos::time::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

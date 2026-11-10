@@ -747,6 +747,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TIME Y07BC M01 D01 W02 C0000 EARLYFF LATEFF MFF DFF FEB1D C003B N29FF T00 HRFF MNFF SCFF HDFF P0061 K63D4 R07BC0301" "$out"; then
+		echo "$name missing time" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
