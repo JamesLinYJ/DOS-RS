@@ -1238,12 +1238,16 @@ run_one() {
 		|| ! grep -q "PARSE 2 HELLO    COM 0" "$out" \
 		|| ! grep -q "WILD 1 ???????? ???" "$out" \
 		|| ! grep -q "CTRL 0 1 BOOT 1" "$out" \
+		|| ! grep -q "EXT 0002 08 03 02" "$out" \
+		|| ! grep -q "PSP 0B00" "$out" \
+		|| ! grep -q "DUP2 OK" "$out" \
+		|| ! grep -q "FN87 0001 1" "$out" \
 		|| ! grep -q "CMD DIR FIX2.EXE" "$out" \
 		|| ! grep -q "CMD DIR PACKED.EXE" "$out" \
 		|| ! grep -q "PACKED 2A00 4D5A OK" "$out" \
 		|| grep -q "CMD ERRORLEVEL /" "$out" \
 		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
-		|| ! grep -q "BuildMsg - PSP at 0000" "$out" \
+		|| ! grep -q "BuildMsg - PSP at 0b00" "$out" \
 		|| ! grep -q "Allocatable memory size is 606208" "$out" \
 		|| ! grep -q "CMD ERRORLEVEL 1" "$out" \
 		|| ! grep -q "Couldn't open  menu creation files." "$out" \

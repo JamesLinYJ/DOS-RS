@@ -243,12 +243,12 @@ CMD ERRORLEVEL @
 CMD COPY OK
 CMD DIR FIX2.EXE
 Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
-BuildMsg - PSP at 0000
-Program memory size is 0
+BuildMsg - PSP at 0b00
+Program memory size is 8026
 Allocatable memory size is 606208
 Processing []
 
- Function 3D, Error 22784, Class 0, Action 0, Locus 0 
+ Function 3D, Error 2, Class 8, Action 3, Locus 2 
   InRegs:
   AX:3D00 BX:11F0 CX:0001 DX:3A43 SI:28EE DI:0001 DS:0F5A ES:0082
   DS:DX -> []
@@ -345,8 +345,8 @@ CMD DIR MENUM.C
 CMD TYPE /* menu-ok */
 int menu(void) { return 1; }
 
-BuildMsg - PSP at b817
-Program memory size is 0
+BuildMsg - PSP at 0b00
+Program memory size is 8026
 Allocatable memory size is 606208
 Processing [BMSG.SKL]
  Utility Name = [BMSG]
@@ -372,6 +372,10 @@ CMD ERRORLEVEL 3
 PARSE 2 HELLO    COM 0
 WILD 1 ???????? ???
 CTRL 0 1 BOOT 1
+EXT 0002 08 03 02
+PSP 0B00
+DUP2 OK
+FN87 0001 1
 EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKFIX 0ABC 0020
