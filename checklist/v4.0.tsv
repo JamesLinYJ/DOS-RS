@@ -828,7 +828,7 @@ v4.0/src/DOS/MSIOCTL.ASM	text	partial	src/dos/msioctl.rs
 v4.0/src/DOS/MSPROC.ASM	text	partial	src/dos/msproc.rs
 v4.0/src/DOS/MSSW.ASM	text	partial	src/dos/mssw.rs
 v4.0/src/DOS/MS_TABLE.ASM	text	untranslated	src/dos/ms_table.rs
-v4.0/src/DOS/NSTDOS.ASM	text	untranslated	src/dos/nstdos.rs
+v4.0/src/DOS/NSTDOS.ASM	text	partial	src/dos/nstdos.rs
 v4.0/src/DOS/OPEN.ASM	text	untranslated	src/dos/open.rs
 v4.0/src/DOS/PARSE.ASM	text	partial	src/dos/parse.rs
 v4.0/src/DOS/PATH.ASM	text	partial	src/dos/path.rs

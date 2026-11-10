@@ -293,6 +293,8 @@ fn boot(gate: usize) -> ! {
         dos::stddosme::show();
         // Share printf prints user id, a colon, and process id.
         dos::shrprint::show();
+        // Non-resident constants: data version 1 and retry count 3.
+        dos::nstdos::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
