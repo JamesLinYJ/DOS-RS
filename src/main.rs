@@ -390,6 +390,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tspc::show();
         // /E accepts 160 through 32768. /C is not the last switch.
         cmd::command::uinit::show();
+        // COMP is a COM file. Its entry is 100h.
+        cmd::comp::comp1::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
