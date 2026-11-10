@@ -35,6 +35,9 @@ fn boot(gate: usize) -> ! {
     if bios::msdisk::read_floppy_boot(&mut floppy) {
         puts("DSKF55AA\n");
     }
+    puts("MED");
+    put_hex16(bios::msdisk::media_check() as u16);
+    puts("\n");
     let mut clock = [0u8; 6];
     let _clock_status = bios::msclock::read_clock(&mut clock);
     puts("CLK");

@@ -12,6 +12,9 @@ const COUNT: usize = 18;
 const ROMREAD: u8 = 2;
 const MAXERR: u16 = 5;
 const FNON_REMOVABLE: u16 = 0x0001;
+const FCHANGED_BY_FORMAT: u16 = 0x0100;
+/// `MSBDATA.INC` `Secrete_Code`. The word is the two characters `jk`.
+const SECRETE_CODE: u16 = u16::from_le_bytes(*b"jk");
 const FTOOBIG: u8 = 0x80;
 const FFHARDFILE: u8 = 5;
 const ERROR_AH: u16 = 0x8100;
@@ -72,6 +75,26 @@ static mut DISK: Disk = Disk {
     lsterr: 0,
     ptrsav: 0,
 };
+
+/// `MEDIA$CHK` for the fixed disk. `Secrete_Code` is `jk`, the disk is not
+/// removable, and format has not changed it, so the result is 1 (no change).
+pub fn media_check() -> i16 {
+    if SECRETE_CODE != u16::from_le_bytes(*b"jk") {
+        return 0;
+    }
+    let flags = disk().bds.flags;
+    let mut si: i16 = 1;
+    if flags & FCHANGED_BY_FORMAT != 0 {
+        if flags & FNON_REMOVABLE != 0 {
+            si = -1;
+        } else {
+            si = 0;
+        }
+    } else if flags & FNON_REMOVABLE == 0 {
+        si = 0;
+    }
+    si
+}
 
 /// Read one sector at sector 0 of logical drive 0. Returns the status word.
 pub fn read_sector0(buffer: &mut [u8]) -> u16 {

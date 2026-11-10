@@ -8,6 +8,8 @@ After the AUX line, the kernel reads one sector from logical drive 0. INT 13h re
 - `disk-read-x86_64` prints `DSK8102` after `AUX` on x86_64.
 - `disk-floppy-i686` prints `DSKF55AA` on i686.
 - `disk-floppy-x86_64` prints `DSKF55AA` on x86_64.
+- `disk-media-i686` prints `MED0001` on i686.
+- `disk-media-x86_64` prints `MED0001` on x86_64.
 
 ## How to get to it (user POV)
 

@@ -87,6 +87,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "MED0001" "$out"; then
+		echo "$name missing media check" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "CLK00000000" "$out"; then
 		echo "$name missing clock line" >&2
 		cat "$out" >&2
