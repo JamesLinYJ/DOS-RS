@@ -9,5 +9,8 @@ pub mod cpmio;
 pub mod cpmio2;
 pub mod disp;
 pub mod exec;
+pub mod file;
 pub mod getset;
 pub mod handle;
+pub mod path;
+pub mod search;

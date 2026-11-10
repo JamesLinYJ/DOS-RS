@@ -1,62 +1,23 @@
 //! `CATALOG` and `ERASE` from `CMD/COMMAND/TCMD1A.ASM` and `TCMD1B.ASM`.
 //!
-//! The root starts as the boot image. `DIR` prints message 1048 and the
-//! live 8.3 names. `DEL` and `ERASE` mark a matching name deleted.
+//! The names come from INT 21h AH=4Eh and AH=4Fh. Delete, rename, copy,
+//! and the directory calls are the matching DOS functions.
+
+use core::arch::asm;
 
 use crate::bios::mscon::con_write_bytes;
 
-const IMAGE: &[u8] = include_bytes!("../../../disks/msload.img");
-
-#[derive(Clone, Copy)]
-struct Ent {
-    name: [u8; 11],
-    live: bool,
-    dir: bool,
-}
-
-static mut ROOT: [Ent; 16] = [Ent {
-    name: [0; 11],
-    live: false,
-    dir: false,
-}; 16];
-static mut READY: bool = false;
-static mut CWD: [u8; 32] = *b"A:\\\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
-static mut CWD_LEN: usize = 3;
-
-fn ensure() {
-    unsafe {
-        if READY {
-            return;
-        }
-        let root = 3 * 512;
-        let mut index = 0usize;
-        while index < 16 {
-            let entry = &IMAGE[root + index * 32..root + index * 32 + 32];
-            if entry[0] == 0 {
-                break;
-            }
-            if entry[0] != 0xe5 && entry[11] & 0x08 == 0 {
-                let mut name = [0u8; 11];
-                name.copy_from_slice(&entry[..11]);
-                ROOT[index].name = name;
-                ROOT[index].live = true;
-            }
-            index += 1;
-        }
-        READY = true;
-    }
-}
-
 pub fn name_exists(name: &[u8]) -> bool {
-    let Some(packed) = pack_name(name) else {
-        return false;
-    };
-    ensure();
-    find_live(&packed).is_some()
+    let mut named = [0u8; 16];
+    let n = name.len().min(15);
+    named[..n].copy_from_slice(&name[..n]);
+    let mut dta = [0u8; 48];
+    set_dta(dta.as_mut_ptr());
+    dos_dx(0x4e, named.as_ptr(), 0x10) == 0
 }
 
 pub fn cwd_text() -> &'static [u8] {
-    unsafe { &CWD[..CWD_LEN] }
+    crate::dos::search::cwd_text()
 }
 
 pub fn dir_cmd(tail: &[u8]) {
@@ -64,27 +25,21 @@ pub fn dir_cmd(tail: &[u8]) {
         con_write_bytes(b"File not found\r\n");
         return;
     }
-    ensure();
-    con_write_bytes(b"Directory of  ");
-    con_write_bytes(unsafe { &CWD[..CWD_LEN] });
+    let mut cwd = [0u8; 32];
+    let _ = dos_si(0x47, cwd.as_mut_ptr());
+    con_write_bytes(b"Directory of  A:");
+    con_write_bytes(asciiz(&cwd));
     con_write_bytes(b"\r\n");
-    if unsafe { CWD_LEN != 3 } {
+    if asciiz(&cwd) != b"\\" {
         return;
     }
-    let mut index = 0usize;
-    while index < 16 {
-        let (live, name, dir) = unsafe { (ROOT[index].live, ROOT[index].name, ROOT[index].dir) };
-        if live {
-            con_write_bytes(&name[..8]);
-            con_write_bytes(b" ");
-            if dir {
-                con_write_bytes(b"<DIR>");
-            } else {
-                con_write_bytes(&name[8..11]);
-            }
-            con_write_bytes(b"\r\n");
-        }
-        index += 1;
+    let mut dta = [0u8; 48];
+    set_dta(dta.as_mut_ptr());
+    let spec = b"*.*\0";
+    let mut code = dos_dx(0x4e, spec.as_ptr(), 0x10);
+    while code == 0 {
+        print_dta(&dta);
+        code = dos_ax(0x4f);
     }
 }
 
@@ -94,106 +49,33 @@ pub fn mkdir_cmd(tail: &[u8]) {
         con_write_bytes(b"Invalid directory\r\n");
         return;
     }
-    let Some(packed) = pack_name(name) else {
-        con_write_bytes(b"Invalid directory\r\n");
-        return;
-    };
-    ensure();
-    if find_live(&packed).is_some() {
+    let named = asciiz_token(name);
+    let code = dos_dx(0x39, named.as_ptr(), 0);
+    if code == 5 {
         con_write_bytes(b"Directory already exists\r\n");
-        return;
+    } else if code != 0 {
+        con_write_bytes(b"Unable to create directory\r\n");
     }
-    let mut index = 0usize;
-    while index < 16 {
-        if unsafe { !ROOT[index].live } {
-            unsafe {
-                ROOT[index].name = packed;
-                ROOT[index].live = true;
-                ROOT[index].dir = true;
-            }
-            return;
-        }
-        index += 1;
-    }
-    con_write_bytes(b"Unable to create directory\r\n");
 }
 
 pub fn chdir_cmd(tail: &[u8]) {
     let name = token(tail);
-    if name.is_empty() || name == b"\\" {
-        unsafe {
-            CWD[..3].copy_from_slice(b"A:\\");
-            CWD_LEN = 3;
-        }
-        return;
-    }
-    let Some(packed) = pack_name(name) else {
+    let named = if name.is_empty() { asciiz_token(b"\\") } else { asciiz_token(name) };
+    if dos_dx(0x3b, named.as_ptr(), 0) != 0 {
         con_write_bytes(b"Invalid directory\r\n");
-        return;
-    };
-    ensure();
-    let Some(index) = find_live(&packed) else {
-        con_write_bytes(b"Invalid directory\r\n");
-        return;
-    };
-    if unsafe { !ROOT[index].dir } {
-        con_write_bytes(b"Invalid directory\r\n");
-        return;
-    }
-    unsafe {
-        CWD[..3].copy_from_slice(b"A:\\");
-        let n = packed.len().min(8);
-        let mut end = 0usize;
-        while end < n && packed[end] != b' ' {
-            CWD[3 + end] = packed[end];
-            end += 1;
-        }
-        CWD_LEN = 3 + end;
     }
 }
 
 pub fn rmdir_cmd(tail: &[u8]) {
     let name = token(tail);
-    let Some(packed) = pack_name(name) else {
-        con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
-        return;
-    };
-    ensure();
-    if unsafe { CWD_LEN > 3 } {
-        let cur = unsafe { &CWD[3..CWD_LEN] };
-        if cur.eq_ignore_ascii_case(&trim_name(&packed)) {
-            con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
-            return;
-        }
-    }
-    let Some(index) = find_live(&packed) else {
-        con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
-        return;
-    };
-    if unsafe { !ROOT[index].dir } {
+    if name.is_empty() {
         con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
         return;
     }
-    unsafe { ROOT[index].live = false }
-}
-
-fn find_live(packed: &[u8; 11]) -> Option<usize> {
-    let mut index = 0usize;
-    while index < 16 {
-        if unsafe { ROOT[index].live && ROOT[index].name.eq_ignore_ascii_case(packed) } {
-            return Some(index);
-        }
-        index += 1;
+    let named = asciiz_token(name);
+    if dos_dx(0x3a, named.as_ptr(), 0) != 0 {
+        con_write_bytes(b"Invalid path, not directory,\r\nor directory not empty\r\n");
     }
-    None
-}
-
-fn trim_name(packed: &[u8; 11]) -> &[u8] {
-    let mut end = 8usize;
-    while end > 0 && packed[end - 1] == b' ' {
-        end -= 1;
-    }
-    &packed[..end]
 }
 
 pub fn copy_cmd(tail: &[u8]) {
@@ -204,44 +86,25 @@ pub fn copy_cmd(tail: &[u8]) {
         con_write_bytes(b"File not found\r\n");
         return;
     }
-    let (Some(from), Some(to)) = (pack_name(src), pack_name(dst)) else {
-        con_write_bytes(b"File not found\r\n");
-        return;
-    };
-    if from.eq_ignore_ascii_case(&to) {
+    if src.eq_ignore_ascii_case(dst) {
         con_write_bytes(b"File cannot be copied onto itself\r\n");
         return;
     }
-    ensure();
-    let mut found = false;
-    let mut index = 0usize;
-    while index < 16 {
-        if unsafe { ROOT[index].live && ROOT[index].name.eq_ignore_ascii_case(&from) } {
-            found = true;
-        }
-        if unsafe { ROOT[index].live && ROOT[index].name.eq_ignore_ascii_case(&to) } {
-            con_write_bytes(b"File cannot be copied onto itself\r\n");
-            return;
-        }
-        index += 1;
-    }
-    if !found {
+    let source = asciiz_token(src);
+    let dest = asciiz_token(dst);
+    let mut dta = [0u8; 48];
+    set_dta(dta.as_mut_ptr());
+    if dos_dx(0x4e, source.as_ptr(), 0x10) != 0 {
         con_write_bytes(b"File not found\r\n");
         return;
     }
-    index = 0;
-    while index < 16 {
-        if unsafe { !ROOT[index].live } {
-            unsafe {
-                ROOT[index].name = to;
-                ROOT[index].live = true;
-                ROOT[index].dir = false;
-            }
-            return;
-        }
-        index += 1;
+    if dos_dx(0x4e, dest.as_ptr(), 0x10) == 0 {
+        con_write_bytes(b"File cannot be copied onto itself\r\n");
+        return;
     }
-    con_write_bytes(b"File creation error\r\n");
+    if dos_dx(0x3c, dest.as_ptr(), 0) != 0 {
+        con_write_bytes(b"File creation error\r\n");
+    }
 }
 
 pub fn rename_cmd(tail: &[u8]) {
@@ -252,30 +115,11 @@ pub fn rename_cmd(tail: &[u8]) {
         con_write_bytes(b"Duplicate file name or file not found\r\n");
         return;
     }
-    let (Some(from), Some(to)) = (pack_name(src), pack_name(dst)) else {
+    let source = asciiz_token(src);
+    let dest = asciiz_token(dst);
+    if dos_di(0x56, source.as_ptr(), dest.as_ptr()) != 0 {
         con_write_bytes(b"Duplicate file name or file not found\r\n");
-        return;
-    };
-    ensure();
-    let mut index = 0usize;
-    while index < 16 {
-        let live = unsafe { ROOT[index].live };
-        if live && unsafe { ROOT[index].name.eq_ignore_ascii_case(&to) } {
-            con_write_bytes(b"Duplicate file name or file not found\r\n");
-            return;
-        }
-        index += 1;
     }
-    index = 0;
-    while index < 16 {
-        let live = unsafe { ROOT[index].live };
-        if live && unsafe { ROOT[index].name.eq_ignore_ascii_case(&from) } {
-            unsafe { ROOT[index].name = to }
-            return;
-        }
-        index += 1;
-    }
-    con_write_bytes(b"Duplicate file name or file not found\r\n");
 }
 
 pub fn erase_cmd(tail: &[u8]) {
@@ -284,21 +128,121 @@ pub fn erase_cmd(tail: &[u8]) {
         con_write_bytes(b"File not found\r\n");
         return;
     }
-    let Some(packed) = pack_name(name) else {
+    let named = asciiz_token(name);
+    if dos_dx(0x41, named.as_ptr(), 0) != 0 {
         con_write_bytes(b"File not found\r\n");
-        return;
-    };
-    ensure();
-    let mut index = 0usize;
-    while index < 16 {
-        let live = unsafe { ROOT[index].live };
-        if live && unsafe { ROOT[index].name.eq_ignore_ascii_case(&packed) } {
-            unsafe { ROOT[index].live = false }
-            return;
-        }
-        index += 1;
     }
-    con_write_bytes(b"File not found\r\n");
+}
+
+fn print_dta(dta: &[u8]) {
+    let attr = dta[0x15];
+    let name = asciiz(&dta[0x1e..]);
+    let mut base = [b' '; 8];
+    let mut ext = [b' '; 3];
+    let mut dot = name.len();
+    let mut i = 0usize;
+    while i < name.len() {
+        if name[i] == b'.' {
+            dot = i;
+            break;
+        }
+        i += 1;
+    }
+    let mut n = 0usize;
+    while n < dot && n < 8 {
+        base[n] = name[n];
+        n += 1;
+    }
+    if dot < name.len() {
+        let mut e = 0usize;
+        while e < 3 && dot + 1 + e < name.len() {
+            ext[e] = name[dot + 1 + e];
+            e += 1;
+        }
+    }
+    con_write_bytes(&base);
+    con_write_bytes(b" ");
+    if attr & 0x10 != 0 {
+        con_write_bytes(b"<DIR>");
+    } else {
+        con_write_bytes(&ext);
+    }
+    con_write_bytes(b"\r\n");
+}
+
+fn asciiz(buf: &[u8]) -> &[u8] {
+    let mut n = 0usize;
+    while n < buf.len() && buf[n] != 0 {
+        n += 1;
+    }
+    &buf[..n]
+}
+
+fn asciiz_token(name: &[u8]) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    let n = name.len().min(15);
+    out[..n].copy_from_slice(&name[..n]);
+    out
+}
+
+fn set_dta(ptr: *mut u8) {
+    let _ = dos_dx(0x1a, ptr as *const u8, 0);
+}
+
+fn dos_ax(ah: u8) -> u16 {
+    let mut eax = u32::from(ah) << 8;
+    unsafe {
+        asm!("int 0x21", inout("eax") eax, clobber_abi("C"));
+    }
+    eax as u16
+}
+
+fn dos_dx(ah: u8, dx: *const u8, cx: u16) -> u16 {
+    let mut eax = u32::from(ah) << 8;
+    let edx = dx as u32;
+    let ecx = u32::from(cx);
+    unsafe {
+        asm!(
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            in("ecx") ecx,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
+}
+
+fn dos_si(ah: u8, si: *mut u8) -> u16 {
+    let mut eax = u32::from(ah) << 8;
+    let ptr = si as u32;
+    unsafe {
+        asm!(
+            "mov esi, {p:e}",
+            "int 0x21",
+            inout("eax") eax,
+            p = in(reg) ptr,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
+}
+
+fn dos_di(ah: u8, dx: *const u8, di: *const u8) -> u16 {
+    let mut eax = u32::from(ah) << 8;
+    let edx = dx as u32;
+    let dest = di as u32;
+    unsafe {
+        asm!(
+            "mov edi, {d:e}",
+            "int 0x21",
+            inout("eax") eax,
+            in("edx") edx,
+            d = in(reg) dest,
+            clobber_abi("C"),
+        );
+    }
+    eax as u16
 }
 
 fn pack_name(name: &[u8]) -> Option<[u8; 11]> {

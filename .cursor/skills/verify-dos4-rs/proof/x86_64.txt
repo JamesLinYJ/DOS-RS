@@ -48,7 +48,7 @@ Current time is  01:02:03.04
 Directory of  A:\
 IO       SYS
 COMMAND  COM
-\COMMAND.COM
+ÿ
 File not found
 Directory of  A:\
 COMMAND  COM

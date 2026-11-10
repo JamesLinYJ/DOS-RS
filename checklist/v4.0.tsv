@@ -798,7 +798,7 @@ v4.0/src/DOS/FAT.ASM	text	untranslated	src/dos/fat.rs
 v4.0/src/DOS/FCB.ASM	text	untranslated	src/dos/fcb.rs
 v4.0/src/DOS/FCBIO2.ASM	text	untranslated	src/dos/fcbio2.rs
 v4.0/src/DOS/FCBIO.ASM	text	untranslated	src/dos/fcbio.rs
-v4.0/src/DOS/FILE.ASM	text	untranslated	src/dos/file.rs
+v4.0/src/DOS/FILE.ASM	text	partial	src/dos/file.rs
 v4.0/src/DOS/FINFO.ASM	text	untranslated	src/dos/finfo.rs
 v4.0/src/DOS/GETSET.ASM	text	partial	src/dos/getset.rs
 v4.0/src/DOS/HANDLE.ASM	text	partial	src/dos/handle.rs
@@ -831,12 +831,12 @@ v4.0/src/DOS/MS_TABLE.ASM	text	untranslated	src/dos/ms_table.rs
 v4.0/src/DOS/NSTDOS.ASM	text	untranslated	src/dos/nstdos.rs
 v4.0/src/DOS/OPEN.ASM	text	untranslated	src/dos/open.rs
 v4.0/src/DOS/PARSE.ASM	text	untranslated	src/dos/parse.rs
-v4.0/src/DOS/PATH.ASM	text	untranslated	src/dos/path.rs
+v4.0/src/DOS/PATH.ASM	text	partial	src/dos/path.rs
 v4.0/src/DOS/PRINT.ASM	text	untranslated	src/dos/print.rs
 v4.0/src/DOS/PROC.ASM	text	untranslated	src/dos/proc.rs
 v4.0/src/DOS/RENAME.ASM	text	untranslated	src/dos/rename.rs
 v4.0/src/DOS/ROM.ASM	text	untranslated	src/dos/rom.rs
-v4.0/src/DOS/SEARCH.ASM	text	untranslated	src/dos/search.rs
+v4.0/src/DOS/SEARCH.ASM	text	partial	src/dos/search.rs
 v4.0/src/DOS/SEGCHECK.ASM	text	untranslated	src/dos/segcheck.rs
 v4.0/src/DOS/SHARE.ASM	text	untranslated	src/dos/share.rs
 v4.0/src/DOS/SHRPRINT.ASM	text	untranslated	src/dos/shrprint.rs

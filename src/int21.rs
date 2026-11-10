@@ -167,10 +167,20 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     let mut slots = [in_range_stub as fn(&mut LogicalFrame); 0x6D];
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
     slots[0x11] = dir_search_first as fn(&mut LogicalFrame);
+    slots[0x1A] = set_dta as fn(&mut LogicalFrame);
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
+    slots[0x39] = mkdir as fn(&mut LogicalFrame);
+    slots[0x3A] = rmdir as fn(&mut LogicalFrame);
+    slots[0x3B] = chdir as fn(&mut LogicalFrame);
+    slots[0x3C] = create_file as fn(&mut LogicalFrame);
     slots[0x3D] = open_handle as fn(&mut LogicalFrame);
     slots[0x3F] = read_handle as fn(&mut LogicalFrame);
+    slots[0x41] = delete_file as fn(&mut LogicalFrame);
+    slots[0x47] = get_cwd as fn(&mut LogicalFrame);
+    slots[0x4E] = find_first as fn(&mut LogicalFrame);
+    slots[0x4F] = find_next as fn(&mut LogicalFrame);
+    slots[0x56] = rename_file as fn(&mut LogicalFrame);
     slots[0x2A] = get_date as fn(&mut LogicalFrame);
     slots[0x2B] = set_date as fn(&mut LogicalFrame);
     slots[0x2C] = get_time as fn(&mut LogicalFrame);
@@ -201,6 +211,58 @@ pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
         return;
     }
     DISPATCH[ah.index()](frame);
+}
+
+/// AH=1Ah. DX is the DTA.
+fn set_dta(frame: &mut LogicalFrame) {
+    crate::dos::search::set_dta(frame.dx as *mut u8);
+}
+
+/// AH=4Eh. CX is the search attribute. DX is the ASCIIZ name.
+fn find_first(frame: &mut LogicalFrame) {
+    let code = crate::dos::search::find_first(frame.dx as *const u8, frame.cx as u8);
+    frame.store_ax(DosWord(code));
+}
+
+/// AH=4Fh. The DTA from find-first supplies the continuation.
+fn find_next(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::search::find_next()));
+}
+
+/// AH=41h. DX is the ASCIIZ name.
+fn delete_file(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::file::delete(frame.dx as *const u8)));
+}
+
+/// AH=56h. DX is the old name and DI is the new name.
+fn rename_file(frame: &mut LogicalFrame) {
+    let code = crate::dos::file::rename(frame.dx as *const u8, frame.di as *const u8);
+    frame.store_ax(DosWord(code));
+}
+
+/// AH=3Ch. DX is the new name.
+fn create_file(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::file::create(frame.dx as *const u8)));
+}
+
+/// AH=39h.
+fn mkdir(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::path::mkdir(frame.dx as *const u8)));
+}
+
+/// AH=3Bh.
+fn chdir(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::path::chdir(frame.dx as *const u8)));
+}
+
+/// AH=3Ah.
+fn rmdir(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::path::rmdir(frame.dx as *const u8)));
+}
+
+/// AH=47h. SI receives the ASCIIZ path without the drive letter.
+fn get_cwd(frame: &mut LogicalFrame) {
+    frame.store_ax(DosWord(crate::dos::path::getcwd(frame.si as *mut u8)));
 }
 
 /// AH=11h. This image has no volume label, so the search returns AL=0xFF.
