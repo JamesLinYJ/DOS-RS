@@ -5,7 +5,7 @@
 //! that matches is the only one run.
 
 use super::tdata::{COMTAB, F_SWITCH_ALLOWED};
-use super::{tcmd1a, tcmd1b, tcmd2a, tenv, tpipe, tucode};
+use super::{tbatch, tcmd1a, tcmd1b, tcmd2a, tenv, tpipe, tucode};
 
 pub fn dispatch(line: &[u8]) -> bool {
     let (name, rest) = split_name(line);
@@ -37,6 +37,26 @@ pub fn dispatch(line: &[u8]) -> bool {
     }
     if name.eq_ignore_ascii_case(b"VERIFY") {
         tucode::verify_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"IF") {
+        tbatch::if_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"CALL") {
+        tbatch::call_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"GOTO") {
+        tbatch::goto_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"FOR") {
+        tbatch::for_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"SHIFT") {
+        tbatch::shift_cmd(rest);
         return true;
     }
     if name.eq_ignore_ascii_case(b"PROMPT") {

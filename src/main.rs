@@ -190,6 +190,11 @@ fn boot(gate: usize) -> ! {
         let _rd_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
         // PROMPT $P$G expands the current directory and the greater-than sign.
         let _prompt = cmd::command::tmisc1::dispatch(b"PROMPT $P$G\r");
+        let _if = cmd::command::tmisc1::dispatch(b"IF EXIST FOO.COM ECHO ifok\r");
+        let _call = cmd::command::tmisc1::dispatch(b"CALL\r");
+        let _goto = cmd::command::tmisc1::dispatch(b"GOTO NOWHERE\r");
+        let _for = cmd::command::tmisc1::dispatch(b"FOR %A IN (X) DO ECHO forok\r");
+        let _shift = cmd::command::tmisc1::dispatch(b"SHIFT\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

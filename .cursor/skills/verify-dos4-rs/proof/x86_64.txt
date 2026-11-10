@@ -66,3 +66,7 @@ Directory of  A:\
 BAR      COM
 FOO      COM
 A:\>
+ifok
+Batch file missing
+Label not found
+forok

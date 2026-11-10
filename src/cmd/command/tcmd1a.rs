@@ -47,6 +47,14 @@ fn ensure() {
     }
 }
 
+pub fn name_exists(name: &[u8]) -> bool {
+    let Some(packed) = pack_name(name) else {
+        return false;
+    };
+    ensure();
+    find_live(&packed).is_some()
+}
+
 pub fn cwd_text() -> &'static [u8] {
     unsafe { &CWD[..CWD_LEN] }
 }

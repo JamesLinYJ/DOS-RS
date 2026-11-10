@@ -345,6 +345,30 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "ifok" "$out"; then
+		echo "$name missing IF" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Batch file missing" "$out"; then
+		echo "$name missing CALL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "Label not found" "$out"; then
+		echo "$name missing GOTO" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
+	if ! grep -q "forok" "$out"; then
+		echo "$name missing FOR" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2
