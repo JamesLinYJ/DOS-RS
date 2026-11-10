@@ -117,7 +117,7 @@ v4.0/src/CMD/COMMAND/RUCODE.ASM	text	untranslated	src/cmd/command/rucode.rs
 v4.0/src/CMD/COMMAND/TBATCH2.ASM	text	untranslated	src/cmd/command/tbatch2.rs
 v4.0/src/CMD/COMMAND/TBATCH.ASM	text	untranslated	src/cmd/command/tbatch.rs
 v4.0/src/CMD/COMMAND/TCMD1A.ASM	text	untranslated	src/cmd/command/tcmd1a.rs
-v4.0/src/CMD/COMMAND/TCMD1B.ASM	text	untranslated	src/cmd/command/tcmd1b.rs
+v4.0/src/CMD/COMMAND/TCMD1B.ASM	text	partial	src/cmd/command/tcmd1b.rs
 v4.0/src/CMD/COMMAND/TCMD2A.ASM	text	partial	src/cmd/command/tcmd2a.rs
 v4.0/src/CMD/COMMAND/TCMD2B.ASM	text	untranslated	src/cmd/command/tcmd2b.rs
 v4.0/src/CMD/COMMAND/TCODE.ASM	text	untranslated	src/cmd/command/tcode.rs

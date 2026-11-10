@@ -273,6 +273,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "Volume in drive A has no label" "$out"; then
+		echo "$name missing VOL" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "A>" "$out"; then
 		echo "$name missing command prompt" >&2
 		cat "$out" >&2

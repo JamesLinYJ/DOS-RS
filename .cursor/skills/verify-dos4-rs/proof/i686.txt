@@ -43,3 +43,5 @@ Current date is Tue 01-01-1980
 Current date is Sun 03-04-1984
 Current time is  00:00:00.00
 Current time is  01:02:03.04
+
+ Volume in drive A has no label

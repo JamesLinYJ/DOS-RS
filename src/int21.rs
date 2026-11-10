@@ -166,6 +166,7 @@ const SERIAL_CX: DosWord = DosWord(0x0000);
 const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     let mut slots = [in_range_stub as fn(&mut LogicalFrame); 0x6D];
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
+    slots[0x11] = dir_search_first as fn(&mut LogicalFrame);
     slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
     slots[0x2A] = get_date as fn(&mut LogicalFrame);
@@ -198,6 +199,12 @@ pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
         return;
     }
     DISPATCH[ah.index()](frame);
+}
+
+/// AH=11h. This image has no volume label, so the search returns AL=0xFF.
+fn dir_search_first(frame: &mut LogicalFrame) {
+    let _fcb = frame.dx;
+    frame.set_al(Al(0xff));
 }
 
 /// AH=19h. AL is the default drive. This image leaves it at 0, which is A.

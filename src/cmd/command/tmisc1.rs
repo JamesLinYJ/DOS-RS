@@ -5,7 +5,7 @@
 //! that matches is the only one run.
 
 use super::tdata::{COMTAB, F_SWITCH_ALLOWED};
-use super::{tcmd2a, tenv, tpipe, tucode};
+use super::{tcmd1b, tcmd2a, tenv, tpipe, tucode};
 
 pub fn dispatch(line: &[u8]) -> bool {
     let (name, rest) = split_name(line);
@@ -49,6 +49,10 @@ pub fn dispatch(line: &[u8]) -> bool {
     }
     if name.eq_ignore_ascii_case(b"TIME") {
         tpipe::time_cmd(rest);
+        return true;
+    }
+    if name.eq_ignore_ascii_case(b"VOL") {
+        tcmd1b::volume(rest);
         return true;
     }
     false

@@ -164,6 +164,8 @@ fn boot(gate: usize) -> ! {
         let _time = cmd::command::tmisc1::dispatch(b"TIME\r");
         let _time_set = cmd::command::tmisc1::dispatch(b"TIME 1:02:03.04\r");
         let _time_show = cmd::command::tmisc1::dispatch(b"TIME\r");
+        // VOL searches for a volume label. This disk has none.
+        let _vol = cmd::command::tmisc1::dispatch(b"VOL\r");
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
