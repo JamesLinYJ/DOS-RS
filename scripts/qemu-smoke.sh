@@ -1376,7 +1376,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "usage: exefix <file> <max-alloc> <min-alloc>" "$out"; then
+	if [ "$(grep -c "usage: exefix <file> <max-alloc> <min-alloc>" "$out")" -ne 2 ]; then
 		echo "$name missing exefix" >&2
 		cat "$out" >&2
 		rm -f "$out"

@@ -238,6 +238,8 @@ Copyright (C) Microsoft Corp 1985,1986.  All rights reserved.
 
 
 CMD DIR PACKED.EXE
+usage: exefix <file> <max-alloc> <min-alloc>
+CMD ERRORLEVEL @
 Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
 BuildMsg - PSP at 0000
 Program memory size is 0
