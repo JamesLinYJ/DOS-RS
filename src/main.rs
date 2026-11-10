@@ -432,6 +432,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcomp::compinit::show();
         // A function alone leaves the low byte in place.
         cmd::diskcomp::dcmpmacr::show();
+        // Strike-a-key clears the buffer before a silent read.
+        cmd::diskcomp::dcompms::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

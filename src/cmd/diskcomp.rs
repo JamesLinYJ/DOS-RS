@@ -2,3 +2,4 @@
 
 pub mod compinit;
 pub mod dcmpmacr;
+pub mod dcompms;
