@@ -452,6 +452,8 @@ fn boot(gate: usize) -> ! {
         cmd::diskcopy::dcopyp::show();
         // Classes are linked in the order 1, 2, then A.
         cmd::diskcopy::dcopysm::show();
+        // A function alone leaves the low byte in place.
+        cmd::diskcopy::dcpymacr::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

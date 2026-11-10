@@ -1179,6 +1179,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "DCPYMACR AX4408 AX190E AX0007 TK0000 N003F F00010200 M00120200 L003F0200 PR0005" "$out"; then
+		echo "$name missing copy macros" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
