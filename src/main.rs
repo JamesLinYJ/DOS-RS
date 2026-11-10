@@ -394,6 +394,8 @@ fn boot(gate: usize) -> ! {
         cmd::comp::comp1::show();
         // Ten mismatches end a compare. The end mark is 1Ah in either file.
         cmd::comp::comp2::show();
+        // Extended open keeps the code-page check in bit 8.
+        cmd::comp::compeq::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();
