@@ -274,7 +274,16 @@ CMD DIR LIB.LST
 The number topic(s) and text string(s) written = 57
 Microsoft (R) Overlay Linker  Version 3.65   
 Copyright (C) Microsoft Corp 19LINK : warning L4021: no stack segment
-LINKED OKEXE2BIN 0018 0E1F OK
+LINKED OK
+Microsoft (R) Program Maintenance Utility   Version 1.00.05
+Copyright (c) Microsoft Corp 1987, 1988. All rights reserved.
+
+NMAKE : warning U4013: tools initialization file not found
+	copy makein.txt makeout.txt
+CMD COPY OK
+CMD TYPE nmake-wrote
+
+EXE2BIN 0018 0E1F OK
 EXEFIX 1234 0010
 PACKED 28AF 4D5A OK
 LIB LST __aFFaldiv........affaldiv          __aFFalmul..

@@ -863,12 +863,17 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         return;
     };
     let executable = image.first() == Some(&b'M') && image.get(1) == Some(&b'Z');
-    let Some(mut child) = place_child(&image[..length], ram, executable) else {
+    let segment = if session.break_at > LAUNCH_SEGMENT {
+        session.break_at
+    } else {
+        LAUNCH_SEGMENT
+    };
+    let Some(mut child) = place_child(&image[..length], ram, executable, segment) else {
         cpu.set_carry(true);
         cpu.set_wide(Slot::Accumulator, 8);
         return;
     };
-    copy_command_tail(ram, block_segment, block_offset);
+    copy_command_tail(ram, block_segment, block_offset, segment);
     match drive(&mut child, ram, session, 512) {
         End::Stopped(code) => {
             session.last_code = u16::from(code);
@@ -1017,7 +1022,7 @@ fn path_value(ram: &GuestRam, segment: u16, mut offset: u16) -> bool {
     false
 }
 
-fn copy_command_tail(ram: &mut GuestRam, segment: u16, offset: u16) {
+fn copy_command_tail(ram: &mut GuestRam, segment: u16, offset: u16, prefix: u16) {
     let Some(tail_low) = ram.load(segment, offset.wrapping_add(2)) else {
         return;
     };
@@ -1035,7 +1040,7 @@ fn copy_command_tail(ram: &mut GuestRam, segment: u16, offset: u16) {
     let Some(count) = ram.load(tail_segment, tail_offset) else {
         return;
     };
-    if !ram.store(LAUNCH_SEGMENT, 0x80, count) {
+    if !ram.store(prefix, 0x80, count) {
         return;
     }
     let mut index = 0u16;
@@ -1044,18 +1049,23 @@ fn copy_command_tail(ram: &mut GuestRam, segment: u16, offset: u16) {
         else {
             return;
         };
-        if !ram.store(LAUNCH_SEGMENT, 0x81u16.wrapping_add(index), byte) {
+        if !ram.store(prefix, 0x81u16.wrapping_add(index), byte) {
             return;
         }
         index = index.wrapping_add(1);
     }
 }
 
-fn place_child(image: &[u8], ram: &mut GuestRam, executable: bool) -> Option<CpuState> {
+fn place_child(
+    image: &[u8],
+    ram: &mut GuestRam,
+    executable: bool,
+    segment: u16,
+) -> Option<CpuState> {
     if executable {
-        super::mz::load(image, ram, LAUNCH_SEGMENT)
+        super::mz::load(image, ram, segment)
     } else {
-        place_com(image, ram, LAUNCH_SEGMENT)
+        place_com(image, ram, segment)
     }
 }
 

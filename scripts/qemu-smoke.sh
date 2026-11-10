@@ -1249,7 +1249,9 @@ run_one() {
 		|| ! grep -q "The number topic(s) and text string(s) written = 57" "$out" \
 		|| ! grep -q "Microsoft (R) Overlay Linker  Version 3.65" "$out" \
 		|| ! grep -q "LINKED OK" "$out" \
-		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out"; then
+		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out" \
+		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \
+		|| ! grep -q "nmake-wrote" "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"

@@ -21,12 +21,13 @@ pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
     let instruction = word(image, 20)?;
     let code_disp = word(image, 22)?;
     let load_segment = prefix.wrapping_add(0x0010);
-    let mut offset = 0u16;
-    for byte in image.get(header_bytes..)? {
-        if !ram.store(load_segment, offset, *byte) {
+    let payload = image.get(header_bytes..)?;
+    for (placed, byte) in payload.iter().enumerate() {
+        let segment = load_segment.wrapping_add((placed >> 4) as u16);
+        let offset = (placed & 0xF) as u16;
+        if !ram.store(segment, offset, *byte) {
             return None;
         }
-        offset = offset.wrapping_add(1);
     }
     let mut index = 0u16;
     while index < reloc_count {
