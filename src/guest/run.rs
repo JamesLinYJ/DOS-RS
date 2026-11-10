@@ -36,6 +36,7 @@ pub fn show() {
     show_exec();
     show_image(b"DBOF    EXE", EXE_PREFIX, true, 60000);
     show_image(b"EXEFIX  EXE", EXE_PREFIX, true, 60000);
+    show_image(b"CONVERT EXE", EXE_PREFIX, true, 60000);
 }
 
 fn show_exec() {

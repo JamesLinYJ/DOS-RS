@@ -281,3 +281,4 @@ DBOF Syntax: DBOF Source-file Target-file Hex-start Hex-length
      Hex-start: offset into the file where data starts (up to 8 hex digits)
     Hex-length: length of the data to get (up to 4 hex digits)
 usage: exefix <file> <max-alloc> <min-alloc>
+Usage: Convert [file]

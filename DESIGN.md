@@ -133,3 +133,5 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 `DBOF.EXE` is the dump-binary tool from that same tree, `v4.0/src/TOOLS/DBOF.EXE`, under the same MIT license. With an empty command tail it prints `DBOF Syntax: DBOF Source-file Target-file Hex-start Hex-length`.
 
 `EXEFIX.EXE` is the header fixer from that same tree, `v4.0/src/TOOLS/EXEFIX.EXE`, under the same MIT license. With an empty command tail it prints `usage: exefix <file> <max-alloc> <min-alloc>`.
+
+`CONVERT.EXE` is the file converter from that same tree, `v4.0/src/TOOLS/CONVERT.EXE`, under the same MIT license. With an empty command tail it prints `Usage: Convert [file]`.

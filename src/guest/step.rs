@@ -210,11 +210,16 @@ fn add_immediate(
         return Outcome::Fault(opcode);
     };
     let operation = (modrm >> 3) & 7;
+    let carry = cpu.flags() & 1 != 0;
     let added = alu::add8(left, immediate);
+    let with_carry = alu::adc8(left, immediate, carry);
+    let borrowed = alu::sbb8(left, immediate, carry);
     let subtracted = alu::sub8(left, immediate);
     let (result, flags, store) = match operation {
         0 => (added.0, added.1, true),
         1 => (left | immediate, byte_logic(left | immediate), true),
+        2 => (with_carry.0, with_carry.1, true),
+        3 => (borrowed.0, borrowed.1, true),
         4 => (left & immediate, byte_logic(left & immediate), true),
         5 => (subtracted.0, subtracted.1, true),
         6 => (left ^ immediate, byte_logic(left ^ immediate), true),
@@ -1169,11 +1174,16 @@ fn alter_word(
         return Outcome::Fault(opcode);
     };
     let operation = (modrm >> 3) & 7;
+    let carry = cpu.flags() & 1 != 0;
     let added = alu::add16(left, immediate);
+    let with_carry = alu::adc16(left, immediate, carry);
+    let borrowed = alu::sbb16(left, immediate, carry);
     let subtracted = alu::sub16(left, immediate);
     let (result, flags, store) = match operation {
         0 => (added.0, added.1, true),
         1 => (left | immediate, logic_flags(left | immediate), true),
+        2 => (with_carry.0, with_carry.1, true),
+        3 => (borrowed.0, borrowed.1, true),
         4 => (left & immediate, logic_flags(left & immediate), true),
         5 => (subtracted.0, subtracted.1, true),
         6 => (left ^ immediate, logic_flags(left ^ immediate), true),
