@@ -1217,10 +1217,11 @@ fn load_effective(
     let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
         return Outcome::Fault(opcode);
     };
-    let Operand::Memory { offset, .. } = operand else {
-        return Outcome::Fault(opcode);
+    let value = match operand {
+        Operand::Memory { offset, .. } => offset,
+        Operand::Register(_) => cpu.recent_offset(),
     };
-    cpu.set_wide(Slot::from_index((modrm >> 3) & 7), offset);
+    cpu.set_wide(Slot::from_index((modrm >> 3) & 7), value);
     Outcome::Continue
 }
 
@@ -2038,7 +2039,9 @@ fn decode(
     let (segment, offset) = if mode == 0 && rm == 6 {
         let low = fetch(cpu, ram)?;
         let high = fetch(cpu, ram)?;
-        (Segment::Data, u16::from_le_bytes([low, high]))
+        let direct = u16::from_le_bytes([low, high]);
+        cpu.set_recent_offset(direct);
+        (Segment::Data, direct)
     } else {
         let displacement = match mode {
             0 => 0,
@@ -2052,7 +2055,9 @@ fn decode(
                 u16::from_le_bytes([low, high])
             }
         };
-        address(cpu, rm, displacement)
+        let placed = address(cpu, rm, displacement);
+        cpu.set_recent_offset(placed.1);
+        placed
     };
     Some(Operand::Memory {
         segment: override_segment.unwrap_or(segment),

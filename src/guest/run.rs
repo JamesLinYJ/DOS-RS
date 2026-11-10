@@ -162,6 +162,38 @@ fn show_shell() {
         End::Loop => crate::bios::mscon::con_write_bytes(b"CMD LOOP\r\n"),
     }
     report_header(b"PACKME  EXE");
+    report_packed();
+}
+
+fn report_packed() {
+    let Some(size) = super::disk::file_len(b"PACKED  EXE") else {
+        return;
+    };
+    let mut body = [0u8; 16384];
+    let Some(length) = super::disk::read_head(b"PACKED  EXE", &mut body) else {
+        return;
+    };
+    let mark = b"Packed file is corrupt";
+    let mut found = false;
+    let mut index = 0usize;
+    while index + mark.len() <= length {
+        if &body[index..index + mark.len()] == mark {
+            found = true;
+            break;
+        }
+        index += 1;
+    }
+    crate::bios::mscon::con_write_bytes(b"PACKED ");
+    put_hex8((size >> 8) as u8);
+    put_hex8(size as u8);
+    crate::bios::mscon::con_write_bytes(b" ");
+    put_hex8(body[0]);
+    put_hex8(body[1]);
+    if found {
+        crate::bios::mscon::con_write_bytes(b" OK\r\n");
+    } else {
+        crate::bios::mscon::con_write_bytes(b" NO\r\n");
+    }
 }
 
 fn report_header(name: &[u8; 11]) {
@@ -932,7 +964,7 @@ pub(super) fn spawn(
             return 0xFF;
         }
     }
-    match drive(&mut cpu, ram, session, 60000) {
+    match drive(&mut cpu, ram, session, 2_000_000) {
         End::Stopped(code) => code,
         _ => 0xFF,
     }

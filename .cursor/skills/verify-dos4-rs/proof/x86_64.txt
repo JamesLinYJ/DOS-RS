@@ -233,7 +233,14 @@ EXT EXE
 CMD ERRORLEVEL 3
 CMD DIR SELECT.DAT
 CMD TYPE ÿA
+Microsoft (R) EXE File Compression Utility  Version 4.06
+Copyright (C) Microsoft Corp 1985,1986.  All rights reserved.
+
+
+CMD ERRORLEVEL /
+CMD DIR PACKED.EXE
 EXEFIX 1234 0010
+PACKED 28AF 4D5A OK
 OP LEA 10
 OP XOR 00
 OP ALU 11

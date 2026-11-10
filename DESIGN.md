@@ -140,6 +140,8 @@ Not taken: the `iced-x86` decoder, the Cranelift JIT, protected mode, x87, and t
 
 `EXEMOD.EXE` is the header utility from that same tree, `v4.0/src/TOOLS/EXEMOD.EXE`, under the same MIT license. The tail ` HELLO.EXE /h` makes it print that file's header, including `.EXE size (bytes)                     3D              61`.
 
-`EXEPACK.EXE` is the compressor from that same tree, `v4.0/src/TOOLS/EXEPACK.EXE`, under the same MIT license. With the real-mode map in place, a shell run on `EXEFIX.EXE` prints the utility banner. The pack then stops: the instruction stream reaches opcode `8D` with a register form, which is not an effective address, so no finished packed file is produced.
+Opcode `8D` with a register source is not a memory operand. Compat16's `execute_lea` returns an error for that form. The 8086 manual only defines `8D` for a memory source. On 8086 and 8088 silicon the same encoding copies the most recent effective-address offset into the destination, because the address unit does not replace that offset when the source is a register. The guest follows the silicon.
+
+`EXEPACK.EXE` is the compressor from that same tree, `v4.0/src/TOOLS/EXEPACK.EXE`, under the same MIT license. The shell runs `EXEPACK.EXE EXEFIX.EXE PACKED.EXE`. The written file is 0x28AF bytes and begins with the MZ mark, and it contains the packer's stub text. The serial line is `PACKED 28AF 4D5A OK`. The directory lists `CMD DIR PACKED.EXE`. After that write the compressor does not return to the shell, so the shell reports a non-zero status. The proof of the write is those two lines.
 
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.

@@ -36,6 +36,16 @@ pub fn boot() {
     disk.cwd = 0;
 }
 
+pub fn file_len(name: &[u8; 11]) -> Option<usize> {
+    let disk = storage();
+    let map = layout(disk)?;
+    let found = find(disk, &map, disk.cwd, name)?;
+    if found.attr & 0x10 != 0 {
+        return None;
+    }
+    Some(found.size)
+}
+
 pub fn read_head(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
     let disk = storage();
     let map = layout(disk)?;

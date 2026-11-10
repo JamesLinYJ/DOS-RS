@@ -82,6 +82,9 @@ pub struct CpuState {
     selectors: [u16; 4],
     instruction: u16,
     flags: u16,
+    /// Offset from the most recent memory operand. A register-form load of an
+    /// effective address copies this, matching 8086 silicon.
+    recent_offset: u16,
 }
 
 impl CpuState {
@@ -91,6 +94,7 @@ impl CpuState {
             selectors: [0; 4],
             instruction: 0x0100,
             flags: 0x0202,
+            recent_offset: 0,
         };
         state.set_selector(Segment::Extra, segment);
         state.set_selector(Segment::Code, segment);
@@ -148,6 +152,14 @@ impl CpuState {
 
     pub fn set_instruction(&mut self, value: u16) {
         self.instruction = value;
+    }
+
+    pub fn recent_offset(&self) -> u16 {
+        self.recent_offset
+    }
+
+    pub fn set_recent_offset(&mut self, value: u16) {
+        self.recent_offset = value;
     }
 
     pub fn set_carry(&mut self, carry: bool) {
