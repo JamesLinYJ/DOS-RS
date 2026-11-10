@@ -20,6 +20,7 @@ pub mod rdata;
 pub mod rucode;
 pub mod tbatch2;
 pub mod tcmd2b;
+pub mod tcode;
 pub mod envdata;
 pub mod tbatch;
 pub mod tcmd1a;

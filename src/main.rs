@@ -372,6 +372,8 @@ fn boot(gate: usize) -> ! {
         cmd::command::tbatch2::show();
         // CTTY wants a device, and CHCP distinguishes a missing country file.
         cmd::command::tcmd2b::show();
+        // Pipes outrank FOR, which outranks batch. A bare drive changes drives.
+        cmd::command::tcode::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

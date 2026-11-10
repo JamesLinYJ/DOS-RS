@@ -939,6 +939,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "TCODE VF00 VF01 SX01 SX00 RD00 RD00 RD01 PP00 PP00 PP01 BY0200 BY0400 BYFE00 BY0000 CR00 CR01 PR00 PR01 PR00 PR00 PR00 AC01 AC02 AC03 AC04 AC00 CL01 CL02 CL02 CL03 CL03 CL00 DV00FF DV0002 DV0000 DV0000 NM03 NM07 TL01 TL00 SW00F0 NU01 NU02 NU03 NU00" "$out"; then
+		echo "$name missing command dispatch" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2
