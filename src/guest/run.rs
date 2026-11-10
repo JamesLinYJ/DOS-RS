@@ -859,7 +859,12 @@ fn place_child(image: &[u8], ram: &mut GuestRam, executable: bool) -> Option<Cpu
     }
 }
 
-pub(super) fn spawn(image: &[u8], ram: &mut GuestRam, session: &mut Session) -> u8 {
+pub(super) fn spawn(
+    image: &[u8],
+    args: &[u8],
+    ram: &mut GuestRam,
+    session: &mut Session,
+) -> u8 {
     let mut offset = 0u16;
     while offset < 0x0800 {
         if !ram.store(SHELL_CHILD, offset, 0) {
@@ -875,7 +880,27 @@ pub(super) fn spawn(image: &[u8], ram: &mut GuestRam, session: &mut Session) -> 
     }) else {
         return 0xFF;
     };
-    match drive(&mut cpu, ram, session, 400) {
+    if !args.is_empty() {
+        let prefix = SHELL_CHILD;
+        let count = args.len().min(126);
+        if !ram.store(prefix, 0x80, (count + 1) as u8) {
+            return 0xFF;
+        }
+        if !ram.store(prefix, 0x81, b' ') {
+            return 0xFF;
+        }
+        let mut index = 0usize;
+        while index < count {
+            if !ram.store(prefix, 0x82u16.wrapping_add(index as u16), args[index]) {
+                return 0xFF;
+            }
+            index += 1;
+        }
+        if !ram.store(prefix, 0x82u16.wrapping_add(index as u16), b'\r') {
+            return 0xFF;
+        }
+    }
+    match drive(&mut cpu, ram, session, 20000) {
         End::Stopped(code) => code,
         _ => 0xFF,
     }

@@ -96,7 +96,7 @@ fn execute(line: &[u8], ram: &mut GuestRam, session: &mut Session, depth: u8) {
     } else if name.starts_with(b"SET") {
         assign(rest);
     } else if let Some(file) = disk::canonical(verb) {
-        launch_named(&file, ram, session, depth);
+        launch_named(&file, rest, ram, session, depth);
     }
 }
 
@@ -197,9 +197,15 @@ fn assign(rest: &[u8]) {
     say(b"CMD SET FAIL\r\n");
 }
 
-fn launch_named(name: &[u8; 11], ram: &mut GuestRam, session: &mut Session, depth: u8) {
+fn launch_named(
+    name: &[u8; 11],
+    args: &[u8],
+    ram: &mut GuestRam,
+    session: &mut Session,
+    depth: u8,
+) {
     if &name[8..11] == b"BAT" {
-        let mut body = [0u8; 256];
+        let mut body = [0u8; 512];
         let Some(length) = disk::read_file(name, &mut body) else {
             say(b"CMD BAT FAIL\r\n");
             return;
@@ -207,12 +213,12 @@ fn launch_named(name: &[u8; 11], ram: &mut GuestRam, session: &mut Session, dept
         run_batch(&body[..length], ram, session, depth + 1);
         return;
     }
-    let mut image = [0u8; 512];
+    let mut image = [0u8; 4096];
     let Some(length) = disk::read_file(name, &mut image) else {
         say(b"CMD RUN FAIL\r\n");
         return;
     };
-    let code = super::run::spawn(&image[..length], ram, session);
+    let code = super::run::spawn(&image[..length], args, ram, session);
     if code != 0 {
         say(b"CMD ERRORLEVEL ");
         say(&[code.wrapping_add(b'0')]);

@@ -316,10 +316,27 @@ fn copy_cluster(disk: &Disk, map: &Map, cluster: u16, size: usize, out: &mut [u8
     if size > out.len() || cluster < 2 {
         return None;
     }
-    let base = cluster_at(map, cluster)?;
-    let count = size.min(map.bytes_per_sector);
-    out[..count].copy_from_slice(disk.bytes.get(base..base + count)?);
-    Some(count)
+    let fat_len = map.fat_bytes.min(512);
+    let mut fat = [0u8; 512];
+    fat[..fat_len].copy_from_slice(disk.bytes.get(map.fat_at..map.fat_at + fat_len)?);
+    let mut current = cluster;
+    let mut filled = 0usize;
+    while filled < size {
+        let base = cluster_at(map, current)?;
+        let chunk = map.bytes_per_sector.min(size - filled);
+        let bytes = disk.bytes.get(base..base + chunk)?;
+        out[filled..filled + chunk].copy_from_slice(bytes);
+        filled += chunk;
+        if filled >= size {
+            break;
+        }
+        let next = crate::dos::fat::unpack(&fat, map.max_cluster, current)?;
+        if crate::dos::fat::is_eof(map.max_cluster, next) {
+            return None;
+        }
+        current = next;
+    }
+    Some(filled)
 }
 
 fn store_cluster(disk: &mut Disk, map: &Map, cluster: u16, data: &[u8]) -> bool {

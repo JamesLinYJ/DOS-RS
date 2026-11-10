@@ -1230,7 +1230,9 @@ run_one() {
 		|| ! grep -q "CMD ECHO FROM BATCH" "$out" \
 		|| ! grep -q "EXT COM" "$out" \
 		|| ! grep -q "EXT EXE" "$out" \
-		|| ! grep -q "CMD ERRORLEVEL 3" "$out"; then
+		|| ! grep -q "CMD ERRORLEVEL 3" "$out" \
+		|| ! grep -q "CMD DIR SELECT.DAT" "$out" \
+		|| ! grep -q $'CMD TYPE \xff\x05A' "$out"; then
 		echo "$name missing command built-ins" >&2
 		cat "$out" >&2
 		rm -f "$out"
