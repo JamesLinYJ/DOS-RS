@@ -681,6 +681,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -q "OPEN AC00 BAD0C NET70 NA0C NS0C BLK0C RO05 RD00 FCB00 NFC70 DIR05 VOL05 DEV00 FO80 NF02 NP03 V16 V2E SHR20 RT00 SHOK PID0001" "$out"; then
+		echo "$name missing open" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "ALLOC 0001 0006 FIT0001 ER08 BX0006" "$out"; then
 		echo "$name missing ALLOC" >&2
 		cat "$out" >&2

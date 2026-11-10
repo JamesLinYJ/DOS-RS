@@ -295,6 +295,8 @@ fn boot(gate: usize) -> ! {
         dos::shrprint::show();
         // Non-resident constants: data version 1 and retry count 3.
         dos::nstdos::show();
+        // Internal open: access, redirector verb, and read-only FCB mode.
+        dos::open::show();
     } else {
         // EXEC returned carry. `COMERR` is only that path.
         bios::sysinit1::com_err();

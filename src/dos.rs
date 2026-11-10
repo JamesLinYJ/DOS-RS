@@ -52,6 +52,7 @@ pub mod msproc;
 pub mod mssw;
 pub mod ms_code;
 pub mod nstdos;
+pub mod open;
 pub mod parse;
 pub mod path;
 pub mod rom;
