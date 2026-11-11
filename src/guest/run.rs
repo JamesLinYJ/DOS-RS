@@ -463,6 +463,11 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x04 => {
+            crate::bios::msaux::aux_write_bytes(&[cpu.low(Slot::Data)]);
+            cpu.set_carry(false);
+            Action::Continue
+        }
         0x02 => {
             crate::bios::mscon::con_write_bytes(&[cpu.low(Slot::Data)]);
             Action::Continue
