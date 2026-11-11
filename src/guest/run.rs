@@ -574,6 +574,14 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             fcb_open(cpu, ram);
             Action::Continue
         }
+        0x11 => {
+            fcb_find(cpu, ram, session, false);
+            Action::Continue
+        }
+        0x12 => {
+            fcb_find(cpu, ram, session, true);
+            Action::Continue
+        }
         0x13 => {
             fcb_delete(cpu, ram);
             Action::Continue
@@ -2661,6 +2669,59 @@ fn fcb_name(raw: &[u8; 37]) -> [u8; 11] {
     let mut name = [b' '; 11];
     name.copy_from_slice(&raw[1..12]);
     name
+}
+
+fn fcb_find(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session, continued: bool) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    if raw[0] > 1 {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    let start = if continued {
+        u16::from_le_bytes([raw[0x18], raw[0x19]])
+    } else {
+        0
+    };
+    let Some(found) = super::disk::find_match(super::disk::working_directory(), &fcb_name(&raw), 0, start)
+    else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let next_index = found.index.saturating_add(1).to_le_bytes();
+    if !ram.store(segment, offset.wrapping_add(0x18), next_index[0])
+        || !ram.store(segment, offset.wrapping_add(0x19), next_index[1])
+        || !write_found_fcb(ram, session, &found)
+    {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    cpu.set_low(Slot::Accumulator, 0);
+    cpu.set_carry(false);
+}
+
+fn write_found_fcb(ram: &mut GuestRam, session: &Session, found: &super::disk::DirMatch) -> bool {
+    let (segment, offset) = dta_target(session);
+    let size = found.size.to_le_bytes();
+    let time = found.time.to_le_bytes();
+    let date = found.date.to_le_bytes();
+    let mut raw = [0u8; 33];
+    raw[0] = 1;
+    raw[1..12].copy_from_slice(&found.name);
+    raw[0x0E] = 128;
+    raw[0x10..0x14].copy_from_slice(&size);
+    raw[0x14..0x16].copy_from_slice(&date);
+    raw[0x16..0x18].copy_from_slice(&time);
+    for (index, byte) in raw.iter().enumerate() {
+        if !ram.store(segment, offset.wrapping_add(index as u16), *byte) {
+            return false;
+        }
+    }
+    true
 }
 
 fn fcb_delete(cpu: &mut CpuState, ram: &mut GuestRam) {
