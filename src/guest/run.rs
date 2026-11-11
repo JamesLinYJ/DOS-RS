@@ -4357,6 +4357,10 @@ fn switch_character(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) == 0x23 {
+        yes_or_no(cpu);
+        return;
+    }
     if cpu.low(Slot::Accumulator) == 0x20 {
         capitalize_one(cpu);
         return;
@@ -4439,6 +4443,16 @@ fn capitalize_text(cpu: &mut CpuState, ram: &mut GuestRam) {
         }
         offset = next;
     }
+}
+
+fn yes_or_no(cpu: &mut CpuState) {
+    let class = match cpu.low(Slot::Data) {
+        b'Y' | b'y' => 0,
+        b'N' | b'n' => 1,
+        _ => 2,
+    };
+    cpu.set_wide(Slot::Accumulator, class);
+    cpu.set_carry(false);
 }
 
 fn capitalize_one(cpu: &mut CpuState) {
