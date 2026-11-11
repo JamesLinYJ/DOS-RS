@@ -684,6 +684,7 @@ fn shift_byte(
     let Some(mut value) = read_byte(cpu, ram, &operand) else {
         return Outcome::Fault(opcode);
     };
+    let original = u16::from(value);
     let mut carry = cpu.flags() & 1 != 0;
     let mut times = count & 0x1F;
     while times != 0 {
@@ -711,6 +712,9 @@ fn shift_byte(
         cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
     }
     cpu.set_carry(carry);
+    if count & 0x1F == 1 {
+        note_shift_overflow(cpu, operation, original, u16::from(value), 0x0080);
+    }
     Outcome::Continue
 }
 
@@ -1044,6 +1048,7 @@ fn shift_word_once(
     }
     cpu.apply_result_flags(sized_flags(result, 0x8000));
     cpu.set_carry(carried);
+    note_shift_overflow(cpu, operation, value, result, 0x8000);
     Outcome::Continue
 }
 
@@ -1453,6 +1458,7 @@ fn shift_once(
     }
     cpu.apply_result_flags(sized_flags(u16::from(result), 0x0080));
     cpu.set_carry(carried);
+    note_shift_overflow(cpu, operation, u16::from(value), u16::from(result), 0x0080);
     Outcome::Continue
 }
 
@@ -1707,10 +1713,11 @@ fn shift_by_count(
     let count = cpu.low(Slot::Count) & 0x1F;
     let mut times = count;
     let mut carry = cpu.flags() & 1 != 0;
-    if wide {
+    let (original, shifted, sign) = if wide {
         let Some(mut value) = read_word(cpu, ram, &operand) else {
             return Outcome::Fault(opcode);
         };
+        let original = value;
         while times != 0 {
             let incoming = carry;
             match operation {
@@ -1751,10 +1758,12 @@ fn shift_by_count(
         if count != 0 {
             cpu.apply_result_flags(sized_flags(value, 0x8000));
         }
+        (original, value, 0x8000u16)
     } else {
         let Some(mut value) = read_byte(cpu, ram, &operand) else {
             return Outcome::Fault(opcode);
         };
+        let original = u16::from(value);
         while times != 0 {
             let incoming = carry;
             match operation {
@@ -1795,9 +1804,27 @@ fn shift_by_count(
         if count != 0 {
             cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
         }
-    }
+        (original, u16::from(value), 0x0080)
+    };
     cpu.set_carry(carry);
+    if count == 1 {
+        note_shift_overflow(cpu, operation, original, shifted, sign);
+    }
     Outcome::Continue
+}
+
+fn note_shift_overflow(cpu: &mut CpuState, operation: u8, original: u16, result: u16, sign: u16) {
+    let carried = cpu.flags() & 1 != 0;
+    let high = result & sign != 0;
+    let overflow = match operation {
+        0 | 2 | 4 | 6 => carried != high,
+        1 | 3 => high != (result & (sign >> 1) != 0),
+        5 => original & sign != 0,
+        _ => false,
+    };
+    if overflow {
+        cpu.set_flags(cpu.flags() | 0x0800);
+    }
 }
 
 fn translate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
