@@ -1318,6 +1318,14 @@ fn multiply_byte(
         4 => {
             let product = u16::from(cpu.low(Slot::Accumulator)).wrapping_mul(u16::from(value));
             cpu.set_wide(Slot::Accumulator, product);
+            note_multiply_overflow(cpu, product > 0xFF);
+            Outcome::Continue
+        }
+        5 => {
+            let product = i16::from(cpu.low(Slot::Accumulator) as i8)
+                .wrapping_mul(i16::from(value as i8));
+            cpu.set_wide(Slot::Accumulator, product as u16);
+            note_multiply_overflow(cpu, product != i16::from(product as i8));
             Outcome::Continue
         }
         6 => {
@@ -1372,8 +1380,9 @@ fn multiply_signed(
         return Outcome::Fault(opcode);
     };
     let factor = byte as i8 as i16;
-    let result = (source as i16).wrapping_mul(factor) as u16;
-    cpu.set_wide(Slot::from_index((modrm >> 3) & 7), result);
+    let wide = i32::from(source as i16).wrapping_mul(i32::from(factor));
+    cpu.set_wide(Slot::from_index((modrm >> 3) & 7), wide as u16);
+    note_multiply_overflow(cpu, wide != i32::from(wide as i16));
     Outcome::Continue
 }
 
@@ -1813,6 +1822,17 @@ fn shift_by_count(
     Outcome::Continue
 }
 
+fn note_multiply_overflow(cpu: &mut CpuState, overflow: bool) {
+    cpu.set_carry(overflow);
+    let mut flags = cpu.flags();
+    if overflow {
+        flags |= 0x0800;
+    } else {
+        flags &= !0x0800;
+    }
+    cpu.set_flags(flags);
+}
+
 fn note_shift_overflow(cpu: &mut CpuState, operation: u8, original: u16, result: u16, sign: u16) {
     let carried = cpu.flags() & 1 != 0;
     let high = result & sign != 0;
@@ -1895,15 +1915,7 @@ fn unary_word(
             let product = u32::from(cpu.wide(Slot::Accumulator)).wrapping_mul(u32::from(value));
             cpu.set_wide(Slot::Accumulator, product as u16);
             cpu.set_wide(Slot::Data, (product >> 16) as u16);
-            let wide = product > 0xFFFF;
-            cpu.set_carry(wide);
-            let mut flags = cpu.flags();
-            if wide {
-                flags |= 0x0800;
-            } else {
-                flags &= !0x0800;
-            }
-            cpu.set_flags(flags);
+            note_multiply_overflow(cpu, product > 0xFFFF);
             Outcome::Continue
         }
         5 => {
@@ -1911,6 +1923,7 @@ fn unary_word(
                 .wrapping_mul(i32::from(value as i16));
             cpu.set_wide(Slot::Accumulator, product as u16);
             cpu.set_wide(Slot::Data, (product >> 16) as u16);
+            note_multiply_overflow(cpu, product != i32::from(product as i16));
             Outcome::Continue
         }
         6 => {
