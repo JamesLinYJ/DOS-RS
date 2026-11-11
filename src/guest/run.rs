@@ -695,6 +695,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             truename(cpu, ram, session);
             Action::Continue
         }
+        0x68 => {
+            commit_file(cpu, session);
+            Action::Continue
+        }
         0x4D => {
             cpu.set_wide(Slot::Accumulator, session.last_code);
             session.last_code = 0;
@@ -888,6 +892,46 @@ fn flush_opened(opened: &Opened) -> bool {
         return true;
     }
     super::disk::write_file(&opened.name, &file_bytes(opened.bytes)[..opened.len])
+}
+
+fn commit_file(cpu: &mut CpuState, session: &mut Session) {
+    let handle = cpu.wide(Slot::Base);
+    let result = if handle < 3 {
+        let index = usize::from(handle);
+        if let Some(opened) = session.stdio[index].as_mut() {
+            if flush_opened(opened) {
+                opened.dirty = false;
+                Commit::Done
+            } else {
+                Commit::Failed
+            }
+        } else {
+            Commit::Done
+        }
+    } else {
+        let index = usize::from(handle - 3);
+        if let Some(opened) = session.opens.get_mut(index).and_then(|slot| slot.as_mut()) {
+            if flush_opened(opened) {
+                opened.dirty = false;
+                Commit::Done
+            } else {
+                Commit::Failed
+            }
+        } else {
+            Commit::Missing
+        }
+    };
+    match result {
+        Commit::Done => cpu.set_carry(false),
+        Commit::Missing => fail(cpu, session, 6),
+        Commit::Failed => fail(cpu, session, 5),
+    }
+}
+
+enum Commit {
+    Done,
+    Missing,
+    Failed,
 }
 
 fn close_file(cpu: &mut CpuState, session: &mut Session) {
