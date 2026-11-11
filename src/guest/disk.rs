@@ -248,6 +248,15 @@ pub fn change_dir(path: &[u8]) -> bool {
     true
 }
 
+pub fn stamp(name: &[u8; 11]) -> Option<(u16, u16)> {
+    let disk = storage();
+    let map = layout(disk)?;
+    let found = find(disk, &map, disk.cwd, name)?;
+    let time = u16::from_le_bytes([found.raw[22], found.raw[23]]);
+    let date = u16::from_le_bytes([found.raw[24], found.raw[25]]);
+    Some((time, date))
+}
+
 pub fn attribute(name: &[u8; 11]) -> Option<u8> {
     let disk = storage();
     let map = layout(disk)?;

@@ -613,6 +613,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             rename_path(cpu, ram);
             Action::Continue
         }
+        0x57 => {
+            file_time(cpu, session);
+            Action::Continue
+        }
         0x5B => {
             create_new(cpu, ram, session);
             Action::Continue
@@ -1895,6 +1899,33 @@ fn rename_path(cpu: &mut CpuState, ram: &GuestRam) {
         return;
     };
     cpu.set_carry(!super::disk::rename_file(&from, &to));
+}
+
+fn file_time(cpu: &mut CpuState, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) != 0 {
+        fail(cpu, session, 1);
+        return;
+    }
+    let handle = cpu.wide(Slot::Base);
+    if handle < 3 {
+        fail(cpu, session, 6);
+        return;
+    }
+    let Some(Some(opened)) = session.opens.get(usize::from(handle - 3)) else {
+        fail(cpu, session, 6);
+        return;
+    };
+    if !opened.named || opened.console {
+        fail(cpu, session, 1);
+        return;
+    }
+    let Some((time, date)) = super::disk::stamp(&opened.name) else {
+        fail(cpu, session, 2);
+        return;
+    };
+    cpu.set_wide(Slot::Count, time);
+    cpu.set_wide(Slot::Data, date);
+    cpu.set_carry(false);
 }
 
 fn seek_file(cpu: &mut CpuState, session: &mut Session) {

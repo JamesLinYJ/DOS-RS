@@ -236,6 +236,8 @@ A bounds check enters vector 5 when the index is outside the signed limits. `BD.
 
 A lock prefix executes the following instruction. `LK.COM` locks an add of `3` and `3` and prints `LK 0006`.
 
+Reading a handle's time returns the directory stamp. `HELLO.COM` is marked `12:00:00` on `1988-01-01`, and `TM.COM` prints `TM 60001021`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
