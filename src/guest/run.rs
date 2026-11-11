@@ -512,6 +512,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             code_page(cpu, session);
             Action::Continue
         }
+        0x65 => {
+            uppercase_info(cpu, ram, session);
+            Action::Continue
+        }
         0x1B => {
             cpu.set_low(Slot::Data, 0);
             drive_info(cpu, ram);
@@ -3617,6 +3621,60 @@ fn switch_character(cpu: &mut CpuState, session: &mut Session) {
         }
         _ => fail(cpu, session, 1),
     }
+}
+
+fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) != 2 {
+        fail(cpu, session, 1);
+        return;
+    }
+    let page = cpu.wide(Slot::Base);
+    let country = cpu.wide(Slot::Data);
+    if page != 0xFFFF && page != session.code_page {
+        fail(cpu, session, 2);
+        return;
+    }
+    if country != 0xFFFF && country != 1 {
+        fail(cpu, session, 2);
+        return;
+    }
+    if cpu.wide(Slot::Count) < 5 {
+        fail(cpu, session, 1);
+        return;
+    }
+    if !plant_uppercase(ram) {
+        fail(cpu, session, 5);
+        return;
+    }
+    let segment = cpu.selector(Segment::Extra);
+    let offset = cpu.wide(Slot::Dest);
+    let pointer = 0x61u16.to_le_bytes();
+    if !ram.store(segment, offset, 2)
+        || !ram.store(segment, offset.wrapping_add(1), 0)
+        || !ram.store(segment, offset.wrapping_add(2), 0)
+        || !ram.store(segment, offset.wrapping_add(3), pointer[0])
+        || !ram.store(segment, offset.wrapping_add(4), pointer[1])
+    {
+        fail(cpu, session, 5);
+        return;
+    }
+    cpu.set_carry(false);
+}
+
+fn plant_uppercase(ram: &mut GuestRam) -> bool {
+    const SEGMENT: u16 = 0x61;
+    if !ram.store(SEGMENT, 0, 0x80) || !ram.store(SEGMENT, 1, 0) {
+        return false;
+    }
+    let mut index = 0u16;
+    while index < 0x80 {
+        let byte = 0x80u8.wrapping_add(index as u8);
+        if !ram.store(SEGMENT, index.wrapping_add(2), byte) {
+            return false;
+        }
+        index = index.wrapping_add(1);
+    }
+    true
 }
 
 fn code_page(cpu: &mut CpuState, session: &mut Session) {
