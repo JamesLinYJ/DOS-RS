@@ -499,6 +499,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             fcb_open(cpu, ram);
             Action::Continue
         }
+        0x13 => {
+            fcb_delete(cpu, ram);
+            Action::Continue
+        }
         0x14 => {
             fcb_read(cpu, ram, session);
             Action::Continue
@@ -1951,6 +1955,21 @@ fn fcb_name(raw: &[u8; 37]) -> [u8; 11] {
     let mut name = [b' '; 11];
     name.copy_from_slice(&raw[1..12]);
     name
+}
+
+fn fcb_delete(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    if super::disk::remove_file(&fcb_name(&raw)) {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+    } else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+    }
 }
 
 fn fcb_open(cpu: &mut CpuState, ram: &mut GuestRam) {
