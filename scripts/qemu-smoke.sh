@@ -1342,6 +1342,7 @@ run_one() {
 		|| ! grep -qF 'CQ 51' "$out" \
 		|| ! grep -qF 'YN 000102' "$out" \
 		|| ! grep -qF 'CO 060100' "$out" \
+		|| ! grep -qF 'FN 05001600FF' "$out" \
 		|| ! grep -qF 'MN 01DOS4RS' "$out" \
 		|| ! grep -qF 'RD \\SRV\PRT' "$out" \
 		|| grep -qF 'A:\\HELLO.COM' "$out" \

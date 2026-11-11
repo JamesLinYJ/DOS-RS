@@ -4377,6 +4377,10 @@ fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session)
         extended_country(cpu, ram, session);
         return;
     }
+    if cpu.low(Slot::Accumulator) == 5 {
+        filename_chars(cpu, ram, session);
+        return;
+    }
     if cpu.low(Slot::Accumulator) == 6 {
         collating_info(cpu, ram, session);
         return;
@@ -4535,6 +4539,61 @@ fn extended_country(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessio
     }
     cpu.set_carry(false);
 }
+
+fn filename_chars(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let page = cpu.wide(Slot::Base);
+    let country = cpu.wide(Slot::Data);
+    if page != 0xFFFF && page != session.code_page {
+        fail(cpu, session, 2);
+        return;
+    }
+    if country != 0xFFFF && country != 1 {
+        fail(cpu, session, 2);
+        return;
+    }
+    if cpu.wide(Slot::Count) < 5 {
+        fail(cpu, session, 1);
+        return;
+    }
+    if !plant_filename_chars(ram) {
+        fail(cpu, session, 5);
+        return;
+    }
+    let segment = cpu.selector(Segment::Extra);
+    let offset = cpu.wide(Slot::Dest);
+    let pointer = FILENAME_SEGMENT.to_le_bytes();
+    if !ram.store(segment, offset, 5)
+        || !ram.store(segment, offset.wrapping_add(1), 0)
+        || !ram.store(segment, offset.wrapping_add(2), 0)
+        || !ram.store(segment, offset.wrapping_add(3), pointer[0])
+        || !ram.store(segment, offset.wrapping_add(4), pointer[1])
+    {
+        fail(cpu, session, 5);
+        return;
+    }
+    cpu.set_carry(false);
+}
+
+fn plant_filename_chars(ram: &mut GuestRam) -> bool {
+    let length = 0x16u16.to_le_bytes();
+    if !ram.store(FILENAME_SEGMENT, 0, length[0])
+        || !ram.store(FILENAME_SEGMENT, 1, length[1])
+        || !ram.store(FILENAME_SEGMENT, 2, 0)
+        || !ram.store(FILENAME_SEGMENT, 3, 0xFF)
+    {
+        return false;
+    }
+    let mut index = 4u16;
+    while index < 24 {
+        if !ram.store(FILENAME_SEGMENT, index, 0) {
+            return false;
+        }
+        index = index.wrapping_add(1);
+    }
+    true
+}
+
+const FILENAME_SEGMENT: u16 = 0x90;
 
 fn collating_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let page = cpu.wide(Slot::Base);

@@ -348,6 +348,8 @@ A yes or no answer is country text. `YN.COM` tests `y`, `n`, and `q`, and prints
 
 The collating table gives each byte its own sort weight. `CO.COM` reads that table and prints `CO 060100`.
 
+Filename characters run from byte 00 through FF. `FN.COM` reads that table and prints `FN 05001600FF`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.
