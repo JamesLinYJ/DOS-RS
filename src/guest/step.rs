@@ -681,9 +681,6 @@ fn shift_byte(
         return Outcome::Fault(opcode);
     };
     let operation = (modrm >> 3) & 7;
-    if operation != 2 && operation != 4 && operation != 5 {
-        return Outcome::Fault(opcode);
-    }
     let Some(mut value) = read_byte(cpu, ram, &operand) else {
         return Outcome::Fault(opcode);
     };
@@ -691,15 +688,31 @@ fn shift_byte(
     let mut carry = cpu.flags() & 1 != 0;
     let mut times = count & 0x1F;
     while times != 0 {
+        let incoming = carry;
         match operation {
-            2 => {
-                let bit = value & 0x80 != 0;
+            0 => {
+                carry = value & 0x80 != 0;
                 value = (value << 1) | u8::from(carry);
-                carry = bit;
             }
-            4 => {
+            1 => {
+                carry = value & 1 != 0;
+                value = (value >> 1) | (u8::from(carry) << 7);
+            }
+            2 => {
+                carry = value & 0x80 != 0;
+                value = (value << 1) | u8::from(incoming);
+            }
+            3 => {
+                carry = value & 1 != 0;
+                value = (value >> 1) | (u8::from(incoming) << 7);
+            }
+            4 | 6 => {
                 carry = value & 0x80 != 0;
                 value <<= 1;
+            }
+            7 => {
+                carry = value & 1 != 0;
+                value = ((value as i8) >> 1) as u8;
             }
             _ => {
                 carry = value & 1 != 0;
