@@ -1063,7 +1063,7 @@ fn shift_word_once(
         1 => ((value >> 1) | ((value & 1) << 15), value & 1 != 0),
         2 => ((value << 1) | u16::from(carry_in), value & 0x8000 != 0),
         3 => ((value >> 1) | (u16::from(carry_in) << 15), value & 1 != 0),
-        4 => (value << 1, value & 0x8000 != 0),
+        4 | 6 => (value << 1, value & 0x8000 != 0),
         5 => (value >> 1, value & 1 != 0),
         7 => ((value as i16 >> 1) as u16, value & 1 != 0),
         _ => return Outcome::Fault(opcode),
@@ -1093,9 +1093,6 @@ fn shift_word_immediate(
         return Outcome::Fault(opcode);
     };
     let operation = (modrm >> 3) & 7;
-    if !matches!(operation, 0 | 1 | 2 | 3 | 4 | 5 | 7) {
-        return Outcome::Fault(opcode);
-    }
     let Some(mut value) = read_word(cpu, ram, &operand) else {
         return Outcome::Fault(opcode);
     };
@@ -1112,7 +1109,7 @@ fn shift_word_immediate(
             1 => ((value >> 1) | ((value & 1) << 15), value & 1 != 0),
             2 => ((value << 1) | u16::from(incoming), value & 0x8000 != 0),
             3 => ((value >> 1) | (u16::from(incoming) << 15), value & 1 != 0),
-            4 => (value << 1, value & 0x8000 != 0),
+            4 | 6 => (value << 1, value & 0x8000 != 0),
             5 => (value >> 1, value & 1 != 0),
             _ => ((value as i16 >> 1) as u16, value & 1 != 0),
         };
@@ -1808,9 +1805,6 @@ fn shift_by_count(
         return Outcome::Fault(opcode);
     };
     let operation = (modrm >> 3) & 7;
-    if operation > 5 && operation != 7 {
-        return Outcome::Fault(opcode);
-    }
     let count = cpu.low(Slot::Count) & 0x1F;
     let mut times = count;
     let mut carry = cpu.flags() & 1 != 0;
@@ -1838,7 +1832,7 @@ fn shift_by_count(
                     carry = value & 1 != 0;
                     value = (value >> 1) | (u16::from(incoming) << 15);
                 }
-                4 => {
+                4 | 6 => {
                     carry = value & 0x8000 != 0;
                     value <<= 1;
                 }
