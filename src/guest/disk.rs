@@ -257,6 +257,24 @@ pub fn stamp(name: &[u8; 11]) -> Option<(u16, u16)> {
     Some((time, date))
 }
 
+pub fn set_stamp(name: &[u8; 11], time: u16, date: u16) -> bool {
+    let disk = storage();
+    let Some(map) = layout(disk) else {
+        return false;
+    };
+    let Some(found) = find(disk, &map, disk.cwd, name) else {
+        return false;
+    };
+    let mut raw = found.raw;
+    let time_bytes = time.to_le_bytes();
+    let date_bytes = date.to_le_bytes();
+    raw[22] = time_bytes[0];
+    raw[23] = time_bytes[1];
+    raw[24] = date_bytes[0];
+    raw[25] = date_bytes[1];
+    write_entry(disk, &map, found.dir, found.index, &raw)
+}
+
 pub fn attribute(name: &[u8; 11]) -> Option<u8> {
     let disk = storage();
     let map = layout(disk)?;

@@ -238,6 +238,8 @@ A lock prefix executes the following instruction. `LK.COM` locks an add of `3` a
 
 Reading a handle's time returns the directory stamp. `HELLO.COM` is marked `12:00:00` on `1988-01-01`, and `TM.COM` prints `TM 60001021`.
 
+Writing a handle's time stores those words in the directory. `ST.COM` sets `1234h` and `4567h` on `TM.COM` and prints `TS 12344567`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

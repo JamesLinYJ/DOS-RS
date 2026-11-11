@@ -1902,7 +1902,8 @@ fn rename_path(cpu: &mut CpuState, ram: &GuestRam) {
 }
 
 fn file_time(cpu: &mut CpuState, session: &mut Session) {
-    if cpu.low(Slot::Accumulator) != 0 {
+    let sub = cpu.low(Slot::Accumulator);
+    if sub > 1 {
         fail(cpu, session, 1);
         return;
     }
@@ -1911,20 +1912,33 @@ fn file_time(cpu: &mut CpuState, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     }
-    let Some(Some(opened)) = session.opens.get(usize::from(handle - 3)) else {
+    let looked = session.opens.get(usize::from(handle - 3)).and_then(|slot| {
+        slot.as_ref()
+            .map(|opened| (opened.name, opened.named, opened.console))
+    });
+    let Some((name, named, console)) = looked else {
         fail(cpu, session, 6);
         return;
     };
-    if !opened.named || opened.console {
+    if !named || console {
         fail(cpu, session, 1);
         return;
     }
-    let Some((time, date)) = super::disk::stamp(&opened.name) else {
-        fail(cpu, session, 2);
-        return;
-    };
-    cpu.set_wide(Slot::Count, time);
-    cpu.set_wide(Slot::Data, date);
+    if sub == 0 {
+        let Some((time, date)) = super::disk::stamp(&name) else {
+            fail(cpu, session, 2);
+            return;
+        };
+        cpu.set_wide(Slot::Count, time);
+        cpu.set_wide(Slot::Data, date);
+    } else {
+        let time = cpu.wide(Slot::Count);
+        let date = cpu.wide(Slot::Data);
+        if !super::disk::set_stamp(&name, time, date) {
+            fail(cpu, session, 5);
+            return;
+        }
+    }
     cpu.set_carry(false);
 }
 
