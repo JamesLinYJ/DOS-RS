@@ -250,6 +250,8 @@ The verify flag starts clear. Setting it and reading it back returns the stored 
 
 An FCB size query rounds the file length up to a record count. `HELLO.COM` is 38 bytes, the record size is 1, and `SZ.COM` prints `SZ 00000026`.
 
+An FCB sequential read copies one record into the transfer area. The first byte of `HELLO.COM` is `B2h`, and `FR.COM` prints `FR B2`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

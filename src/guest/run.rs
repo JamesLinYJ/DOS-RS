@@ -495,6 +495,14 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x0F => {
+            fcb_open(cpu, ram);
+            Action::Continue
+        }
+        0x14 => {
+            fcb_read(cpu, ram, session);
+            Action::Continue
+        }
         0x23 => {
             fcb_size(cpu, ram);
             Action::Continue
@@ -1925,6 +1933,131 @@ fn rename_path(cpu: &mut CpuState, ram: &GuestRam) {
         return;
     };
     cpu.set_carry(!super::disk::rename_file(&from, &to));
+}
+
+fn load_fcb(ram: &GuestRam, segment: u16, offset: u16) -> Option<[u8; 37]> {
+    let mut raw = [0u8; 37];
+    for (index, byte) in raw.iter_mut().enumerate() {
+        *byte = ram.load(segment, offset.wrapping_add(index as u16))?;
+    }
+    Some(raw)
+}
+
+fn fcb_name(raw: &[u8; 37]) -> [u8; 11] {
+    let mut name = [b' '; 11];
+    name.copy_from_slice(&raw[1..12]);
+    name
+}
+
+fn fcb_open(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let name = fcb_name(&raw);
+    let Some(len) = super::disk::file_len(&name) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let (time, date) = super::disk::stamp(&name).unwrap_or((0, 0));
+    if raw[0] == 0 && !ram.store(segment, offset, 1) {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    let size = (len as u32).to_le_bytes();
+    let time_bytes = time.to_le_bytes();
+    let date_bytes = date.to_le_bytes();
+    let fields = [
+        (0x0C, 0),
+        (0x0D, 0),
+        (0x0E, 128),
+        (0x0F, 0),
+        (0x10, size[0]),
+        (0x11, size[1]),
+        (0x12, size[2]),
+        (0x13, size[3]),
+        (0x14, date_bytes[0]),
+        (0x15, date_bytes[1]),
+        (0x16, time_bytes[0]),
+        (0x17, time_bytes[1]),
+        (0x20, 0),
+    ];
+    for (at, byte) in fields {
+        if !ram.store(segment, offset.wrapping_add(at), byte) {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            return;
+        }
+    }
+    cpu.set_low(Slot::Accumulator, 0);
+    cpu.set_carry(false);
+}
+
+fn fcb_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let name = fcb_name(&raw);
+    let Some(len) = super::disk::file_len(&name) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let mut record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
+    if record == 0 {
+        record = 128;
+    }
+    let block = u32::from(u16::from_le_bytes([raw[0x0C], raw[0x0D]]));
+    let current = u32::from(raw[0x20]);
+    let index = block.saturating_mul(128).saturating_add(current);
+    let start = index.saturating_mul(record);
+    if start >= len as u32 {
+        cpu.set_low(Slot::Accumulator, 1);
+        return;
+    }
+    let take = record.min((len as u32) - start);
+    if start >= 128 || start + take > 128 {
+        cpu.set_low(Slot::Accumulator, 2);
+        return;
+    }
+    let mut file = [0u8; 128];
+    if super::disk::read_file(&name, &mut file).is_none() {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    let (dta_segment, dta_offset) = dta_target(session);
+    let mut copied = 0u32;
+    while copied < record {
+        let byte = if copied < take {
+            file[(start + copied) as usize]
+        } else {
+            0
+        };
+        if !ram.store(dta_segment, dta_offset.wrapping_add(copied as u16), byte) {
+            cpu.set_low(Slot::Accumulator, 2);
+            return;
+        }
+        copied += 1;
+    }
+    let next = current + 1;
+    let (block_next, record_next) = if next >= 128 {
+        (block + 1, 0u8)
+    } else {
+        (block, next as u8)
+    };
+    let block_bytes = (block_next as u16).to_le_bytes();
+    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
+        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
+        || !ram.store(segment, offset.wrapping_add(0x20), record_next)
+    {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    cpu.set_low(Slot::Accumulator, if take < record { 3 } else { 0 });
+    cpu.set_carry(false);
 }
 
 fn fcb_size(cpu: &mut CpuState, ram: &mut GuestRam) {
