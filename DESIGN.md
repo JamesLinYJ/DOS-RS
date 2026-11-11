@@ -338,6 +338,8 @@ Code page 437 has no double-byte lead bytes. `DB.COM` asks for that table and pr
 
 Extended country information names the United States and code page 437. `CI.COM` prints `CI 01000101B5`.
 
+An ASCIIZ string is capitalized in place. `CA.COM` turns `abc` into `ABC` and prints `CA ABC`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.

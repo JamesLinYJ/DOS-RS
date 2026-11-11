@@ -4357,6 +4357,10 @@ fn switch_character(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) == 0x22 {
+        capitalize_text(cpu, ram);
+        return;
+    }
     if cpu.low(Slot::Accumulator) == 1 {
         extended_country(cpu, ram, session);
         return;
@@ -4400,6 +4404,37 @@ fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session)
         return;
     }
     cpu.set_carry(false);
+}
+
+fn capitalize_text(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let segment = cpu.selector(Segment::Data);
+    let origin = cpu.wide(Slot::Data);
+    let mut offset = origin;
+    loop {
+        let Some(byte) = ram.load(segment, offset) else {
+            cpu.set_carry(true);
+            return;
+        };
+        if byte == 0 {
+            cpu.set_carry(false);
+            return;
+        }
+        let upper = if byte.is_ascii_lowercase() {
+            byte.wrapping_sub(b'a').wrapping_add(b'A')
+        } else {
+            byte
+        };
+        if !ram.store(segment, offset, upper) {
+            cpu.set_carry(true);
+            return;
+        }
+        let next = offset.wrapping_add(1);
+        if next == origin {
+            cpu.set_carry(true);
+            return;
+        }
+        offset = next;
+    }
 }
 
 fn extended_country(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
