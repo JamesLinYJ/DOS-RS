@@ -134,6 +134,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xB0..=0xB7 => move_byte_immediate(cpu, ram, opcode),
         0xB8..=0xBF => move_word_immediate(cpu, ram, opcode),
         0xC0 => shift_byte(cpu, ram, override_segment, opcode),
+        0xC1 => shift_word_immediate(cpu, ram, override_segment, opcode),
         0xC2 => return_count(cpu, ram, opcode),
         0xC3 => pop_instruction(cpu, ram),
         0xC4 => load_far(cpu, ram, override_segment, Segment::Extra, opcode),
@@ -1050,6 +1051,62 @@ fn shift_word_once(
     cpu.apply_result_flags(sized_flags(result, 0x8000));
     cpu.set_carry(carried);
     note_shift_overflow(cpu, operation, value, result, 0x8000);
+    Outcome::Continue
+}
+
+fn shift_word_immediate(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
+    let Some(modrm) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(count) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let operation = (modrm >> 3) & 7;
+    if !matches!(operation, 0 | 1 | 2 | 3 | 4 | 5 | 7) {
+        return Outcome::Fault(opcode);
+    }
+    let Some(mut value) = read_word(cpu, ram, &operand) else {
+        return Outcome::Fault(opcode);
+    };
+    let original = value;
+    let mut carry = cpu.flags() & 1 != 0;
+    let mut times = count & 0x1F;
+    while times != 0 {
+        let incoming = carry;
+        let (next, carried) = match operation {
+            0 => (
+                (value << 1) | u16::from(value & 0x8000 != 0),
+                value & 0x8000 != 0,
+            ),
+            1 => ((value >> 1) | ((value & 1) << 15), value & 1 != 0),
+            2 => ((value << 1) | u16::from(incoming), value & 0x8000 != 0),
+            3 => ((value >> 1) | (u16::from(incoming) << 15), value & 1 != 0),
+            4 => (value << 1, value & 0x8000 != 0),
+            5 => (value >> 1, value & 1 != 0),
+            _ => ((value as i16 >> 1) as u16, value & 1 != 0),
+        };
+        value = next;
+        carry = carried;
+        times -= 1;
+    }
+    if !write_word(cpu, ram, &operand, value) {
+        return Outcome::Fault(opcode);
+    }
+    if count & 0x1F != 0 {
+        cpu.apply_result_flags(sized_flags(value, 0x8000));
+    }
+    cpu.set_carry(carry);
+    if count & 0x1F == 1 {
+        note_shift_overflow(cpu, operation, original, value, 0x8000);
+    }
     Outcome::Continue
 }
 
