@@ -388,6 +388,10 @@ pub(super) struct Session {
     month: u8,
     day: u8,
     weekday: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    hundredths: u8,
 }
 
 impl Session {
@@ -423,6 +427,10 @@ impl Session {
             month: 1,
             day: 1,
             weekday: 2,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            hundredths: 0,
         }
     }
 }
@@ -596,9 +604,15 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x2C => {
-            cpu.set_wide(Slot::Count, 0);
-            cpu.set_wide(Slot::Data, 0);
+            cpu.set_high(Slot::Count, session.hour);
+            cpu.set_low(Slot::Count, session.minute);
+            cpu.set_high(Slot::Data, session.second);
+            cpu.set_low(Slot::Data, session.hundredths);
             cpu.set_carry(false);
+            Action::Continue
+        }
+        0x2D => {
+            set_clock_time(cpu, session);
             Action::Continue
         }
         0x30 => {
@@ -874,6 +888,27 @@ fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
             cpu.set_carry(false);
         }
         _ => fail(cpu, session, 1),
+    }
+}
+
+fn set_clock_time(cpu: &mut CpuState, session: &mut Session) {
+    let hour = cpu.high(Slot::Count);
+    let minute = cpu.low(Slot::Count);
+    let second = cpu.high(Slot::Data);
+    let hundredths = cpu.low(Slot::Data);
+    match crate::dos::time::set_time(hour, minute, second, hundredths) {
+        Ok(()) => {
+            session.hour = hour;
+            session.minute = minute;
+            session.second = second;
+            session.hundredths = hundredths;
+            cpu.set_low(Slot::Accumulator, 0);
+            cpu.set_carry(false);
+        }
+        Err(_) => {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            cpu.set_carry(true);
+        }
     }
 }
 
