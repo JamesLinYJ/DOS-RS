@@ -334,6 +334,8 @@ Disk reset writes every open file that still has new bytes. `DZ.COM` writes `QR`
 
 A locked region rejects a write from another handle. `UL.COM` locks the first two bytes of `ABCD`, the other handle is refused, and the file still reads `ABCD`. It prints `UL 0021ABCD`.
 
+Code page 437 has no double-byte lead bytes. `DB.COM` asks for that table and prints `DB 070000`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.

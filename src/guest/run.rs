@@ -4357,6 +4357,10 @@ fn switch_character(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) == 7 {
+        dbcs_info(cpu, ram, session);
+        return;
+    }
     if cpu.low(Slot::Accumulator) != 2 {
         fail(cpu, session, 1);
         return;
@@ -4383,6 +4387,41 @@ fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session)
     let offset = cpu.wide(Slot::Dest);
     let pointer = 0x61u16.to_le_bytes();
     if !ram.store(segment, offset, 2)
+        || !ram.store(segment, offset.wrapping_add(1), 0)
+        || !ram.store(segment, offset.wrapping_add(2), 0)
+        || !ram.store(segment, offset.wrapping_add(3), pointer[0])
+        || !ram.store(segment, offset.wrapping_add(4), pointer[1])
+    {
+        fail(cpu, session, 5);
+        return;
+    }
+    cpu.set_carry(false);
+}
+
+fn dbcs_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let page = cpu.wide(Slot::Base);
+    let country = cpu.wide(Slot::Data);
+    if page != 0xFFFF && page != session.code_page {
+        fail(cpu, session, 2);
+        return;
+    }
+    if country != 0xFFFF && country != 1 {
+        fail(cpu, session, 2);
+        return;
+    }
+    if cpu.wide(Slot::Count) < 5 {
+        fail(cpu, session, 1);
+        return;
+    }
+    const TABLE: u16 = 0x62;
+    if !ram.store(TABLE, 0, 0) || !ram.store(TABLE, 1, 0) {
+        fail(cpu, session, 5);
+        return;
+    }
+    let segment = cpu.selector(Segment::Extra);
+    let offset = cpu.wide(Slot::Dest);
+    let pointer = TABLE.to_le_bytes();
+    if !ram.store(segment, offset, 7)
         || !ram.store(segment, offset.wrapping_add(1), 0)
         || !ram.store(segment, offset.wrapping_add(2), 0)
         || !ram.store(segment, offset.wrapping_add(3), pointer[0])
