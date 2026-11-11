@@ -709,6 +709,10 @@ pub fn working_directory() -> u16 {
     storage().cwd
 }
 
+pub fn set_working(cluster: u16) {
+    storage().cwd = cluster;
+}
+
 pub fn parent_directory(cluster: u16) -> u16 {
     if cluster < 2 {
         return 0;

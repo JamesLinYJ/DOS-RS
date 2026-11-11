@@ -679,6 +679,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             file_time(cpu, session);
             Action::Continue
         }
+        0x5A => {
+            create_temp(cpu, ram, session);
+            Action::Continue
+        }
         0x5B => {
             create_new(cpu, ram, session);
             Action::Continue
@@ -959,6 +963,111 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     }
     cpu.set_wide(Slot::Accumulator, moved);
     cpu.set_carry(false);
+}
+
+fn create_temp(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let segment = cpu.selector(Segment::Data);
+    let start = cpu.wide(Slot::Data);
+    let text = bytes_at(ram, segment, start);
+    let mut length = 0usize;
+    while length < text.len() && text[length] != 0 {
+        length += 1;
+    }
+    if length == 0 || length == text.len() {
+        fail(cpu, session, 3);
+        return;
+    }
+    let saved = super::disk::working_directory();
+    if let Err(code) = temp_directory(&text[..length]) {
+        super::disk::set_working(saved);
+        fail(cpu, session, code);
+        return;
+    }
+    let attr = (cpu.wide(Slot::Count) as u8) & 0x27;
+    let mut serial = 0u32;
+    let mut name = [b' '; 11];
+    let chosen = loop {
+        if serial > 0xFFFF {
+            super::disk::set_working(saved);
+            fail(cpu, session, 4);
+            return;
+        }
+        hex_name(serial, &mut name);
+        if !super::disk::exists(&name) && !volume::listed(volume::IMAGE, &name) {
+            break name;
+        }
+        serial += 1;
+    };
+    if !super::disk::write_named(&chosen, b"", attr) {
+        super::disk::set_working(saved);
+        fail(cpu, session, 5);
+        return;
+    }
+    let Some(handle) = open_named(session, chosen, 2, true) else {
+        super::disk::set_working(saved);
+        fail(cpu, session, 4);
+        return;
+    };
+    super::disk::set_working(saved);
+    let mut index = 0usize;
+    let mut offset = start.wrapping_add(length as u16);
+    while index < 8 {
+        if !ram.store(segment, offset, chosen[index]) {
+            fail(cpu, session, 5);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+        index += 1;
+    }
+    if !ram.store(segment, offset, 0) {
+        fail(cpu, session, 5);
+        return;
+    }
+    cpu.set_wide(Slot::Accumulator, handle);
+    cpu.set_carry(false);
+}
+
+fn temp_directory(text: &[u8]) -> Result<(), u16> {
+    let mut cursor = 0usize;
+    while cursor < text.len() && text[cursor] == b' ' {
+        cursor += 1;
+    }
+    if cursor >= text.len() {
+        return Err(3);
+    }
+    if cursor + 1 < text.len() && text[cursor + 1] == b':' {
+        let letter = ascii_upper(text[cursor]);
+        if !letter.is_ascii_uppercase() || letter > b'B' {
+            return Err(15);
+        }
+        cursor += 2;
+    }
+    let last = text[text.len() - 1];
+    if cursor >= text.len() || (last != b'\\' && last != b'/') {
+        return Err(3);
+    }
+    let body = &text[cursor..text.len() - 1];
+    if body.is_empty() {
+        super::disk::change_dir(b"\\");
+        return Ok(());
+    }
+    if body.contains(&b'\\') || body.contains(&b'/') || !super::disk::change_dir(body) {
+        return Err(3);
+    }
+    Ok(())
+}
+
+fn hex_name(serial: u32, name: &mut [u8; 11]) {
+    let digits = b"0123456789ABCDEF";
+    let mut index = 0usize;
+    while index < 8 {
+        let shift = (7 - index) * 4;
+        name[index] = digits[((serial >> shift) & 0xF) as usize];
+        index += 1;
+    }
+    name[8] = b' ';
+    name[9] = b' ';
+    name[10] = b' ';
 }
 
 fn create_new(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {

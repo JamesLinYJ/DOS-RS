@@ -270,6 +270,8 @@ Extended open creates a file named at `DS:SI` and reports the action in `CX`. `E
 
 Truename expands a path to a drive and directory with `.` and `..` removed. `TN.COM` passes `a:\dos\..\hello.com` and prints `TN A:\HELLO.COM`.
 
+A temporary file is created in the requested directory and its generated name is written back over the terminator. `TF.COM` asks for a file in `A:\`, writes `TEMP`, and prints `TF 00000000TEMP`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
