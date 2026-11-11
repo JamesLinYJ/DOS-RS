@@ -381,6 +381,7 @@ pub(super) struct Session {
     vector_live: [bool; 256],
     verify: u8,
     strategy: u8,
+    code_page: u16,
 }
 
 impl Session {
@@ -409,6 +410,7 @@ impl Session {
             vector_live: [false; 256],
             verify: 0,
             strategy: 0,
+            code_page: 437,
         }
     }
 }
@@ -484,6 +486,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
         }
         0x62 => {
             current_process(cpu, session);
+            Action::Continue
+        }
+        0x66 => {
+            code_page(cpu, session);
             Action::Continue
         }
         0x1B => {
@@ -3322,6 +3328,26 @@ fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
     cpu.set_selector(Segment::Data, 0x50);
     cpu.set_wide(Slot::Base, 0);
     cpu.set_carry(false);
+}
+
+fn code_page(cpu: &mut CpuState, session: &mut Session) {
+    match cpu.low(Slot::Accumulator) {
+        1 => {
+            cpu.set_wide(Slot::Base, session.code_page);
+            cpu.set_wide(Slot::Data, 437);
+            cpu.set_carry(false);
+        }
+        2 => {
+            let requested = cpu.wide(Slot::Base);
+            if requested != 437 {
+                fail(cpu, session, 2);
+                return;
+            }
+            session.code_page = requested;
+            cpu.set_carry(false);
+        }
+        _ => fail(cpu, session, 1),
+    }
 }
 
 fn country_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
