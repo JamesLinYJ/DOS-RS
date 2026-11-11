@@ -1327,6 +1327,7 @@ run_one() {
 		|| ! grep -qF 'RM 0000' "$out" \
 		|| ! grep -qF 'LC 0000' "$out" \
 		|| ! grep -qF 'HL 0000' "$out" \
+		|| ! grep -qF 'OS FF' "$out" \
 		|| ! grep -qF 'MN 01DOS4RS' "$out" \
 		|| ! grep -qF 'RD \\SRV\PRT' "$out" \
 		|| grep -qF 'A:\\HELLO.COM' "$out" \

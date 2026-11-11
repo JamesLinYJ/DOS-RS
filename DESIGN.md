@@ -318,6 +318,8 @@ The same drive is local. `LC.COM` reads the attribute word and prints `LC 0000`.
 
 A file handle on that drive is local too. `HL.COM` opens `HL.DAT` and prints `HL 0000`.
 
+Output status stays ready at the end of a file, because the file can still grow. `OS.COM` seeks to the end and prints `OS FF`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.

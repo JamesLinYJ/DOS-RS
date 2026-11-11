@@ -4005,6 +4005,7 @@ fn device_control(cpu: &mut CpuState, session: &mut Session) {
             cpu.set_carry(false);
         }
         6 => input_status(cpu, session),
+        7 => output_status(cpu, session),
         8 => removable_drive(cpu, session),
         9 => local_drive(cpu, session),
         0x0A => local_handle(cpu, session),
@@ -4041,6 +4042,26 @@ fn removable_drive(cpu: &mut CpuState, session: &mut Session) {
         return;
     }
     cpu.set_wide(Slot::Accumulator, 0);
+    cpu.set_carry(false);
+}
+
+fn output_status(cpu: &mut CpuState, session: &mut Session) {
+    let handle = cpu.wide(Slot::Base);
+    if handle == 0 {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+        return;
+    }
+    if handle < 3 {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(false);
+        return;
+    }
+    let Some(Some(_)) = session.opens.get(usize::from(handle - 3)).copied() else {
+        fail(cpu, session, 6);
+        return;
+    };
+    cpu.set_low(Slot::Accumulator, 0xFF);
     cpu.set_carry(false);
 }
 
