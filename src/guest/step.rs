@@ -25,13 +25,17 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         return Outcome::Fault(0);
     };
     let mut override_segment = None;
-    if matches!(opcode, 0x26 | 0x2E | 0x36 | 0x3E) {
-        override_segment = Some(match opcode {
-            0x26 => Segment::Extra,
-            0x2E => Segment::Code,
-            0x36 => Segment::Stack,
-            _ => Segment::Data,
-        });
+    loop {
+        if matches!(opcode, 0x26 | 0x2E | 0x36 | 0x3E) {
+            override_segment = Some(match opcode {
+                0x26 => Segment::Extra,
+                0x2E => Segment::Code,
+                0x36 => Segment::Stack,
+                _ => Segment::Data,
+            });
+        } else if opcode != 0xF0 {
+            break;
+        }
         opcode = match fetch(cpu, ram) {
             Some(opcode) => opcode,
             None => return Outcome::Fault(0),
