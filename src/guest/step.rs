@@ -180,6 +180,10 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xFE => adjust_byte(cpu, ram, override_segment, opcode),
         0xFF => adjust_word(cpu, ram, override_segment, opcode),
         0xF6 => multiply_byte(cpu, ram, override_segment, opcode),
+        0xF5 => {
+            cpu.set_carry((cpu.flags() & 1) == 0);
+            Outcome::Continue
+        }
         0xF8 => {
             cpu.set_carry(false);
             Outcome::Continue
