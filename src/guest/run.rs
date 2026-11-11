@@ -566,6 +566,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x26 => {
+            create_psp(cpu, ram, session);
+            Action::Continue
+        }
         0x2A => {
             cpu.set_wide(Slot::Count, 1980);
             cpu.set_high(Slot::Data, 1);
@@ -854,6 +858,37 @@ fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
             cpu.set_carry(false);
         }
         _ => fail(cpu, session, 1),
+    }
+}
+
+fn create_psp(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
+    let source = session.current_psp;
+    let dest = cpu.wide(Slot::Data);
+    if source == 0 || dest == 0 {
+        cpu.set_carry(true);
+        return;
+    }
+    let mut offset = 0u16;
+    while offset < 0x100 {
+        let Some(byte) = ram.load(source, offset) else {
+            cpu.set_carry(true);
+            return;
+        };
+        if !ram.store(dest, offset, byte) {
+            cpu.set_carry(true);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+    }
+    let parent = source.to_le_bytes();
+    if ram.store(dest, 0, 0xCD)
+        && ram.store(dest, 1, 0x20)
+        && ram.store(dest, 0x16, parent[0])
+        && ram.store(dest, 0x17, parent[1])
+    {
+        cpu.set_carry(false);
+    } else {
+        cpu.set_carry(true);
     }
 }
 
