@@ -4357,6 +4357,10 @@ fn switch_character(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) == 1 {
+        extended_country(cpu, ram, session);
+        return;
+    }
     if cpu.low(Slot::Accumulator) == 7 {
         dbcs_info(cpu, ram, session);
         return;
@@ -4394,6 +4398,50 @@ fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session)
     {
         fail(cpu, session, 5);
         return;
+    }
+    cpu.set_carry(false);
+}
+
+fn extended_country(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let page = cpu.wide(Slot::Base);
+    let country = cpu.wide(Slot::Data);
+    if page != 0xFFFF && page != session.code_page {
+        fail(cpu, session, 2);
+        return;
+    }
+    if country != 0xFFFF && country != 1 {
+        fail(cpu, session, 2);
+        return;
+    }
+    let limit = usize::from(cpu.wide(Slot::Count));
+    if limit < 7 {
+        fail(cpu, session, 1);
+        return;
+    }
+    let mut raw = [0u8; 41];
+    raw[0] = 1;
+    raw[1] = 0x26;
+    raw[3] = 1;
+    raw[5] = 0xB5;
+    raw[6] = 0x01;
+    raw[9] = b'$';
+    raw[0x0E] = b',';
+    raw[0x10] = b'.';
+    raw[0x12] = b'-';
+    raw[0x14] = b':';
+    raw[0x17] = 2;
+    raw[0x1D] = b',';
+    let segment = cpu.selector(Segment::Extra);
+    let mut offset = cpu.wide(Slot::Dest);
+    let mut index = 0usize;
+    let count = limit.min(raw.len());
+    while index < count {
+        if !ram.store(segment, offset, raw[index]) {
+            fail(cpu, session, 5);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+        index += 1;
     }
     cpu.set_carry(false);
 }

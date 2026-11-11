@@ -336,6 +336,8 @@ A locked region rejects a write from another handle. `UL.COM` locks the first tw
 
 Code page 437 has no double-byte lead bytes. `DB.COM` asks for that table and prints `DB 070000`.
 
+Extended country information names the United States and code page 437. `CI.COM` prints `CI 01000101B5`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.
