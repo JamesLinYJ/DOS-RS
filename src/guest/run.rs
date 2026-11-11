@@ -622,6 +622,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             fcb_place(cpu, ram);
             Action::Continue
         }
+        0x27 => {
+            fcb_block_read(cpu, ram, session);
+            Action::Continue
+        }
         0x25 => {
             let id = usize::from(cpu.low(Slot::Accumulator));
             session.vector_segment[id] = cpu.selector(Segment::Data);
@@ -3066,6 +3070,101 @@ fn fcb_random_write(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
         }
     }
     cpu.set_low(Slot::Accumulator, 0);
+    cpu.set_carry(false);
+}
+
+fn fcb_block_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    };
+    let name = fcb_name(&raw);
+    let Some(len) = super::disk::file_len(&name) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    };
+    let record = fcb_record(&raw);
+    if record > 128 || len > 128 {
+        cpu.set_low(Slot::Accumulator, 2);
+        cpu.set_carry(false);
+        return;
+    }
+    let mut file = [0u8; 128];
+    if len > 0 && super::disk::read_file(&name, &mut file[..len]).is_none() {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    }
+    let mut index = random_index(&raw, record);
+    let want = cpu.wide(Slot::Count);
+    let (dta_segment, mut dta_offset) = dta_target(session);
+    let mut done = 0u16;
+    let mut status = 0u8;
+    while done < want {
+        let start = index.saturating_mul(record);
+        if start >= len as u32 {
+            status = 1;
+            break;
+        }
+        let take = record.min((len as u32) - start);
+        if start.saturating_add(record) > 128 {
+            status = 2;
+            break;
+        }
+        let mut copied = 0u32;
+        let mut stored = true;
+        while copied < record {
+            let byte = if copied < take {
+                file[(start + copied) as usize]
+            } else {
+                0
+            };
+            if !ram.store(dta_segment, dta_offset.wrapping_add(copied as u16), byte) {
+                stored = false;
+                break;
+            }
+            copied += 1;
+        }
+        if !stored {
+            status = 2;
+            break;
+        }
+        dta_offset = dta_offset.wrapping_add(record as u16);
+        index = index.saturating_add(1);
+        done = done.saturating_add(1);
+        if take < record {
+            status = 3;
+            break;
+        }
+    }
+    let mut bytes = index.to_le_bytes();
+    if record >= 64 {
+        bytes[3] = 0;
+    }
+    for (at, byte) in bytes.into_iter().enumerate() {
+        if !ram.store(segment, offset.wrapping_add(0x21 + at as u16), byte) {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            cpu.set_carry(true);
+            return;
+        }
+    }
+    let block = u16::try_from(index / 128).unwrap_or(u16::MAX);
+    let block_bytes = block.to_le_bytes();
+    let current = u8::try_from(index % 128).unwrap_or(u8::MAX);
+    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
+        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
+        || !ram.store(segment, offset.wrapping_add(0x20), current)
+    {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    }
+    cpu.set_wide(Slot::Count, done);
+    cpu.set_low(Slot::Accumulator, status);
     cpu.set_carry(false);
 }
 
