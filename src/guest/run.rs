@@ -687,6 +687,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             extended_open(cpu, ram, session);
             Action::Continue
         }
+        0x60 => {
+            truename(cpu, ram, session);
+            Action::Continue
+        }
         0x4D => {
             cpu.set_wide(Slot::Accumulator, session.last_code);
             session.last_code = 0;
@@ -2534,6 +2538,208 @@ fn read_attribute(cpu: &mut CpuState, ram: &GuestRam) {
     }
     cpu.set_wide(Slot::Accumulator, 5);
     cpu.set_carry(true);
+}
+
+fn truename(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let text = bytes_at(ram, cpu.selector(Segment::Data), cpu.wide(Slot::Source));
+    let built = match canonical_path(&text, session.drive) {
+        Ok(built) => built,
+        Err(code) => {
+            fail(cpu, session, code);
+            return;
+        }
+    };
+    let segment = cpu.selector(Segment::Extra);
+    let mut offset = cpu.wide(Slot::Dest);
+    let mut index = 0usize;
+    while index < built.len {
+        if !ram.store(segment, offset, built.bytes[index]) {
+            fail(cpu, session, 5);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+        index += 1;
+    }
+    if ram.store(segment, offset, 0) {
+        cpu.set_carry(false);
+    } else {
+        fail(cpu, session, 5);
+    }
+}
+
+struct Canon {
+    bytes: [u8; 80],
+    len: usize,
+}
+
+fn canonical_path(text: &[u8; 64], current: u8) -> Result<Canon, u16> {
+    let mut cursor = 0usize;
+    while cursor < text.len() && text[cursor] == b' ' {
+        cursor += 1;
+    }
+    let mut end = cursor;
+    while end < text.len() && text[end] != 0 {
+        end += 1;
+    }
+    if cursor >= end {
+        return Err(3);
+    }
+    let mut drive = current;
+    if cursor + 1 < end && text[cursor + 1] == b':' {
+        let letter = ascii_upper(text[cursor]);
+        if !letter.is_ascii_uppercase() {
+            return Err(15);
+        }
+        drive = letter - b'A';
+        if drive > 1 {
+            return Err(15);
+        }
+        cursor += 2;
+    }
+    if drive > 1 {
+        return Err(15);
+    }
+    let absolute = cursor < end && (text[cursor] == b'\\' || text[cursor] == b'/');
+    let mut parts = [[0u8; 12]; 16];
+    let mut lengths = [0u8; 16];
+    let mut count = 0usize;
+    if !absolute {
+        let mut prefix = [0u8; 64];
+        let prefix_len = super::disk::current_path(&mut prefix);
+        take_parts(&prefix[..prefix_len], &mut parts, &mut lengths, &mut count)?;
+    }
+    take_parts(&text[cursor..end], &mut parts, &mut lengths, &mut count)?;
+    let mut bytes = [0u8; 80];
+    bytes[0] = b'A' + drive;
+    bytes[1] = b':';
+    bytes[2] = b'\\';
+    let mut used = 3usize;
+    let mut index = 0usize;
+    while index < count {
+        if index > 0 {
+            if used >= bytes.len() {
+                return Err(3);
+            }
+            bytes[used] = b'\\';
+            used += 1;
+        }
+        let length = usize::from(lengths[index]);
+        let mut pos = 0usize;
+        while pos < length {
+            if used >= bytes.len() {
+                return Err(3);
+            }
+            bytes[used] = parts[index][pos];
+            used += 1;
+            pos += 1;
+        }
+        index += 1;
+    }
+    Ok(Canon { bytes, len: used })
+}
+
+fn take_parts(
+    text: &[u8],
+    parts: &mut [[u8; 12]; 16],
+    lengths: &mut [u8; 16],
+    count: &mut usize,
+) -> Result<(), u16> {
+    let mut start = 0usize;
+    while start <= text.len() {
+        let mut stop = start;
+        while stop < text.len() && text[stop] != b'\\' && text[stop] != b'/' {
+            stop += 1;
+        }
+        push_part(parts, lengths, count, &text[start..stop])?;
+        if stop >= text.len() {
+            break;
+        }
+        start = stop + 1;
+    }
+    Ok(())
+}
+
+fn push_part(
+    parts: &mut [[u8; 12]; 16],
+    lengths: &mut [u8; 16],
+    count: &mut usize,
+    raw: &[u8],
+) -> Result<(), u16> {
+    if raw.is_empty() || raw == b"." {
+        return Ok(());
+    }
+    if raw == b".." {
+        if *count > 0 {
+            *count -= 1;
+        }
+        return Ok(());
+    }
+    if *count >= parts.len() {
+        return Err(3);
+    }
+    let mut name = [0u8; 12];
+    let mut used = 0usize;
+    let mut base = 0usize;
+    let mut ext = 0usize;
+    let mut dotted = false;
+    for &byte in raw {
+        let upper = ascii_upper(byte);
+        if upper == b'.' {
+            if dotted || used == 0 {
+                return Err(3);
+            }
+            dotted = true;
+            name[used] = b'.';
+            used += 1;
+            continue;
+        }
+        if !path_char(upper) {
+            return Err(3);
+        }
+        if dotted {
+            ext += 1;
+            if ext > 3 {
+                return Err(3);
+            }
+        } else {
+            base += 1;
+            if base > 8 {
+                return Err(3);
+            }
+        }
+        name[used] = upper;
+        used += 1;
+    }
+    if used == 0 || (dotted && ext == 0) {
+        return Err(3);
+    }
+    parts[*count] = name;
+    lengths[*count] = used as u8;
+    *count += 1;
+    Ok(())
+}
+
+fn path_char(byte: u8) -> bool {
+    byte.is_ascii_uppercase()
+        || byte.is_ascii_digit()
+        || matches!(
+            byte,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'-'
+                | b'@'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'{'
+                | b'}'
+                | b'~'
+        )
 }
 
 fn current_directory(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
