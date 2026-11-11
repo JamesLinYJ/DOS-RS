@@ -278,6 +278,8 @@ Get DTA returns the transfer address stored by set DTA. `GD.COM` sets the addres
 
 The InDOS flag and the following critical-error flag are clear once the call returns. `ND.COM` sets both bytes, calls again, and prints `ND 0000`.
 
+The list of lists reports the largest sector, the number of block devices, and the last drive. `LL.COM` reads those fields and prints `LL 02000202`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

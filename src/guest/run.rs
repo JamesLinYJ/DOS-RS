@@ -677,6 +677,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             find_next(cpu, ram, session);
             Action::Continue
         }
+        0x52 => {
+            list_of_lists(cpu, ram);
+            Action::Continue
+        }
         0x54 => {
             cpu.set_low(Slot::Accumulator, session.verify);
             cpu.set_carry(false);
@@ -3211,6 +3215,37 @@ fn dta_target(session: &Session) -> (u16, u16) {
     } else {
         (session.dta_segment, session.dta_offset)
     }
+}
+
+fn list_of_lists(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let Some((_per_cluster, per_sector, _free, _total)) = super::disk::allocation() else {
+        cpu.set_carry(true);
+        return;
+    };
+    const SEGMENT: u16 = 0x50;
+    const OFFSET: u16 = 0x10;
+    let sector = per_sector.to_le_bytes();
+    let mut raw = [0u8; 0x34];
+    raw[0x10] = sector[0];
+    raw[0x11] = sector[1];
+    raw[0x20] = 2;
+    raw[0x21] = 2;
+    let header: [u8; 18] = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0x04, 0x80, 0, 0, 0, 0, b'N', b'U', b'L', b' ', b' ', b' ', b' ',
+        b' ',
+    ];
+    raw[0x22..0x34].copy_from_slice(&header);
+    let mut index = 0u16;
+    while usize::from(index) < raw.len() {
+        if !ram.store(SEGMENT, OFFSET.wrapping_add(index), raw[usize::from(index)]) {
+            cpu.set_carry(true);
+            return;
+        }
+        index = index.wrapping_add(1);
+    }
+    cpu.set_selector(Segment::Extra, SEGMENT);
+    cpu.set_wide(Slot::Base, OFFSET);
+    cpu.set_carry(false);
 }
 
 fn indos_flag(cpu: &mut CpuState, ram: &mut GuestRam) {
