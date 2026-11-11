@@ -478,6 +478,15 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             current_process(cpu, session);
             Action::Continue
         }
+        0x1B => {
+            cpu.set_low(Slot::Data, 0);
+            drive_info(cpu, ram);
+            Action::Continue
+        }
+        0x1C => {
+            drive_info(cpu, ram);
+            Action::Continue
+        }
         0x1A => {
             session.dta_segment = cpu.selector(Segment::Data);
             session.dta_offset = cpu.wide(Slot::Data);
@@ -2299,6 +2308,32 @@ fn dta_target(session: &Session) -> (u16, u16) {
     } else {
         (session.dta_segment, session.dta_offset)
     }
+}
+
+fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let drive = cpu.low(Slot::Data);
+    if drive > 1 {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    }
+    let Some((per_cluster, per_sector, _free, total)) = super::disk::allocation() else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    };
+    let media = super::disk::media_id();
+    if !ram.store(0x50, 0, media) {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    }
+    cpu.set_low(Slot::Accumulator, per_cluster as u8);
+    cpu.set_wide(Slot::Count, per_sector);
+    cpu.set_wide(Slot::Data, total);
+    cpu.set_selector(Segment::Data, 0x50);
+    cpu.set_wide(Slot::Base, 0);
+    cpu.set_carry(false);
 }
 
 fn report_space(cpu: &mut CpuState) {

@@ -33,6 +33,10 @@ struct Map {
 ///
 /// The scan matches `DISK_INFO`: cluster 2 through the highest cluster, with
 /// a zero entry counted free. The total is one less than the highest cluster.
+pub fn media_id() -> u8 {
+    storage().bytes.get(21).copied().unwrap_or(0xF0)
+}
+
 pub fn allocation() -> Option<(u16, u16, u16, u16)> {
     let disk = storage();
     let map = layout(disk)?;
