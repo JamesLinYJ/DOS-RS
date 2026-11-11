@@ -3799,8 +3799,19 @@ fn device_control(cpu: &mut CpuState, session: &mut Session) {
         }
         6 => input_status(cpu, session),
         8 => removable_drive(cpu, session),
+        9 => local_drive(cpu, session),
         _ => cpu.set_carry(true),
     }
+}
+
+fn local_drive(cpu: &mut CpuState, session: &mut Session) {
+    let drive = cpu.low(Slot::Base);
+    if drive > 2 {
+        fail(cpu, session, 15);
+        return;
+    }
+    cpu.set_wide(Slot::Data, 0);
+    cpu.set_carry(false);
 }
 
 fn removable_drive(cpu: &mut CpuState, session: &mut Session) {
