@@ -232,6 +232,8 @@ A frame with one nested level pushes the new frame pointer before the locals. `E
 
 Interrupt on overflow enters vector 4 when the overflow flag is set. `IT.COM` adds `1` to `7Fh` and prints `IT Y`.
 
+A bounds check enters vector 5 when the index is outside the signed limits. `BD.COM` checks `0` against `1` and `10`, the handler brings the index inside the range, and the program prints `BD Y`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

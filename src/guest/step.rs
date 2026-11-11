@@ -56,6 +56,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0x48..=0x4F => decrement(cpu, opcode),
         0x60 => push_all(cpu, ram),
         0x61 => pop_all(cpu, ram),
+        0x62 => bound_check(cpu, ram, override_segment, opcode),
         0x68 => push_immediate(cpu, ram, opcode),
         0x69 => multiply_signed(cpu, ram, override_segment, opcode, true),
         0x6A => push_signed(cpu, ram, opcode),
@@ -787,6 +788,38 @@ fn move_into_operand(
         } else {
             Outcome::Fault(opcode)
         }
+    }
+}
+
+fn bound_check(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
+    let opcode_at = cpu.instruction().wrapping_sub(1);
+    let Some(modrm) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
+        return Outcome::Fault(opcode);
+    };
+    let Operand::Memory { segment, offset } = operand else {
+        return Outcome::Fault(opcode);
+    };
+    let value = cpu.wide(Slot::from_index((modrm >> 3) & 7)) as i16;
+    let selector = cpu.selector(segment);
+    let Some(lower) = load_pair(ram, selector, offset) else {
+        return Outcome::Fault(opcode);
+    };
+    let Some(upper) = load_pair(ram, selector, offset.wrapping_add(2)) else {
+        return Outcome::Fault(opcode);
+    };
+    if value < lower as i16 || value > upper as i16 {
+        cpu.set_instruction(opcode_at);
+        Outcome::Interrupt(5)
+    } else {
+        Outcome::Continue
     }
 }
 
