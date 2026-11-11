@@ -495,6 +495,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x23 => {
+            fcb_size(cpu, ram);
+            Action::Continue
+        }
         0x25 => {
             let id = usize::from(cpu.low(Slot::Accumulator));
             session.vector_segment[id] = cpu.selector(Segment::Data);
@@ -1921,6 +1925,38 @@ fn rename_path(cpu: &mut CpuState, ram: &GuestRam) {
         return;
     };
     cpu.set_carry(!super::disk::rename_file(&from, &to));
+}
+
+fn fcb_size(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let mut raw = [0u8; 37];
+    for (index, byte) in raw.iter_mut().enumerate() {
+        let Some(loaded) = ram.load(segment, offset.wrapping_add(index as u16)) else {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            return;
+        };
+        *byte = loaded;
+    }
+    let mut name = [b' '; 11];
+    name.copy_from_slice(&raw[1..12]);
+    let mut record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
+    if record == 0 {
+        record = 128;
+    }
+    let Some(len) = super::disk::file_len(&name) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let records = (len as u32).div_ceil(record);
+    for (index, byte) in records.to_le_bytes().into_iter().enumerate() {
+        if !ram.store(segment, offset.wrapping_add(0x21 + index as u16), byte) {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            return;
+        }
+    }
+    cpu.set_low(Slot::Accumulator, 0);
+    cpu.set_carry(false);
 }
 
 fn file_time(cpu: &mut CpuState, session: &mut Session) {
