@@ -1339,7 +1339,7 @@ run_one() {
 		|| ! grep -q "INT MAKE OK" "$out" \
 		|| ! grep -q "INT REN OK" "$out" \
 		|| ! grep -q "INT DEL OK" "$out" \
-		|| ! grep -q "INT FIND HELLO.COM" "$out" \
+		|| ! grep -q $'INT FIND HELLO.COM\r\nINT CWD ROOT' "$out" \
 		|| ! grep -q "INT CWD ROOT" "$out" \
 		|| ! grep -q "INT MEM OK" "$out" \
 		|| ! grep -q "INT DIR OK" "$out"; then

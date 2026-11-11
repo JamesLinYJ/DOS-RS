@@ -425,7 +425,8 @@ INT SEEK 01
 INT MAKE OK
 INT REN OK
 INT DEL OK
-INT FIND HELLO.COMÕ ¥Õ!<tÈf∫åËk¥*Õ!ã¡=ºtÈR∫ôËW¥,Õ!ã¡=tÈ>∫©ËC≤¥6Õ!ã¡=tÈ(∫∑Ë-∫4∏`%Õ!∏`5Õ!ã√=4tÈ∫«Ë∫M∏CÕ!sÈ¯ã¡= tÈÓ∫÷ËÛ∫W∏=Õ!sÈ€ãÿ∏B3…∫Õ!sÈ =tÈ¬∫‰Ë«∫`3…¥<Õ!sÈÆ∫ÚË≥∫`øi¥VÕ!sÈô∫Ëû∫i¥AÕ!sÈá∫Ëå∫¥Õ!∫M3…¥NÕ!ro∫Ët∫ùËnæ{≤¥GÕ!rX¨<têêêêê∫INT CWD ROOT
+INT FIND HELLO.COM
+INT CWD ROOT
 INT MEM OK
 INT DIR OK
 BIOS 10 50

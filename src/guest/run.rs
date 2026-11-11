@@ -2222,6 +2222,15 @@ fn write_match(
             cursor += 1;
         }
     }
+    if length + 1 < shown.len() {
+        shown[length + 1] = b'\r';
+    }
+    if length + 2 < shown.len() {
+        shown[length + 2] = b'\n';
+    }
+    if length + 3 < shown.len() {
+        shown[length + 3] = b'$';
+    }
     let mut slot = 0usize;
     while slot < shown.len() {
         if !ram.store(segment, base.wrapping_add(0x1E).wrapping_add(slot as u16), shown[slot]) {
