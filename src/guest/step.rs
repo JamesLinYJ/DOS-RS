@@ -1756,12 +1756,36 @@ fn shift_by_count(
             return Outcome::Fault(opcode);
         };
         while times != 0 {
-            if operation == 4 {
-                carry = value & 0x80 != 0;
-                value <<= 1;
-            } else {
-                carry = value & 1 != 0;
-                value >>= 1;
+            let incoming = carry;
+            match operation {
+                0 => {
+                    carry = value & 0x80 != 0;
+                    value = (value << 1) | u8::from(carry);
+                }
+                1 => {
+                    carry = value & 1 != 0;
+                    value = (value >> 1) | (u8::from(carry) << 7);
+                }
+                2 => {
+                    carry = value & 0x80 != 0;
+                    value = (value << 1) | u8::from(incoming);
+                }
+                3 => {
+                    carry = value & 1 != 0;
+                    value = (value >> 1) | (u8::from(incoming) << 7);
+                }
+                4 | 6 => {
+                    carry = value & 0x80 != 0;
+                    value <<= 1;
+                }
+                7 => {
+                    carry = value & 1 != 0;
+                    value = ((value as i8) >> 1) as u8;
+                }
+                _ => {
+                    carry = value & 1 != 0;
+                    value >>= 1;
+                }
             }
             times -= 1;
         }

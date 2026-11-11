@@ -1263,6 +1263,7 @@ run_one() {
 		|| ! grep -qF 'A:\HELLO.COM' "$out" \
 		|| ! grep -qF 'NEXT CHILD.COM' "$out" \
 		|| ! grep -qF 'IOCTL 0000' "$out" \
+		|| ! grep -qF 'SAR C0' "$out" \
 		|| grep -qF 'A:\\HELLO.COM' "$out" \
 		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out" \
 		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \
