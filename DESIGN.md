@@ -332,6 +332,8 @@ A random block write stores several records from the transfer area. `BW.COM` wri
 
 Disk reset writes every open file that still has new bytes. `DZ.COM` writes `QR` without closing, resets the disk, and prints `DZ 00QR`.
 
+A locked region rejects a write from another handle. `UL.COM` locks the first two bytes of `ABCD`, the other handle is refused, and the file still reads `ABCD`. It prints `UL 0021ABCD`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.

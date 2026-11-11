@@ -387,6 +387,7 @@ pub(super) struct Session {
     machine_name: [u8; 15],
     machine_defined: bool,
     redirects: [Redirect; 4],
+    locks: [RegionLock; 8],
     year: u16,
     month: u8,
     day: u8,
@@ -429,6 +430,7 @@ impl Session {
             machine_name: [b' '; 15],
             machine_defined: false,
             redirects: [Redirect::empty(); 4],
+            locks: [RegionLock::empty(); 8],
             year: 1980,
             month: 1,
             day: 1,
@@ -835,6 +837,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
         }
         0x5B => {
             create_new(cpu, ram, session);
+            Action::Continue
+        }
+        0x5C => {
+            lock_file(cpu, session);
             Action::Continue
         }
         0x6C => {
@@ -1403,12 +1409,158 @@ enum Commit {
     Failed,
 }
 
+fn lock_file(cpu: &mut CpuState, session: &mut Session) {
+    let handle = cpu.wide(Slot::Base);
+    let name = match handle_name(session, handle) {
+        Ok(name) => name,
+        Err(code) => {
+            fail(cpu, session, code);
+            return;
+        }
+    };
+    let start = (u32::from(cpu.wide(Slot::Count)) << 16) | u32::from(cpu.wide(Slot::Data));
+    let length = (u32::from(cpu.wide(Slot::Source)) << 16) | u32::from(cpu.wide(Slot::Dest));
+    match cpu.low(Slot::Accumulator) {
+        0 => add_lock(cpu, session, handle, name, start, length),
+        1 => remove_lock(cpu, session, handle, &name, start, length),
+        _ => fail(cpu, session, 1),
+    }
+}
+
+fn handle_name(session: &Session, handle: u16) -> Result<[u8; 11], u16> {
+    let opened = if handle < 3 {
+        session.stdio[usize::from(handle)].as_ref()
+    } else {
+        let index = usize::from(handle - 3);
+        session.opens.get(index).and_then(|slot| slot.as_ref())
+    };
+    match opened {
+        None => Err(6),
+        Some(opened) if !opened.named => Err(1),
+        Some(opened) => Ok(opened.name),
+    }
+}
+
+fn add_lock(
+    cpu: &mut CpuState,
+    session: &mut Session,
+    handle: u16,
+    name: [u8; 11],
+    start: u32,
+    length: u32,
+) {
+    let mut index = 0usize;
+    while index < session.locks.len() {
+        let held = session.locks[index];
+        if held.live && held.name == name && ranges_overlap(start, length, held.start, held.length) {
+            fail(cpu, session, 0x21);
+            return;
+        }
+        index += 1;
+    }
+    index = 0;
+    while index < session.locks.len() {
+        if !session.locks[index].live {
+            session.locks[index] = RegionLock {
+                owner: handle,
+                name,
+                start,
+                length,
+                live: true,
+            };
+            cpu.set_carry(false);
+            return;
+        }
+        index += 1;
+    }
+    fail(cpu, session, 0x24);
+}
+
+fn remove_lock(
+    cpu: &mut CpuState,
+    session: &mut Session,
+    handle: u16,
+    name: &[u8; 11],
+    start: u32,
+    length: u32,
+) {
+    let mut index = 0usize;
+    while index < session.locks.len() {
+        let held = session.locks[index];
+        if held.live && held.owner == handle && held.name == *name && held.start == start && held.length == length
+        {
+            session.locks[index].live = false;
+            cpu.set_carry(false);
+            return;
+        }
+        index += 1;
+    }
+    fail(cpu, session, 0x21);
+}
+
+fn release_locks(session: &mut Session, handle: u16) {
+    let mut index = 0usize;
+    while index < session.locks.len() {
+        if session.locks[index].live && session.locks[index].owner == handle {
+            session.locks[index].live = false;
+        }
+        index += 1;
+    }
+}
+
+fn region_blocked(session: &Session, handle: u16, name: &[u8; 11], start: u32, length: u32) -> bool {
+    let mut index = 0usize;
+    while index < session.locks.len() {
+        let held = session.locks[index];
+        if held.live
+            && held.owner != handle
+            && held.name == *name
+            && ranges_overlap(start, length, held.start, held.length)
+        {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn ranges_overlap(start: u32, length: u32, other: u32, other_length: u32) -> bool {
+    if length == 0 || other_length == 0 {
+        return false;
+    }
+    let end = start.saturating_add(length);
+    let other_end = other.saturating_add(other_length);
+    start < other_end && other < end
+}
+
+#[derive(Clone, Copy)]
+struct RegionLock {
+    owner: u16,
+    name: [u8; 11],
+    start: u32,
+    length: u32,
+    live: bool,
+}
+
+impl RegionLock {
+    const fn empty() -> Self {
+        Self {
+            owner: 0,
+            name: [b' '; 11],
+            start: 0,
+            length: 0,
+            live: false,
+        }
+    }
+}
+
 fn close_file(cpu: &mut CpuState, session: &mut Session) {
     let handle = cpu.wide(Slot::Base);
     if handle >= 3 {
         let index = usize::from(handle - 3);
-        if let Some(opened) = session.opens[index] {
-            let stored = flush_opened(&opened);
+    if let Some(opened) = session.opens[index] {
+        release_locks(session, handle);
+        let stored = flush_opened(&opened);
             session.opens[index] = None;
             if !stored {
                 note_error(session, 5);
@@ -1447,6 +1599,14 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if found.access == 1 {
         fail(cpu, session, 5);
         return;
+    }
+    if requested > 0 {
+        let start = u32::try_from(found.pos).unwrap_or(u32::MAX);
+        let span = u32::try_from(requested).unwrap_or(u32::MAX);
+        if region_blocked(session, handle, &found.name, start, span) {
+            fail(cpu, session, 0x21);
+            return;
+        }
     }
     let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
         fail(cpu, session, 6);
@@ -1807,11 +1967,18 @@ fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 5);
         return;
     }
+    let count = cpu.wide(Slot::Count);
+    if count > 0 {
+        let start = u32::try_from(found.pos).unwrap_or(u32::MAX);
+        if region_blocked(session, handle, &found.name, start, u32::from(count)) {
+            fail(cpu, session, 0x21);
+            return;
+        }
+    }
     let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
         fail(cpu, session, 6);
         return;
     };
-    let count = cpu.wide(Slot::Count);
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
     let mut seen = 0u16;
