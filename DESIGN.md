@@ -222,6 +222,8 @@ Complement carry flips the carry flag. `CMC.COM` sets carry, complements it, and
 
 Operation 6 of a shift by CL is a left shift, the same as operation 4. `S6.COM` shifts `1` left once that way and prints `S6 02`.
 
+A repeated byte load reads through the source index. `LD.COM` repeats a load of one byte and prints `LD Q`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

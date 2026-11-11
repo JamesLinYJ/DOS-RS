@@ -2238,6 +2238,16 @@ fn compare_string_word(
     true
 }
 
+fn load_byte(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
+    let source = cpu.wide(Slot::Source);
+    let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
+        return false;
+    };
+    cpu.set_low(Slot::Accumulator, byte);
+    cpu.set_wide(Slot::Source, step_index(cpu, source));
+    true
+}
+
 fn load_word(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
     let source = cpu.wide(Slot::Source);
     let Some(value) = load_pair(ram, source_selector(cpu, override_segment), source) else {
@@ -2328,6 +2338,7 @@ fn repeat(
             0xA5 => copy_string_word(cpu, ram, override_segment),
             0xA6 => compare_string(cpu, ram, override_segment),
             0xA7 => compare_string_word(cpu, ram, override_segment),
+            0xAC => load_byte(cpu, ram, override_segment),
             0xAA => {
                 let dest = cpu.wide(Slot::Dest);
                 ram.store(
