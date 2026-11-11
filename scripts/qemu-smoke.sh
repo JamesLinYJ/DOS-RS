@@ -1310,6 +1310,7 @@ run_one() {
 		|| ! grep -qF 'LL 02000202' "$out" \
 		|| ! grep -qF 'PS 1234' "$out" \
 		|| ! grep -qF 'MS 0001' "$out" \
+		|| ! grep -qF 'CT 0001000024' "$out" \
 		|| grep -qF 'A:\\HELLO.COM' "$out" \
 		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out" \
 		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \

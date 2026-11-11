@@ -284,6 +284,8 @@ Set PSP stores the segment that get PSP returns. `PS.COM` selects `1234h`, reads
 
 The allocation strategy is first fit until a program selects another. `MS.COM` selects best fit, reads it back, and prints `MS 0001`.
 
+Country information for the United States uses country code `0001h`, month-day-year dates, and a `$` currency symbol. `CT.COM` prints `CT 0001000024`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

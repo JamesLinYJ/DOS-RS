@@ -596,6 +596,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             report_space(cpu);
             Action::Continue
         }
+        0x38 => {
+            country_info(cpu, ram, session);
+            Action::Continue
+        }
         0x39 => {
             cpu.set_carry(!named(cpu, ram, super::disk::make_dir));
             Action::Continue
@@ -3317,6 +3321,37 @@ fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
     cpu.set_wide(Slot::Data, total);
     cpu.set_selector(Segment::Data, 0x50);
     cpu.set_wide(Slot::Base, 0);
+    cpu.set_carry(false);
+}
+
+fn country_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let code = match cpu.low(Slot::Accumulator) {
+        0 => 1,
+        0xFF => cpu.wide(Slot::Base),
+        other => u16::from(other),
+    };
+    if code != 1 {
+        fail(cpu, session, 2);
+        return;
+    }
+    let mut info = [0u8; 34];
+    info[2] = b'$';
+    info[7] = b',';
+    info[9] = b'.';
+    info[0x0B] = b'-';
+    info[0x0D] = b':';
+    info[0x10] = 2;
+    info[0x16] = b',';
+    let segment = cpu.selector(Segment::Data);
+    let mut offset = cpu.wide(Slot::Data);
+    for byte in info {
+        if !ram.store(segment, offset, byte) {
+            fail(cpu, session, 5);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+    }
+    cpu.set_wide(Slot::Base, 1);
     cpu.set_carry(false);
 }
 
