@@ -192,6 +192,8 @@ Function 44h subfunction 0 returns the device word. Handles 0 through 2 that are
 
 A byte shifted by CL follows the same rotate, through-carry, logical, and arithmetic operations as a byte shifted once. `SAR.COM` arithmetic-shifts `80h` once and prints `SAR C0`.
 
+Parity and overflow jumps follow the flags. `JP.COM` clears AL, which has even parity, and prints `JP Y`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

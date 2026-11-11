@@ -2355,7 +2355,10 @@ fn condition(flags: u16, kind: u8) -> bool {
     let zero = flags & 0x40 != 0;
     let sign = flags & 0x80 != 0;
     let overflow = flags & 0x0800 != 0;
+    let parity = flags & 0x0004 != 0;
     match kind {
+        0x0 => overflow,
+        0x1 => !overflow,
         0x2 => carry,
         0x3 => !carry,
         0x4 => zero,
@@ -2364,6 +2367,8 @@ fn condition(flags: u16, kind: u8) -> bool {
         0x7 => !carry && !zero,
         0x8 => sign,
         0x9 => !sign,
+        0xA => parity,
+        0xB => !parity,
         0xC => sign != overflow,
         0xD => sign == overflow,
         0xE => zero || sign != overflow,
