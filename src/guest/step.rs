@@ -153,6 +153,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xD1 => shift_word_once(cpu, ram, override_segment, opcode),
         0xD2 => shift_by_count(cpu, ram, override_segment, false, opcode),
         0xD3 => shift_by_count(cpu, ram, override_segment, true, opcode),
+        0xD4 => adjust_multiply(cpu, ram, opcode),
         0xD7 => translate(cpu, ram, opcode),
         0xE4 => read_port(cpu, ram, opcode),
         0xE0..=0xE2 => loop_count(cpu, ram, opcode),
@@ -1954,6 +1955,22 @@ fn note_shift_overflow(cpu: &mut CpuState, operation: u8, original: u16, result:
     if overflow {
         cpu.set_flags(cpu.flags() | 0x0800);
     }
+}
+
+fn adjust_multiply(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+    let Some(base) = fetch(cpu, ram) else {
+        return Outcome::Fault(opcode);
+    };
+    if base == 0 {
+        return Outcome::Fault(opcode);
+    }
+    let value = cpu.low(Slot::Accumulator);
+    let quotient = value / base;
+    let remainder = value % base;
+    cpu.set_high(Slot::Accumulator, quotient);
+    cpu.set_low(Slot::Accumulator, remainder);
+    cpu.apply_result_flags(byte_logic(remainder));
+    Outcome::Continue
 }
 
 fn translate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
