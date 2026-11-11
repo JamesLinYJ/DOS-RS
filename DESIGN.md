@@ -328,6 +328,8 @@ Closing an FCB writes its size back to the directory. `FC.COM` writes `WXYZ`, cl
 
 A random block read returns several records and the count. `BK.COM` reads two records from `ABCD` and prints `BK 0002ABCD`.
 
+A random block write stores several records from the transfer area. `BW.COM` writes `WXYZ` as two records and prints `BW 0002WXYZ`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.
