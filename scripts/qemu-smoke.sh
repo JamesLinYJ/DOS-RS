@@ -1296,6 +1296,12 @@ run_one() {
 		|| ! grep -qF 'FR B2' "$out" \
 		|| ! grep -qF 'FW WXYZ' "$out" \
 		|| ! grep -qF 'FD 0002' "$out" \
+		|| ! grep -qF 'RN ABCD' "$out" \
+		|| ! grep -qF 'RR 41' "$out" \
+		|| ! grep -qF 'RW 000051' "$out" \
+		|| ! grep -qF 'MK 00000000' "$out" \
+		|| ! grep -qF 'SR 00000083' "$out" \
+		|| ! grep -qF 'EX 0002EXOK' "$out" \
 		|| grep -qF 'A:\\HELLO.COM' "$out" \
 		|| ! grep -q "EXE2BIN 0018 0E1F OK" "$out" \
 		|| ! grep -q "Microsoft (R) Program Maintenance Utility   Version 1.00.05" "$out" \

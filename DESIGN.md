@@ -256,6 +256,18 @@ An FCB sequential write stores the transfer area into the file. `FW.COM` writes 
 
 An FCB delete removes the named file. `FD.COM` creates `ZZ.DAT`, deletes it, and the next open returns `0002h`. It prints `FD 0002`.
 
+An FCB rename moves the directory name and leaves the bytes in place. `RN.COM` writes `ABCD` into `OLD.DAT`, renames it to `NEW.DAT`, and prints `RN ABCD`.
+
+An FCB random read uses the random record field. `RR.COM` reads record 1 of `HELLO.COM` at one byte per record and prints `RR 41`.
+
+An FCB random write stores the transfer area at the random record. `RW.COM` writes `Q` at record 2 and prints `RW 000051`.
+
+An FCB create truncates an existing file. `MK.COM` writes three bytes, creates the same name through an FCB, and prints `MK 00000000`.
+
+An FCB set-random-record stores `block * 128 + current`. `SR.COM` uses block 1 and record 3 and prints `SR 00000083`.
+
+Extended open creates a file named at `DS:SI` and reports the action in `CX`. `EX.COM` creates `EX.DAT`, writes `EXOK`, and prints `EX 0002EXOK`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
