@@ -228,6 +228,8 @@ A word compare reads both strings and sets the flags from their difference. `CW.
 
 A repeated string move accepts a segment override after the repeat. `RS.COM` moves one byte with the extra segment as the source and prints `RS Q`.
 
+A frame with one nested level pushes the new frame pointer before the locals. `EN.COM` starts the stack at `2000h` and prints `EN 1FFE1FF8`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

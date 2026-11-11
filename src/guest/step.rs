@@ -1520,13 +1520,30 @@ fn enter(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let Some(level) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
-    if level != 0 || !push_word(cpu, ram, cpu.wide(Slot::Frame)) {
+    if !push_word(cpu, ram, cpu.wide(Slot::Frame)) {
         return Outcome::Fault(opcode);
     }
-    let pointer = cpu.wide(Slot::Stack);
-    cpu.set_wide(Slot::Frame, pointer);
+    let frame = cpu.wide(Slot::Stack);
+    if level > 0 {
+        let mut depth = 1u8;
+        while depth < level {
+            let next = cpu.wide(Slot::Frame).wrapping_sub(2);
+            cpu.set_wide(Slot::Frame, next);
+            let Some(copied) = load_pair(ram, cpu.selector(Segment::Stack), next) else {
+                return Outcome::Fault(opcode);
+            };
+            if !push_word(cpu, ram, copied) {
+                return Outcome::Fault(opcode);
+            }
+            depth += 1;
+        }
+        if !push_word(cpu, ram, frame) {
+            return Outcome::Fault(opcode);
+        }
+    }
+    cpu.set_wide(Slot::Frame, frame);
     let bytes = u16::from_le_bytes([low, high]);
-    cpu.set_wide(Slot::Stack, pointer.wrapping_sub(bytes));
+    cpu.set_wide(Slot::Stack, cpu.wide(Slot::Stack).wrapping_sub(bytes));
     Outcome::Continue
 }
 
