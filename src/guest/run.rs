@@ -379,6 +379,7 @@ pub(super) struct Session {
     vector_segment: [u16; 256],
     vector_offset: [u16; 256],
     vector_live: [bool; 256],
+    verify: u8,
 }
 
 impl Session {
@@ -405,6 +406,7 @@ impl Session {
             vector_segment: [0; 256],
             vector_offset: [0; 256],
             vector_live: [false; 256],
+            verify: 0,
         }
     }
 }
@@ -506,6 +508,11 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_high(Slot::Data, 1);
             cpu.set_low(Slot::Data, 1);
             cpu.set_low(Slot::Accumulator, 2);
+            cpu.set_carry(false);
+            Action::Continue
+        }
+        0x2E => {
+            session.verify = u8::from(cpu.low(Slot::Accumulator) != 0);
             cpu.set_carry(false);
             Action::Continue
         }
@@ -617,6 +624,11 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
         }
         0x4F => {
             find_next(cpu, ram, session);
+            Action::Continue
+        }
+        0x54 => {
+            cpu.set_low(Slot::Accumulator, session.verify);
+            cpu.set_carry(false);
             Action::Continue
         }
         0x56 => {
