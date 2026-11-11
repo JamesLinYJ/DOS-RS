@@ -468,6 +468,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             system_values(cpu, session);
             Action::Continue
         }
+        0x34 => {
+            indos_flag(cpu, ram);
+            Action::Continue
+        }
         0x46 => {
             force_duplicate(cpu, session);
             Action::Continue
@@ -3207,6 +3211,18 @@ fn dta_target(session: &Session) -> (u16, u16) {
     } else {
         (session.dta_segment, session.dta_offset)
     }
+}
+
+fn indos_flag(cpu: &mut CpuState, ram: &mut GuestRam) {
+    const SEGMENT: u16 = 0x50;
+    const OFFSET: u16 = 4;
+    if !ram.store(SEGMENT, OFFSET, 0) || !ram.store(SEGMENT, OFFSET.wrapping_add(1), 0) {
+        cpu.set_carry(true);
+        return;
+    }
+    cpu.set_selector(Segment::Extra, SEGMENT);
+    cpu.set_wide(Slot::Base, OFFSET);
+    cpu.set_carry(false);
 }
 
 fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
