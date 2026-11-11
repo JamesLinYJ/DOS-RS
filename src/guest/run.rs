@@ -594,6 +594,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x32 => {
+            drive_parameters(cpu, ram);
+            Action::Continue
+        }
         0x35 => {
             let id = usize::from(cpu.low(Slot::Accumulator));
             if session.vector_live[id] {
@@ -3370,6 +3374,57 @@ fn list_of_lists(cpu: &mut CpuState, ram: &mut GuestRam) {
     }
     cpu.set_selector(Segment::Extra, SEGMENT);
     cpu.set_wide(Slot::Base, OFFSET);
+    cpu.set_carry(false);
+}
+
+fn drive_parameters(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let drive = cpu.low(Slot::Data);
+    if drive > 2 {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    }
+    let Some(block) = super::disk::drive_block() else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        cpu.set_carry(true);
+        return;
+    };
+    let mut raw = [0u8; 0x20];
+    let sector = block.bytes_per_sector.to_le_bytes();
+    raw[2] = sector[0];
+    raw[3] = sector[1];
+    raw[4] = block.sectors_per_cluster.wrapping_sub(1);
+    raw[5] = block.shift;
+    let reserved = block.reserved.to_le_bytes();
+    raw[6] = reserved[0];
+    raw[7] = reserved[1];
+    raw[8] = block.fats;
+    let root = block.root_entries.to_le_bytes();
+    raw[9] = root[0];
+    raw[10] = root[1];
+    let data = block.data_sector.to_le_bytes();
+    raw[0x0B] = data[0];
+    raw[0x0C] = data[1];
+    let highest = block.max_cluster.to_le_bytes();
+    raw[0x0D] = highest[0];
+    raw[0x0E] = highest[1];
+    let fat = block.sectors_per_fat.to_le_bytes();
+    raw[0x0F] = fat[0];
+    raw[0x10] = fat[1];
+    raw[0x11] = block.media;
+    const SEGMENT: u16 = 0x60;
+    let mut index = 0u16;
+    while usize::from(index) < raw.len() {
+        if !ram.store(SEGMENT, index, raw[usize::from(index)]) {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            cpu.set_carry(true);
+            return;
+        }
+        index = index.wrapping_add(1);
+    }
+    cpu.set_selector(Segment::Data, SEGMENT);
+    cpu.set_wide(Slot::Base, 0);
+    cpu.set_low(Slot::Accumulator, 0);
     cpu.set_carry(false);
 }
 

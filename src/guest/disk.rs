@@ -37,6 +37,50 @@ pub fn media_id() -> u8 {
     storage().bytes.get(21).copied().unwrap_or(0xF0)
 }
 
+pub struct DriveBlock {
+    pub bytes_per_sector: u16,
+    pub sectors_per_cluster: u8,
+    pub reserved: u16,
+    pub fats: u8,
+    pub root_entries: u16,
+    pub sectors_per_fat: u16,
+    pub media: u8,
+    pub data_sector: u16,
+    pub max_cluster: u16,
+    pub shift: u8,
+}
+
+pub fn drive_block() -> Option<DriveBlock> {
+    let disk = storage();
+    let map = layout(disk)?;
+    let sectors_per_cluster = *disk.bytes.get(13)?;
+    let reserved = u16::from_le_bytes([*disk.bytes.get(14)?, *disk.bytes.get(15)?]);
+    let fats = *disk.bytes.get(16)?;
+    let root_entries = u16::from_le_bytes([*disk.bytes.get(17)?, *disk.bytes.get(18)?]);
+    let sectors_per_fat = u16::from_le_bytes([*disk.bytes.get(22)?, *disk.bytes.get(23)?]);
+    let media = disk.bytes.get(21).copied().unwrap_or(0xF0);
+    let bytes_per_sector = u16::try_from(map.bytes_per_sector).ok()?;
+    let data_sector = u16::try_from(map.data_sector).ok()?;
+    let mut shift = 0u8;
+    let mut span = 1u16;
+    while span < u16::from(sectors_per_cluster) && shift < 8 {
+        span = span.saturating_mul(2);
+        shift = shift.saturating_add(1);
+    }
+    Some(DriveBlock {
+        bytes_per_sector,
+        sectors_per_cluster,
+        reserved,
+        fats,
+        root_entries,
+        sectors_per_fat,
+        media,
+        data_sector,
+        max_cluster: map.max_cluster,
+        shift,
+    })
+}
+
 pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
     let disk = storage();
     let map = layout(disk)?;
