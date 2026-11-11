@@ -380,6 +380,7 @@ pub(super) struct Session {
     vector_offset: [u16; 256],
     vector_live: [bool; 256],
     verify: u8,
+    strategy: u8,
 }
 
 impl Session {
@@ -407,6 +408,7 @@ impl Session {
             vector_offset: [0; 256],
             vector_live: [false; 256],
             verify: 0,
+            strategy: 0,
         }
     }
 }
@@ -678,6 +680,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             current_process(cpu, session);
             Action::Continue
         }
+        0x58 => {
+            allocation_strategy(cpu, session);
+            Action::Continue
+        }
         0x4E => {
             find_first(cpu, ram, session);
             Action::Continue
@@ -804,6 +810,25 @@ fn extended_error(cpu: &mut CpuState, session: &Session) {
     cpu.set_selector(Segment::Extra, 0);
     cpu.set_wide(Slot::Dest, 0);
     cpu.set_carry(false);
+}
+
+fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
+    match cpu.low(Slot::Accumulator) {
+        0 => {
+            cpu.set_wide(Slot::Accumulator, u16::from(session.strategy));
+            cpu.set_carry(false);
+        }
+        1 => {
+            let requested = cpu.wide(Slot::Base);
+            if requested > 2 {
+                fail(cpu, session, 1);
+                return;
+            }
+            session.strategy = requested as u8;
+            cpu.set_carry(false);
+        }
+        _ => fail(cpu, session, 1),
+    }
 }
 
 fn current_process(cpu: &mut CpuState, session: &Session) {
