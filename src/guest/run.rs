@@ -669,6 +669,15 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x4C => Action::Exit(cpu.low(Slot::Accumulator)),
+        0x50 => {
+            session.current_psp = cpu.wide(Slot::Base);
+            cpu.set_carry(false);
+            Action::Continue
+        }
+        0x51 => {
+            current_process(cpu, session);
+            Action::Continue
+        }
         0x4E => {
             find_first(cpu, ram, session);
             Action::Continue
