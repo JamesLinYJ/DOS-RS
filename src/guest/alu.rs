@@ -99,12 +99,15 @@ fn add_flags(left: u8, right: u8, result: u8, carry: bool) -> u16 {
 }
 
 fn join_flags(low: u8, high: u8, low_flags: u16, high_flags: u16) -> u16 {
-    let mut flags = high_flags & !CARRY & !AUXILIARY & !ZERO;
+    let mut flags = high_flags & !CARRY & !AUXILIARY & !ZERO & !PARITY;
     if high_flags & CARRY != 0 {
         flags |= CARRY;
     }
     if low_flags & AUXILIARY != 0 {
         flags |= AUXILIARY;
+    }
+    if low_flags & PARITY != 0 {
+        flags |= PARITY;
     }
     if low == 0 && high == 0 {
         flags |= ZERO;
@@ -115,12 +118,15 @@ fn join_flags(low: u8, high: u8, low_flags: u16, high_flags: u16) -> u16 {
 pub fn add16(left: u16, right: u16) -> (u16, u16) {
     let (low, low_flags) = add8(left as u8, right as u8);
     let (high, high_flags) = adc8((left >> 8) as u8, (right >> 8) as u8, low_flags & CARRY != 0);
-    let mut flags = high_flags & !CARRY & !AUXILIARY;
+    let mut flags = high_flags & !CARRY & !AUXILIARY & !PARITY;
     if high_flags & CARRY != 0 {
         flags |= CARRY;
     }
     if low_flags & AUXILIARY != 0 {
         flags |= AUXILIARY;
+    }
+    if low_flags & PARITY != 0 {
+        flags |= PARITY;
     }
     if low == 0 && high == 0 {
         flags |= ZERO;
@@ -157,12 +163,15 @@ pub fn sub8(left: u8, right: u8) -> (u8, u16) {
 pub fn sub16(left: u16, right: u16) -> (u16, u16) {
     let (low, low_flags) = sub8(left as u8, right as u8);
     let (high, high_flags) = sbb8((left >> 8) as u8, (right >> 8) as u8, low_flags & CARRY != 0);
-    let mut flags = high_flags & !CARRY & !AUXILIARY & !ZERO;
+    let mut flags = high_flags & !CARRY & !AUXILIARY & !ZERO & !PARITY;
     if high_flags & CARRY != 0 {
         flags |= CARRY;
     }
     if low_flags & AUXILIARY != 0 {
         flags |= AUXILIARY;
+    }
+    if low_flags & PARITY != 0 {
+        flags |= PARITY;
     }
     if low == 0 && high == 0 {
         flags |= ZERO;
