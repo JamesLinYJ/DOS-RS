@@ -4357,6 +4357,10 @@ fn switch_character(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    if cpu.low(Slot::Accumulator) == 0x21 {
+        capitalize_count(cpu, ram);
+        return;
+    }
     if cpu.low(Slot::Accumulator) == 0x22 {
         capitalize_text(cpu, ram);
         return;
@@ -4419,11 +4423,7 @@ fn capitalize_text(cpu: &mut CpuState, ram: &mut GuestRam) {
             cpu.set_carry(false);
             return;
         }
-        let upper = if byte.is_ascii_lowercase() {
-            byte.wrapping_sub(b'a').wrapping_add(b'A')
-        } else {
-            byte
-        };
+        let upper = upper_letter(byte);
         if !ram.store(segment, offset, upper) {
             cpu.set_carry(true);
             return;
@@ -4434,6 +4434,33 @@ fn capitalize_text(cpu: &mut CpuState, ram: &mut GuestRam) {
             return;
         }
         offset = next;
+    }
+}
+
+fn capitalize_count(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let segment = cpu.selector(Segment::Data);
+    let mut offset = cpu.wide(Slot::Data);
+    let mut left = cpu.wide(Slot::Count);
+    while left > 0 {
+        let Some(byte) = ram.load(segment, offset) else {
+            cpu.set_carry(true);
+            return;
+        };
+        if !ram.store(segment, offset, upper_letter(byte)) {
+            cpu.set_carry(true);
+            return;
+        }
+        offset = offset.wrapping_add(1);
+        left -= 1;
+    }
+    cpu.set_carry(false);
+}
+
+fn upper_letter(byte: u8) -> u8 {
+    if byte.is_ascii_lowercase() {
+        byte.wrapping_sub(b'a').wrapping_add(b'A')
+    } else {
+        byte
     }
 }
 

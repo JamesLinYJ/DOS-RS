@@ -340,6 +340,8 @@ Extended country information names the United States and code page 437. `CI.COM`
 
 An ASCIIZ string is capitalized in place. `CA.COM` turns `abc` into `ABC` and prints `CA ABC`.
 
+A counted string stops at the given length. `CC.COM` capitalizes three letters of `abcx` and prints `CC ABCx`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.
