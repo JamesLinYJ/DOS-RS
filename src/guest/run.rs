@@ -386,6 +386,7 @@ pub(super) struct Session {
     handle_limit: u16,
     machine_name: [u8; 15],
     machine_defined: bool,
+    redirects: [Redirect; 4],
     year: u16,
     month: u8,
     day: u8,
@@ -427,6 +428,7 @@ impl Session {
             handle_limit: HANDLE_SLOTS as u16,
             machine_name: [b' '; 15],
             machine_defined: false,
+            redirects: [Redirect::empty(); 4],
             year: 1980,
             month: 1,
             day: 1,
@@ -803,6 +805,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             machine_name(cpu, ram, session);
             Action::Continue
         }
+        0x5F => {
+            redirect_list(cpu, ram, session);
+            Action::Continue
+        }
         0x5B => {
             create_new(cpu, ram, session);
             Action::Continue
@@ -927,6 +933,159 @@ fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
         }
         _ => fail(cpu, session, 1),
     }
+}
+
+#[derive(Clone, Copy)]
+struct Redirect {
+    local: [u8; 16],
+    remote: [u8; 32],
+    kind: u8,
+    parameter: u16,
+    live: bool,
+}
+
+impl Redirect {
+    const fn empty() -> Self {
+        Self {
+            local: [0; 16],
+            remote: [0; 32],
+            kind: 0,
+            parameter: 0,
+            live: false,
+        }
+    }
+}
+
+fn redirect_list(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    match cpu.low(Slot::Accumulator) {
+        2 => redirect_get(cpu, ram, session),
+        3 => redirect_set(cpu, ram, session),
+        _ => fail(cpu, session, 1),
+    }
+}
+
+fn redirect_set(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
+    let mut local = [0u8; 16];
+    let mut remote = [0u8; 32];
+    if !read_text(
+        ram,
+        cpu.selector(Segment::Data),
+        cpu.wide(Slot::Source),
+        &mut local,
+    ) || !read_text(
+        ram,
+        cpu.selector(Segment::Extra),
+        cpu.wide(Slot::Dest),
+        &mut remote,
+    ) {
+        fail(cpu, session, 5);
+        return;
+    }
+    let mut slot = 0usize;
+    let mut found = None;
+    while slot < session.redirects.len() {
+        if session.redirects[slot].live && session.redirects[slot].local == local {
+            found = Some(slot);
+            break;
+        }
+        slot += 1;
+    }
+    if found.is_none() {
+        slot = 0;
+        while slot < session.redirects.len() {
+            if !session.redirects[slot].live {
+                found = Some(slot);
+                break;
+            }
+            slot += 1;
+        }
+    }
+    let Some(slot) = found else {
+        fail(cpu, session, 8);
+        return;
+    };
+    session.redirects[slot] = Redirect {
+        local,
+        remote,
+        kind: cpu.low(Slot::Base),
+        parameter: cpu.wide(Slot::Count),
+        live: true,
+    };
+    cpu.set_carry(false);
+}
+
+fn redirect_get(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let Some(slot) = redirect_at(session, cpu.wide(Slot::Base)) else {
+        fail(cpu, session, 0x12);
+        return;
+    };
+    let entry = session.redirects[slot];
+    if !write_text(
+        ram,
+        cpu.selector(Segment::Data),
+        cpu.wide(Slot::Source),
+        &entry.local,
+    ) || !write_text(
+        ram,
+        cpu.selector(Segment::Extra),
+        cpu.wide(Slot::Dest),
+        &entry.remote,
+    ) {
+        fail(cpu, session, 5);
+        return;
+    }
+    cpu.set_high(Slot::Base, 0);
+    cpu.set_low(Slot::Base, entry.kind);
+    cpu.set_wide(Slot::Count, entry.parameter);
+    cpu.set_carry(false);
+}
+
+fn redirect_at(session: &Session, index: u16) -> Option<usize> {
+    let mut seen = 0u16;
+    let mut slot = 0usize;
+    while slot < session.redirects.len() {
+        if session.redirects[slot].live {
+            if seen == index {
+                return Some(slot);
+            }
+            seen = seen.saturating_add(1);
+        }
+        slot += 1;
+    }
+    None
+}
+
+fn read_text(ram: &GuestRam, segment: u16, mut offset: u16, out: &mut [u8]) -> bool {
+    let mut index = 0usize;
+    while index < out.len() {
+        let Some(byte) = ram.load(segment, offset) else {
+            return false;
+        };
+        out[index] = byte;
+        index += 1;
+        offset = offset.wrapping_add(1);
+        if byte == 0 {
+            while index < out.len() {
+                out[index] = 0;
+                index += 1;
+            }
+            return true;
+        }
+    }
+    false
+}
+
+fn write_text(ram: &mut GuestRam, segment: u16, mut offset: u16, text: &[u8]) -> bool {
+    for byte in text {
+        if !ram.store(segment, offset, *byte) {
+            return false;
+        }
+        offset = offset.wrapping_add(1);
+        if *byte == 0 {
+            return true;
+        }
+    }
+    false
 }
 
 fn machine_name(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
