@@ -178,6 +178,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xD3 => shift_by_count(cpu, ram, override_segment, true, opcode),
         0xD4 => adjust_multiply(cpu, ram, opcode),
         0xD5 => adjust_divide(cpu, ram, opcode),
+        0xD6 => set_byte_from_carry(cpu),
         0xD7 => translate(cpu, ram, opcode),
         0xE4 => read_port(cpu, ram, opcode),
         0xE0..=0xE2 => loop_count(cpu, ram, opcode),
@@ -2103,6 +2104,12 @@ fn adjust_ascii_add(cpu: &mut CpuState) -> Outcome {
     if adjust {
         cpu.set_flags(cpu.flags() | 0x0010);
     }
+    Outcome::Continue
+}
+
+fn set_byte_from_carry(cpu: &mut CpuState) -> Outcome {
+    let filled = if cpu.flags() & 1 != 0 { 0xFF } else { 0 };
+    cpu.set_low(Slot::Accumulator, filled);
     Outcome::Continue
 }
 
