@@ -383,6 +383,7 @@ pub(super) struct Session {
     strategy: u8,
     code_page: u16,
     switch_char: u8,
+    handle_limit: u16,
 }
 
 impl Session {
@@ -413,6 +414,7 @@ impl Session {
             strategy: 0,
             code_page: 437,
             switch_char: b'/',
+            handle_limit: HANDLE_SLOTS as u16,
         }
     }
 }
@@ -749,6 +751,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             volume_serial(cpu, ram, session);
             Action::Continue
         }
+        0x67 => {
+            set_handle_count(cpu, session);
+            Action::Continue
+        }
         0x4D => {
             cpu.set_wide(Slot::Accumulator, session.last_code);
             session.last_code = 0;
@@ -890,7 +896,7 @@ fn force_duplicate(cpu: &mut CpuState, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     };
-    if target >= (HANDLE_SLOTS as u16).saturating_add(3) {
+    if target >= session.handle_limit || target >= (HANDLE_SLOTS as u16).saturating_add(3) {
         fail(cpu, session, 6);
         return;
     }
@@ -1337,13 +1343,43 @@ fn duplicate(cpu: &mut CpuState, session: &mut Session) {
 
 fn free_handle(session: &Session) -> Option<usize> {
     let mut slot = 0usize;
-    while slot < session.opens.len() {
+    let room = usize::from(session.handle_limit.saturating_sub(3));
+    while slot < session.opens.len() && slot < room {
         if session.opens[slot].is_none() {
             return Some(slot);
         }
         slot += 1;
     }
     None
+}
+
+fn set_handle_count(cpu: &mut CpuState, session: &mut Session) {
+    let requested = cpu.wide(Slot::Base);
+    if requested < open_handle_span(session) {
+        fail(cpu, session, 4);
+        return;
+    }
+    if requested > HANDLE_SLOTS as u16 {
+        fail(cpu, session, 8);
+        return;
+    }
+    session.handle_limit = requested;
+    cpu.set_carry(false);
+}
+
+fn open_handle_span(session: &Session) -> u16 {
+    let mut needed = 3u16;
+    let mut slot = 0usize;
+    while slot < session.opens.len() {
+        if session.opens[slot].is_some() {
+            let span = (slot as u16).saturating_add(4);
+            if span > needed {
+                needed = span;
+            }
+        }
+        slot += 1;
+    }
+    needed
 }
 
 fn write_output(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
