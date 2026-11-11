@@ -4009,8 +4009,19 @@ fn device_control(cpu: &mut CpuState, session: &mut Session) {
         8 => removable_drive(cpu, session),
         9 => local_drive(cpu, session),
         0x0A => local_handle(cpu, session),
+        0x0E => logical_map(cpu, session),
         _ => cpu.set_carry(true),
     }
+}
+
+fn logical_map(cpu: &mut CpuState, session: &mut Session) {
+    let drive = cpu.low(Slot::Base);
+    if drive > 1 {
+        fail(cpu, session, 15);
+        return;
+    }
+    cpu.set_low(Slot::Accumulator, 0);
+    cpu.set_carry(false);
 }
 
 fn local_handle(cpu: &mut CpuState, session: &mut Session) {
