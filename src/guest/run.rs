@@ -503,6 +503,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             fcb_read(cpu, ram, session);
             Action::Continue
         }
+        0x15 => {
+            fcb_write(cpu, ram, session);
+            Action::Continue
+        }
         0x23 => {
             fcb_size(cpu, ram);
             Action::Continue
@@ -2057,6 +2061,76 @@ fn fcb_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
         return;
     }
     cpu.set_low(Slot::Accumulator, if take < record { 3 } else { 0 });
+    cpu.set_carry(false);
+}
+
+fn fcb_write(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let name = fcb_name(&raw);
+    let Some(len) = super::disk::file_len(&name) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let mut record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
+    if record == 0 {
+        record = 128;
+    }
+    let block = u32::from(u16::from_le_bytes([raw[0x0C], raw[0x0D]]));
+    let current = u32::from(raw[0x20]);
+    let index = block.saturating_mul(128).saturating_add(current);
+    let start = index.saturating_mul(record);
+    let end = start.saturating_add(record);
+    if record > 128 || len > 128 || end > 128 {
+        cpu.set_low(Slot::Accumulator, 1);
+        return;
+    }
+    let mut file = [0u8; 128];
+    if len > 0 && super::disk::read_file(&name, &mut file[..len]).is_none() {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    let (dta_segment, dta_offset) = dta_target(session);
+    let mut copied = 0u32;
+    while copied < record {
+        let Some(byte) = ram.load(dta_segment, dta_offset.wrapping_add(copied as u16)) else {
+            cpu.set_low(Slot::Accumulator, 2);
+            return;
+        };
+        file[(start + copied) as usize] = byte;
+        copied += 1;
+    }
+    let new_len = (len as u32).max(end) as usize;
+    if !super::disk::write_file(&name, &file[..new_len]) {
+        cpu.set_low(Slot::Accumulator, 1);
+        return;
+    }
+    let size = (new_len as u32).to_le_bytes();
+    for (index, byte) in size.into_iter().enumerate() {
+        if !ram.store(segment, offset.wrapping_add(0x10 + index as u16), byte) {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            return;
+        }
+    }
+    let next = current + 1;
+    let (block_next, record_next) = if next >= 128 {
+        (block + 1, 0u8)
+    } else {
+        (block, next as u8)
+    };
+    let block_bytes = (block_next as u16).to_le_bytes();
+    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
+        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
+        || !ram.store(segment, offset.wrapping_add(0x20), record_next)
+    {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    }
+    cpu.set_low(Slot::Accumulator, 0);
     cpu.set_carry(false);
 }
 

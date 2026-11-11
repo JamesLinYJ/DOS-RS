@@ -252,6 +252,8 @@ An FCB size query rounds the file length up to a record count. `HELLO.COM` is 38
 
 An FCB sequential read copies one record into the transfer area. The first byte of `HELLO.COM` is `B2h`, and `FR.COM` prints `FR B2`.
 
+An FCB sequential write stores the transfer area into the file. `FW.COM` writes `WXYZ` and prints `FW WXYZ`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
