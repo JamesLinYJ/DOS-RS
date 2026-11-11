@@ -40,6 +40,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     match opcode {
         0x00..=0x05 | 0x08..=0x0D | 0x10..=0x15 | 0x18..=0x1D | 0x20..=0x25 | 0x28..=0x2D
         | 0x30..=0x35 | 0x38..=0x3D => arithmetic(cpu, ram, override_segment, opcode),
+        0x37 => adjust_ascii_add(cpu),
         0x06 => push_segment(cpu, ram, Segment::Extra, opcode),
         0x07 => pop_segment(cpu, ram, Segment::Extra, opcode),
         0x0E => push_segment(cpu, ram, Segment::Code, opcode),
@@ -1956,6 +1957,28 @@ fn note_shift_overflow(cpu: &mut CpuState, operation: u8, original: u16, result:
     if overflow {
         cpu.set_flags(cpu.flags() | 0x0800);
     }
+}
+
+fn adjust_ascii_add(cpu: &mut CpuState) -> Outcome {
+    let low = cpu.low(Slot::Accumulator);
+    let auxiliary = cpu.flags() & 0x0010 != 0;
+    let adjust = auxiliary || (low & 0x0F) > 9;
+    let mut value = low;
+    if adjust {
+        value = value.wrapping_add(6);
+        cpu.set_high(
+            Slot::Accumulator,
+            cpu.high(Slot::Accumulator).wrapping_add(1),
+        );
+    }
+    value &= 0x0F;
+    cpu.set_low(Slot::Accumulator, value);
+    cpu.apply_result_flags(byte_logic(value));
+    cpu.set_carry(adjust);
+    if adjust {
+        cpu.set_flags(cpu.flags() | 0x0010);
+    }
+    Outcome::Continue
 }
 
 fn adjust_divide(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
