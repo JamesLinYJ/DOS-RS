@@ -745,6 +745,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             commit_file(cpu, session);
             Action::Continue
         }
+        0x69 => {
+            volume_serial(cpu, ram, session);
+            Action::Continue
+        }
         0x4D => {
             cpu.set_wide(Slot::Accumulator, session.last_code);
             session.last_code = 0;
@@ -3334,6 +3338,73 @@ fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
     cpu.set_selector(Segment::Data, 0x50);
     cpu.set_wide(Slot::Base, 0);
     cpu.set_carry(false);
+}
+
+fn volume_serial(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let drive = cpu.low(Slot::Base);
+    if drive > 2 {
+        fail(cpu, session, 15);
+        return;
+    }
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    if load_word(ram, segment, offset) != Some(0) {
+        fail(cpu, session, 0x57);
+        return;
+    }
+    match cpu.low(Slot::Accumulator) {
+        0 => {
+            let Some((serial, label, kind)) = super::disk::volume_id() else {
+                fail(cpu, session, 15);
+                return;
+            };
+            if !store_bytes(ram, segment, offset.wrapping_add(2), &serial)
+                || !store_bytes(ram, segment, offset.wrapping_add(6), &label)
+                || !store_bytes(ram, segment, offset.wrapping_add(17), &kind)
+            {
+                fail(cpu, session, 5);
+                return;
+            }
+            cpu.set_carry(false);
+        }
+        1 => {
+            let mut serial = [0u8; 4];
+            let mut label = [b' '; 11];
+            if !load_bytes(ram, segment, offset.wrapping_add(2), &mut serial)
+                || !load_bytes(ram, segment, offset.wrapping_add(6), &mut label)
+            {
+                fail(cpu, session, 5);
+                return;
+            }
+            if super::disk::set_volume_id(&serial, &label) {
+                cpu.set_carry(false);
+            } else {
+                fail(cpu, session, 15);
+            }
+        }
+        _ => fail(cpu, session, 1),
+    }
+}
+
+fn store_bytes(ram: &mut GuestRam, segment: u16, mut offset: u16, bytes: &[u8]) -> bool {
+    for byte in bytes {
+        if !ram.store(segment, offset, *byte) {
+            return false;
+        }
+        offset = offset.wrapping_add(1);
+    }
+    true
+}
+
+fn load_bytes(ram: &GuestRam, segment: u16, mut offset: u16, bytes: &mut [u8]) -> bool {
+    for byte in bytes {
+        let Some(loaded) = ram.load(segment, offset) else {
+            return false;
+        };
+        *byte = loaded;
+        offset = offset.wrapping_add(1);
+    }
+    true
 }
 
 fn switch_character(cpu: &mut CpuState, session: &mut Session) {

@@ -37,6 +37,44 @@ pub fn media_id() -> u8 {
     storage().bytes.get(21).copied().unwrap_or(0xF0)
 }
 
+pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
+    let disk = storage();
+    let map = layout(disk)?;
+    let marked = disk.bytes.get(0x26).copied() == Some(0x29);
+    let mut serial = [0u8; 4];
+    let mut label = *b"NO NAME    ";
+    if marked {
+        serial.copy_from_slice(&disk.bytes[0x27..0x2B]);
+        label.copy_from_slice(&disk.bytes[0x2B..0x36]);
+    }
+    let kind = if map.max_cluster >= 4086 {
+        *b"FAT16   "
+    } else {
+        *b"FAT12   "
+    };
+    Some((serial, label, kind))
+}
+
+pub fn set_volume_id(serial: &[u8; 4], label: &[u8; 11]) -> bool {
+    let fat16 = {
+        let disk = storage();
+        match layout(disk) {
+            Some(map) => map.max_cluster >= 4086,
+            None => return false,
+        }
+    };
+    let disk = storage();
+    if disk.bytes.len() < 0x3E {
+        return false;
+    }
+    disk.bytes[0x26] = 0x29;
+    disk.bytes[0x27..0x2B].copy_from_slice(serial);
+    disk.bytes[0x2B..0x36].copy_from_slice(label);
+    let kind: &[u8; 8] = if fat16 { b"FAT16   " } else { b"FAT12   " };
+    disk.bytes[0x36..0x3E].copy_from_slice(kind);
+    true
+}
+
 pub fn allocation() -> Option<(u16, u16, u16, u16)> {
     let disk = storage();
     let map = layout(disk)?;
