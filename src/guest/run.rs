@@ -458,6 +458,11 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             direct_console(cpu);
             Action::Continue
         }
+        0x05 => {
+            let _ = crate::bios::mslpt::prn_write_bytes(&[cpu.low(Slot::Data)]);
+            cpu.set_carry(false);
+            Action::Continue
+        }
         0x02 => {
             crate::bios::mscon::con_write_bytes(&[cpu.low(Slot::Data)]);
             Action::Continue
