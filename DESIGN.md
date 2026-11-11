@@ -230,6 +230,8 @@ A repeated string move accepts a segment override after the repeat. `RS.COM` mov
 
 A frame with one nested level pushes the new frame pointer before the locals. `EN.COM` starts the stack at `2000h` and prints `EN 1FFE1FF8`.
 
+Interrupt on overflow enters vector 4 when the overflow flag is set. `IT.COM` adds `1` to `7Fh` and prints `IT Y`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

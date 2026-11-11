@@ -166,6 +166,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xC8 => enter(cpu, ram, opcode),
         0xC9 => leave(cpu, ram, opcode),
         0xCD => software_interrupt(cpu, ram, opcode),
+        0xCE => interrupt_on_overflow(cpu),
         0xD0 => shift_once(cpu, ram, override_segment, opcode),
         0xD1 => shift_word_once(cpu, ram, override_segment, opcode),
         0xD2 => shift_by_count(cpu, ram, override_segment, false, opcode),
@@ -786,6 +787,14 @@ fn move_into_operand(
         } else {
             Outcome::Fault(opcode)
         }
+    }
+}
+
+fn interrupt_on_overflow(cpu: &CpuState) -> Outcome {
+    if cpu.flags() & 0x0800 != 0 {
+        Outcome::Interrupt(4)
+    } else {
+        Outcome::Continue
     }
 }
 
