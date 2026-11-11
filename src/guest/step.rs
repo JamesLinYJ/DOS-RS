@@ -2341,18 +2341,31 @@ fn repeat(
     override_segment: Option<Segment>,
     opcode: u8,
 ) -> Outcome {
-    let Some(next) = fetch(cpu, ram) else {
+    let Some(mut next) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
+    let mut source = override_segment;
+    if matches!(next, 0x26 | 0x2E | 0x36 | 0x3E) {
+        source = Some(match next {
+            0x26 => Segment::Extra,
+            0x2E => Segment::Code,
+            0x36 => Segment::Stack,
+            _ => Segment::Data,
+        });
+        next = match fetch(cpu, ram) {
+            Some(byte) => byte,
+            None => return Outcome::Fault(opcode),
+        };
+    }
     let stop_when_zero = opcode == 0xF2;
     let compare = matches!(next, 0xA6 | 0xA7 | 0xAE | 0xAF);
     while cpu.wide(Slot::Count) != 0 {
         let ok = match next {
-            0xA4 => copy_string(cpu, ram, override_segment),
-            0xA5 => copy_string_word(cpu, ram, override_segment),
-            0xA6 => compare_string(cpu, ram, override_segment),
-            0xA7 => compare_string_word(cpu, ram, override_segment),
-            0xAC => load_byte(cpu, ram, override_segment),
+            0xA4 => copy_string(cpu, ram, source),
+            0xA5 => copy_string_word(cpu, ram, source),
+            0xA6 => compare_string(cpu, ram, source),
+            0xA7 => compare_string_word(cpu, ram, source),
+            0xAC => load_byte(cpu, ram, source),
             0xAA => {
                 let dest = cpu.wide(Slot::Dest);
                 ram.store(
@@ -2365,7 +2378,7 @@ fn repeat(
                 }
             }
             0xAB => store_word(cpu, ram),
-            0xAD => load_word(cpu, ram, override_segment),
+            0xAD => load_word(cpu, ram, source),
             0xAE => scan_once(cpu, ram),
             0xAF => scan_word(cpu, ram),
             _ => return Outcome::Fault(opcode),

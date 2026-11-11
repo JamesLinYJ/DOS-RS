@@ -226,6 +226,8 @@ A repeated byte load reads through the source index. `LD.COM` repeats a load of 
 
 A word compare reads both strings and sets the flags from their difference. `CW.COM` compares two copies of `1234h` and prints `CW Y`.
 
+A repeated string move accepts a segment override after the repeat. `RS.COM` moves one byte with the extra segment as the source and prints `RS Q`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
