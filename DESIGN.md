@@ -186,7 +186,9 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `MENUBLD.EXE` still prints `Couldn't open  menu creation files.` when the tail is empty. The shell then runs `MENUBLD.EXE MENU.MNU USAMS.MSG`. It reads the menu, the message file, and `USAMS.IDX`, and writes `MENUM.C`. The line is `All four files have been opened for menu creation.`, the directory line is `CMD DIR MENUM.C`, and the file contains `menu-ok`.
 
-`BUILDMSG.EXE` still prints `Allocatable memory size is 606208` and returns status 1 when the tail is empty. The shell then runs `BUILDMSG.EXE USAMS BMSG.SKL`. The message file has a `BMSG` class, so the index contains it. The builder writes `BMSG.CTL` and the include files. The line is `Created include file [BMSG.CLA]`, the directory line is `CMD DIR BMSG.CTL`, and the file begins `$M_NUM_CLS  EQU 1`.
+`BUILDMSG.EXE` still prints `Allocatable memory size is 606208` and returns status 1 when the tail is empty. The shell then runs `BUILDMSG.EXE USAMS BMSG.SKL`. The message file has a `BMSG` class, so the index contains it. The builder writes `BMSG.CTL` and the include files. The line is `Created include file [BMSG.CLA]`, the directory line is `CMD DIR BMSG.CTL`, and the file begins `$M_NUM_CLS  EQU 1`. The `:DEF` handler records the message number and writes the length line from that number. It does not copy the quoted skeleton text into the message table, so that quote is not added to `BMSG.CLA`.
+
+Function 44h subfunction 0 returns the device word. Handles 0 through 2 that are still the console stay `80D3`. A disk file on drive A that has not been written returns `0040`. A write clears that clean bit, so the word is `0000`. `IOCHK.COM` writes one byte and prints `IOCTL 0000`.
 
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 

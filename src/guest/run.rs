@@ -559,7 +559,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x44 => {
-            device_control(cpu);
+            device_control(cpu, session);
             Action::Continue
         }
         0x63 => {
@@ -2292,14 +2292,38 @@ fn bytes_at(ram: &GuestRam, segment: u16, mut offset: u16) -> [u8; 64] {
     text
 }
 
-fn device_control(cpu: &mut CpuState) {
+fn device_control(cpu: &mut CpuState, session: &Session) {
     if cpu.low(Slot::Accumulator) != 0 {
         cpu.set_carry(true);
         return;
     }
-    let info = if cpu.wide(Slot::Base) < 3 { 0x80D3 } else { 0x0040 };
-    cpu.set_wide(Slot::Data, info);
+    cpu.set_wide(Slot::Data, file_device_word(session, cpu.wide(Slot::Base)));
     cpu.set_carry(false);
+}
+
+fn file_device_word(session: &Session, handle: u16) -> u16 {
+    if handle < 3 {
+        if let Some(opened) = session.stdio[usize::from(handle)]
+            && !opened.console
+        {
+            return written_file_word(opened.dirty);
+        }
+        return 0x80D3;
+    }
+    let Some(slot) = session.opens.get(usize::from(handle - 3)) else {
+        return 0x0040;
+    };
+    let Some(opened) = slot else {
+        return 0x0040;
+    };
+    if opened.console {
+        return 0x80D3;
+    }
+    written_file_word(opened.dirty)
+}
+
+fn written_file_word(written: bool) -> u16 {
+    if written { 0 } else { 0x0040 }
 }
 
 fn enter_vector(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session, vector: u8) -> bool {
