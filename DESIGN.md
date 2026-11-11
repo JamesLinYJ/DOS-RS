@@ -298,6 +298,8 @@ Creating a PSP copies the current process prefix and records that process as the
 
 The drive parameter block reports the boot record. `DP.COM` reads one reserved sector, one FAT, 256 root entries, and 16 sectors per FAT. It prints `DP 00010101000010`.
 
+The clock date starts at Tuesday 1 January 1980. `SD.COM` sets 2 January 1980, reads it back, and prints `SD 07BC010203`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

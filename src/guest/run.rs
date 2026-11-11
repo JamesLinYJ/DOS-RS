@@ -384,6 +384,10 @@ pub(super) struct Session {
     code_page: u16,
     switch_char: u8,
     handle_limit: u16,
+    year: u16,
+    month: u8,
+    day: u8,
+    weekday: u8,
 }
 
 impl Session {
@@ -415,6 +419,10 @@ impl Session {
             code_page: 437,
             switch_char: b'/',
             handle_limit: HANDLE_SLOTS as u16,
+            year: 1980,
+            month: 1,
+            day: 1,
+            weekday: 2,
         }
     }
 }
@@ -571,11 +579,15 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x2A => {
-            cpu.set_wide(Slot::Count, 1980);
-            cpu.set_high(Slot::Data, 1);
-            cpu.set_low(Slot::Data, 1);
-            cpu.set_low(Slot::Accumulator, 2);
+            cpu.set_wide(Slot::Count, session.year);
+            cpu.set_high(Slot::Data, session.month);
+            cpu.set_low(Slot::Data, session.day);
+            cpu.set_low(Slot::Accumulator, session.weekday);
             cpu.set_carry(false);
+            Action::Continue
+        }
+        0x2B => {
+            set_clock_date(cpu, session);
             Action::Continue
         }
         0x2E => {
@@ -862,6 +874,26 @@ fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
             cpu.set_carry(false);
         }
         _ => fail(cpu, session, 1),
+    }
+}
+
+fn set_clock_date(cpu: &mut CpuState, session: &mut Session) {
+    let year = cpu.wide(Slot::Count);
+    let month = cpu.high(Slot::Data);
+    let day = cpu.low(Slot::Data);
+    match crate::dos::time::set_date(year, month, day) {
+        Ok(date) => {
+            session.year = date.year;
+            session.month = date.month;
+            session.day = date.day;
+            session.weekday = date.weekday;
+            cpu.set_low(Slot::Accumulator, 0);
+            cpu.set_carry(false);
+        }
+        Err(_) => {
+            cpu.set_low(Slot::Accumulator, 0xFF);
+            cpu.set_carry(true);
+        }
     }
 }
 
