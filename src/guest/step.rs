@@ -121,6 +121,13 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
                 Outcome::Fault(opcode)
             }
         }
+        0xA7 => {
+            if compare_string_word(cpu, ram, override_segment) {
+                Outcome::Continue
+            } else {
+                Outcome::Fault(opcode)
+            }
+        }
         0xA8 => test_byte(cpu, ram, opcode),
         0xA9 => test_word(cpu, ram, opcode),
         0xA4 => {
@@ -135,6 +142,13 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xAC => load_string(cpu, ram, override_segment, opcode),
         0xAD => load_string_word(cpu, ram, override_segment, opcode),
         0xAE => scan_string(cpu, ram, opcode),
+        0xAF => {
+            if scan_word(cpu, ram) {
+                Outcome::Continue
+            } else {
+                Outcome::Fault(opcode)
+            }
+        }
         0xB0..=0xB7 => move_byte_immediate(cpu, ram, opcode),
         0xB8..=0xBF => move_word_immediate(cpu, ram, opcode),
         0xC0 => shift_byte(cpu, ram, override_segment, opcode),
