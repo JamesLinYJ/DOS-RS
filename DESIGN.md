@@ -204,6 +204,8 @@ Decimal adjust turns a binary sum of two decimal digits into a packed decimal by
 
 An immediate count shifts a word the same way a one-bit word shift does. `SH.COM` shifts `1` left by four and prints `SH 0010`.
 
+A signed multiply by a 16-bit immediate stores the low product. `IM.COM` multiplies `3` by `5` and prints `IM 000F`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

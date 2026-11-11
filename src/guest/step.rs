@@ -54,8 +54,9 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0x60 => push_all(cpu, ram),
         0x61 => pop_all(cpu, ram),
         0x68 => push_immediate(cpu, ram, opcode),
+        0x69 => multiply_signed(cpu, ram, override_segment, opcode, true),
         0x6A => push_signed(cpu, ram, opcode),
-        0x6B => multiply_signed(cpu, ram, override_segment, opcode),
+        0x6B => multiply_signed(cpu, ram, override_segment, opcode, false),
         0x6C => input_string(cpu, ram, opcode),
         0x6E => output_string(cpu, ram, opcode),
         0x70..=0x7F => branch(cpu, ram, opcode, false),
@@ -1424,6 +1425,7 @@ fn multiply_signed(
     ram: &mut GuestRam,
     override_segment: Option<Segment>,
     opcode: u8,
+    wide_factor: bool,
 ) -> Outcome {
     let Some(modrm) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
@@ -1431,13 +1433,23 @@ fn multiply_signed(
     let Some(operand) = decode(cpu, ram, modrm, override_segment) else {
         return Outcome::Fault(opcode);
     };
-    let Some(byte) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
+    let factor = if wide_factor {
+        let Some(low) = fetch(cpu, ram) else {
+            return Outcome::Fault(opcode);
+        };
+        let Some(high) = fetch(cpu, ram) else {
+            return Outcome::Fault(opcode);
+        };
+        i16::from_le_bytes([low, high])
+    } else {
+        let Some(byte) = fetch(cpu, ram) else {
+            return Outcome::Fault(opcode);
+        };
+        byte as i8 as i16
     };
     let Some(source) = read_word(cpu, ram, &operand) else {
         return Outcome::Fault(opcode);
     };
-    let factor = byte as i8 as i16;
     let wide = i32::from(source as i16).wrapping_mul(i32::from(factor));
     cpu.set_wide(Slot::from_index((modrm >> 3) & 7), wide as u16);
     note_multiply_overflow(cpu, wide != i32::from(wide as i16));
