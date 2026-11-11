@@ -382,6 +382,7 @@ pub(super) struct Session {
     verify: u8,
     strategy: u8,
     code_page: u16,
+    switch_char: u8,
 }
 
 impl Session {
@@ -411,6 +412,7 @@ impl Session {
             verify: 0,
             strategy: 0,
             code_page: 437,
+            switch_char: b'/',
         }
     }
 }
@@ -600,6 +602,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
         }
         0x36 => {
             report_space(cpu);
+            Action::Continue
+        }
+        0x37 => {
+            switch_character(cpu, session);
             Action::Continue
         }
         0x38 => {
@@ -3328,6 +3334,25 @@ fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
     cpu.set_selector(Segment::Data, 0x50);
     cpu.set_wide(Slot::Base, 0);
     cpu.set_carry(false);
+}
+
+fn switch_character(cpu: &mut CpuState, session: &mut Session) {
+    match cpu.low(Slot::Accumulator) {
+        0 => {
+            cpu.set_low(Slot::Data, session.switch_char);
+            cpu.set_carry(false);
+        }
+        1 => {
+            let requested = cpu.low(Slot::Data);
+            if !requested.is_ascii_graphic() {
+                fail(cpu, session, 1);
+                return;
+            }
+            session.switch_char = requested;
+            cpu.set_carry(false);
+        }
+        _ => fail(cpu, session, 1),
+    }
 }
 
 fn code_page(cpu: &mut CpuState, session: &mut Session) {
