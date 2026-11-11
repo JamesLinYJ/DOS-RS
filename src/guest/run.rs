@@ -3791,12 +3791,35 @@ fn bytes_at(ram: &GuestRam, segment: u16, mut offset: u16) -> [u8; 64] {
     text
 }
 
-fn device_control(cpu: &mut CpuState, session: &Session) {
-    if cpu.low(Slot::Accumulator) != 0 {
-        cpu.set_carry(true);
+fn device_control(cpu: &mut CpuState, session: &mut Session) {
+    match cpu.low(Slot::Accumulator) {
+        0 => {
+            cpu.set_wide(Slot::Data, file_device_word(session, cpu.wide(Slot::Base)));
+            cpu.set_carry(false);
+        }
+        6 => input_status(cpu, session),
+        _ => cpu.set_carry(true),
+    }
+}
+
+fn input_status(cpu: &mut CpuState, session: &mut Session) {
+    let handle = cpu.wide(Slot::Base);
+    if handle < 3 {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_carry(false);
         return;
     }
-    cpu.set_wide(Slot::Data, file_device_word(session, cpu.wide(Slot::Base)));
+    let Some(Some(opened)) = session.opens.get(usize::from(handle - 3)).copied() else {
+        fail(cpu, session, 6);
+        return;
+    };
+    if opened.console {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+        return;
+    }
+    let ready = if opened.pos < opened.len { 0xFF } else { 0 };
+    cpu.set_low(Slot::Accumulator, ready);
     cpu.set_carry(false);
 }
 
