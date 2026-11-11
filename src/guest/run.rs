@@ -516,10 +516,11 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             if session.vector_live[id] {
                 cpu.set_selector(Segment::Extra, session.vector_segment[id]);
                 cpu.set_wide(Slot::Base, session.vector_offset[id]);
-                cpu.set_carry(false);
             } else {
-                cpu.set_carry(true);
+                cpu.set_selector(Segment::Extra, 0);
+                cpu.set_wide(Slot::Base, 0);
             }
+            cpu.set_carry(false);
             Action::Continue
         }
         0x36 => {
