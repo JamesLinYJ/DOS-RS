@@ -495,6 +495,13 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x2F => {
+            let (segment, offset) = dta_target(session);
+            cpu.set_selector(Segment::Extra, segment);
+            cpu.set_wide(Slot::Base, offset);
+            cpu.set_carry(false);
+            Action::Continue
+        }
         0x0F => {
             fcb_open(cpu, ram);
             Action::Continue
