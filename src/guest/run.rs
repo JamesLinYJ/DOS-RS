@@ -384,6 +384,8 @@ pub(super) struct Session {
     code_page: u16,
     switch_char: u8,
     handle_limit: u16,
+    machine_name: [u8; 15],
+    machine_defined: bool,
     year: u16,
     month: u8,
     day: u8,
@@ -423,6 +425,8 @@ impl Session {
             code_page: 437,
             switch_char: b'/',
             handle_limit: HANDLE_SLOTS as u16,
+            machine_name: [b' '; 15],
+            machine_defined: false,
             year: 1980,
             month: 1,
             day: 1,
@@ -795,6 +799,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             create_temp(cpu, ram, session);
             Action::Continue
         }
+        0x5E => {
+            machine_name(cpu, ram, session);
+            Action::Continue
+        }
         0x5B => {
             create_new(cpu, ram, session);
             Action::Continue
@@ -915,6 +923,46 @@ fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
                 return;
             }
             session.strategy = requested as u8;
+            cpu.set_carry(false);
+        }
+        _ => fail(cpu, session, 1),
+    }
+}
+
+fn machine_name(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let segment = cpu.selector(Segment::Data);
+    let start = cpu.wide(Slot::Data);
+    match cpu.low(Slot::Accumulator) {
+        0 => {
+            if session.machine_defined {
+                let mut offset = start;
+                for byte in session.machine_name {
+                    if !ram.store(segment, offset, byte) {
+                        fail(cpu, session, 5);
+                        return;
+                    }
+                    offset = offset.wrapping_add(1);
+                }
+                cpu.set_high(Slot::Count, 1);
+            } else {
+                cpu.set_high(Slot::Count, 0);
+            }
+            cpu.set_low(Slot::Count, 0);
+            cpu.set_carry(false);
+        }
+        1 => {
+            if cpu.high(Slot::Count) == 0 {
+                session.machine_defined = false;
+                cpu.set_carry(false);
+                return;
+            }
+            let mut name = [b' '; 15];
+            if !load_bytes(ram, segment, start, &mut name) {
+                fail(cpu, session, 5);
+                return;
+            }
+            session.machine_name = name;
+            session.machine_defined = true;
             cpu.set_carry(false);
         }
         _ => fail(cpu, session, 1),
