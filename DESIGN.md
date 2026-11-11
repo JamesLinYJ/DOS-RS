@@ -304,6 +304,8 @@ The clock time starts at midnight. `CK.COM` sets 13:45:07.50, reads it back, and
 
 The uppercase table for the current code page is 128 bytes long and starts at character `80h`. `UT.COM` prints `UT 020080`.
 
+Direct console output writes the character, and a read with no key waiting returns zero with the zero flag set. `DC.COM` prints `DC Q00`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.

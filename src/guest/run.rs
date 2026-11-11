@@ -435,11 +435,27 @@ impl Session {
     }
 }
 
+fn direct_console(cpu: &mut CpuState) {
+    let value = cpu.low(Slot::Data);
+    if value == 0xFF {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_zero(true);
+        cpu.set_carry(false);
+        return;
+    }
+    crate::bios::mscon::con_write_bytes(&[value]);
+    cpu.set_carry(false);
+}
+
 fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Action {
     match cpu.high(Slot::Accumulator) {
         0x0B => {
             cpu.set_low(Slot::Accumulator, 0);
             cpu.set_carry(false);
+            Action::Continue
+        }
+        0x06 => {
+            direct_console(cpu);
             Action::Continue
         }
         0x02 => {
