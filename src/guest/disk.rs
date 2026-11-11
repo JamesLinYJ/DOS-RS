@@ -231,6 +231,33 @@ pub fn write_named(name: &[u8; 11], data: &[u8], attr: u8) -> bool {
     write_entry(disk, &map, disk.cwd, slot, &raw)
 }
 
+pub fn finish_fcb(name: &[u8; 11], size: u32, time: u16, date: u16) -> bool {
+    let disk = storage();
+    let Some(map) = layout(disk) else {
+        return false;
+    };
+    let Some(found) = find(disk, &map, disk.cwd, name) else {
+        return false;
+    };
+    if found.attr & 0x10 != 0 {
+        return false;
+    }
+    let Ok(old) = u32::try_from(found.size) else {
+        return false;
+    };
+    if size > old {
+        return false;
+    }
+    let mut raw = found.raw;
+    let time_bytes = time.to_le_bytes();
+    let date_bytes = date.to_le_bytes();
+    let size_bytes = size.to_le_bytes();
+    raw[22..24].copy_from_slice(&time_bytes);
+    raw[24..26].copy_from_slice(&date_bytes);
+    raw[28..32].copy_from_slice(&size_bytes);
+    write_entry(disk, &map, found.dir, found.index, &raw)
+}
+
 pub fn remove_file(name: &[u8; 11]) -> bool {
     let disk = storage();
     let Some(map) = layout(disk) else {

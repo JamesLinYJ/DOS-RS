@@ -324,6 +324,8 @@ Drive A has one logical assignment. `LM.COM` asks for that map and prints `LM 00
 
 An FCB search returns the matching directory name in the transfer area. `FF.COM` finds `HELLO.COM` and then `CHILD.COM`, and prints `FF HELLO.COM CHILD.COM`.
 
+Closing an FCB writes its size back to the directory. `FC.COM` writes `WXYZ`, closes the file at two bytes, and prints `FC 0002WX`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.

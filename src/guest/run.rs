@@ -574,6 +574,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             fcb_open(cpu, ram);
             Action::Continue
         }
+        0x10 => {
+            fcb_close(cpu, ram);
+            Action::Continue
+        }
         0x11 => {
             fcb_find(cpu, ram, session, false);
             Action::Continue
@@ -2782,6 +2786,24 @@ fn fcb_open(cpu: &mut CpuState, ram: &mut GuestRam) {
     }
     cpu.set_low(Slot::Accumulator, 0);
     cpu.set_carry(false);
+}
+
+fn fcb_close(cpu: &mut CpuState, ram: &GuestRam) {
+    let segment = cpu.selector(Segment::Data);
+    let offset = cpu.wide(Slot::Data);
+    let Some(raw) = load_fcb(ram, segment, offset) else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+        return;
+    };
+    let size = u32::from_le_bytes([raw[0x10], raw[0x11], raw[0x12], raw[0x13]]);
+    let time = u16::from_le_bytes([raw[0x16], raw[0x17]]);
+    let date = u16::from_le_bytes([raw[0x14], raw[0x15]]);
+    if super::disk::finish_fcb(&fcb_name(&raw), size, time, date) {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+    } else {
+        cpu.set_low(Slot::Accumulator, 0xFF);
+    }
 }
 
 fn fcb_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
