@@ -170,7 +170,7 @@ The guest volume is 2513 sectors. Eight sectors of FAT hold the table, and the h
 
 `C1.EXE` is the C front end from that same tree, `v4.0/src/TOOLS/C1.EXE`, under the same MIT license. A guest can keep twenty files open at once, and each open file can be as large as the small-model library. The shell runs `C1.EXE -f TINY.C`. The flag names the source, and `TYPE sy` shows the symbol `c1ok` from that compile.
 
-The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under the 4086-cluster FAT12 limit, which leaves room for the library and the compiler's temporary files. `C2.EXE` reads the front end's `ex`, `sy`, and `in` files and writes `pr`, `gs`, and `ls`. `C3.EXE -c TINY.OBJ` turns those into an object. `LINK.EXE TINY.OBJ,C1OK.EXE;` pulls `SLIBCE.LIB`, and `C1OK.EXE` prints `C2 OK`. The launch buffer holds `C2.EXE`.
+The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under the 4086-cluster FAT12 limit, which leaves room for the library and the compiler's temporary files. `C2.EXE` reads the front end's `ex`, `sy`, and `in` files and writes `pr`, `gs`, and `ls`. `C3.EXE -c TINY.OBJ` turns those into an object. Its floating-point emulator loads an operand with `ES:LODSW` from the extra segment. `LINK.EXE TINY.OBJ,C1OK.EXE;` pulls `SLIBCE.LIB`, and `C1OK.EXE` prints `C2 OK`. The same load in `CL.EXE` is part of the large compile, and `LARGE.EXE` still prints `L1 OK`. The launch buffer holds `C2.EXE`.
 
 `LIB2.EXE` is the library manager from `v4.0/src/LIB/LIB.EXE`, under the same MIT license. It is not the 3.10 tool. The shell runs `LIB2.EXE LIBH.LIB, LIB2.LST;`. It reads the library and writes the cross-reference. The banner is `IBM Library Manager/2 Version 1.01`, and the new file is `CMD DIR LIB2.LST`.
 

@@ -103,14 +103,14 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xA2 => store_byte_absolute(cpu, ram, override_segment, opcode),
         0xA3 => store_word_absolute(cpu, ram, override_segment, opcode),
         0xA5 => {
-            if copy_string_word(cpu, ram) {
+            if copy_string_word(cpu, ram, override_segment) {
                 Outcome::Continue
             } else {
                 Outcome::Fault(opcode)
             }
         }
         0xA6 => {
-            if compare_string(cpu, ram) {
+            if compare_string(cpu, ram, override_segment) {
                 Outcome::Continue
             } else {
                 Outcome::Fault(opcode)
@@ -119,7 +119,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xA8 => test_byte(cpu, ram, opcode),
         0xA9 => test_word(cpu, ram, opcode),
         0xA4 => {
-            if copy_string(cpu, ram) {
+            if copy_string(cpu, ram, override_segment) {
                 Outcome::Continue
             } else {
                 Outcome::Fault(opcode)
@@ -127,8 +127,8 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         }
         0xAA => store_string(cpu, ram, opcode),
         0xAB => store_string_word(cpu, ram, opcode),
-        0xAC => load_string(cpu, ram, opcode),
-        0xAD => load_string_word(cpu, ram, opcode),
+        0xAC => load_string(cpu, ram, override_segment, opcode),
+        0xAD => load_string_word(cpu, ram, override_segment, opcode),
         0xAE => scan_string(cpu, ram, opcode),
         0xB0..=0xB7 => move_byte_immediate(cpu, ram, opcode),
         0xB8..=0xBF => move_word_immediate(cpu, ram, opcode),
@@ -158,7 +158,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xE9 => jump_near(cpu, ram, opcode),
         0xEA => jump_far(cpu, ram, opcode),
         0xEB => branch(cpu, ram, opcode, true),
-        0xF2 | 0xF3 => repeat(cpu, ram, opcode),
+        0xF2 | 0xF3 => repeat(cpu, ram, override_segment, opcode),
         0xF4 => Outcome::Halt,
         0xF7 => unary_word(cpu, ram, override_segment, opcode),
         0xFA => {
@@ -1895,13 +1895,22 @@ fn unary_word(
     }
 }
 
-fn copy_string_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+fn source_selector(cpu: &CpuState, override_segment: Option<Segment>) -> u16 {
+    cpu.selector(override_segment.unwrap_or(Segment::Data))
+}
+
+fn copy_string_word(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+) -> bool {
     let source = cpu.wide(Slot::Source);
     let dest = cpu.wide(Slot::Dest);
-    let Some(low) = ram.load(cpu.selector(Segment::Data), source) else {
+    let segment = source_selector(cpu, override_segment);
+    let Some(low) = ram.load(segment, source) else {
         return false;
     };
-    let Some(high) = ram.load(cpu.selector(Segment::Data), source.wrapping_add(1)) else {
+    let Some(high) = ram.load(segment, source.wrapping_add(1)) else {
         return false;
     };
     if !ram.store(cpu.selector(Segment::Extra), dest, low)
@@ -1914,10 +1923,14 @@ fn copy_string_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     true
 }
 
-fn compare_string(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+fn compare_string(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+) -> bool {
     let source = cpu.wide(Slot::Source);
     let dest = cpu.wide(Slot::Dest);
-    let Some(left) = ram.load(cpu.selector(Segment::Data), source) else {
+    let Some(left) = ram.load(source_selector(cpu, override_segment), source) else {
         return false;
     };
     let Some(right) = ram.load(cpu.selector(Segment::Extra), dest) else {
@@ -1930,10 +1943,14 @@ fn compare_string(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     true
 }
 
-fn compare_string_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+fn compare_string_word(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+) -> bool {
     let source = cpu.wide(Slot::Source);
     let dest = cpu.wide(Slot::Dest);
-    let Some(left) = load_pair(ram, cpu.selector(Segment::Data), source) else {
+    let Some(left) = load_pair(ram, source_selector(cpu, override_segment), source) else {
         return false;
     };
     let Some(right) = load_pair(ram, cpu.selector(Segment::Extra), dest) else {
@@ -1946,9 +1963,9 @@ fn compare_string_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     true
 }
 
-fn load_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+fn load_word(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
     let source = cpu.wide(Slot::Source);
-    let Some(value) = load_pair(ram, cpu.selector(Segment::Data), source) else {
+    let Some(value) = load_pair(ram, source_selector(cpu, override_segment), source) else {
         return false;
     };
     cpu.set_wide(Slot::Accumulator, value);
@@ -1984,12 +2001,18 @@ fn scan_once(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
     true
 }
 
-fn load_string_word(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+fn load_string_word(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
     let source = cpu.wide(Slot::Source);
-    let Some(low) = ram.load(cpu.selector(Segment::Data), source) else {
+    let segment = source_selector(cpu, override_segment);
+    let Some(low) = ram.load(segment, source) else {
         return Outcome::Fault(opcode);
     };
-    let Some(high) = ram.load(cpu.selector(Segment::Data), source.wrapping_add(1)) else {
+    let Some(high) = ram.load(segment, source.wrapping_add(1)) else {
         return Outcome::Fault(opcode);
     };
     cpu.set_wide(Slot::Accumulator, u16::from_le_bytes([low, high]));
@@ -2013,7 +2036,12 @@ fn step_width(cpu: &CpuState, value: u16, width: u16) -> u16 {
     }
 }
 
-fn repeat(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+fn repeat(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
     let Some(next) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
@@ -2021,10 +2049,10 @@ fn repeat(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let compare = matches!(next, 0xA6 | 0xA7 | 0xAE | 0xAF);
     while cpu.wide(Slot::Count) != 0 {
         let ok = match next {
-            0xA4 => copy_string(cpu, ram),
-            0xA5 => copy_string_word(cpu, ram),
-            0xA6 => compare_string(cpu, ram),
-            0xA7 => compare_string_word(cpu, ram),
+            0xA4 => copy_string(cpu, ram, override_segment),
+            0xA5 => copy_string_word(cpu, ram, override_segment),
+            0xA6 => compare_string(cpu, ram, override_segment),
+            0xA7 => compare_string_word(cpu, ram, override_segment),
             0xAA => {
                 let dest = cpu.wide(Slot::Dest);
                 ram.store(
@@ -2037,7 +2065,7 @@ fn repeat(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
                 }
             }
             0xAB => store_word(cpu, ram),
-            0xAD => load_word(cpu, ram),
+            0xAD => load_word(cpu, ram, override_segment),
             0xAE => scan_once(cpu, ram),
             0xAF => scan_word(cpu, ram),
             _ => return Outcome::Fault(opcode),
@@ -2056,10 +2084,14 @@ fn repeat(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     Outcome::Continue
 }
 
-fn copy_string(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+fn copy_string(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+) -> bool {
     let source = cpu.wide(Slot::Source);
     let dest = cpu.wide(Slot::Dest);
-    let Some(byte) = ram.load(cpu.selector(Segment::Data), source) else {
+    let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
         return false;
     };
     if !ram.store(cpu.selector(Segment::Extra), dest, byte) {
@@ -2079,9 +2111,14 @@ fn store_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     Outcome::Continue
 }
 
-fn load_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+fn load_string(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    override_segment: Option<Segment>,
+    opcode: u8,
+) -> Outcome {
     let source = cpu.wide(Slot::Source);
-    let Some(byte) = ram.load(cpu.selector(Segment::Data), source) else {
+    let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
         return Outcome::Fault(opcode);
     };
     cpu.set_low(Slot::Accumulator, byte);
