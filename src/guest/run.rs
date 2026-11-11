@@ -4377,6 +4377,10 @@ fn uppercase_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session)
         extended_country(cpu, ram, session);
         return;
     }
+    if cpu.low(Slot::Accumulator) == 6 {
+        collating_info(cpu, ram, session);
+        return;
+    }
     if cpu.low(Slot::Accumulator) == 7 {
         dbcs_info(cpu, ram, session);
         return;
@@ -4531,6 +4535,60 @@ fn extended_country(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessio
     }
     cpu.set_carry(false);
 }
+
+fn collating_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
+    let page = cpu.wide(Slot::Base);
+    let country = cpu.wide(Slot::Data);
+    if page != 0xFFFF && page != session.code_page {
+        fail(cpu, session, 2);
+        return;
+    }
+    if country != 0xFFFF && country != 1 {
+        fail(cpu, session, 2);
+        return;
+    }
+    if cpu.wide(Slot::Count) < 5 {
+        fail(cpu, session, 1);
+        return;
+    }
+    if !plant_collating(ram) {
+        fail(cpu, session, 5);
+        return;
+    }
+    let segment = cpu.selector(Segment::Extra);
+    let offset = cpu.wide(Slot::Dest);
+    let pointer = COLLATING_SEGMENT.to_le_bytes();
+    if !ram.store(segment, offset, 6)
+        || !ram.store(segment, offset.wrapping_add(1), 0)
+        || !ram.store(segment, offset.wrapping_add(2), 0)
+        || !ram.store(segment, offset.wrapping_add(3), pointer[0])
+        || !ram.store(segment, offset.wrapping_add(4), pointer[1])
+    {
+        fail(cpu, session, 5);
+        return;
+    }
+    cpu.set_carry(false);
+}
+
+fn plant_collating(ram: &mut GuestRam) -> bool {
+    let length = 0x100u16.to_le_bytes();
+    if !ram.store(COLLATING_SEGMENT, 0, length[0]) || !ram.store(COLLATING_SEGMENT, 1, length[1]) {
+        return false;
+    }
+    let mut index = 0u16;
+    while index < 0x100 {
+        let Ok(byte) = u8::try_from(index) else {
+            return false;
+        };
+        if !ram.store(COLLATING_SEGMENT, index.wrapping_add(2), byte) {
+            return false;
+        }
+        index = index.wrapping_add(1);
+    }
+    true
+}
+
+const COLLATING_SEGMENT: u16 = 0x70;
 
 fn dbcs_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let page = cpu.wide(Slot::Base);
