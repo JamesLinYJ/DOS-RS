@@ -48,6 +48,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0x17 => pop_segment(cpu, ram, Segment::Stack, opcode),
         0x1E => push_segment(cpu, ram, Segment::Data, opcode),
         0x1F => pop_segment(cpu, ram, Segment::Data, opcode),
+        0x27 => decimal_add(cpu),
         0x40..=0x47 => increment(cpu, opcode),
         0x48..=0x4F => decrement(cpu, opcode),
         0x60 => push_all(cpu, ram),
@@ -1818,6 +1819,32 @@ fn shift_by_count(
     cpu.set_carry(carry);
     if count == 1 {
         note_shift_overflow(cpu, operation, original, shifted, sign);
+    }
+    Outcome::Continue
+}
+
+fn decimal_add(cpu: &mut CpuState) -> Outcome {
+    let old = cpu.low(Slot::Accumulator);
+    let old_carry = cpu.flags() & 1 != 0;
+    let auxiliary = cpu.flags() & 0x0010 != 0;
+    let mut value = old;
+    let mut carry = false;
+    let mut adjusted = false;
+    if auxiliary || (old & 0x0F) > 9 {
+        let sum = u16::from(value) + 6;
+        value = sum as u8;
+        carry = old_carry || sum > 0xFF;
+        adjusted = true;
+    }
+    if old > 0x99 || old_carry {
+        value = value.wrapping_add(0x60);
+        carry = true;
+    }
+    cpu.set_low(Slot::Accumulator, value);
+    cpu.apply_result_flags(byte_logic(value));
+    cpu.set_carry(carry);
+    if adjusted {
+        cpu.set_flags(cpu.flags() | 0x0010);
     }
     Outcome::Continue
 }

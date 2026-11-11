@@ -200,6 +200,8 @@ A 16-bit add, subtract, add-with-carry, or subtract-with-borrow takes parity fro
 
 A multiply sets carry and overflow when the product does not fit in the low half. `MUL.COM` multiplies `FFh` by itself and prints `MUL 1`.
 
+Decimal adjust turns a binary sum of two decimal digits into a packed decimal byte. `DA.COM` adds `1` to `19h` and prints `DA 20`.
+
 `CONVERT.EXE` still prints `Usage: Convert [file]` when the tail is empty. A `.COM` input is not implemented. The shell copies `HELLO.EXE` to `CONV.EXE` and runs `CONVERT.EXE CONV.EXE`. It writes `CONV.COM`. The line is `conv.exe => conv.com [OK]`, the directory line is `CMD DIR CONV.COM`, and the file contains `Converted`.
 
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
