@@ -330,6 +330,8 @@ A random block read returns several records and the count. `BK.COM` reads two re
 
 A random block write stores several records from the transfer area. `BW.COM` writes `WXYZ` as two records and prints `BW 0002WXYZ`.
 
+Disk reset writes every open file that still has new bytes. `DZ.COM` writes `QR` without closing, resets the disk, and prints `DZ 00QR`.
+
 The machine name can be stored and read back. `MN.COM` sets `DOS4RS` and prints `MN 01DOS4RS`.
 
 A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT` and prints `RD \\SRV\PRT`.

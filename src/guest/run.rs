@@ -460,6 +460,10 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             cpu.set_carry(false);
             Action::Continue
         }
+        0x0D => {
+            disk_reset(cpu, session);
+            Action::Continue
+        }
         0x06 => {
             direct_console(cpu);
             Action::Continue
@@ -1277,6 +1281,33 @@ fn force_duplicate(cpu: &mut CpuState, session: &mut Session) {
         let _ = flush_opened(&previous);
     }
     session.opens[index] = Some(opened);
+    cpu.set_carry(false);
+}
+
+fn disk_reset(cpu: &mut CpuState, session: &mut Session) {
+    let mut index = 0usize;
+    while index < session.stdio.len() {
+        if let Some(opened) = session.stdio[index].as_mut() {
+            if !flush_opened(opened) {
+                fail(cpu, session, 1);
+                return;
+            }
+            opened.dirty = false;
+        }
+        index += 1;
+    }
+    index = 0;
+    while index < session.opens.len() {
+        if let Some(opened) = session.opens[index].as_mut() {
+            if !flush_opened(opened) {
+                fail(cpu, session, 1);
+                return;
+            }
+            opened.dirty = false;
+        }
+        index += 1;
+    }
+    cpu.set_low(Slot::Accumulator, 0);
     cpu.set_carry(false);
 }
 
