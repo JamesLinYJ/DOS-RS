@@ -5,11 +5,12 @@
 //! instruction pointer has moved past the instruction.
 
 pub mod alu;
+mod arena;
 pub mod command;
 pub mod disk;
 pub mod memory;
 pub mod mz;
+mod process;
 pub mod run;
 pub mod state;
 pub mod step;
-pub mod volume;

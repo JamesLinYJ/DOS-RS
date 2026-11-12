@@ -2737,7 +2737,7 @@ fn condition(flags: u16, kind: u8) -> bool {
 }
 
 fn fetch(cpu: &mut CpuState, ram: &GuestRam) -> Option<u8> {
-    let byte = ram.load_code(cpu.selector(Segment::Code), cpu.instruction())?;
+    let byte = ram.load(cpu.selector(Segment::Code), cpu.instruction())?;
     cpu.set_instruction(cpu.instruction().wrapping_add(1));
     Some(byte)
 }

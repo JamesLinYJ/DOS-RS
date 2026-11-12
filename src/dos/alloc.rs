@@ -19,7 +19,9 @@ struct Item {
     sig: u8,
 }
 
-const SLOTS: usize = 8;
+// A block consumes at least its header. This also accommodates zero-size requests.
+const ARENA_PARAGRAPHS: u16 = 16;
+const SLOTS: usize = ARENA_PARAGRAPHS as usize + 1;
 
 static mut ITEMS: [Item; SLOTS] = [Item {
     live: false,
@@ -38,7 +40,7 @@ fn ensure() {
         ITEMS[0] = Item {
             live: true,
             seg: 0,
-            size: 16,
+            size: ARENA_PARAGRAPHS,
             owner: 0,
             sig: SIG_Z,
         };
@@ -111,8 +113,7 @@ pub fn alloc(request: u16) -> Result<u16, (u16, u16)> {
     ensure();
     let mut max = 0u16;
     let mut index = 0usize;
-    let n = count();
-    while index < n {
+    while index < count() {
         unsafe {
             if ITEMS[index].owner == 0 {
                 coalesce(index);
@@ -168,8 +169,12 @@ pub fn free(extra_segment: u16) -> u16 {
     let mut index = 0usize;
     while index < n {
         unsafe {
-            if ITEMS[index].seg + 1 == extra_segment {
+            if ITEMS[index].seg + 1 == extra_segment && ITEMS[index].owner == PDB {
                 ITEMS[index].owner = 0;
+                coalesce(index);
+                if index > 0 && ITEMS[index - 1].owner == 0 {
+                    coalesce(index - 1);
+                }
                 return 0;
             }
         }

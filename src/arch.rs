@@ -1,6 +1,6 @@
 //! Multiboot trampoline and the trap-to-logical mapping.
 //!
-//! The trampoline is the spike's. `kmain` does not read the registers it pushes.
+//! The trampoline establishes the native stack and calls `kmain`.
 //! This module does not own the DOS register contract.
 
 use core::arch::global_asm;
@@ -31,8 +31,7 @@ global_asm!(
 .global _start
 _start:
     mov esp, offset __stack_top
-    push ebx
-    push eax
+    cld
     call kmain
 2:  hlt
     jmp 2b
@@ -100,6 +99,7 @@ long_mode:
     mov es, ax
     mov ss, ax
     mov rsp, offset __stack_top
+    cld
     call kmain
 4:  hlt
     jmp 4b
@@ -124,10 +124,8 @@ impl GateToken {
     }
 }
 
-/// Address of the INT 21h gate, for the IDT slot `kmain` installs.
-///
-/// The pointer is an integer so `kmain` does not name the trap layout.
-pub(crate) fn gate_addr() -> usize {
+/// Address used when installing the native INT 21h gate.
+fn gate_addr() -> usize {
     int21_gate as *const () as usize
 }
 
@@ -216,10 +214,13 @@ int21_gate:
     xor eax, eax
     mov ax, es
     mov [esp + 32], eax
-    lea eax, [esp]
-    push eax
+    mov ebx, esp
+    and esp, -16
+    sub esp, 12
+    push ebx
+    cld
     call dispatch_from_trap
-    add esp, 4
+    mov esp, ebx
     mov eax, [esp + 28]
     mov ds, ax
     mov eax, [esp + 32]
@@ -270,8 +271,17 @@ int21_gate:
     mov [rsp + 64], rax
     mov rbx, rsp
     mov rdi, rbx
+    push r8
+    push r9
+    push r10
+    push r11
     and rsp, -16
+    cld
     call dispatch_from_trap
+    mov r8, [rbx-8]
+    mov r9, [rbx-16]
+    mov r10, [rbx-24]
+    mov r11, [rbx-32]
     mov rsp, rbx
     mov ax, [rsp + 56]
     mov ds, ax
@@ -385,7 +395,126 @@ fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFra
     trap.es = regs.extra_segment;
 }
 
-pub fn code_selector() -> u16 {
+/// Writes `0xFF` to both PIC mask ports so IRQ1 cannot raise vector `0x21`.
+///
+/// Port `0x21` is the master PIC mask. Vector `0x21` is the IDT slot.
+/// Writing `0xFF` again leaves the masks the same.
+pub(super) fn install_interrupts() {
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
+    install_dos_gate();
+}
+
+const GATE_INTERRUPT: u8 = 0x8E;
+
+#[cfg(target_arch = "x86")]
+#[derive(Clone, Copy)]
+#[repr(C, packed)]
+struct IdtEntry {
+    offset_low: u16,
+    selector: u16,
+    zero: u8,
+    type_attr: u8,
+    offset_high: u16,
+}
+
+#[cfg(target_arch = "x86_64")]
+#[derive(Clone, Copy)]
+#[repr(C, packed)]
+struct IdtEntry {
+    offset_low: u16,
+    selector: u16,
+    ist: u8,
+    type_attr: u8,
+    offset_mid: u16,
+    offset_high: u32,
+    reserved: u32,
+}
+
+impl IdtEntry {
+    const fn empty() -> Self {
+        #[cfg(target_arch = "x86")]
+        {
+            Self {
+                offset_low: 0,
+                selector: 0,
+                zero: 0,
+                type_attr: 0,
+                offset_high: 0,
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            Self {
+                offset_low: 0,
+                selector: 0,
+                ist: 0,
+                type_attr: 0,
+                offset_mid: 0,
+                offset_high: 0,
+                reserved: 0,
+            }
+        }
+    }
+
+    fn interrupt(gate: usize, selector: u16) -> Self {
+        #[cfg(target_arch = "x86")]
+        {
+            Self {
+                offset_low: gate as u16,
+                selector,
+                zero: 0,
+                type_attr: GATE_INTERRUPT,
+                offset_high: (gate >> 16) as u16,
+            }
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            Self {
+                offset_low: gate as u16,
+                selector,
+                ist: 0,
+                type_attr: GATE_INTERRUPT,
+                offset_mid: (gate >> 16) as u16,
+                offset_high: (gate >> 32) as u32,
+                reserved: 0,
+            }
+        }
+    }
+}
+
+#[repr(C, packed)]
+struct IdtPtr {
+    limit: u16,
+    #[cfg(target_arch = "x86")]
+    base: u32,
+    #[cfg(target_arch = "x86_64")]
+    base: u64,
+}
+
+static mut IDT: [IdtEntry; 256] = [IdtEntry::empty(); 256];
+
+/// Installs the native DOS gate in IDT slot 21h.
+///
+/// An interrupt gate clears IF on entry.
+fn install_dos_gate() {
+    let selector = code_selector();
+    let entry = IdtEntry::interrupt(gate_addr(), selector);
+    unsafe {
+        let idt = &raw mut IDT;
+        (*idt)[0x21] = entry;
+        let ptr = IdtPtr {
+            limit: (core::mem::size_of_val(&*idt) - 1) as u16,
+            #[cfg(target_arch = "x86")]
+            base: idt as u32,
+            #[cfg(target_arch = "x86_64")]
+            base: idt as u64,
+        };
+        load_idt(&raw const ptr as *const u8);
+    }
+}
+
+fn code_selector() -> u16 {
     let selector: u16;
     unsafe {
         core::arch::asm!(
@@ -397,7 +526,7 @@ pub fn code_selector() -> u16 {
     selector
 }
 
-pub fn load_idt(descriptor: *const u8) {
+fn load_idt(descriptor: *const u8) {
     unsafe {
         core::arch::asm!(
             "lidt [{ptr}]",
@@ -407,9 +536,9 @@ pub fn load_idt(descriptor: *const u8) {
     }
 }
 
-/// The one software interrupt. AH=30h, carry set on entry.
+/// Invoke native INT 21h AH=30h with the supplied carry bit.
 /// Returns the version word, the OEM word, the serial word, and carry.
-pub fn get_version() -> (u16, u16, u16, bool) {
+pub fn get_version(carry: bool) -> (u16, u16, u16, bool) {
     #[cfg(target_arch = "x86")]
     let (version, oem, serial, flags) = unsafe {
         let version: u32;
@@ -417,15 +546,17 @@ pub fn get_version() -> (u16, u16, u16, bool) {
         let serial: u32;
         let flags: u32;
         core::arch::asm!(
-            "stc",
-            "mov ah, 0x30",
+            "bt edx, 0",
+            "mov eax, 0x30a5",
+            "mov ebx, 0x1234",
+            "mov ecx, 0x5678",
             "int 0x21",
             "pushfd",
             "pop edx",
             lateout("eax") version,
             lateout("ebx") oem,
             lateout("ecx") serial,
-            lateout("edx") flags,
+            inlateout("edx") u32::from(carry) => flags,
             clobber_abi("C"),
         );
         (version, oem, serial, flags)
@@ -437,19 +568,23 @@ pub fn get_version() -> (u16, u16, u16, bool) {
         let serial: u64;
         let flags: u64;
         core::arch::asm!(
-            "stc",
-            "mov eax, 0x3000",
+            "bt edx, 0",
+            "push rbx",
+            "mov eax, 0x30a5",
+            "mov ebx, 0x1234",
+            "mov ecx, 0x5678",
             "int 0x21",
             "mov r8, rax",
             "mov r9, rcx",
             "pushfq",
             "pop r10",
-            "push rbx",
-            "pop rax",
+            "mov rax, rbx",
+            "pop rbx",
             lateout("r8") version,
             lateout("rax") oem,
             lateout("r9") serial,
             lateout("r10") flags,
+            in("edx") u32::from(carry),
             clobber_abi("C"),
         );
         (version, oem, serial, flags)

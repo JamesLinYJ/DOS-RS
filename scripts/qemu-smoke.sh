@@ -1,6 +1,8 @@
 #!/bin/bash
 # Boot both kernels under QEMU. Map isa-debug-exit status 33 to process status 0.
 set -euo pipefail
+# Guest output includes OEM bytes outside UTF-8. Match the serial stream bytewise.
+export LC_ALL=C
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 
@@ -57,7 +59,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "AX=0004 BX=FF00 CX=0000 CF=1" "$out"; then
+	if ! grep -q "AX=0004 BX=FF00 CX=0000 CF=1" "$out" || ! grep -q "AX=0004 BX=FF00 CX=0000 CF=0" "$out"; then
 		echo "$name missing AH=30h result" >&2
 		cat "$out" >&2
 		rm -f "$out"
@@ -1197,6 +1199,12 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
+	if ! grep -qx $'GUEST ARCH OK\r' "$out"; then
+		echo "$name failed guest architecture regression" >&2
+		cat "$out" >&2
+		rm -f "$out"
+		exit 1
+	fi
 	if ! grep -q "GUEST HELLO COM" "$out"; then
 		echo "$name missing guest hello" >&2
 		cat "$out" >&2
@@ -1248,7 +1256,7 @@ run_one() {
 		|| grep -q "CMD ERRORLEVEL /" "$out" \
 		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
 		|| ! grep -q "BuildMsg - PSP at 0b00" "$out" \
-		|| ! grep -q "Allocatable memory size is 606208" "$out" \
+		|| ! grep -q "Allocatable memory size is 526944" "$out" \
 		|| ! grep -q "CMD ERRORLEVEL 1" "$out" \
 		|| ! grep -q "Couldn't open  menu creation files." "$out" \
 		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out" \
@@ -1543,6 +1551,12 @@ if [[ "${1:-}" == "doctor" ]]; then
 fi
 
 doctor
+(
+    test_dir="$(mktemp -d)"
+    trap 'rm -rf "$test_dir"' EXIT
+    rustc +nightly-2026-11-08 --edition=2024 --test "$root/tests/layout.rs" -o "$test_dir/layout"
+    "$test_dir/layout"
+)
 run_one i686 qemu-system-i386 "$root/target/i686-unknown-none/release/dos4-rs"
 run_one x86_64 qemu-system-x86_64 "$root/target/x86_64-unknown-none/release/dos4-rs"
 exit 0
