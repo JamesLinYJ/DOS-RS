@@ -1,32 +1,43 @@
 # DOS-RS
 
-DOS-RS is a freestanding Rust port of selected MS-DOS 4.0 services. It boots an i686 or x86_64 kernel under QEMU. Both kernels run the same real-mode interpreter, load COM and MZ executables from a RAM-backed FAT12 volume, and exercise DOS programs including MASM, LINK and the Microsoft C compiler passes.
+![DOS-RS booting its i686 kernel and running DOS guest programs](docs/assets/boot.svg)
 
-The current boot entry runs a fixed regression sequence. The shell reads the bundled batch workload. Serial output includes the native interrupt results, guest program output and generated-file checks. Boot finishes through QEMU's debug-exit device.
+DOS-RS runs 16-bit DOS programs on two bare-metal Rust kernels. Boot either target in QEMU and the same interpreter runs COM and MZ executables against a writable FAT12 volume. The bundled workload assembles, compiles and links DOS programs, then executes the files it produced.
 
-- [Architecture and implementation boundaries](DESIGN.md)
-- [Guest programs and expected results](docs/guest-programs.md)
-- [Upstream translation checklist](checklist/v4.0.tsv) and [source attribution](NOTICE)
+[Quick start](#quick-start) · [What runs](#what-runs) · [Architecture](DESIGN.md) · [Contributor guide](AGENTS.md)
 
-## Build and verify
+<details>
+<summary>中文简介</summary>
 
-Install Rust through rustup, both QEMU system emulators, Bash and a `timeout` executable. The toolchain file selects `nightly-2026-11-08` with `rust-src`. Run from the repository root.
+DOS-RS 用 Rust 实现了部分 MS-DOS 4.0 服务。i686 和 x86_64 两个内核共用 16 位解释器。启动后，预设批处理会运行 MASM、LINK 和 Microsoft C 编译工具，并执行生成的 DOS 程序。下方命令可以构建两个内核、运行 QEMU 验证并保存串口记录。
+
+</details>
+
+## Quick start
+
+From the repository root, use a shell with **rustup**, **Bash**, **QEMU** (`qemu-system-i386` and `qemu-system-x86_64`) and **`timeout`** on the path. Rustup reads the pinned nightly and components from [rust-toolchain.toml](rust-toolchain.toml).
 
 ```bash
 cargo build -Zjson-target-spec --target ./i686-unknown-none.json --release
 cargo build --target x86_64-unknown-none --release
-scripts/qemu-smoke.sh doctor
 PROOF_DIR=target/proof scripts/qemu-smoke.sh
 ```
 
-The last command runs the host layout tests and checks the full serial transcript from each kernel. Both native calls return `AX=0004 BX=FF00 CX=0000`, with `CF=1` and `CF=0` respectively. The interpreted regression prints `GUEST ARCH OK`. Each QEMU process returns 33 after the kernel writes `0x10` to port `0xF4`. The script returns zero when every check passes.
+The last command runs the host tests, boots each kernel and checks its serial output. A passing run prints `GUEST ARCH OK` for each target and returns **0**. The raw QEMU status is **33**, the success value from the debug-exit device. Open `target/proof/i686.txt` or `target/proof/x86_64.txt` to read a boot transcript.
 
-The checked-in guest regression binary builds from [8086 assembly](tests/architecture.asm). To verify a source change with NASM, rebuild it before building the kernels.
+## What runs
 
-```bash
-nasm -f bin tests/architecture.asm -o tests/architecture.com
-```
+| Workload | What to look for in the serial output |
+| --- | --- |
+| COM and MZ loading | `GUEST HELLO COM` and `HELLO EXE` come from two different executable formats. |
+| Child processes | `FILE Z EXEC 7` shows a parent reading a file, launching a child and receiving its exit code. |
+| DOS development tools | `MASM OK` comes from the assembled and linked program. `L1 OK` comes from the large-model C program. |
+| Runtime regression | `GUEST ARCH OK` covers the version registers, a self-modifying instruction and nested EXEC. |
 
-## Translation status
+Boot follows a scripted batch session. Interactive command entry and full DOS file-handle inheritance remain open. The program notes list the commands, input files and expected results for individual tools. [Guest program notes](docs/guest-programs.md)
 
-The checklist tracks 1,280 paths under upstream `v4.0/src`. It currently labels 11 translated, 154 partial and 1,115 untranslated. These are source-file classifications. Runtime coverage is recorded separately by the smoke suite. `scripts/gen-checklist.py` generates an initial path inventory with all rows marked untranslated. Preserve reviewed statuses when updating an existing checklist.
+## Source and provenance
+
+The architecture guide follows execution from the Multiboot entry through native interrupts, guest memory, program loading and disk access. The translation checklist tracks individual files from Microsoft's published MS-DOS 4.0 source tree. [Architecture guide](DESIGN.md) · [Translation checklist](checklist/v4.0.tsv)
+
+DOS-RS is MIT-licensed. The upstream revision and Microsoft copyright attribution are recorded in the repository. [License](LICENSE) · [Notice](NOTICE)
