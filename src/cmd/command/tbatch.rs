@@ -7,7 +7,7 @@
 
 use crate::bios::mscon::con_write_bytes;
 
-pub fn if_cmd(tail: &[u8]) {
+pub fn if_cmd(env: &mut super::tenv::Environment, tail: &[u8]) {
     let mut rest = skip_space(tail);
     let mut invert = false;
     if word(rest, b"NOT") {
@@ -20,7 +20,7 @@ pub fn if_cmd(tail: &[u8]) {
         let cmd = skip_token(rest);
         let found = super::tcmd1a::name_exists(name);
         if found != invert && !blank(cmd) {
-            let _ = super::tmisc1::dispatch(cmd);
+            env.dispatch(cmd);
         }
         return;
     }
@@ -37,7 +37,7 @@ pub fn goto_cmd(_tail: &[u8]) {
 
 pub fn shift_cmd(_tail: &[u8]) {}
 
-pub fn for_cmd(tail: &[u8]) {
+pub fn for_cmd(env: &mut super::tenv::Environment, tail: &[u8]) {
     let rest = skip_space(tail);
     let var_end = token_end(rest);
     let after_var = skip_space(&rest[var_end..]);
@@ -74,7 +74,7 @@ pub fn for_cmd(tail: &[u8]) {
         let _one = token(item);
         item = skip_token(item);
         if !blank(cmd) {
-            let _ = super::tmisc1::dispatch(cmd);
+            env.dispatch(cmd);
         }
     }
 }

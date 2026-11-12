@@ -106,81 +106,82 @@ pub(super) fn run() {
         }
         cmd::command::tcmd2a::print_default_prompt();
         puts("\n");
-        let _ran = cmd::command::tmisc1::dispatch(b"VER");
+        let mut shell = cmd::command::tenv::Environment::new();
+        shell.dispatch(b"VER");
         // The prompt loop runs the next typed line. Bare ECHO prints message
         // 1057. A tail that is not ON or OFF is printed from 82h. OFF clears
         // the bit, so the following bare ECHO prints the off text.
-        let _echo = cmd::command::tmisc1::dispatch(b"ECHO\r");
-        let _echo_text = cmd::command::tmisc1::dispatch(b"ECHO hello\r");
-        let _echo_off = cmd::command::tmisc1::dispatch(b"ECHO OFF\r");
-        let _echo_again = cmd::command::tmisc1::dispatch(b"ECHO\r");
+        shell.dispatch(b"ECHO\r");
+        shell.dispatch(b"ECHO hello\r");
+        shell.dispatch(b"ECHO OFF\r");
+        shell.dispatch(b"ECHO\r");
         // `BREAK` with an empty tail reads CntCFlag. It starts clear, so the
         // line is message 1055 with "off". ON stores DL=1, and the next read
         // prints "on".
-        let _break = cmd::command::tmisc1::dispatch(b"BREAK\r");
-        let _break_on = cmd::command::tmisc1::dispatch(b"BREAK ON\r");
-        let _break_again = cmd::command::tmisc1::dispatch(b"BREAK\r");
+        shell.dispatch(b"BREAK\r");
+        shell.dispatch(b"BREAK ON\r");
+        shell.dispatch(b"BREAK\r");
         // `VERIFY` reads VERFLG. It starts clear. ON stores AL bit 0 through
         // AH=2Eh, and the next AH=54h read prints message 1056 as on.
-        let _verify = cmd::command::tmisc1::dispatch(b"VERIFY\r");
-        let _verify_on = cmd::command::tmisc1::dispatch(b"VERIFY ON\r");
-        let _verify_again = cmd::command::tmisc1::dispatch(b"VERIFY\r");
+        shell.dispatch(b"VERIFY\r");
+        shell.dispatch(b"VERIFY ON\r");
+        shell.dispatch(b"VERIFY\r");
         // Bare PATH. The environment value after PATH= is a NUL, so
         // print_path takes the empty path and prints message 1049.
         // The next line stores `\DOS`. A second bare PATH prints it.
-        let _path = cmd::command::tmisc1::dispatch(b"PATH\r");
-        let _path_set = cmd::command::tmisc1::dispatch(b"PATH \\DOS\r");
-        let _path_show = cmd::command::tmisc1::dispatch(b"PATH\r");
+        shell.dispatch(b"PATH\r");
+        shell.dispatch(b"PATH \\DOS\r");
+        shell.dispatch(b"PATH\r");
         // CLS asks INT 2Fh and clears through INT 10h.
-        let _cls = cmd::command::tmisc1::dispatch(b"CLS\r");
+        shell.dispatch(b"CLS\r");
         // AH=43h. Archive comes from the directory attribute. +R sets bit 0.
-        let _attr = cmd::command::tmisc1::dispatch(b"ATTRIB COMMAND.COM\r");
-        let _attr_set = cmd::command::tmisc1::dispatch(b"ATTRIB +R COMMAND.COM\r");
+        shell.dispatch(b"ATTRIB COMMAND.COM\r");
+        shell.dispatch(b"ATTRIB +R COMMAND.COM\r");
         // AH=57h stores 1984-03-04 01:02, then DIR prints that stamp.
         cmd::command::tcmd1a::stamp_command();
         // SET with no tail lists the block. FOO=BAR is stored, then listed.
-        let _set = cmd::command::tmisc1::dispatch(b"SET FOO=BAR\r");
-        let _set_show = cmd::command::tmisc1::dispatch(b"SET\r");
+        shell.dispatch(b"SET FOO=BAR\r");
+        shell.dispatch(b"SET\r");
         // DATE and TIME read AH=2Ah and AH=2Ch, then store a new value.
-        let _date = cmd::command::tmisc1::dispatch(b"DATE\r");
-        let _date_set = cmd::command::tmisc1::dispatch(b"DATE 3-4-1984\r");
-        let _date_show = cmd::command::tmisc1::dispatch(b"DATE\r");
-        let _time = cmd::command::tmisc1::dispatch(b"TIME\r");
-        let _time_set = cmd::command::tmisc1::dispatch(b"TIME 1:02:03.04\r");
-        let _time_show = cmd::command::tmisc1::dispatch(b"TIME\r");
+        shell.dispatch(b"DATE\r");
+        shell.dispatch(b"DATE 3-4-1984\r");
+        shell.dispatch(b"DATE\r");
+        shell.dispatch(b"TIME\r");
+        shell.dispatch(b"TIME 1:02:03.04\r");
+        shell.dispatch(b"TIME\r");
         // VOL searches for a volume label. This disk has none.
-        let _vol = cmd::command::tmisc1::dispatch(b"VOL\r");
+        shell.dispatch(b"VOL\r");
         // DIR lists the boot root. The names are the 8.3 fields.
-        let _dir = cmd::command::tmisc1::dispatch(b"DIR\r");
+        shell.dispatch(b"DIR\r");
         // TYPE prints the file bytes. NONE is the missing-file line.
-        let _typed = cmd::command::tmisc1::dispatch(b"TYPE COMMAND.COM\r");
-        let _type_miss = cmd::command::tmisc1::dispatch(b"TYPE NONE\r");
+        shell.dispatch(b"TYPE COMMAND.COM\r");
+        shell.dispatch(b"TYPE NONE\r");
         // DEL removes IO.SYS. The following DIR no longer lists it.
-        let _del = cmd::command::tmisc1::dispatch(b"DEL IO.SYS\r");
-        let _erased = cmd::command::tmisc1::dispatch(b"DIR\r");
+        shell.dispatch(b"DEL IO.SYS\r");
+        shell.dispatch(b"DIR\r");
         // REN changes COMMAND.COM to FOO.COM. The next DIR shows the new name.
-        let _ren = cmd::command::tmisc1::dispatch(b"REN COMMAND.COM FOO.COM\r");
-        let _renamed = cmd::command::tmisc1::dispatch(b"DIR\r");
+        shell.dispatch(b"REN COMMAND.COM FOO.COM\r");
+        shell.dispatch(b"DIR\r");
         // COPY adds BAR.COM. The next DIR lists it.
-        let _copy = cmd::command::tmisc1::dispatch(b"COPY FOO.COM BAR.COM\r");
-        let _copied = cmd::command::tmisc1::dispatch(b"DIR\r");
+        shell.dispatch(b"COPY FOO.COM BAR.COM\r");
+        shell.dispatch(b"DIR\r");
         // The copy wrote the source bytes. TYPE reads them back with AH=3Fh.
-        let _copy_type = cmd::command::tmisc1::dispatch(b"TYPE BAR.COM\r");
+        shell.dispatch(b"TYPE BAR.COM\r");
         // MD makes SUB, CD prints it as the directory header, RD removes it.
-        let _md = cmd::command::tmisc1::dispatch(b"MD SUB\r");
-        let _md_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
-        let _cd = cmd::command::tmisc1::dispatch(b"CD SUB\r");
-        let _cd_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
-        let _cd_up = cmd::command::tmisc1::dispatch(b"CD \\\r");
-        let _rd = cmd::command::tmisc1::dispatch(b"RD SUB\r");
-        let _rd_dir = cmd::command::tmisc1::dispatch(b"DIR\r");
+        shell.dispatch(b"MD SUB\r");
+        shell.dispatch(b"DIR\r");
+        shell.dispatch(b"CD SUB\r");
+        shell.dispatch(b"DIR\r");
+        shell.dispatch(b"CD \\\r");
+        shell.dispatch(b"RD SUB\r");
+        shell.dispatch(b"DIR\r");
         // PROMPT $P$G expands the current directory and the greater-than sign.
-        let _prompt = cmd::command::tmisc1::dispatch(b"PROMPT $P$G\r");
-        let _if = cmd::command::tmisc1::dispatch(b"IF EXIST FOO.COM ECHO ifok\r");
-        let _call = cmd::command::tmisc1::dispatch(b"CALL\r");
-        let _goto = cmd::command::tmisc1::dispatch(b"GOTO NOWHERE\r");
-        let _for = cmd::command::tmisc1::dispatch(b"FOR %A IN (X) DO ECHO forok\r");
-        let _shift = cmd::command::tmisc1::dispatch(b"SHIFT\r");
+        shell.dispatch(b"PROMPT $P$G\r");
+        shell.dispatch(b"IF EXIST FOO.COM ECHO ifok\r");
+        shell.dispatch(b"CALL\r");
+        shell.dispatch(b"GOTO NOWHERE\r");
+        shell.dispatch(b"FOR %A IN (X) DO ECHO forok\r");
+        shell.dispatch(b"SHIFT\r");
         // FCB open of FOO.COM after the rename. The line is the file length
         // and the sequential-read return.
         dos::fcb::show();

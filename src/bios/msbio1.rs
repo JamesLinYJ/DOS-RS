@@ -1,47 +1,27 @@
-//! Device entry from `BIOS/MSBIO1.ASM`.
-//!
-//! `STRATEGY` saves the request packet. `CON$IN` and `AUX0$IN` index the
-//! command tables and call the driver. `OUTCHR` stays the INT 29h gate.
+//! Synchronous DOS character-device requests. Transfer buffers borrow the caller's
+//! memory for the call, including on kernels with 64-bit host addresses.
 
-static mut PTRSAV: usize = 0;
-static mut AUXNUM: u8 = 0;
+pub(super) const DONE: u16 = 0x0100;
+pub(super) const UNKNOWN_COMMAND: u16 = 0x8103;
 
-pub(crate) fn packet() -> *mut u8 {
-    unsafe { PTRSAV as *mut u8 }
+pub(super) struct Request<'a> {
+    pub command: u8,
+    pub status: u16,
+    pub count: u16,
+    pub media: u8,
+    pub source: &'a [u8],
+    pub destination: &'a mut [u8],
 }
 
-pub(crate) fn auxnum() -> u8 {
-    unsafe { AUXNUM }
-}
-
-/// `STRATEGY`. BX is the packet offset and ES is its segment. Here the packet
-/// is one pointer.
-pub fn strategy(packet: *mut u8) {
-    unsafe { PTRSAV = packet as usize }
-}
-
-/// `CON$IN`. SI selects `CONTBL`.
-pub fn con_in() {
-    super::mscon::con_in();
-}
-
-/// `AUX0$IN`. AL is 0, then `AUXTBL`.
-pub fn aux0_in() {
-    unsafe { AUXNUM = 0 }
-    super::msaux::aux0_in();
-}
-
-/// `GETDX`. DX is the word at `AUXNUM`.
-pub(crate) fn get_dx() -> u16 {
-    u16::from(auxnum())
-}
-
-pub fn run_con(packet: *mut u8) {
-    strategy(packet);
-    con_in();
-}
-
-pub fn run_aux0(packet: *mut u8) {
-    strategy(packet);
-    aux0_in();
+pub(super) fn write(bytes: &[u8], driver: fn(&mut Request<'_>)) {
+    for chunk in bytes.chunks(u16::MAX.into()) {
+        driver(&mut Request {
+            command: 8,
+            status: 0,
+            count: chunk.len() as u16,
+            media: 0,
+            source: chunk,
+            destination: &mut [],
+        });
+    }
 }

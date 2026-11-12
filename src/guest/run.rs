@@ -8,7 +8,7 @@ use super::state::{CpuState, Segment, Slot};
 use super::step::{self, Outcome};
 
 mod smoke;
-pub use smoke::show;
+pub use smoke::{run_shell, show};
 
 const LAUNCH_SEGMENT: u16 = 0x1600;
 const SHELL_SEGMENT: u16 = 0x0900;
@@ -104,6 +104,7 @@ fn file_bytes(index: usize) -> &'static mut [u8] {
 }
 
 pub(super) struct Session {
+    pub(super) environment: super::command::Environment,
     opens: [Option<Opened>; HANDLE_SLOTS],
     last_code: u16,
     dta_segment: u16,
@@ -145,6 +146,7 @@ pub(super) struct Session {
 impl Session {
     fn new() -> Self {
         Self {
+            environment: super::command::Environment::new(),
             opens: [None; HANDLE_SLOTS],
             last_code: 0,
             dta_segment: 0,

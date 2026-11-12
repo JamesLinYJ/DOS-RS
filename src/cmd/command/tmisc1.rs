@@ -7,134 +7,55 @@
 use super::tdata::{COMTAB, F_SWITCH_ALLOWED};
 use super::{tbatch, tcmd1a, tcmd1b, tcmd2a, tenv, tpipe, tucode};
 
-pub fn dispatch(line: &[u8]) -> bool {
-    let (name, rest) = split_name(line);
-    let Some(flags) = find_com(name) else {
-        return false;
-    };
-    if flags & F_SWITCH_ALLOWED == 0 && rest.contains(&b'/') {
-        return false;
-    }
-    if name.eq_ignore_ascii_case(b"VER") {
-        tcmd2a::version();
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"PATH") {
-        tcmd2a::path_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"CLS") {
-        tcmd2a::cls();
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"ECHO") {
-        tucode::echo(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"BREAK") {
-        tucode::break_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"VERIFY") {
-        tucode::verify_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"IF") {
-        tbatch::if_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"CALL") {
-        tbatch::call_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"GOTO") {
-        tbatch::goto_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"FOR") {
-        tbatch::for_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"SHIFT") {
-        tbatch::shift_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"PROMPT") {
-        tenv::prompt_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"SET") {
-        tenv::set_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"DATE") {
-        tpipe::date_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"TIME") {
-        tpipe::time_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"TYPE") {
-        tcmd1b::type_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"MD") || name.eq_ignore_ascii_case(b"MKDIR") {
-        tcmd1a::mkdir_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"CD") || name.eq_ignore_ascii_case(b"CHDIR") {
-        tcmd1a::chdir_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"RD") || name.eq_ignore_ascii_case(b"RMDIR") {
-        tcmd1a::rmdir_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"COPY") {
-        tcmd1a::copy_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"REN") || name.eq_ignore_ascii_case(b"RENAME") {
-        tcmd1a::rename_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"DEL") || name.eq_ignore_ascii_case(b"ERASE") {
-        tcmd1a::erase_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"DIR") {
-        tcmd1a::dir_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"ATTRIB") {
-        tcmd1a::attrib_cmd(rest);
-        return true;
-    }
-    if name.eq_ignore_ascii_case(b"VOL") {
-        tcmd1b::volume(rest);
-        return true;
-    }
-    false
-}
-
-fn find_com(name: &[u8]) -> Option<u8> {
-    for (entry, flags) in COMTAB {
-        if entry.len() == name.len() && entry.eq_ignore_ascii_case(name) {
-            return Some(*flags);
+impl tenv::Environment {
+    pub fn dispatch(&mut self, line: &[u8]) -> bool {
+        let (name, rest) = split_name(line);
+        let Some(&(command, flags)) = COMTAB
+            .iter()
+            .find(|(entry, _)| entry.eq_ignore_ascii_case(name))
+        else {
+            return false;
+        };
+        if flags & F_SWITCH_ALLOWED == 0 && rest.contains(&b'/') {
+            return false;
         }
+        match command {
+            b"VER" => tcmd2a::version(),
+            b"PATH" => self.path_cmd(rest),
+            b"CLS" => tcmd2a::cls(),
+            b"ECHO" => tucode::echo(&mut self.echo, rest),
+            b"BREAK" => tucode::break_cmd(rest),
+            b"VERIFY" => tucode::verify_cmd(rest),
+            b"IF" => tbatch::if_cmd(self, rest),
+            b"CALL" => tbatch::call_cmd(rest),
+            b"GOTO" => tbatch::goto_cmd(rest),
+            b"FOR" => tbatch::for_cmd(self, rest),
+            b"SHIFT" => tbatch::shift_cmd(rest),
+            b"PROMPT" => self.prompt_cmd(rest),
+            b"SET" => self.set_cmd(rest),
+            b"DATE" => tpipe::date_cmd(rest),
+            b"TIME" => tpipe::time_cmd(rest),
+            b"TYPE" => tcmd1b::type_cmd(rest),
+            b"MD" | b"MKDIR" => tcmd1a::mkdir_cmd(rest),
+            b"CD" | b"CHDIR" => tcmd1a::chdir_cmd(rest),
+            b"RD" | b"RMDIR" => tcmd1a::rmdir_cmd(rest),
+            b"COPY" => tcmd1a::copy_cmd(rest),
+            b"REN" | b"RENAME" => tcmd1a::rename_cmd(rest),
+            b"DEL" | b"ERASE" => tcmd1a::erase_cmd(rest),
+            b"DIR" => tcmd1a::dir_cmd(rest),
+            b"ATTRIB" => tcmd1a::attrib_cmd(rest),
+            b"VOL" => tcmd1b::volume(rest),
+            _ => return false,
+        }
+        true
     }
-    None
 }
 
 fn split_name(line: &[u8]) -> (&[u8], &[u8]) {
-    let mut start = 0usize;
-    while start < line.len() && line[start] == b' ' {
-        start += 1;
-    }
-    let mut end = start;
-    while end < line.len() && line[end] != b' ' && line[end] != b'\r' && line[end] != b'\n' {
-        end += 1;
-    }
-    (&line[start..end], &line[end..])
+    let line = line.trim_ascii_start();
+    let end = line
+        .iter()
+        .position(u8::is_ascii_whitespace)
+        .unwrap_or(line.len());
+    line.split_at(end)
 }

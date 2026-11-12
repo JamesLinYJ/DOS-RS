@@ -4,7 +4,7 @@
 
 DOS-RS runs 16-bit DOS programs on two bare-metal Rust kernels. Boot either target in QEMU and the same interpreter runs COM and MZ executables against a writable FAT12 volume. The bundled workload assembles, compiles and links DOS programs, then executes the files it produced.
 
-[Quick start](#quick-start) · [What runs](#what-runs) · [Architecture](DESIGN.md) · [Contributor guide](AGENTS.md)
+[Quick start](#quick-start) · [What runs](#what-runs) · [Contributor guide](AGENTS.md)
 
 <details>
 <summary>中文简介</summary>
@@ -25,6 +25,14 @@ PROOF_DIR=target/proof scripts/qemu-smoke.sh
 
 The last command runs the host tests, boots each kernel and checks its serial output. A passing run prints `GUEST ARCH OK` for each target and returns **0**. The raw QEMU status is **33**, the success value from the debug-exit device. Open `target/proof/i686.txt` or `target/proof/x86_64.txt` to read a boot transcript.
 
+On macOS, open the batch in QEMU’s serial console window. The console build uses its own output directory so the smoke commands above can reuse their release binaries.
+
+```bash
+cargo build --release --features batch-console --target x86_64-unknown-none --target-dir target/console
+qemu-system-x86_64 -kernel target/console/x86_64-unknown-none/release/dos4-rs \
+  -display cocoa -vga none -serial vc:88Cx22C -monitor none -nic none -m 64
+```
+
 ## What runs
 
 | Workload | What to look for in the serial output |
@@ -38,6 +46,6 @@ Boot follows a scripted batch session. Interactive command entry and full DOS fi
 
 ## Source and provenance
 
-The architecture guide follows execution from the Multiboot entry through native interrupts, guest memory, program loading and disk access. The translation checklist tracks individual files from Microsoft's published MS-DOS 4.0 source tree. [Architecture guide](DESIGN.md) · [Translation checklist](checklist/v4.0.tsv)
+The translation checklist maps the Rust modules to files in Microsoft’s published MS-DOS 4.0 source tree. [Translation checklist](checklist/v4.0.tsv)
 
 DOS-RS is MIT-licensed. The upstream revision and Microsoft copyright attribution are recorded in the repository. [License](LICENSE) · [Notice](NOTICE)

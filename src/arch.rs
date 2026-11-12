@@ -60,8 +60,6 @@ gdt64_ptr:
 .global _start
 _start:
     mov esp, offset __stack_top
-    mov edi, eax
-    mov esi, ebx
     mov eax, offset pdpt
     or eax, 3
     mov dword ptr [pml4], eax
@@ -133,59 +131,27 @@ unsafe extern "C" {
     fn int21_gate();
 }
 
-/// i686 ring 0 trap. The CPU pushes EFLAGS, CS, and EIP as 4-byte slots.
-///
-/// GPRs, DS, and ES are software-saved into this `repr(C)` image. The image
-/// is not the CPU push itself. The naked gate copies the push in with `mov`.
-#[cfg(target_arch = "x86")]
+/// Software-saved registers in stack order. The CPU return frame stays above
+/// these slots and is consumed directly by IRET.
 #[repr(C)]
 struct TrapFrame {
-    eax: u32,
-    ebx: u32,
-    ecx: u32,
-    edx: u32,
-    esi: u32,
-    edi: u32,
-    ebp: u32,
-    ds: u32,
-    es: u32,
-    eip: u32,
-    cs: u32,
-    eflags: u32,
+    es: usize,
+    ds: usize,
+    di: usize,
+    si: usize,
+    bp: usize,
+    #[cfg(target_arch = "x86")]
+    _original_sp: usize, // PUSHAD saves ESP. POPAD skips this slot.
+    bx: usize,
+    dx: usize,
+    cx: usize,
+    ax: usize,
 }
 
 #[cfg(target_arch = "x86")]
-const _: () = assert!(core::mem::size_of::<TrapFrame>() == 48);
-#[cfg(target_arch = "x86")]
-const _: () = assert!(core::mem::offset_of!(TrapFrame, eflags) == 44);
-
-/// x86_64 trap. The CPU pushes SS, RSP, RFLAGS, CS, and RIP as 8-byte slots.
-///
-/// GPRs, DS, and ES are software-saved into this `repr(C)` image. The image
-/// is not the CPU push itself. The naked gate copies the push in with `mov`.
+const _: () = assert!(core::mem::size_of::<TrapFrame>() == 40);
 #[cfg(target_arch = "x86_64")]
-#[repr(C)]
-struct TrapFrame {
-    rax: u64,
-    rbx: u64,
-    rcx: u64,
-    rdx: u64,
-    rsi: u64,
-    rdi: u64,
-    rbp: u64,
-    ds: u64,
-    es: u64,
-    rip: u64,
-    cs: u64,
-    rflags: u64,
-    rsp: u64,
-    ss: u64,
-}
-
-#[cfg(target_arch = "x86_64")]
-const _: () = assert!(core::mem::size_of::<TrapFrame>() == 112);
-#[cfg(target_arch = "x86_64")]
-const _: () = assert!(core::mem::offset_of!(TrapFrame, ss) == 104);
+const _: () = assert!(core::mem::size_of::<TrapFrame>() == 72);
 
 #[cfg(target_arch = "x86")]
 global_asm!(
@@ -194,47 +160,27 @@ global_asm!(
 .code32
 .global int21_gate
 int21_gate:
-    sub esp, 48
-    mov [esp + 0], eax
-    mov [esp + 4], ebx
-    mov [esp + 8], ecx
-    mov [esp + 12], edx
-    mov [esp + 16], esi
-    mov [esp + 20], edi
-    mov [esp + 24], ebp
-    mov eax, [esp + 48]
-    mov [esp + 36], eax
-    mov eax, [esp + 52]
-    mov [esp + 40], eax
-    mov eax, [esp + 56]
-    mov [esp + 44], eax
+    pushad
     xor eax, eax
     mov ax, ds
-    mov [esp + 28], eax
-    xor eax, eax
+    push eax
     mov ax, es
-    mov [esp + 32], eax
+    push eax
     mov ebx, esp
     and esp, -16
     sub esp, 12
     push ebx
     cld
-    call dispatch_from_trap
+    call {dispatch}
     mov esp, ebx
-    mov eax, [esp + 28]
-    mov ds, ax
-    mov eax, [esp + 32]
+    pop eax
     mov es, ax
-    mov ebx, [esp + 4]
-    mov ecx, [esp + 8]
-    mov edx, [esp + 12]
-    mov esi, [esp + 16]
-    mov edi, [esp + 20]
-    mov ebp, [esp + 24]
-    mov eax, [esp + 0]
-    add esp, 48
+    pop eax
+    mov ds, ax
+    popad
     iretd
-"#
+"#,
+    dispatch = sym dispatch_from_trap,
 );
 
 #[cfg(target_arch = "x86_64")]
@@ -245,154 +191,74 @@ global_asm!(
 .global int21_gate
 int21_gate:
     sub rsp, 128
-    sub rsp, 112
-    mov [rsp + 0], rax
-    mov [rsp + 8], rbx
-    mov [rsp + 16], rcx
-    mov [rsp + 24], rdx
-    mov [rsp + 32], rsi
-    mov [rsp + 40], rdi
-    mov [rsp + 48], rbp
-    mov rax, [rsp + 240]
-    mov [rsp + 72], rax
-    mov rax, [rsp + 248]
-    mov [rsp + 80], rax
-    mov rax, [rsp + 256]
-    mov [rsp + 88], rax
-    mov rax, [rsp + 264]
-    mov [rsp + 96], rax
-    mov rax, [rsp + 272]
-    mov [rsp + 104], rax
-    xor rax, rax
-    mov ax, ds
-    mov [rsp + 56], rax
-    xor rax, rax
-    mov ax, es
-    mov [rsp + 64], rax
-    mov rbx, rsp
-    mov rdi, rbx
     push r8
     push r9
     push r10
     push r11
+    push rax
+    push rcx
+    push rdx
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    xor eax, eax
+    mov ax, ds
+    push rax
+    mov ax, es
+    push rax
+    mov rbx, rsp
+    mov rdi, rbx
     and rsp, -16
     cld
-    call dispatch_from_trap
-    mov r8, [rbx-8]
-    mov r9, [rbx-16]
-    mov r10, [rbx-24]
-    mov r11, [rbx-32]
+    call {dispatch}
     mov rsp, rbx
-    mov ax, [rsp + 56]
-    mov ds, ax
-    mov ax, [rsp + 64]
+    pop rax
     mov es, ax
-    mov rbx, [rsp + 8]
-    mov rcx, [rsp + 16]
-    mov rdx, [rsp + 24]
-    mov rsi, [rsp + 32]
-    mov rdi, [rsp + 40]
-    mov rbp, [rsp + 48]
-    mov rax, [rsp + 0]
-    add rsp, 240
+    pop rax
+    mov ds, ax
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    pop rdx
+    pop rcx
+    pop rax
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    add rsp, 128
     iretq
-"#
+"#,
+    dispatch = sym dispatch_from_trap,
 );
 
-#[unsafe(no_mangle)]
-unsafe extern "C" fn dispatch_from_trap(trap: *mut TrapFrame) {
-    let trap = unsafe { &mut *trap };
+extern "C" fn dispatch_from_trap(trap: &mut TrapFrame) {
     let token = GateToken::mint();
-    let mut logical = logical_from_trap(&token, trap);
-    int21::entry(&token, &mut logical);
-    logical_into_trap(&token, &logical, trap);
-}
-
-/// Copies the trap into a [`LogicalFrame`].
-///
-/// i686 GPRs are zero-extended into `u64`. x86_64 GPRs are copied whole.
-/// DS and ES are copied. EFLAGS, RFLAGS, the return address, CS, and the x86_64
-/// interrupt SS and RSP are not copied.
-#[cfg(target_arch = "x86")]
-fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
-    let _flags_stay = trap.eflags;
-    let _eip_stays = trap.eip;
-    let _cs_stays = trap.cs;
-    LogicalFrame::from_native(
-        token,
-        NativeRegs {
-            status: u64::from(trap.eax),
-            handle: u64::from(trap.ebx),
-            count: u64::from(trap.ecx),
-            buffer: u64::from(trap.edx),
-            source: u64::from(trap.esi),
-            destination: u64::from(trap.edi),
-            base: u64::from(trap.ebp),
-            data_segment: u64::from(trap.ds),
-            extra_segment: u64::from(trap.es),
-        },
-    )
-}
-
-/// Copies the trap into a [`LogicalFrame`].
-///
-/// GPRs are copied as `u64`. DS and ES are zero-extended. RFLAGS, RIP, CS, RSP, and SS stay in the trap.
-#[cfg(target_arch = "x86_64")]
-fn logical_from_trap(token: &GateToken, trap: &TrapFrame) -> LogicalFrame {
-    let _flags_stay = trap.rflags;
-    let _rip_stays = trap.rip;
-    let _cs_stays = trap.cs;
-    let _rsp_stays = trap.rsp;
-    let _ss_stays = trap.ss;
-    LogicalFrame::from_native(
-        token,
-        NativeRegs {
-            status: trap.rax,
-            handle: trap.rbx,
-            count: trap.rcx,
-            buffer: trap.rdx,
-            source: trap.rsi,
-            destination: trap.rdi,
-            base: trap.rbp,
-            data_segment: trap.ds,
-            extra_segment: trap.es,
-        },
-    )
-}
-
-/// Writes the logical GPRs back into the trap.
-///
-/// On i686 each GPR write stores the low 32 bits. On x86_64 it stores the full `u64`.
-/// DS and ES are written back as selector values. The pushed flags are not written.
-#[cfg(target_arch = "x86")]
-fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFrame) {
-    let regs = frame.native(token);
-    trap.eax = regs.status as u32;
-    trap.ebx = regs.handle as u32;
-    trap.ecx = regs.count as u32;
-    trap.edx = regs.buffer as u32;
-    trap.esi = regs.source as u32;
-    trap.edi = regs.destination as u32;
-    trap.ebp = regs.base as u32;
-    trap.ds = regs.data_segment as u32;
-    trap.es = regs.extra_segment as u32;
-}
-
-/// Writes the logical GPRs back into the trap.
-///
-/// Does not write RFLAGS, RIP, CS, RSP, or SS.
-#[cfg(target_arch = "x86_64")]
-fn logical_into_trap(token: &GateToken, frame: &LogicalFrame, trap: &mut TrapFrame) {
-    let regs = frame.native(token);
-    trap.rax = regs.status;
-    trap.rbx = regs.handle;
-    trap.rcx = regs.count;
-    trap.rdx = regs.buffer;
-    trap.rsi = regs.source;
-    trap.rdi = regs.destination;
-    trap.rbp = regs.base;
-    trap.ds = regs.data_segment;
-    trap.es = regs.extra_segment;
+    let regs = NativeRegs {
+        status: trap.ax as u64,
+        handle: trap.bx as u64,
+        count: trap.cx as u64,
+        buffer: trap.dx as u64,
+        source: trap.si as u64,
+        destination: trap.di as u64,
+        base: trap.bp as u64,
+        data_segment: trap.ds as u64,
+        extra_segment: trap.es as u64,
+    };
+    let mut frame = LogicalFrame::from_native(&token, regs);
+    int21::entry(&token, &mut frame);
+    let regs = frame.native(&token);
+    trap.ax = regs.status as usize;
+    trap.bx = regs.handle as usize;
+    trap.cx = regs.count as usize;
+    trap.dx = regs.buffer as usize;
+    trap.si = regs.source as usize;
+    trap.di = regs.destination as usize;
+    trap.bp = regs.base as usize;
+    trap.ds = regs.data_segment as usize;
+    trap.es = regs.extra_segment as usize;
 }
 
 /// Writes `0xFF` to both PIC mask ports so IRQ1 cannot raise vector `0x21`.
@@ -539,57 +405,32 @@ fn load_idt(descriptor: *const u8) {
 /// Invoke native INT 21h AH=30h with the supplied carry bit.
 /// Returns the version word, the OEM word, the serial word, and carry.
 pub fn get_version(carry: bool) -> (u16, u16, u16, bool) {
-    #[cfg(target_arch = "x86")]
-    let (version, oem, serial, flags) = unsafe {
-        let version: u32;
-        let oem: u32;
-        let serial: u32;
-        let flags: u32;
+    let (version, oem, serial): (u32, u32, u32);
+    let flags: u32;
+    // The DOS gate preserves all registers other than the three version words.
+    // LLVM reserves RBX on x86_64, so save it and copy its DOS result to ESI.
+    unsafe {
+        #[cfg(target_arch = "x86")]
         core::arch::asm!(
-            "bt edx, 0",
-            "mov eax, 0x30a5",
-            "mov ebx, 0x1234",
-            "mov ecx, 0x5678",
-            "int 0x21",
-            "pushfd",
-            "pop edx",
-            lateout("eax") version,
-            lateout("ebx") oem,
-            lateout("ecx") serial,
+            "bt edx, 0", "int 0x21", "setc dl",
+            inout("eax") 0x30a5u32 => version,
+            inout("ebx") 0x1234u32 => oem,
+            inout("ecx") 0x5678u32 => serial,
             inlateout("edx") u32::from(carry) => flags,
             clobber_abi("C"),
         );
-        (version, oem, serial, flags)
-    };
-    #[cfg(target_arch = "x86_64")]
-    let (version, oem, serial, flags) = unsafe {
-        let version: u64;
-        let oem: u64;
-        let serial: u64;
-        let flags: u64;
+        #[cfg(target_arch = "x86_64")]
         core::arch::asm!(
-            "bt edx, 0",
-            "push rbx",
-            "mov eax, 0x30a5",
-            "mov ebx, 0x1234",
-            "mov ecx, 0x5678",
-            "int 0x21",
-            "mov r8, rax",
-            "mov r9, rcx",
-            "pushfq",
-            "pop r10",
-            "mov rax, rbx",
-            "pop rbx",
-            lateout("r8") version,
-            lateout("rax") oem,
-            lateout("r9") serial,
-            lateout("r10") flags,
-            in("edx") u32::from(carry),
+            "push rbx", "mov ebx, 0x1234", "bt edx, 0", "int 0x21",
+            "mov esi, ebx", "pop rbx", "setc dl",
+            inout("eax") 0x30a5u32 => version,
+            lateout("esi") oem,
+            inout("ecx") 0x5678u32 => serial,
+            inlateout("edx") u32::from(carry) => flags,
             clobber_abi("C"),
         );
-        (version, oem, serial, flags)
-    };
-    (version as u16, oem as u16, serial as u16, flags & 1 == 1)
+    }
+    (version as u16, oem as u16, serial as u16, flags & 1 != 0)
 }
 
 pub fn halt() -> ! {

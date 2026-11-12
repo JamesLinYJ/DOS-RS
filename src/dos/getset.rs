@@ -6,12 +6,14 @@
 /// AH=30h returns the DOS version, OEM and serial words, preserving FLAGS.
 pub const VERSION: (u16, u16, u16) = (0x0004, 0xFF00, 0x0000);
 
-static mut VERFLG: u8 = 0;
+use core::sync::atomic::{AtomicU8, Ordering};
+
+static VERFLG: AtomicU8 = AtomicU8::new(0);
 
 pub fn get_verify() -> u8 {
-    unsafe { VERFLG }
+    VERFLG.load(Ordering::Relaxed)
 }
 
 pub fn set_verify(result: u8) {
-    unsafe { VERFLG = result & 1 }
+    VERFLG.store(result & 1, Ordering::Relaxed)
 }

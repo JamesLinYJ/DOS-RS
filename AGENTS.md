@@ -1,6 +1,6 @@
 # Working on DOS-RS
 
-Start with the execution path you are changing. Native INT 21h calls enter through the CPU gate. Interpreted programs reach DOS through the guest run loop. Both kernel targets use the same guest implementation. [Architecture guide](DESIGN.md)
+Start with the execution path you are changing. Native INT 21h calls enter through the CPU gate. Interpreted programs reach DOS through the guest run loop. Both kernel targets use the same guest implementation.
 
 ## Where to make changes
 

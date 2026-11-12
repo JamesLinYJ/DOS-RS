@@ -1,6 +1,6 @@
 //! Programs driven during the QEMU boot regression suite.
 use super::{End, SHELL_CHILD, SHELL_SEGMENT, Session, drive, load_root, put_hex8};
-use crate::guest::{command, disk, memory};
+use crate::guest::{disk, memory};
 
 const COM_SEGMENT: u16 = 0x0100;
 const EXE_PREFIX: u16 = 0x0300;
@@ -12,7 +12,9 @@ pub fn show() {
     show_image(b"HELLO   COM", COM_SEGMENT, 128);
     show_image(b"HELLO   EXE", EXE_PREFIX, 128);
     show_image(b"RUN     COM", RUN_SEGMENT, 128);
-    show_shell();
+    if run_shell() {
+        report_shell_files();
+    }
     show_image(b"OPCHECK COM", WIDE_SEGMENT, 8192);
     disk::boot();
     show_image(b"DOSCALL COM", WIDE_SEGMENT, 8192);
@@ -54,13 +56,12 @@ fn show_saved() {
     crate::bios::mscon::con_write_bytes(b"\r\n");
 }
 
-fn show_shell() {
+pub fn run_shell() -> bool {
     disk::boot();
-    command::reset();
     let mut image = [0u8; 512];
     let Some(length) = disk::read_file(b"COMMAND COM", &mut image) else {
-        crate::bios::mscon::con_write_bytes(b"CMD MISSING\r\n");
-        return;
+        crate::bios::mscon::con_write_bytes(b"Cannot find COMMAND.COM.\r\n");
+        return false;
     };
     let ram = memory::storage();
     ram.clear();
@@ -73,19 +74,32 @@ fn show_shell() {
         ram,
         &mut session,
     ) else {
-        crate::bios::mscon::con_write_bytes(b"CMD FAULT\r\n");
-        return;
+        crate::bios::mscon::con_write_bytes(b"Cannot load COMMAND.COM.\r\n");
+        return false;
     };
     match drive(&mut cpu, ram, &mut session, 100_000) {
-        End::Stopped(_) => {}
+        End::Stopped(0) => return true,
+        End::Stopped(code) => {
+            crate::puts("Shell exit code: ");
+            crate::bios::mscon::write_number(code);
+            crate::puts("\n");
+        }
         End::Fault(opcode) => {
-            crate::bios::mscon::con_write_bytes(b"CMD FAULT ");
+            crate::bios::mscon::con_write_bytes(b"Shell stopped at opcode 0x");
             put_hex8(opcode);
             crate::bios::mscon::con_write_bytes(b"\r\n");
         }
-        End::Other => crate::bios::mscon::con_write_bytes(b"CMD INT\r\n"),
-        End::Loop => crate::bios::mscon::con_write_bytes(b"CMD LOOP\r\n"),
+        End::Other => {
+            crate::bios::mscon::con_write_bytes(b"Shell stopped on an unsupported interrupt.\r\n")
+        }
+        End::Loop => {
+            crate::bios::mscon::con_write_bytes(b"Shell reached the instruction limit.\r\n")
+        }
     }
+    false
+}
+
+fn report_shell_files() {
     if let Some(size) = disk::file_len(b"SAY     BIN") {
         let mut body = [0u8; 32];
         let length = disk::read_head(b"SAY     BIN", &mut body).unwrap_or(0);

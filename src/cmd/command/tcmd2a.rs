@@ -11,136 +11,18 @@ const SYM: u8 = b'>';
 /// INT 21h AH=30h returns the major version in AL and the minor in AH.
 /// Message 1040 substitutes those two numbers.
 pub fn version() {
-    let (major, minor) = dos_version();
+    let [major, minor] = crate::dos::getset::VERSION.0.to_le_bytes();
     crate::bios::mscon::con_write_bytes(b"\r\n");
     crate::bios::mscon::con_write_bytes(super::tdata::VER_MESSAGE);
-    put_dec(major);
+    crate::bios::mscon::write_number(major);
     crate::bios::mscon::con_write_bytes(b".");
-    put_dec(minor);
+    crate::bios::mscon::write_number(minor);
     crate::bios::mscon::con_write_bytes(b"\r\n\r\n");
 }
 
-fn dos_version() -> (u8, u8) {
-    (4, 0)
-}
-
-fn put_dec(mut value: u8) {
-    let mut buf = [0u8; 3];
-    let mut n = 0usize;
-    if value == 0 {
-        crate::bios::mscon::con_write_bytes(b"0");
-        return;
-    }
-    while value != 0 {
-        buf[n] = b'0' + (value % 10);
-        n += 1;
-        value /= 10;
-    }
-    while n != 0 {
-        n -= 1;
-        crate::bios::mscon::con_write_bytes(&buf[n..n + 1]);
-    }
-}
-
-/// `PATH` from `TCMD2A.ASM`. A blank tail is `disppath`. Anything else is
-/// parsed into the environment value after `PATH=`.
-///
-/// The environment block in `ENVDATA.ASM` starts as `PATH=` plus a NUL.
-/// This slot is that value. A second token is "Too many parameters".
-static mut PATH_VALUE: [u8; 67] = [0; 67];
-static mut PATH_LEN: usize = 0;
-
-pub fn path_cmd(tail: &[u8]) {
-    let tail = skip_space(tail);
-    if path_tail_blank(tail) {
-        print_path();
-        return;
-    }
-    let mut end = 0usize;
-    while end < tail.len() {
-        let byte = tail[end];
-        if byte == b' ' || byte == b'\t' || byte == b'\r' || byte == b'\n' || byte == 0 {
-            break;
-        }
-        end += 1;
-    }
-    if !path_tail_blank(skip_space(&tail[end..])) {
-        crate::bios::mscon::con_write_bytes(b"Too many parameters\r\n");
-        return;
-    }
-    let value = &tail[..end];
-    let n = value.len().min(67);
-    unsafe {
-        core::ptr::copy_nonoverlapping(value.as_ptr(), (&raw mut PATH_VALUE).cast::<u8>(), n);
-        PATH_LEN = n;
-    }
-}
-
-pub fn copy_path(out: &mut [u8]) -> usize {
-    let len = unsafe { PATH_LEN };
-    let n = len.min(out.len());
-    unsafe {
-        core::ptr::copy_nonoverlapping((&raw const PATH_VALUE).cast::<u8>(), out.as_mut_ptr(), n);
-    }
-    n
-}
-
-fn print_path() {
-    let len = unsafe { PATH_LEN };
-    if len == 0 {
-        crate::bios::mscon::con_write_bytes(b"No Path\r\n");
-        return;
-    }
-    crate::bios::mscon::con_write_bytes(b"PATH=");
-    let mut path = [0u8; 67];
-    let n = len.min(path.len());
-    unsafe {
-        core::ptr::copy_nonoverlapping((&raw const PATH_VALUE).cast::<u8>(), path.as_mut_ptr(), n);
-    }
-    crate::bios::mscon::con_write_bytes(&path[..n]);
-    crate::bios::mscon::con_write_bytes(b"\r\n");
-}
-
-fn skip_space(tail: &[u8]) -> &[u8] {
-    let mut i = 0usize;
-    while i < tail.len() && (tail[i] == b' ' || tail[i] == b'\t') {
-        i += 1;
-    }
-    &tail[i..]
-}
-
-/// `CLS` from `TCMD2A.ASM`. INT 2Fh AH=1Ah asks if ANSI.SYS is installed.
-/// It is not, so the clear is INT 10h: border, scroll, cursor home.
-///
-/// The serial line has no video page. `CLS` is the marker that those calls
-/// returned.
+/// The serial console records a clear-screen command in the boot transcript.
 pub fn cls() {
-    if ansi_installed() == 0xff {
-        return;
-    }
-    video(0x0f00);
-    video(0x0b00);
-    video(0x0600);
-    video(0x0200);
     crate::bios::mscon::con_write_bytes(b"CLS\r\n");
-}
-
-fn ansi_installed() -> u8 {
-    0
-}
-
-fn video(_call: u32) {}
-
-fn path_tail_blank(tail: &[u8]) -> bool {
-    for &byte in tail {
-        if byte == b'\r' || byte == b'\n' || byte == 0 {
-            return true;
-        }
-        if byte != b' ' && byte != b'\t' {
-            return false;
-        }
-    }
-    true
 }
 
 /// One trip through `print_prompt` when no `PROMPT` string is set.

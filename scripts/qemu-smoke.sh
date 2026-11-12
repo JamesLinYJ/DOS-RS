@@ -53,7 +53,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "dos4-rs $name" "$out"; then
+	if ! grep -qF "DOS-RS / $name" "$out"; then
 		echo "$name missing banner" >&2
 		cat "$out" >&2
 		rm -f "$out"
@@ -191,7 +191,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "hello" "$out"; then
+	if ! grep -Fqx $'hello\r' "$out"; then
 		echo "$name missing ECHO text" >&2
 		cat "$out" >&2
 		rm -f "$out"
@@ -1223,24 +1223,24 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "CMD VER 4.00" "$out" \
-		|| ! grep -q "CMD ECHO hello" "$out" \
-		|| ! grep -q "CMD DIR HELLO.COM" "$out" \
-		|| ! grep -q "CMD TYPE Z" "$out" \
-		|| ! grep -q "CMD COPY OK" "$out" \
-		|| ! grep -q "CMD DEL OK" "$out" \
-		|| ! grep -q "CMD REN OK" "$out" \
-		|| ! grep -q "CMD MD OK" "$out" \
-		|| ! grep -q "CMD CD OK" "$out" \
-		|| ! grep -q "CMD RD OK" "$out" \
-		|| ! grep -q "CMD SET OK" "$out" \
-		|| ! grep -q "CMD ECHO BATCH" "$out" \
-		|| ! grep -q "CMD ECHO FROM BATCH" "$out" \
+	if ! grep -qF "DOS-RS (DOS 4.00)" "$out" \
+		|| [ "$(grep -Fxc $'hello\r' "$out")" -lt 2 ] \
+		|| ! grep -qF "Found: HELLO.COM" "$out" \
+		|| ! grep -Fqx $'Z\r' "$out" \
+		|| ! grep -qF "File copied." "$out" \
+		|| ! grep -qF "File deleted." "$out" \
+		|| ! grep -qF "File renamed." "$out" \
+		|| ! grep -qF "Directory created." "$out" \
+		|| ! grep -qF "Directory changed." "$out" \
+		|| ! grep -qF "Directory removed." "$out" \
+		|| ! grep -qF "Variable set." "$out" \
+		|| ! grep -Fqx $'BATCH\r' "$out" \
+		|| ! grep -Fqx $'FROM BATCH\r' "$out" \
 		|| ! grep -q "EXT COM" "$out" \
 		|| ! grep -q "EXT EXE" "$out" \
-		|| ! grep -q "CMD ERRORLEVEL 3" "$out" \
-		|| ! grep -q "CMD DIR SELECT.DAT" "$out" \
-		|| ! grep -q $'CMD TYPE \xff\x05A' "$out" \
+		|| ! grep -Fqx $'Exit code: 3\r' "$out" \
+		|| ! grep -qF "Found: SELECT.DAT" "$out" \
+		|| ! grep -Fqx $'\xff\x05A\r' "$out" \
 		|| ! grep -q "EXEFIX 1234 0010" "$out" \
 		|| ! grep -q "PACKFIX 0ABC 0020" "$out" \
 		|| ! grep -q "PARSE 2 HELLO    COM 0" "$out" \
@@ -1250,19 +1250,19 @@ run_one() {
 		|| ! grep -q "PSP 0B00" "$out" \
 		|| ! grep -q "DUP2 OK" "$out" \
 		|| ! grep -q "FN87 0001 1" "$out" \
-		|| ! grep -q "CMD DIR FIX2.EXE" "$out" \
-		|| ! grep -q "CMD DIR PACKED.EXE" "$out" \
+		|| ! grep -qF "Found: FIX2.EXE" "$out" \
+		|| ! grep -qF "Found: PACKED.EXE" "$out" \
 		|| ! grep -q "PACKED 2A00 4D5A OK" "$out" \
-		|| grep -q "CMD ERRORLEVEL /" "$out" \
+		|| grep -Fqx $'Exit code: 255\r' "$out" \
 		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
 		|| ! grep -q "BuildMsg - PSP at 0b00" "$out" \
 		|| ! grep -q "Allocatable memory size is 526944" "$out" \
-		|| ! grep -q "CMD ERRORLEVEL 1" "$out" \
+		|| ! grep -Fqx $'Exit code: 1\r' "$out" \
 		|| ! grep -q "Couldn't open  menu creation files." "$out" \
 		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out" \
 		|| ! grep -qF "usage: cl [ option... ] filename... [ -link linkoption... ]" "$out" \
 		|| ! grep -q "Microsoft (R) Library Manager  Version 3.10" "$out" \
-		|| ! grep -q "CMD DIR LIB.LST" "$out" \
+		|| ! grep -qF "Found: LIB.LST" "$out" \
 		|| ! grep -q "LIB LST __aFFaldiv" "$out" \
 		|| ! grep -q "The number topic(s) and text string(s) written = 57" "$out" \
 		|| ! grep -q "Microsoft (R) Overlay Linker  Version 3.65" "$out" \
@@ -1364,27 +1364,27 @@ run_one() {
 		|| ! grep -q "c1ok" "$out" \
 		|| ! grep -q "C2 OK" "$out" \
 		|| ! grep -q "IBM Library Manager/2 Version 1.01" "$out" \
-		|| ! grep -q "CMD DIR LIB2.LST" "$out" \
+		|| ! grep -qF "Found: LIB2.LST" "$out" \
 		|| ! grep -q "06EH,06DH,061H,06BH,065H" "$out" \
 		|| ! grep -q "Message file updated." "$out" \
 		|| ! grep -q "Index file updated." "$out" \
 		|| ! grep -q "Message files for MORE.SKL completed." "$out" \
-		|| ! grep -q "CMD DIR MORE.CLA" "$out" \
+		|| ! grep -qF "Found: MORE.CLA" "$out" \
 		|| ! grep -q "; MORE.clA" "$out" \
 		|| ! grep -q "largeok" "$out" \
 		|| ! grep -q "L1 OK" "$out" \
 		|| ! grep -q "Microsoft (R) C Optimizing Compiler Version 5.10" "$out" \
-		|| ! grep -q "CMD DIR LARGE.OBJ" "$out" \
+		|| ! grep -qF "Found: LARGE.OBJ" "$out" \
 		|| ! grep -q "_largeok" "$out" \
 		|| grep -q "D4005" "$out" \
 		|| ! grep -q "All four files have been opened for menu creation." "$out" \
-		|| ! grep -q "CMD DIR MENUM.C" "$out" \
+		|| ! grep -qF "Found: MENUM.C" "$out" \
 		|| ! grep -q "menu-ok" "$out" \
 		|| ! grep -q "Created include file \[BMSG.CLA\]" "$out" \
-		|| ! grep -q "CMD DIR BMSG.CTL" "$out" \
+		|| ! grep -qF "Found: BMSG.CTL" "$out" \
 		|| ! grep -q "\$M_NUM_CLS  EQU 1" "$out" \
 		|| ! grep -q "conv.exe => conv.com \[OK\]" "$out" \
-		|| ! grep -q "CMD DIR CONV.COM" "$out" \
+		|| ! grep -qF "Found: CONV.COM" "$out" \
 		|| ! grep -q "Converted" "$out" \
 		|| ! grep -q "exec: EXITCODE.COM returned 3" "$out"; then
 		echo "$name missing command built-ins" >&2

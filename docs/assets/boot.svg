@@ -18,7 +18,7 @@
     <path d="M473 43v132" stroke="#405452"/>
     <text x="511" y="54" fill="#98aaa6" font-size="13" letter-spacing="1.5">COM1 / BOOT EXCERPT</text>
     <g font-size="18">
-      <text x="511" y="87" fill="#e3ece4">dos4-rs i686</text>
+      <text x="511" y="87" fill="#e3ece4">DOS-RS / i686</text>
       <text x="511" y="115" fill="#c4d4cd">GUEST HELLO COM</text>
       <text x="511" y="143" fill="#c4d4cd">FILE Z EXEC 7</text>
       <text x="511" y="171" fill="#a1e6a9" font-weight="bold">GUEST ARCH OK</text>

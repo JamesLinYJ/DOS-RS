@@ -1,231 +1,152 @@
-//! `SET` from `CMD/COMMAND/TENV.ASM`.
-//!
-//! A blank tail is `DISP_ENV`. One `=` stores the name, uppercased, and the
-//! value as typed. Any other number of `=` signs is message 1030.
+//! Bounded native COMMAND environment. Names and values are DOS byte strings.
 
-use crate::bios::mscon::con_write_bytes;
-use crate::cmd::command::envdata::{COMSPEC_KEY, ECOMSPEC};
-
-const SLOTS: usize = 4;
-const NAME_MAX: usize = 16;
-const VALUE_MAX: usize = 32;
+use super::envdata::{COMSPEC_KEY, ECOMSPEC};
+use crate::bios::mscon::con_write_bytes as print;
 
 #[derive(Clone, Copy)]
-struct Slot {
-    name: [u8; NAME_MAX],
-    name_len: u8,
-    value: [u8; VALUE_MAX],
-    value_len: u8,
-    used: bool,
+struct Text<const N: usize> {
+    bytes: [u8; N],
+    len: usize,
 }
 
-static mut VARS: [Slot; SLOTS] = [Slot {
-    name: [0; NAME_MAX],
-    name_len: 0,
-    value: [0; VALUE_MAX],
-    value_len: 0,
-    used: false,
-}; SLOTS];
+impl<const N: usize> Text<N> {
+    fn from_slice(input: &[u8]) -> Self {
+        let mut bytes = [0; N];
+        let len = input.len().min(N);
+        bytes[..len].copy_from_slice(&input[..len]);
+        Self { bytes, len }
+    }
 
-static mut PROMPT: [u8; 64] = [0; 64];
-static mut PROMPT_LEN: usize = 0;
-static mut PROMPT_SET: bool = false;
-
-/// `ADD_PROMPT`. `$P` is the current directory and `$G` is `>`.
-pub fn prompt_cmd(tail: &[u8]) {
-    let tail = skip_space(tail);
-    if blank(tail) {
-        unsafe { PROMPT_SET = false }
-        return;
+    fn bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
     }
-    let mut end = 0usize;
-    while end < tail.len() && tail[end] != b'\r' && tail[end] != b'\n' && tail[end] != 0 {
-        end += 1;
-    }
-    let n = end.min(64);
-    unsafe {
-        PROMPT[..n].copy_from_slice(&tail[..n]);
-        PROMPT_LEN = n;
-        PROMPT_SET = true;
-    }
-    print_prompt();
 }
 
-fn print_prompt() {
-    let (set, len) = unsafe { (PROMPT_SET, PROMPT_LEN) };
-    if !set {
-        con_write_bytes(b"A>");
-        return;
+#[derive(Clone, Copy)]
+struct Variable {
+    name: Text<16>,
+    value: Text<32>,
+}
+
+pub struct Environment {
+    vars: [Option<Variable>; 4],
+    path: Text<67>,
+    prompt: Text<64>,
+    pub(super) echo: bool,
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Self {
+            vars: [None; 4],
+            path: Text::from_slice(b""),
+            prompt: Text::from_slice(b""),
+            echo: true,
+        }
     }
-    let text = unsafe { &PROMPT[..len] };
-    let mut i = 0usize;
-    while i < text.len() {
-        if text[i] == b'$' && i + 1 < text.len() {
-            let code = up(text[i + 1]);
-            if code == b'P' {
-                con_write_bytes(super::tcmd1a::cwd_text());
-            } else if code == b'G' {
-                con_write_bytes(b">");
-            } else if code == b'$' {
-                con_write_bytes(b"$");
+
+    pub(super) fn prompt_cmd(&mut self, tail: &[u8]) {
+        self.prompt = Text::from_slice(argument(tail));
+        let mut bytes = self.prompt.bytes().iter().copied();
+        if bytes.len() == 0 {
+            return;
+        }
+        while let Some(byte) = bytes.next() {
+            if byte != b'$' {
+                print(&[byte]);
+                continue;
             }
-            i += 2;
-        } else {
-            con_write_bytes(&text[i..i + 1]);
-            i += 1;
+            match bytes.next().map(|b| b.to_ascii_uppercase()) {
+                Some(b'P') => print(super::tcmd1a::cwd_text()),
+                Some(b'G') => print(b">"),
+                Some(b'$') | None => print(b"$"),
+                _ => {}
+            }
+        }
+        print(b"\r\n");
+    }
+
+    pub(super) fn path_cmd(&mut self, tail: &[u8]) {
+        let mut args = argument(tail)
+            .split(|b| matches!(b, b' ' | b'\t'))
+            .filter(|s| !s.is_empty());
+        match (args.next(), args.next()) {
+            (None, _) if self.path.bytes().is_empty() => print(b"No Path\r\n"),
+            (None, _) => self.print_path(),
+            (Some(path), None) => self.path = Text::from_slice(path),
+            _ => print(b"Too many parameters\r\n"),
         }
     }
-    con_write_bytes(b"\r\n");
-}
 
-pub fn set_cmd(tail: &[u8]) {
-    let tail = skip_space(tail);
-    if blank(tail) {
-        show_env();
-        return;
+    fn print_path(&self) {
+        print(b"PATH=");
+        print(self.path.bytes());
+        print(b"\r\n");
     }
-    let mut end = 0usize;
-    while end < tail.len() && tail[end] != b'\r' && tail[end] != b'\n' && tail[end] != 0 {
-        end += 1;
-    }
-    let line = &tail[..end];
-    let mut eqs = 0u8;
-    let mut eq_at = 0usize;
-    let mut index = 0usize;
-    while index < line.len() {
-        if line[index] == b'=' {
-            eqs = eqs.wrapping_add(1);
-            eq_at = index;
+
+    pub(super) fn set_cmd(&mut self, tail: &[u8]) {
+        let line = argument(tail);
+        if line.is_empty() {
+            self.print_path();
+            print(COMSPEC_KEY);
+            print(ECOMSPEC);
+            print(b"\r\n");
+            for var in self.vars.iter().flatten() {
+                print(var.name.bytes());
+                print(b"=");
+                print(var.value.bytes());
+                print(b"\r\n");
+            }
+            return;
         }
-        index += 1;
-    }
-    if eqs != 1 || eq_at == 0 {
-        con_write_bytes(b"Syntax error\r\n");
-        return;
-    }
-    let name = &line[..eq_at];
-    let value = &line[eq_at + 1..];
-    if value.is_empty() {
-        delete_name(name);
-        return;
-    }
-    store_name(name, value);
-}
 
-fn show_env() {
-    con_write_bytes(b"PATH=");
-    let mut path = [0u8; 67];
-    let n = super::tcmd2a::copy_path(&mut path);
-    if n != 0 {
-        con_write_bytes(&path[..n]);
-    }
-    con_write_bytes(b"\r\n");
-    con_write_bytes(COMSPEC_KEY);
-    con_write_bytes(ECOMSPEC);
-    con_write_bytes(b"\r\n");
-    let mut slot = 0usize;
-    while slot < SLOTS {
-        let (used, name_len, value_len) = unsafe {
-            (
-                VARS[slot].used,
-                VARS[slot].name_len as usize,
-                VARS[slot].value_len as usize,
-            )
+        let mut fields = line.split(|&byte| byte == b'=');
+        let (Some(name), Some(value), None) = (fields.next(), fields.next(), fields.next()) else {
+            print(b"Syntax error\r\n");
+            return;
         };
-        if used {
-            con_write_bytes(unsafe { &VARS[slot].name[..name_len] });
-            con_write_bytes(b"=");
-            con_write_bytes(unsafe { &VARS[slot].value[..value_len] });
-            con_write_bytes(b"\r\n");
+        if name.is_empty() {
+            print(b"Syntax error\r\n");
+            return;
         }
-        slot += 1;
-    }
-}
-
-fn store_name(name: &[u8], value: &[u8]) {
-    let mut upper = [0u8; NAME_MAX];
-    let nlen = name.len().min(NAME_MAX);
-    let mut i = 0usize;
-    while i < nlen {
-        upper[i] = up(name[i]);
-        i += 1;
-    }
-    let vlen = value.len().min(VALUE_MAX);
-    let mut found = SLOTS;
-    let mut free = SLOTS;
-    let mut slot = 0usize;
-    while slot < SLOTS {
-        let (used, name_len) = unsafe { (VARS[slot].used, VARS[slot].name_len as usize) };
-        if used && name_len == nlen && unsafe { VARS[slot].name[..nlen] == upper[..nlen] } {
-            found = slot;
-            break;
-        }
-        if !used && free == SLOTS {
-            free = slot;
-        }
-        slot += 1;
-    }
-    let dest = if found != SLOTS { found } else { free };
-    if dest == SLOTS {
-        con_write_bytes(b"Out of environment space\r\n");
-        return;
-    }
-    unsafe {
-        VARS[dest].name[..nlen].copy_from_slice(&upper[..nlen]);
-        VARS[dest].name_len = nlen as u8;
-        VARS[dest].value[..vlen].copy_from_slice(&value[..vlen]);
-        VARS[dest].value_len = vlen as u8;
-        VARS[dest].used = true;
-    }
-}
-
-fn delete_name(name: &[u8]) {
-    let mut slot = 0usize;
-    while slot < SLOTS {
-        let (used, name_len) = unsafe { (VARS[slot].used, VARS[slot].name_len as usize) };
-        if used && name_len == name.len() {
-            let mut same = true;
-            let mut i = 0usize;
-            while i < name_len {
-                if unsafe { VARS[slot].name[i] } != up(name[i]) {
-                    same = false;
-                    break;
-                }
-                i += 1;
+        // A delete compares the full supplied name. New assignments store up to 16 bytes.
+        let key = if value.is_empty() {
+            name
+        } else {
+            &name[..name.len().min(16)]
+        };
+        let existing = self
+            .vars
+            .iter()
+            .position(|slot| slot.is_some_and(|v| v.name.bytes().eq_ignore_ascii_case(key)));
+        if value.is_empty() {
+            if let Some(i) = existing {
+                self.vars[i] = None;
             }
-            if same {
-                unsafe { VARS[slot].used = false }
-                return;
-            }
+            return;
         }
-        slot += 1;
+        let Some(i) = existing.or_else(|| self.vars.iter().position(Option::is_none)) else {
+            print(b"Out of environment space\r\n");
+            return;
+        };
+        let mut name = Text::from_slice(key);
+        name.bytes.make_ascii_uppercase();
+        self.vars[i] = Some(Variable {
+            name,
+            value: Text::from_slice(value),
+        });
     }
 }
 
-fn up(byte: u8) -> u8 {
-    if byte.is_ascii_lowercase() {
-        byte - 0x20
-    } else {
-        byte
-    }
-}
-
-fn skip_space(tail: &[u8]) -> &[u8] {
-    let mut i = 0usize;
-    while i < tail.len() && (tail[i] == b' ' || tail[i] == b'\t') {
-        i += 1;
-    }
-    &tail[i..]
-}
-
-fn blank(tail: &[u8]) -> bool {
-    for &byte in tail {
-        if byte == b'\r' || byte == b'\n' || byte == 0 {
-            return true;
-        }
-        if byte != b' ' && byte != b'\t' {
-            return false;
-        }
-    }
-    true
+fn argument(tail: &[u8]) -> &[u8] {
+    let end = tail
+        .iter()
+        .position(|b| matches!(b, b'\r' | b'\n' | 0))
+        .unwrap_or(tail.len());
+    let text = &tail[..end];
+    let start = text
+        .iter()
+        .position(|b| !matches!(b, b' ' | b'\t'))
+        .unwrap_or(text.len());
+    &text[start..]
 }

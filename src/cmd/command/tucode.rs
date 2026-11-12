@@ -6,9 +6,6 @@
 
 use crate::bios::mscon::con_write_bytes;
 
-/// `RDATA.ASM` `ECHOFLAG`. The low bit is on.
-static mut ECHO_FLAG: u8 = 0b0000_0001;
-
 const ECHO_IS: &[u8] = b"ECHO is ";
 const ON_TEXT: &[u8] = b"on";
 const OFF_TEXT: &[u8] = b"off";
@@ -75,27 +72,20 @@ fn dos_break(subfunction: u8, flag: u8) -> u8 {
 }
 
 /// `ECHO`. `line` is the text `cmd_copy` stored at 81h, including the CR.
-pub fn echo(tail: &[u8]) {
+pub fn echo(enabled: &mut bool, tail: &[u8]) {
     match on_off(tail) {
-        OnOff::On => unsafe {
-            ECHO_FLAG |= 1;
-        },
-        OnOff::Off => unsafe {
-            ECHO_FLAG &= !1;
-        },
-        OnOff::Blank => print_state(),
+        OnOff::On => *enabled = true,
+        OnOff::Off => *enabled = false,
+        OnOff::Blank => {
+            con_write_bytes(ECHO_IS);
+            con_write_bytes(if *enabled { ON_TEXT } else { OFF_TEXT });
+            crlf2();
+        }
         OnOff::Other => {
             crprint(skip_one(tail));
             crlf2();
         }
     }
-}
-
-fn print_state() {
-    con_write_bytes(ECHO_IS);
-    let on = unsafe { ECHO_FLAG & 1 != 0 };
-    con_write_bytes(if on { ON_TEXT } else { OFF_TEXT });
-    crlf2();
 }
 
 /// Message 1070 is a bare CR LF.

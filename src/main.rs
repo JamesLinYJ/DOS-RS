@@ -18,18 +18,28 @@ mod smoke;
 pub extern "C" fn kmain() -> ! {
     arch::install_interrupts();
     puts(banner());
-    smoke::run();
-    debug_exit()
+    let success = if cfg!(feature = "batch-console") {
+        puts("Running AUTOEXEC.BAT\n\n");
+        let completed = guest::run::run_shell();
+        if completed {
+            puts("\nBatch complete.\n");
+        }
+        completed
+    } else {
+        smoke::run();
+        true
+    };
+    debug_exit(success)
 }
 
 fn banner() -> &'static str {
     #[cfg(target_arch = "x86")]
     {
-        "dos4-rs i686\n"
+        "DOS-RS / i686\n"
     }
     #[cfg(target_arch = "x86_64")]
     {
-        "dos4-rs x86_64\n"
+        "DOS-RS / x86_64\n"
     }
 }
 
@@ -102,12 +112,12 @@ fn puts_result(line: &VersionLine) {
     puts("\n");
 }
 
-/// Writes `0x10` to port `0xF4`.
+/// Report the boot outcome to QEMU and halt.
 ///
 /// QEMU `isa-debug-exit` returns status `(0x10 << 1) | 1`, which is 33.
 /// The smoke script maps 33 to process status 0.
-fn debug_exit() -> ! {
-    outb(0xF4, 0x10);
+fn debug_exit(success: bool) -> ! {
+    outb(0xF4, if success { 0x10 } else { 0x11 });
     arch::halt()
 }
 

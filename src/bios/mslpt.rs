@@ -5,10 +5,8 @@
 //! COM1 and returns AH=0. AH=2 returns AH=80h, not busy and no error.
 //! `WAIT_COUNT` starts at 50h for each of the four devices.
 
-const STATUS: usize = 3;
-const MAJOR: usize = 13;
-const MINOR: usize = 14;
-const IOCTL_PACKET: usize = 19;
+use core::sync::atomic::{AtomicU16, Ordering};
+
 const DONE: u16 = 0x0100;
 const BUSY_DONE: u16 = 0x0300;
 const ERROR_DONE: u16 = 0x8100;
@@ -20,8 +18,7 @@ const IOC_PC: u8 = 5;
 const GET_RETRY: u8 = 0x65;
 const SET_RETRY: u8 = 0x45;
 
-static mut PRINTDEV: u8 = 0;
-static mut WAIT_COUNT: [u16; 4] = [0x50, 0x50, 0x50, 0x50];
+static WAIT_COUNT: [AtomicU16; 4] = [const { AtomicU16::new(0x50) }; 4];
 
 pub fn prn_write_bytes(bytes: &[u8]) -> u16 {
     if bytes.is_empty() {
@@ -77,55 +74,35 @@ pub fn prn_tilbusy(bytes: &[u8]) -> u16 {
     done
 }
 
-/// `PRN$GENIOCTL` get-retry. The packet is the `IOCTL_REQ` layout.
+/// Read the retry count for the default printer.
 pub fn prn_ioctl_get() -> u16 {
-    let mut data = [0u8; 2];
-    let mut packet = [0u8; 32];
-    packet[MAJOR] = IOC_PC;
-    packet[MINOR] = GET_RETRY;
-    let addr = data.as_mut_ptr() as u32;
-    packet[IOCTL_PACKET..IOCTL_PACKET + 4].copy_from_slice(&addr.to_le_bytes());
-    prn_genioctl(packet.as_mut_ptr());
-    u16::from_le_bytes(data)
+    let mut count = 0;
+    prn_genioctl(0, IOC_PC, GET_RETRY, &mut count);
+    count
 }
 
-fn prn_genioctl(packet: *mut u8) {
-    let major = unsafe { *packet.add(MAJOR) };
+fn prn_genioctl(device: usize, major: u8, minor: u8, count: &mut u16) -> u16 {
     if major != IOC_PC {
-        write_word(packet, STATUS, ERROR_DONE | 3);
-        return;
+        return ERROR_DONE | 3;
     }
-    let minor = unsafe { *packet.add(MINOR) };
-    let data = read_dword(packet, IOCTL_PACKET) as *mut u8;
-    let index = unsafe { PRINTDEV } as usize & 3;
-    if minor == GET_RETRY {
-        let count = unsafe { WAIT_COUNT[index] };
-        write_word(data, 0, count);
-        write_word(packet, STATUS, DONE);
-    } else if minor == SET_RETRY {
-        let count = read_word(data, 0);
-        unsafe { WAIT_COUNT[index] = count };
-        write_word(data, 0, count);
-        write_word(packet, STATUS, DONE);
-    } else {
-        write_word(packet, STATUS, ERROR_DONE | 3);
+    let retries = &WAIT_COUNT[device & 3];
+    match minor {
+        GET_RETRY => *count = retries.load(Ordering::Relaxed),
+        SET_RETRY => retries.store(*count, Ordering::Relaxed),
+        _ => return ERROR_DONE | 3,
     }
+    DONE
 }
 
 /// `PRNOP` / `PRNSTAT`. Returns AH and ZF from the status triage.
 fn prn_op(ah_cmd: u8, result: u8) -> (u8, bool) {
-    let _dx = super::msbio1::get_dx();
-    let function = int17(ah_cmd, result);
+    let function = printer(ah_cmd, result);
     if function & IOERR != 0 {
         let zf = function & NOPAPER == 0;
         return (function, zf);
     }
     let zf = function & TIMEOUT == 0;
     (function, zf)
-}
-
-fn int17(command: u8, byte: u8) -> u8 {
-    printer(command, byte)
 }
 
 fn printer(command: u8, byte: u8) -> u8 {
@@ -136,28 +113,5 @@ fn printer(command: u8, byte: u8) -> u8 {
         NOT_BUSY
     } else {
         0
-    }
-}
-
-fn write_word(pkt: *mut u8, offset: usize, value: u16) {
-    let bytes = value.to_le_bytes();
-    unsafe {
-        *pkt.add(offset) = bytes[0];
-        *pkt.add(offset + 1) = bytes[1];
-    }
-}
-
-fn read_word(pkt: *const u8, offset: usize) -> u16 {
-    unsafe { u16::from_le_bytes([*pkt.add(offset), *pkt.add(offset + 1)]) }
-}
-
-fn read_dword(pkt: *const u8, offset: usize) -> u32 {
-    unsafe {
-        u32::from_le_bytes([
-            *pkt.add(offset),
-            *pkt.add(offset + 1),
-            *pkt.add(offset + 2),
-            *pkt.add(offset + 3),
-        ])
     }
 }
