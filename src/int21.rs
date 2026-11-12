@@ -1,4 +1,4 @@
-//! DOS INT 21h for this pull request.
+//! Native DOS INT 21h dispatch.
 //!
 //! The logical frame, the dispatch table, AH=30h, the shared in-range stub,
 //! and the out-of-range check all live here. The arch gate is the only caller
@@ -14,7 +14,7 @@ struct DosWord(u16);
 
 /// Low byte of AX.
 ///
-/// Distinct from [`Ah`] so a function number cannot be stored as AL.
+/// Distinct from [`FunctionCode`] so a function number cannot be stored as AL.
 #[derive(Clone, Copy)]
 struct ResultByte(u8);
 
@@ -24,7 +24,7 @@ impl ResultByte {
 
 /// AH function number.
 ///
-/// Distinct from [`Al`] and from [`DosWord`].
+/// Distinct from [`ResultByte`] and from [`DosWord`].
 #[derive(Clone, Copy)]
 struct FunctionCode(u8);
 
@@ -151,13 +151,6 @@ impl LogicalFrame {
         self.buffer = (self.buffer & !0xFFFF) | u64::from(word.0);
     }
 }
-
-/// Major 4 in AL, minor 0 in AH. The word is `0x0004`.
-const VERSION_AX: DosWord = DosWord(0x0004);
-/// BH is OEM `0xFF`. BL is the high serial byte, which this image leaves at 0.
-const OEM_BX: DosWord = DosWord(0xFF00);
-/// Low 16 bits of the serial. This image leaves them at 0.
-const SERIAL_CX: DosWord = DosWord(0x0000);
 
 /// One pointer per AH from 0 through the last slot.
 ///
@@ -606,9 +599,10 @@ fn set_ctrl_c_trapping(frame: &mut LogicalFrame) {
 /// Writes AX=`0x0004`, BX=`0xFF00`, and CX=`0x0000` into the low 16 bits.
 /// Leaves the upper bits of those registers alone. Does not write DX, SI, DI, BP, DS, or ES.
 fn get_version(frame: &mut LogicalFrame) {
-    frame.store_ax(VERSION_AX);
-    frame.store_bx(OEM_BX);
-    frame.store_cx(SERIAL_CX);
+    let (ax, bx, cx) = crate::dos::getset::VERSION;
+    frame.store_ax(DosWord(ax));
+    frame.store_bx(DosWord(bx));
+    frame.store_cx(DosWord(cx));
 }
 
 /// Shared body for every empty in-range slot.

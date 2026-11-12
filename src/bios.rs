@@ -1,6 +1,5 @@
 //! Resident BIOS pieces translated from v4.0 `BIOS/`.
-//!
-//! Disk, SYSINIT, and MSLOAD are not in this module.
+//! Includes disk and character devices, MSLOAD and the modeled SYSINIT routines.
 
 pub mod msaux;
 pub mod msdisk;

@@ -1,5 +1,6 @@
 dos4-rs x86_64
 AX=0004 BX=FF00 CX=0000 CF=1
+AX=0004 BX=FF00 CX=0000 CF=0
 BIOS
 AUX
 DSK8102
@@ -245,15 +246,15 @@ CMD DIR FIX2.EXE
 Incorrect number of parms  given to BUILDIDX.CMD ERRORLEVEL ]
 BuildMsg - PSP at 0b00
 Program memory size is 8026
-Allocatable memory size is 606208
+Allocatable memory size is 526944
 Processing []
 
  Function 3D, Error 2, Class 8, Action 3, Locus 2 
   InRegs:
-  AX:3D00 BX:11F0 CX:0001 DX:3A43 SI:28EE DI:0001 DS:0F5A ES:0082
+  AX:3D00 BX:11F0 CX:0001 DX:3A41 SI:28EE DI:0001 DS:0F5A ES:0082
   DS:DX -> []
   OutRegs:
-  AX:0002 BX:11F0 CX:0001 DX:3A43 SI:28EE DI:0001 DS:0F5A ES:0082
+  AX:0002 BX:11F0 CX:0001 DX:3A41 SI:28EE DI:0001 DS:0F5A ES:0082
 CMD ERRORLEVEL 1
 Creating .C files for  using  file of messages. 
 
@@ -291,7 +292,7 @@ Microsoft (R) Macro Assembler Version 5.10
 Copyright (C) Microsoft Corp 1981, 1988.  All rights reserved.
 
 
-  47526 + 481331 Bytes symbol space free
+  47526 + 425253 Bytes symbol space free
 
       0 Warning Errors
       0 Severe  Errors
@@ -357,7 +358,7 @@ int menu(void) { return 1; }
 
 BuildMsg - PSP at 0b00
 Program memory size is 8026
-Allocatable memory size is 606208
+Allocatable memory size is 526944
 Processing [BMSG.SKL]
  Utility Name = [BMSG]
  Loading messages from USAMS.MSG
@@ -543,3 +544,4 @@ Maximum allocation (para)           FFFF           65535
 Header size (para)                     2               2
 Relocation table offset               1C              28
 Relocation entries                     1               1
+GUEST ARCH OK
