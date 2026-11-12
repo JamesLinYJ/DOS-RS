@@ -1,108 +1,96 @@
-//! MZ load and relocation.
-//!
-//! The image is placed one paragraph block above the program segment prefix.
-//! Each relocation word is increased by that load segment.
+//! Validate an MZ load module before reserving RAM or applying relocations.
 
 use super::memory::GuestRam;
 use super::state::{CpuState, Segment, Slot};
 
-pub fn load(image: &[u8], ram: &mut GuestRam, prefix: u16) -> Option<CpuState> {
-    if image.len() < 28 || image[0] != b'M' || image[1] != b'Z' {
-        return None;
-    }
-    let header_bytes = usize::from(word(image, 8)?) * 16;
-    if header_bytes < 28 || header_bytes > image.len() {
-        return None;
-    }
-    let reloc_count = word(image, 6)?;
-    let reloc_at = usize::from(word(image, 24)?);
-    let stack_disp = word(image, 14)?;
-    let stack_pointer = word(image, 16)?;
-    let instruction = word(image, 20)?;
-    let code_disp = word(image, 22)?;
-    ram.release_image();
-    let load_segment = prefix.wrapping_add(0x0010);
-    let payload = image.get(header_bytes..)?;
-    for (placed, byte) in payload.iter().enumerate() {
-        let segment = load_segment.wrapping_add((placed >> 4) as u16);
-        let offset = (placed & 0xF) as u16;
-        if !ram.store(segment, offset, *byte) {
-            return None;
-        }
-    }
-    let mut index = 0u16;
-    while index < reloc_count {
-        let at = reloc_at + usize::from(index) * 4;
-        let place = word(image, at)?;
-        let place_segment = load_segment.wrapping_add(word(image, at + 2)?);
-        let low = ram.load(place_segment, place)?;
-        let high = ram.load(place_segment, place.wrapping_add(1))?;
-        let fixed = u16::from_le_bytes([low, high]).wrapping_add(load_segment);
-        let bytes = fixed.to_le_bytes();
-        if !ram.store(place_segment, place, bytes[0])
-            || !ram.store(place_segment, place.wrapping_add(1), bytes[1])
-        {
-            return None;
-        }
-        index += 1;
-    }
-    if !ram.store(prefix, 0, 0xCD) || !ram.store(prefix, 1, 0x20) {
-        return None;
-    }
-    let limit = super::memory::CONVENTIONAL_END.to_le_bytes();
-    if !ram.store(prefix, 2, limit[0]) || !ram.store(prefix, 3, limit[1]) {
-        return None;
-    }
-    if !plant_environment(ram, prefix, b"GUEST   EXE") {
-        return None;
-    }
-    let mut cpu = CpuState::at_com(prefix);
-    cpu.set_instruction(instruction);
-    cpu.set_selector(Segment::Code, load_segment.wrapping_add(code_disp));
-    cpu.set_selector(Segment::Stack, load_segment.wrapping_add(stack_disp));
-    cpu.set_wide(Slot::Stack, stack_pointer);
-    Some(cpu)
+pub(super) struct Mz<'a> {
+    payload: &'a [u8],
+    relocations: &'a [u8],
+    cs: u16,
+    ip: u16,
+    ss: u16,
+    sp: u16,
+    pub minimum: u16,
+    pub maximum: u16,
 }
 
-pub(super) fn plant_environment(ram: &mut GuestRam, prefix: u16, program: &[u8; 11]) -> bool {
-    const ENV_SEGMENT: u16 = 0x0600;
-    let segment = ENV_SEGMENT.to_le_bytes();
-    if !ram.store(prefix, 0x2C, segment[0]) || !ram.store(prefix, 0x2D, segment[1]) {
-        return false;
-    }
-    if !ram.store(prefix, 0x80, 1) || !ram.store(prefix, 0x81, b'\r') {
-        return false;
-    }
-    let mut text = [0u8; 40];
-    let mut length = 0usize;
-    for byte in b"PATH=\\\0\0\x01\0C:\\" {
-        text[length] = *byte;
-        length += 1;
-    }
-    let mut index = 0usize;
-    while index < 8 && program[index] != b' ' {
-        text[length] = program[index];
-        length += 1;
-        index += 1;
-    }
-    text[length] = b'.';
-    length += 1;
-    text[length] = program[8];
-    text[length + 1] = program[9];
-    text[length + 2] = program[10];
-    length += 3;
-    text[length] = 0;
-    let mut offset = 0u16;
-    while usize::from(offset) <= length {
-        if !ram.store(ENV_SEGMENT, offset, text[usize::from(offset)]) {
-            return false;
+impl<'a> Mz<'a> {
+    pub fn parse(file: &'a [u8]) -> Option<Self> {
+        let word = |at: usize| Some(u16::from_le_bytes(file.get(at..at + 2)?.try_into().ok()?));
+        if !file.starts_with(b"MZ") {
+            return None;
         }
-        offset = offset.wrapping_add(1);
+        let last = usize::from(word(2)?);
+        let pages = usize::from(word(4)?);
+        if last > 511 || pages == 0 {
+            return None;
+        }
+        let length = (pages - 1) * 512 + if last == 0 { 512 } else { last };
+        let header = usize::from(word(8)?) * 16;
+        if header < 28 {
+            return None;
+        }
+        let payload = file.get(header..length)?;
+        let count = usize::from(word(6)?);
+        let at = usize::from(word(24)?);
+        let relocations = if count == 0 {
+            &[]
+        } else {
+            if at < 28 {
+                return None;
+            }
+            file.get(..header)?.get(at..at + count * 4)?
+        };
+        for reloc in relocations.chunks_exact(4) {
+            let at = relocation_offset(reloc);
+            payload.get(at..at + 2)?;
+        }
+        let (cs, ip, ss, sp) = (word(22)?, word(20)?, word(14)?, word(16)?);
+        let entry = (usize::from(cs) * 16 + usize::from(ip)) & 0xFFFFF;
+        payload.get(entry)?;
+        let base = 0x10 + payload.len().div_ceil(16);
+        let stack_end = 0x10
+            + usize::from(ss)
+            + if sp == 0 {
+                0x1000
+            } else {
+                usize::from(sp).div_ceil(16)
+            };
+        let minimum = u16::try_from((base + usize::from(word(10)?)).max(stack_end)).ok()?;
+        let maximum = u16::try_from(base + usize::from(word(12)?))
+            .unwrap_or(u16::MAX)
+            .max(minimum);
+        Some(Self {
+            payload,
+            relocations,
+            cs,
+            ip,
+            ss,
+            sp,
+            minimum,
+            maximum,
+        })
     }
-    true
+
+    pub fn load(&self, ram: &mut GuestRam, psp: u16, end: u16) -> CpuState {
+        let load = psp + 0x10;
+        let bytes = ram.paragraphs_mut(load, end);
+        bytes[..self.payload.len()].copy_from_slice(self.payload);
+        for reloc in self.relocations.chunks_exact(4) {
+            let i = relocation_offset(reloc);
+            let word = u16::from_le_bytes([bytes[i], bytes[i + 1]]).wrapping_add(load);
+            bytes[i..i + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        let mut cpu = CpuState::at_com(psp);
+        cpu.set_instruction(self.ip);
+        cpu.set_selector(Segment::Code, load.wrapping_add(self.cs));
+        cpu.set_selector(Segment::Stack, load.wrapping_add(self.ss));
+        cpu.set_wide(Slot::Stack, self.sp);
+        cpu
+    }
 }
 
-fn word(image: &[u8], at: usize) -> Option<u16> {
-    let bytes = image.get(at..at + 2)?;
-    Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+fn relocation_offset(entry: &[u8]) -> usize {
+    usize::from(u16::from_le_bytes([entry[2], entry[3]])) * 16
+        + usize::from(u16::from_le_bytes([entry[0], entry[1]]))
 }

@@ -1,9 +1,5 @@
-//! MS-DOS kernel pieces the BIOS init path calls through INT 21h.
-//!
-//! The checklist already maps `DOS/CPMIO.ASM` and `DOS/CPMIO2.ASM` here.
-//! This slice is only the console output those files use for a `$` string
-//! and a single character. No new register type is added. The frame stays
-//! in `int21`.
+//! Native DOS services and translations indexed by upstream source path.
+//! Native INT 21h dispatch lives in `int21`.
 
 pub mod abort;
 pub mod alloc;
