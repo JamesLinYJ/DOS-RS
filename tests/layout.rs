@@ -2,6 +2,8 @@
 #![allow(dead_code)]
 #[path = "../src/guest/arena.rs"]
 mod arena;
+#[path = "../src/kernel_cell.rs"]
+mod kernel_cell;
 #[path = "../src/guest/memory.rs"]
 mod memory;
 #[path = "../src/guest/mz.rs"]
@@ -118,7 +120,7 @@ fn mz_file() -> Vec<u8> {
 #[test]
 fn mz_loads_declared_bytes_and_applies_relocations_once() {
     let _guard = RAM_LOCK.lock().unwrap();
-    let ram = memory::storage();
+    let ram = &mut *memory::storage();
     ram.clear();
     let file = mz_file();
     let mut arena = Arena::new();
@@ -145,7 +147,7 @@ fn program(image: &[u8]) -> Program<'_> {
 #[test]
 fn invalid_images_never_modify_guest_ram_or_consume_a_block() {
     let _guard = RAM_LOCK.lock().unwrap();
-    let ram = memory::storage();
+    let ram = &mut *memory::storage();
     ram.clear();
     ram.store(ROOT, 0, 0xa5);
     let mut arena = Arena::new();
@@ -170,7 +172,7 @@ fn invalid_images_never_modify_guest_ram_or_consume_a_block() {
 #[test]
 fn maximum_command_tail_preserves_the_psp_boundary() {
     let _guard = RAM_LOCK.lock().unwrap();
-    let ram = memory::storage();
+    let ram = &mut *memory::storage();
     ram.clear();
     let mut arena = Arena::new();
     let mut executable = program(&[0xf4]);
@@ -240,4 +242,17 @@ fn native_arena_can_split_to_its_last_header_and_rejoin_all_blocks() {
     }
     assert_eq!(native_alloc::largest_free(), 16);
     assert!(native_alloc::alloc(16).is_ok());
+}
+
+#[test]
+fn kernel_storage_rejects_a_second_borrow_and_releases_on_unwind() {
+    let cell = kernel_cell::KernelCell::new(0u16);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut one = cell.borrow();
+        *one = 42;
+        assert!(cell.try_borrow().is_none());
+        panic!("abort a borrow");
+    }));
+    assert!(result.is_err());
+    assert_eq!(*cell.borrow(), 42);
 }

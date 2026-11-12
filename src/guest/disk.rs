@@ -4,7 +4,14 @@
 //! copy. Cluster numbers still use [`crate::dos::fat`]. A highest cluster of
 //! 4086 or more is a 16-bit table; below that the entries are 12-bit.
 
+#[cfg(test)]
 const IMAGE: &[u8] = include_bytes!("../../disks/guest12.img");
+#[cfg(not(test))]
+const IMAGE: &[u8] = include_bytes!(env!("DOS_RS_GUEST_IMAGE"));
+const _: () = assert!(
+    IMAGE.len() <= CAPACITY,
+    "guest image exceeds the 2 MiB volume"
+);
 
 const CAPACITY: usize = 4096 * 512;
 
@@ -15,11 +22,11 @@ struct Disk {
     cwd: u16,
 }
 
-static mut DISK: Disk = Disk {
+static DISK: crate::kernel_cell::KernelCell<Disk> = crate::kernel_cell::KernelCell::new(Disk {
     pending_fat: [0; 8192],
     bytes: [0; CAPACITY],
     cwd: 0,
-};
+});
 
 struct Map {
     bytes_per_sector: usize,
@@ -36,7 +43,7 @@ struct Map {
 /// The scan matches `DISK_INFO`: cluster 2 through the highest cluster, with
 /// a zero entry counted free. The total is one less than the highest cluster.
 pub fn media_id() -> u8 {
-    storage().bytes.get(21).copied().unwrap_or(0xF0)
+    DISK.borrow().bytes.get(21).copied().unwrap_or(0xF0)
 }
 
 pub struct DriveBlock {
@@ -53,7 +60,7 @@ pub struct DriveBlock {
 }
 
 pub fn drive_block() -> Option<DriveBlock> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let sectors_per_cluster = *disk.bytes.get(13)?;
     let reserved = u16::from_le_bytes([*disk.bytes.get(14)?, *disk.bytes.get(15)?]);
@@ -84,7 +91,7 @@ pub fn drive_block() -> Option<DriveBlock> {
 }
 
 pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let marked = disk.bytes.get(0x26).copied() == Some(0x29);
     let mut serial = [0u8; 4];
@@ -103,13 +110,13 @@ pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
 
 pub fn set_volume_id(serial: &[u8; 4], label: &[u8; 11]) -> bool {
     let fat16 = {
-        let disk = storage();
+        let disk = &mut *DISK.borrow();
         match layout(disk) {
             Some(map) => map.max_cluster >= 4086,
             None => return false,
         }
     };
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     if disk.bytes.len() < 0x3E {
         return false;
     }
@@ -122,7 +129,7 @@ pub fn set_volume_id(serial: &[u8; 4], label: &[u8; 11]) -> bool {
 }
 
 pub fn allocation() -> Option<(u16, u16, u16, u16)> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     if map.max_cluster < 2 {
         return None;
@@ -155,18 +162,18 @@ pub fn allocation() -> Option<(u16, u16, u16, u16)> {
 
 /// Read a BIOS request against the same mounted bytes as DOS file services.
 pub(super) fn with_media<T>(read: impl FnOnce(&[u8]) -> T) -> T {
-    read(&storage().bytes[..IMAGE.len()])
+    read(&DISK.borrow().bytes[..IMAGE.len()])
 }
 
 pub fn boot() {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     disk.bytes.fill(0);
     disk.bytes[..IMAGE.len()].copy_from_slice(IMAGE);
     disk.cwd = 0;
 }
 
 pub fn file_len(name: &[u8; 11]) -> Option<usize> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let found = find(disk, &map, disk.cwd, name)?;
     if found.attr & 0x10 != 0 {
@@ -176,7 +183,7 @@ pub fn file_len(name: &[u8; 11]) -> Option<usize> {
 }
 
 pub fn read_head(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let found = find(disk, &map, disk.cwd, name)?;
     if found.attr & 0x10 != 0 {
@@ -191,7 +198,7 @@ pub fn read_file(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
 }
 
 pub fn read_file_at(dir: u16, name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let found = find(disk, &map, dir, name)?;
     if found.attr & 0x10 != 0 {
@@ -212,7 +219,7 @@ pub fn write_named_at(dir: u16, name: &[u8; 11], data: &[u8], attr: u8) -> bool 
     if data.len() > 128 * 512 {
         return false;
     }
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -270,7 +277,7 @@ pub fn write_named_at(dir: u16, name: &[u8; 11], data: &[u8], attr: u8) -> bool 
 }
 
 pub fn finish_fcb(name: &[u8; 11], size: u32, time: u16, date: u16) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -297,7 +304,7 @@ pub fn finish_fcb(name: &[u8; 11], size: u32, time: u16, date: u16) -> bool {
 }
 
 pub fn remove_file(name: &[u8; 11]) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -312,7 +319,7 @@ pub fn remove_file(name: &[u8; 11]) -> bool {
 }
 
 pub fn rename_file(from: &[u8; 11], to: &[u8; 11]) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -328,7 +335,7 @@ pub fn rename_file(from: &[u8; 11], to: &[u8; 11]) -> bool {
 }
 
 pub fn make_dir(name: &[u8; 11]) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -353,7 +360,7 @@ pub fn make_dir(name: &[u8; 11]) -> bool {
 }
 
 pub fn remove_dir(name: &[u8; 11]) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -368,7 +375,7 @@ pub fn remove_dir(name: &[u8; 11]) -> bool {
 }
 
 pub fn change_dir(path: &[u8]) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     if path == b"\\" || path.is_empty() {
         disk.cwd = 0;
         return true;
@@ -404,7 +411,7 @@ pub fn stamp(name: &[u8; 11]) -> Option<(u16, u16)> {
 }
 
 pub fn stamp_at(dir: u16, name: &[u8; 11]) -> Option<(u16, u16)> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let found = find(disk, &map, dir, name)?;
     let time = u16::from_le_bytes([found.raw[22], found.raw[23]]);
@@ -413,7 +420,7 @@ pub fn stamp_at(dir: u16, name: &[u8; 11]) -> Option<(u16, u16)> {
 }
 
 pub fn set_stamp_at(dir: u16, name: &[u8; 11], time: u16, date: u16) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -431,13 +438,13 @@ pub fn set_stamp_at(dir: u16, name: &[u8; 11], time: u16, date: u16) -> bool {
 }
 
 pub fn attribute(name: &[u8; 11]) -> Option<u8> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     Some(find(disk, &map, disk.cwd, name)?.attr)
 }
 
 pub fn set_attribute(name: &[u8; 11], attr: u8) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -457,7 +464,7 @@ pub fn exists(name: &[u8; 11]) -> bool {
 }
 
 pub fn exists_at(dir: u16, name: &[u8; 11]) -> bool {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -471,10 +478,6 @@ struct Found {
     size: usize,
     attr: u8,
     raw: [u8; 32],
-}
-
-fn storage() -> &'static mut Disk {
-    unsafe { &mut *core::ptr::addr_of_mut!(DISK) }
 }
 
 fn layout(disk: &Disk) -> Option<Map> {
@@ -718,7 +721,7 @@ fn parent_of(disk: &Disk, map: &Map, cluster: u16) -> u16 {
 }
 
 pub fn current_path(out: &mut [u8]) -> usize {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     if disk.cwd < 2 {
         return 0;
     }
@@ -793,18 +796,18 @@ fn write_component(out: &mut [u8], mut used: usize, name: &[u8; 11]) -> usize {
 }
 
 pub fn working_directory() -> u16 {
-    storage().cwd
+    DISK.borrow().cwd
 }
 
 pub fn set_working(cluster: u16) {
-    storage().cwd = cluster;
+    DISK.borrow().cwd = cluster;
 }
 
 pub fn parent_directory(cluster: u16) -> u16 {
     if cluster < 2 {
         return 0;
     }
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let Some(map) = layout(disk) else {
         return 0;
     };
@@ -821,7 +824,7 @@ pub struct DirMatch {
 }
 
 pub fn find_match(dir: u16, template: &[u8; 11], search_attr: u8, start: u16) -> Option<DirMatch> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let mut index = usize::from(start);
     let limit = entry_count(&map, dir);
@@ -851,7 +854,7 @@ pub fn find_match(dir: u16, template: &[u8; 11], search_attr: u8, start: u16) ->
 }
 
 pub fn directory_cluster(parent: u16, name: &[u8; 11]) -> Option<u16> {
-    let disk = storage();
+    let disk = &mut *DISK.borrow();
     let map = layout(disk)?;
     let found = find(disk, &map, parent, name)?;
     if found.attr & 0x10 == 0 {

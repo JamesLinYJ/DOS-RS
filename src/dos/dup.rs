@@ -4,13 +4,12 @@
 //! The reference count is incremented. Wrapping is the same trouble the
 //! original comment names, and the add is wrapping on purpose.
 
-static mut REF_COUNT: u16 = 1;
+use core::sync::atomic::{AtomicU16, Ordering};
+
+static REF_COUNT: AtomicU16 = AtomicU16::new(1);
 
 pub fn dos_dup() -> u16 {
-    unsafe {
-        REF_COUNT = REF_COUNT.wrapping_add(1);
-        REF_COUNT
-    }
+    REF_COUNT.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
 }
 
 pub fn show() {

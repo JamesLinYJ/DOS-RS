@@ -8,13 +8,13 @@
 const CRIT_DISK: u16 = 1;
 const CRIT_DEVICE: u16 = 2;
 
-static mut PATCHED: bool = false;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static PATCHED: AtomicBool = AtomicBool::new(false);
 
 fn section(base: u16, which: u16) -> u16 {
-    unsafe {
-        if !PATCHED {
-            return 0;
-        }
+    if !PATCHED.load(Ordering::Relaxed) {
+        return 0;
     }
     base + which
 }
@@ -41,7 +41,7 @@ pub fn leave_device() -> u16 {
 
 /// The sharer replaces the leading `RET` with `PUSH AX`.
 pub fn sharer_patch() {
-    unsafe { PATCHED = true }
+    PATCHED.store(true, Ordering::Relaxed);
 }
 
 pub fn show() {

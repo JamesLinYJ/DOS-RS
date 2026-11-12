@@ -4,6 +4,8 @@
 //! offsets, never host pointers. `INT` returns to the owner after the
 //! instruction pointer has moved past the instruction.
 
+#![forbid(unsafe_code)]
+
 pub mod alu;
 mod arena;
 pub mod command;

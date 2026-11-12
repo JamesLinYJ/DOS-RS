@@ -10,7 +10,7 @@ fn aux0_in(request: &mut Request<'_>) {
     request.status = match request.command {
         8 | 9 => {
             for &byte in request.source.iter().take(usize::from(request.count)) {
-                crate::serial_putc(byte);
+                super::pc::serial_write(super::pc::UARTS[0], byte);
             }
             DONE
         }

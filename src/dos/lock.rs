@@ -8,13 +8,8 @@ const INVALID_FUNCTION: u16 = 1;
 const INVALID_HANDLE: u16 = 6;
 const LOCK_VIOLATION: u16 = 0x21;
 
-struct Range {
-    start: u32,
-    len: u32,
-    held: bool,
-}
-
-static mut LOCK: Range = Range { start: 0, len: 0, held: false };
+static LOCK: crate::kernel_cell::KernelCell<Option<(u32, u32)>> =
+    crate::kernel_cell::KernelCell::new(None);
 
 pub fn oper(result: u8, open: bool, start: u32, len: u32) -> u16 {
     if result > 1 {
@@ -23,22 +18,19 @@ pub fn oper(result: u8, open: bool, start: u32, len: u32) -> u16 {
     if !open {
         return INVALID_HANDLE;
     }
-    unsafe {
-        if result == 0 {
-            if LOCK.held && overlap(LOCK.start, LOCK.len, start, len) {
-                return LOCK_VIOLATION;
-            }
-            LOCK.start = start;
-            LOCK.len = len;
-            LOCK.held = true;
-            return 0;
+    let mut held = LOCK.borrow();
+    if result == 0 {
+        if held.is_some_and(|(a, b)| overlap(a, b, start, len)) {
+            return LOCK_VIOLATION;
         }
-        if LOCK.held && LOCK.start == start && LOCK.len == len {
-            LOCK.held = false;
-            return 0;
-        }
-        LOCK_VIOLATION
+        *held = Some((start, len));
+        return 0;
     }
+    if *held == Some((start, len)) {
+        *held = None;
+        return 0;
+    }
+    LOCK_VIOLATION
 }
 
 fn overlap(a: u32, a_len: u32, b: u32, b_len: u32) -> bool {
@@ -48,9 +40,7 @@ fn overlap(a: u32, a_len: u32, b: u32, b_len: u32) -> bool {
 }
 
 pub fn show() {
-    unsafe {
-        LOCK.held = false;
-    }
+    *LOCK.borrow() = None;
     let first = oper(0, true, 0, 16);
     let again = oper(0, true, 0, 16);
     let unlocked = oper(1, true, 0, 16);

@@ -464,3 +464,14 @@ pub fn inb(port: u16) -> u8 {
     }
     value
 }
+
+/// Read a 16-bit PC I/O port from the kernel's privileged execution context.
+pub fn inw(port: u16) -> u16 {
+    let value: u16;
+    // SAFETY: Both native kernels run at CPL 0. IN only returns the selected port's value.
+    unsafe {
+        core::arch::asm!("in ax, dx", in("dx") port, out("ax") value,
+        options(nomem, nostack, preserves_flags));
+    }
+    value
+}

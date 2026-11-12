@@ -1,14 +1,7 @@
-//! Disk read from `BIOS/MSDISK.ASM` for one fixed-disk sector.
-//!
-//! There is no disk controller under QEMU `-kernel`. `FASTSPEED` executes
-//! INT 13h. The handler returns carry and AH=`80h`. `DSKERR` treats `80h` as
-//! a hard error. `MAPERROR` uses the `ERRIN`/`ERROUT` bytes in `MSBDATA.INC`.
-//! Timeout `80h` becomes AL=2. `ERR$CNT` stores status `8102h`.
+//! Boot-disk BIOS services. The fixed-disk path reads the primary ATA master.
+//! The embedded floppy uses 18 sectors per track and two heads.
 
-const STATUS: usize = 3;
-const COUNT: usize = 18;
 const ROMREAD: u8 = 2;
-const MAXERR: u16 = 5;
 const FNON_REMOVABLE: u16 = 0x0001;
 const FCHANGELINE: u16 = 0x0002;
 const FI_AM_MULT: u16 = 0x0010;
@@ -22,66 +15,8 @@ const WRITE_FAULT: u8 = 0xCC;
 const ACCESS_MAX: u8 = 5;
 /// `MSBDATA.INC` `Secrete_Code`. The word is the two characters `jk`.
 const SECRETE_CODE: u16 = u16::from_le_bytes(*b"jk");
-const FTOOBIG: u8 = 0x80;
 const FFHARDFILE: u8 = 5;
 const ERROR_AH: u16 = 0x8100;
-
-/// ROM AH values and the BIOS AL codes from `MSBDATA.INC`.
-const ERRIN: [u8; 8] = [0xCC, 0x80, 0x40, 0x10, 0x08, 0x06, 0x04, 0x03];
-const ERROUT: [u8; 9] = [10, 2, 6, 4, 4, 15, 8, 0, 12];
-
-#[derive(Clone, Copy)]
-#[repr(C)]
-struct Bds {
-    drivelet: u8,
-    drivenum: u8,
-    flags: u16,
-    fatsiz: u8,
-    formfactor: u8,
-    seclim: u16,
-    hdlim: u16,
-    drvlim: u16,
-    hidsec: u16,
-}
-
-#[repr(C)]
-struct Disk {
-    bds: Bds,
-    medbyt: u8,
-    seccnt: u16,
-    cursec: u8,
-    curhd: u8,
-    curtrk: u16,
-    rflag: u8,
-    sector: u16,
-    sector_high: u16,
-    lsterr: u8,
-    ptrsav: usize,
-}
-
-static mut DISK: Disk = Disk {
-    bds: Bds {
-        drivelet: 0,
-        drivenum: 0x80,
-        flags: FNON_REMOVABLE,
-        fatsiz: 0,
-        formfactor: FFHARDFILE,
-        seclim: 17,
-        hdlim: 2,
-        drvlim: 10000,
-        hidsec: 0,
-    },
-    medbyt: 0xF8,
-    seccnt: 0,
-    cursec: 1,
-    curhd: 0,
-    curtrk: 0,
-    rflag: ROMREAD,
-    sector: 0,
-    sector_high: 0,
-    lsterr: 0,
-    ptrsav: 0,
-};
 
 /// `MEDIA$CHK` for the fixed disk. `Secrete_Code` is `jk`, the disk is not
 /// removable, and format has not changed it, so the result is 1 (no change).
@@ -89,7 +24,7 @@ pub fn media_check() -> i16 {
     if SECRETE_CODE != u16::from_le_bytes(*b"jk") {
         return 0;
     }
-    let flags = disk().bds.flags;
+    let flags = FNON_REMOVABLE;
     let mut source: i16 = 1;
     if flags & FCHANGED_BY_FORMAT != 0 {
         if flags & FNON_REMOVABLE != 0 {
@@ -105,12 +40,12 @@ pub fn media_check() -> i16 {
 
 /// `SETDRIVE`. One BDS, logical drive 0. Carry when the letter is absent.
 pub fn set_drive(logical: u8) -> bool {
-    disk().bds.drivelet == logical
+    logical == 0
 }
 
 /// `DSK$REM`. A fixed disk takes the busy exit.
 pub fn dsk_removable() -> u16 {
-    if disk().bds.flags & FNON_REMOVABLE != 0 {
+    if FNON_REMOVABLE & FNON_REMOVABLE != 0 {
         0x0300
     } else {
         0x0100
@@ -119,7 +54,7 @@ pub fn dsk_removable() -> u16 {
 
 /// `CHECKSINGLE`. A fixed disk, or a drive that is not shared, returns at once.
 pub fn check_single() -> bool {
-    let flags = disk().bds.flags;
+    let flags = FNON_REMOVABLE;
     flags & (FNON_REMOVABLE | FI_OWN_PHYSICAL) != 0 || flags & FI_AM_MULT == 0
 }
 
@@ -305,7 +240,7 @@ pub fn fixed_disk_paths() -> bool {
         && !verify_soft_ecc(WRITE_FAULT, 1)
         && int2f_13(0x13, 0x1000, 0x2000) == Some(0x1000)
         && int2f_13(0, 0x1000, 0x2000).is_none()
-        && !ask_rom_media(disk().bds.flags)
+        && !ask_rom_media(FNON_REMOVABLE)
         && dma_fit(0x1000, 512) == 512
         && dma_fit(0xff00, 512) == 0x100
         && read_in_range(FNON_REMOVABLE, 0, 1, 10000)
@@ -334,27 +269,14 @@ fn ask_rom_media(flags: u16) -> bool {
 
 /// Read one sector at sector 0 of logical drive 0. Returns the status word.
 pub fn read_sector0(buffer: &mut [u8]) -> u16 {
-    let mut packet = [0u8; 32];
-    packet[2] = 4;
-    let count = 1u16;
-    packet[COUNT..COUNT + 2].copy_from_slice(&count.to_le_bytes());
-    unsafe {
-        let disk = &mut *core::ptr::addr_of_mut!(DISK);
-        disk.ptrsav = packet.as_mut_ptr() as usize;
-        disk.sector = 0;
-        disk.sector_high = 0;
-        disk.seccnt = count;
-        disk.medbyt = 0xF8;
-        disk.rflag = ROMREAD;
-    }
-    let carry = diskrd();
-    if carry {
-        err_cnt();
+    let Some(sector) = buffer.get_mut(..512).and_then(|s| s.try_into().ok()) else {
+        return ERROR_AH | 8;
+    };
+    if super::ata::capacity().is_some() && super::ata::read(0, sector) {
+        0x0100
     } else {
-        write_status(0x0100);
+        ERROR_AH | 2
     }
-    let _ = buffer;
-    packet_status()
 }
 
 /// Read cylinder 0, head 0, sector 1 of drive 0. That is logical sector 0
@@ -373,204 +295,25 @@ pub(crate) fn read_chs(
     drive: u8,
     buf: &mut [u8],
 ) -> bool {
-    let packed_sector = (cyl & 0xff) << 8 | u16::from(sector & 0x3f) | ((cyl & 0x300) >> 2);
-    let drive_head = u16::from(drive) | (u16::from(head) << 8);
-    let (_status, carry) = disk_service(ah_cmd, count, packed_sector, drive_head, buf.as_mut_ptr());
-    carry
-}
-
-fn diskrd() -> bool {
-    let disk = disk();
-    if disk.bds.drivelet != 0 {
+    if ah_cmd == 0 {
+        return drive != 0;
+    }
+    if drive != 0 || ah_cmd != ROMREAD || count == 0 || !(1..=18).contains(&sector) || head >= 2 {
         return true;
     }
-    if disk.seccnt == 0 {
-        return false;
-    }
-    if disk.bds.flags & UNFORMATTED_MEDIA != 0 {
+    let lba = (usize::from(cyl) * 2 + usize::from(head)) * 18 + usize::from(sector - 1);
+    let bytes = usize::from(count) * 512;
+    let start = lba * 512;
+    let Some(source) = msload_image().get(start..start + bytes) else {
         return true;
-    }
-    let start = disk.sector as u32 + u32::from(disk.bds.hidsec);
-    let end = start + u32::from(disk.seccnt);
-    if disk.bds.drvlim != 0 && end > u32::from(disk.bds.drvlim) {
-        return true;
-    }
-    let seclim = u32::from(disk.bds.seclim);
-    let track = start / seclim;
-    let mut sector = (start % seclim) as u8;
-    sector = sector.wrapping_add(1);
-    let heads = u32::from(disk.bds.hdlim);
-    let cylinder = track / heads;
-    let head = (track % heads) as u8;
-    if cylinder > 1024 {
-        return true;
-    }
-    unsafe {
-        let disk = &mut *core::ptr::addr_of_mut!(DISK);
-        disk.cursec = sector;
-        disk.curhd = head;
-        disk.curtrk = cylinder as u16;
-    }
-    block()
-}
-
-fn block() -> bool {
-    let (seclim, cursec, count) = unsafe {
-        let disk = &*core::ptr::addr_of!(DISK);
-        (disk.bds.seclim as u8, disk.cursec, disk.seccnt)
     };
-    let on_track = seclim.wrapping_add(1).wrapping_sub(cursec) as u16;
-    let this = count.min(on_track);
-    disk_io(this)
-}
-
-fn disk_io(count: u16) -> bool {
-    let mut base = MAXERR;
-    let function = disk().rflag;
-    loop {
-        let failed = fastspeed(function, count as u8);
-        if !failed.1 {
-            return false;
-        }
-        if dskerr(failed.0, &mut base) {
-            return true;
-        }
-    }
-}
-
-/// `FASTSPEED`. `FTOOBIG` returns AH=`80h` and carry. Otherwise INT 13h.
-fn fastspeed(ah_cmd: u8, count: u8) -> (u8, bool) {
-    let too_big = disk().bds.fatsiz & FTOOBIG != 0;
-    if too_big {
-        return (0x80, true);
-    }
-    if disk().bds.formfactor != FFHARDFILE && ah_cmd != ROMREAD {
-        return int13(ah_cmd, count);
-    }
-    int13(ah_cmd, count)
-}
-
-fn dskerr(function: u8, base: &mut u16) -> bool {
-    *base = base.saturating_sub(1);
-    if *base == 0 || function == 0x80 || function == 0xCC {
-        map_error(function);
+    let Some(target) = buf.get_mut(..bytes) else {
         return true;
-    }
+    };
+    target.copy_from_slice(source);
     false
-}
-
-fn map_error(function: u8) -> u8 {
-    unsafe {
-        (*core::ptr::addr_of_mut!(DISK)).lsterr = function;
-    }
-    let mut result = 12;
-    for (index, code) in ERRIN.iter().enumerate() {
-        if *code == function {
-            result = ERROUT[index];
-            break;
-        }
-    }
-    if !ERRIN.contains(&function) {
-        result = ERROUT[ERROUT.len() - 1];
-    }
-    unsafe {
-        (*core::ptr::addr_of_mut!(DISK)).lsterr = result;
-    }
-    result
-}
-
-fn err_cnt() {
-    let result = disk().lsterr;
-    let packed = disk().seccnt;
-    let pkt = ptrsav();
-    let count = packet_word(COUNT);
-    write_word(pkt, COUNT, count.wrapping_sub(packed));
-    write_status(ERROR_AH | u16::from(result));
-}
-
-fn int13(ah_cmd: u8, count: u8) -> (u8, bool) {
-    let sector = disk().cursec;
-    let cyl = disk().curtrk;
-    let head = disk().curhd;
-    let drive = disk().bds.drivenum;
-    let packed_sector = (u16::from(sector & 0x3f)) | ((cyl & 0xff) << 8);
-    let drive_head = u16::from(drive) | (u16::from(head) << 8);
-    disk_service(ah_cmd, count, packed_sector, drive_head, core::ptr::null_mut())
-}
-
-fn disk_service(command: u8, count: u8, packed_sector: u16, drive_head: u16, buffer: *mut u8) -> (u8, bool) {
-    let call = (u32::from(command) << 8) | u32::from(count);
-    let result = bios_int13_regs(call, buffer as u32, u32::from(packed_sector), u32::from(drive_head));
-    let status = ((result >> 8) & 0xff) as u8;
-    (status, result & 0x1_0000 != 0)
-}
-
-/// Disk service. Hard disks time out. Drive 0 reads `disks/msload.img`.
-///
-/// The low 16 bits are the status word. Bit 16 is the carry flag.
-fn bios_int13_regs(call: u32, buffer: u32, packed_sector: u32, drive_head: u32) -> u32 {
-    let command = ((call >> 8) & 0xff) as u8;
-    let count = (call & 0xff) as u8;
-    let drive = (drive_head & 0xff) as u8;
-    if drive & 0x80 != 0 {
-        return (0x80u32 << 8) | (1 << 16);
-    }
-    if command == 0 {
-        return 0;
-    }
-    if command != 2 || count == 0 {
-        return (0x01u32 << 8) | (1 << 16);
-    }
-    let sector = packed_sector & 0x3f;
-    let cylinder = ((packed_sector >> 8) & 0xff) | ((packed_sector & 0xc0) << 2);
-    let head = (drive_head >> 8) & 0xff;
-    const SECTORS_PER_TRACK: u32 = 18;
-    const HEADS: u32 = 2;
-    if sector == 0 {
-        return (0x04u32 << 8) | (1 << 16);
-    }
-    let lba = (cylinder * HEADS + head) * SECTORS_PER_TRACK + (sector - 1);
-    let image = msload_image();
-    let start = lba as usize * 512;
-    let bytes = count as usize * 512;
-    if start.saturating_add(bytes) > image.len() {
-        return (0x04u32 << 8) | (1 << 16);
-    }
-    unsafe {
-        core::ptr::copy_nonoverlapping(image[start..].as_ptr(), buffer as *mut u8, bytes);
-    }
-    u32::from(count)
 }
 
 fn msload_image() -> &'static [u8] {
     include_bytes!("../../disks/msload.img")
-}
-
-fn disk() -> &'static Disk {
-    unsafe { &*core::ptr::addr_of!(DISK) }
-}
-
-fn ptrsav() -> *mut u8 {
-    disk().ptrsav as *mut u8
-}
-
-fn packet_word(offset: usize) -> u16 {
-    let pkt = ptrsav();
-    unsafe { u16::from_le_bytes([*pkt.add(offset), *pkt.add(offset + 1)]) }
-}
-
-fn write_word(pkt: *mut u8, offset: usize, value: u16) {
-    let bytes = value.to_le_bytes();
-    unsafe {
-        *pkt.add(offset) = bytes[0];
-        *pkt.add(offset + 1) = bytes[1];
-    }
-}
-
-fn write_status(status: u16) {
-    write_word(ptrsav(), STATUS, status);
-}
-
-fn packet_status() -> u16 {
-    packet_word(STATUS)
 }

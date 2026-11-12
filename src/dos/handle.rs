@@ -5,17 +5,20 @@
 
 const IMAGE: &[u8] = include_bytes!("../../disks/msload.img");
 
-static mut OFF: usize = 0;
-static mut LEFT: usize = 0;
-static mut OPEN: bool = false;
-static mut OWNED: bool = false;
-static mut OWNED_AT: usize = 0;
-static mut OWNED_POS: usize = 0;
-static mut OPEN_AT: usize = usize::MAX;
-static mut POS: u32 = 0;
-static mut SIZE: u32 = 0;
-static mut BASE: usize = 0;
-static mut DIRTY: bool = false;
+use crate::kernel_cell::KernelCell;
+
+enum Backing {
+    Owned,
+    Image { start: usize },
+}
+struct OpenFile {
+    index: usize,
+    position: u32,
+    size: u32,
+    backing: Backing,
+    dirty: bool,
+}
+static OPEN: KernelCell<Option<OpenFile>> = KernelCell::new(None);
 
 pub fn open_asciiz(name: *const u8) -> Option<u16> {
     let mut raw = [0u8; 12];
@@ -30,14 +33,14 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
             len += 1;
         }
     }
-    let packed = pack(&raw[..len])?;
+    let packed = crate::dos::search::pack(&raw[..len])?;
     if let Some(index) = crate::dos::search::find_packed(&packed) {
         let ent = crate::dos::search::slot(index);
         if ent.dir {
             return None;
         }
         if ent.owned {
-            arm_owned(index);
+            bind_owned(index);
             return Some(5);
         }
         if ent.cluster >= 2 {
@@ -74,89 +77,105 @@ pub fn open_asciiz(name: *const u8) -> Option<u16> {
 }
 
 pub fn bind_owned(index: usize) {
-    arm_owned(index);
+    let size = u32::from(crate::dos::search::slot(index).data_len);
+    *OPEN.borrow() = Some(OpenFile {
+        index,
+        size,
+        backing: Backing::Owned,
+        position: 0,
+        dirty: false,
+    });
+}
+
+fn arm_image(index: usize, start: usize, size: usize) {
+    *OPEN.borrow() = Some(OpenFile {
+        index,
+        size: size as u32,
+        backing: Backing::Image { start },
+        position: 0,
+        dirty: false,
+    });
 }
 
 pub fn opened_index(handle: u16) -> Option<usize> {
-    if handle != 5 || unsafe { !OPEN || OPEN_AT == usize::MAX } {
+    if handle != 5 {
         return None;
     }
-    Some(unsafe { OPEN_AT })
+    OPEN.borrow().as_ref().map(|file| file.index)
 }
 
 pub fn write(handle: u16, src: *const u8, count: usize) -> usize {
-    if handle != 5 || unsafe { !OPEN || !OWNED } {
+    let mut guard = OPEN.borrow();
+    let Some(file) = guard.as_mut() else { return 0 };
+    if handle != 5 || !matches!(file.backing, Backing::Owned) || src.is_null() {
         return 0;
     }
-    let index = unsafe { OWNED_AT };
-    let mut ent = crate::dos::search::slot(index);
-    let mut pos = unsafe { OWNED_POS };
-    let mut n = 0usize;
-    while n < count && pos < ent.data.len() {
-        ent.data[pos] = unsafe { *src.add(n) };
-        pos += 1;
-        n += 1;
+    let mut ent = crate::dos::search::slot(file.index);
+    let pos = file.position as usize;
+    let Some(room) = ent.data.get_mut(pos..) else {
+        return 0;
+    };
+    let n = room.len().min(count);
+    if n == 0 {
+        return 0;
     }
-    if (pos as u8) > ent.data_len {
-        ent.data_len = pos as u8;
-        ent.size = u16::from(ent.data_len);
-    }
-    crate::dos::search::set_slot(index, ent);
-    unsafe {
-        OWNED_POS = pos;
-        POS = pos as u32;
-        SIZE = u32::from(ent.data_len);
-        if n > 0 {
-            DIRTY = true;
-        }
-    }
+    // The native DOS ABI supplies at least count readable bytes.
+    unsafe { core::ptr::copy(src, room.as_mut_ptr(), n) };
+    file.position += n as u32;
+    ent.data_len = ent.data_len.max(file.position as u8);
+    file.size = u32::from(ent.data_len);
+    ent.size = u16::from(ent.data_len);
+    file.dirty = true;
+    crate::dos::search::set_slot(file.index, ent);
     n
 }
 
-/// AH=42h. `method` 0 stores CX:DX, 1 adds it to the position, 2 adds it to the size.
-/// The `Ok` value is the new position. `Err` is `error_invalid_handle` or
-/// `error_invalid_function`.
-pub fn seek(handle: u16, method: u8, buffer: u16, count: u16) -> Result<u32, u16> {
-    if handle != 5 || unsafe { !OPEN } {
-        return Err(6);
-    }
-    if method > 2 {
-        return Err(1);
-    }
-    let offset = (u32::from(count) << 16) | u32::from(buffer);
-    let pos = unsafe {
-        match method {
-            0 => offset,
-            1 => POS.wrapping_add(offset),
-            _ => SIZE.wrapping_add(offset),
-        }
+pub fn seek(handle: u16, method: u8, low: u16, high: u16) -> Result<u32, u16> {
+    let mut guard = OPEN.borrow();
+    let file = guard.as_mut().filter(|_| handle == 5).ok_or(6u16)?;
+    let offset = (u32::from(high) << 16) | u32::from(low);
+    file.position = match method {
+        0 => offset,
+        1 => file.position.wrapping_add(offset),
+        2 => file.size.wrapping_add(offset),
+        _ => return Err(1),
     };
-    place(pos);
-    Ok(pos)
+    Ok(file.position)
 }
 
-/// AH=3Eh. A second close of the same handle is `error_invalid_handle`.
 pub fn close(handle: u16) -> u16 {
-    if handle != 5 || unsafe { !OPEN } {
+    if handle != 5 {
         return 6;
     }
-    let index = unsafe { OPEN_AT };
-    let dirty = unsafe { DIRTY };
-    if dirty {
-        crate::dos::close::commit(index);
-    }
-    unsafe {
-        OPEN = false;
-        DIRTY = false;
+    let Some(file) = OPEN.borrow().take() else {
+        return 6;
+    };
+    if file.dirty {
+        crate::dos::close::commit(file.index);
     }
     0
 }
 
-/// Read `count` bytes of a root file at a byte offset. The handle cursor is left alone.
-pub fn read_at(name: &[u8; 11], offset: usize, dst: *mut u8, count: usize) -> usize {
-    if dst.is_null() || count == 0 {
+fn copy_out(data: &[u8], offset: usize, dst: *mut u8, count: usize) -> usize {
+    let Some(rest) = data.get(offset..) else {
         return 0;
+    };
+    let n = count.min(rest.len());
+    if n != 0 && !dst.is_null() {
+        // The native DOS caller supplies room for count bytes at dst.
+        unsafe { core::ptr::copy(rest.as_ptr(), dst, n) };
+        n
+    } else {
+        0
     }
+}
+
+fn image_data(start: usize, size: usize) -> &'static [u8] {
+    let data = IMAGE.get(start..).unwrap_or_default();
+    &data[..data.len().min(size)]
+}
+
+pub fn read_at(name: &[u8; 11], offset: usize, dst: *mut u8, count: usize) -> usize {
     let Some(index) = crate::dos::search::find_packed(name) else {
         return 0;
     };
@@ -165,149 +184,30 @@ pub fn read_at(name: &[u8; 11], offset: usize, dst: *mut u8, count: usize) -> us
         return 0;
     }
     if ent.owned {
-        let len = ent.data_len as usize;
-        if offset >= len {
-            return 0;
-        }
-        let n = count.min(len - offset);
-        let mut i = 0usize;
-        while i < n {
-            unsafe { *dst.add(i) = ent.data[offset + i] }
-            i += 1;
-        }
-        return n;
+        return copy_out(&ent.data[..usize::from(ent.data_len)], offset, dst, count);
     }
     if ent.cluster < 2 {
         return 0;
     }
-    let base = (4 + (ent.cluster as usize - 2)) * 512;
-    let size = ent.size as usize;
-    if offset >= size || base + offset >= IMAGE.len() {
-        return 0;
-    }
-    let n = count.min(size - offset).min(IMAGE.len() - (base + offset));
-    let mut i = 0usize;
-    while i < n {
-        unsafe { *dst.add(i) = IMAGE[base + offset + i] }
-        i += 1;
-    }
-    n
+    let start = (4 + usize::from(ent.cluster - 2)) * 512;
+    copy_out(image_data(start, usize::from(ent.size)), offset, dst, count)
 }
 
 pub fn read(handle: u16, dst: *mut u8, count: usize) -> usize {
-    if handle != 5 || unsafe { !OPEN } {
+    let mut guard = OPEN.borrow();
+    let Some(file) = guard.as_mut().filter(|_| handle == 5) else {
         return 0;
-    }
-    if unsafe { OWNED } {
-        let ent = crate::dos::search::slot(unsafe { OWNED_AT });
-        let pos = unsafe { OWNED_POS };
-        let avail = (ent.data_len as usize).saturating_sub(pos);
-        let n = count.min(avail);
-        let mut i = 0usize;
-        while i < n {
-            unsafe { *dst.add(i) = ent.data[pos + i] }
-            i += 1;
+    };
+    let pos = file.position as usize;
+    let n = match file.backing {
+        Backing::Owned => {
+            let ent = crate::dos::search::slot(file.index);
+            copy_out(&ent.data[..usize::from(ent.data_len)], pos, dst, count)
         }
-        unsafe {
-            OWNED_POS += n;
-            POS += n as u32;
+        Backing::Image { start } => {
+            copy_out(image_data(start, file.size as usize), pos, dst, count)
         }
-        return n;
-    }
-    let n = count.min(unsafe { LEFT });
-    let off = unsafe { OFF };
-    let mut i = 0usize;
-    while i < n {
-        unsafe { *dst.add(i) = IMAGE[off + i] }
-        i += 1;
-    }
-    unsafe {
-        OFF += n;
-        LEFT -= n;
-        POS += n as u32;
-    }
+    };
+    file.position += n as u32;
     n
-}
-
-fn arm_owned(index: usize) {
-    let ent = crate::dos::search::slot(index);
-    unsafe {
-        OWNED = true;
-        OWNED_AT = index;
-        OPEN_AT = index;
-        OWNED_POS = 0;
-        POS = 0;
-        SIZE = u32::from(ent.data_len);
-        DIRTY = false;
-        OPEN = true;
-    }
-}
-
-fn arm_image(index: usize, start: usize, size: usize) {
-    unsafe {
-        OWNED = false;
-        OPEN_AT = index;
-        BASE = start;
-        SIZE = size as u32;
-        DIRTY = false;
-        OPEN = true;
-    }
-    place(0);
-}
-
-fn place(pos: u32) {
-    unsafe {
-        POS = pos;
-        if OWNED {
-            OWNED_POS = pos as usize;
-            return;
-        }
-        let size = SIZE as usize;
-        let at = pos as usize;
-        if at >= size {
-            OFF = BASE.saturating_add(size);
-            LEFT = 0;
-        } else {
-            OFF = BASE + at;
-            let room = IMAGE.len().saturating_sub(OFF);
-            LEFT = (size - at).min(room);
-        }
-    }
-}
-
-fn pack(name: &[u8]) -> Option<[u8; 11]> {
-    let mut out = [b' '; 11];
-    let mut dot = name.len();
-    let mut i = 0usize;
-    while i < name.len() {
-        if name[i] == b'.' {
-            dot = i;
-            break;
-        }
-        i += 1;
-    }
-    if dot == 0 || dot > 8 {
-        return None;
-    }
-    let mut n = 0usize;
-    while n < dot {
-        out[n] = up(name[n]);
-        n += 1;
-    }
-    if dot < name.len() {
-        let mut e = 0usize;
-        while e < 3 && dot + 1 + e < name.len() {
-            out[8 + e] = up(name[dot + 1 + e]);
-            e += 1;
-        }
-    }
-    Some(out)
-}
-
-fn up(byte: u8) -> u8 {
-    if byte.is_ascii_lowercase() {
-        byte - 0x20
-    } else {
-        byte
-    }
 }

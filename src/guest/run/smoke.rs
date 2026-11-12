@@ -63,7 +63,7 @@ pub fn run_shell() -> bool {
         crate::bios::mscon::con_write_bytes(b"Cannot find COMMAND.COM.\r\n");
         return false;
     };
-    let ram = memory::storage();
+    let ram = &mut *memory::storage();
     ram.clear();
     let mut session = Session::new();
     let Some(mut cpu) = load_root(
@@ -77,6 +77,10 @@ pub fn run_shell() -> bool {
         crate::bios::mscon::con_write_bytes(b"Cannot load COMMAND.COM.\r\n");
         return false;
     };
+    super::drivers::configure(ram, &mut session);
+    if cfg!(feature = "batch-console") {
+        crate::puts("Running AUTOEXEC.BAT\n\n");
+    }
     match drive(&mut cpu, ram, &mut session, 100_000) {
         End::Stopped(0) => return true,
         End::Stopped(code) => {
@@ -198,7 +202,7 @@ fn run_fixture(name: &[u8; 11], segment: u16, args: &[u8], limit: u16) {
         crate::bios::mscon::con_write_bytes(b"GUEST MISSING\r\n");
         return;
     };
-    let ram = memory::storage();
+    let ram = &mut *memory::storage();
     ram.clear();
     let mut session = Session::new();
     let Some(mut cpu) = load_root(&image[..length], name, segment, args, ram, &mut session) else {
@@ -219,7 +223,7 @@ fn run_fixture(name: &[u8; 11], segment: u16, args: &[u8], limit: u16) {
 
 fn architecture_probe() {
     disk::boot();
-    let ram = memory::storage();
+    let ram = &mut *memory::storage();
     ram.clear();
     let mut session = Session::new();
     let image = include_bytes!("../../../tests/architecture.com");

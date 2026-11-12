@@ -11,6 +11,7 @@ mod cmd;
 mod dos;
 mod guest;
 mod int21;
+mod kernel_cell;
 mod smoke;
 
 /// Multiboot calls this. It does not return.
@@ -19,7 +20,6 @@ pub extern "C" fn kmain() -> ! {
     arch::install_interrupts();
     puts(banner());
     let success = if cfg!(feature = "batch-console") {
-        puts("Running AUTOEXEC.BAT\n\n");
         let completed = guest::run::run_shell();
         if completed {
             puts("\nBatch complete.\n");
@@ -75,6 +75,7 @@ pub(crate) fn serial_putc(byte: u8) {
 }
 
 fn putc(byte: u8) {
+    bios::pc::display(byte);
     while inb(0x3FD) & 0x20 == 0 {}
     outb(0x3F8, byte);
 }

@@ -40,6 +40,7 @@ run_one() {
 		-kernel "$kernel" \
 		-display none \
 		-serial stdio \
+		-parallel "file:$printer_log" \
 		-no-reboot \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		-drive if=floppy,index=0,format=raw,file="$root/disks/msload.img" \
@@ -113,7 +114,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "PRN" "$out"; then
+	if ! grep -q "PRN" "$printer_log"; then
 		echo "$name missing printer line" >&2
 		cat "$out" >&2
 		rm -f "$out"
@@ -1329,7 +1330,7 @@ run_one() {
 		|| ! grep -qF 'CK 0D2D0732' "$out" \
 		|| ! grep -qF 'UT 020080' "$out" \
 		|| ! grep -qF 'DC Q00' "$out" \
-		|| ! grep -qF 'LP ZOK' "$out" \
+		|| ! grep -qF 'LP ZOK' "$printer_log" \
 		|| ! grep -qF 'AX ZOK' "$out" \
 		|| ! grep -qF 'IS FF00' "$out" \
 		|| ! grep -qF 'RM 0000' "$out" \
@@ -1539,6 +1540,7 @@ run_one() {
 	if [[ -n "${PROOF_DIR:-}" ]]; then
 		mkdir -p "$PROOF_DIR"
 		cp "$out" "$PROOF_DIR/$name.txt"
+		cp "$printer_log" "$PROOF_DIR/$name.printer.txt"
 		printf '%s\n' "$status" >"$PROOF_DIR/$name.qemu-exit"
 	fi
 	cat "$out"
@@ -1557,6 +1559,8 @@ doctor
     rustc +nightly-2026-11-08 --edition=2024 --test "$root/tests/layout.rs" -o "$test_dir/layout"
     "$test_dir/layout"
 )
+printer_log="$(mktemp)"
+trap 'rm -f "$printer_log"' EXIT
 run_one i686 qemu-system-i386 "$root/target/i686-unknown-none/release/dos4-rs"
 run_one x86_64 qemu-system-x86_64 "$root/target/x86_64-unknown-none/release/dos4-rs"
 exit 0

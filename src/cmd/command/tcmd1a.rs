@@ -10,13 +10,10 @@ pub fn name_exists(name: &[u8]) -> bool {
     let n = name.len().min(15);
     named[..n].copy_from_slice(&name[..n]);
     let mut dta = [0u8; 48];
-    set_dta(dta.as_mut_ptr());
+    let _restore = crate::dos::search::temporary_dta(dta.as_mut_ptr());
     dos_dx(0x4e, named.as_ptr(), 0x10) == 0
 }
 
-pub fn cwd_text() -> &'static [u8] {
-    crate::dos::search::cwd_text()
-}
 
 pub fn dir_cmd(tail: &[u8]) {
     if !blank(tail) {
@@ -32,7 +29,7 @@ pub fn dir_cmd(tail: &[u8]) {
         return;
     }
     let mut dta = [0u8; 48];
-    set_dta(dta.as_mut_ptr());
+    let _restore = crate::dos::search::temporary_dta(dta.as_mut_ptr());
     let spec = b"*.*\0";
     let mut code = dos_dx(0x4e, spec.as_ptr(), 0x10);
     while code == 0 {
@@ -91,7 +88,7 @@ pub fn copy_cmd(tail: &[u8]) {
     let source = asciiz_token(src);
     let dest = asciiz_token(dst);
     let mut dta = [0u8; 48];
-    set_dta(dta.as_mut_ptr());
+    let _restore = crate::dos::search::temporary_dta(dta.as_mut_ptr());
     if dos_dx(0x4e, source.as_ptr(), 0x10) != 0 {
         con_write_bytes(b"File not found\r\n");
         return;
@@ -321,9 +318,6 @@ fn write_bytes(handle: u16, src: *const u8, count: usize) -> usize {
     crate::dos::handle::write(handle, src, count)
 }
 
-fn set_dta(ptr: *mut u8) {
-    crate::dos::search::set_dta(ptr);
-}
 
 fn dos_ax(function: u8) -> u16 {
     if function == 0x4f {

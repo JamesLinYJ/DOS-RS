@@ -81,6 +81,7 @@ pub fn rmdir(name: *const u8) -> u16 {
     };
     if !search::cwd_is_root() {
         let cwd = search::cwd_text();
+        let cwd = cwd.as_bytes();
         if cwd.len() > 3 && cwd[3..].eq_ignore_ascii_case(trim(&packed)) {
             return CURRENT;
         }
@@ -102,75 +103,32 @@ pub fn getcwd(buf: *mut u8, drive: u8) -> u16 {
         return crate::dos::ms_code::sys_ret_err(INVALID_DRIVE);
     }
     let cwd = search::cwd_text();
+    let cwd = cwd.as_bytes();
     let path = if cwd.len() >= 2 && cwd[1] == b':' {
         &cwd[2..]
     } else {
         cwd
     };
-    copy_dir(path, buf);
+    if buf.is_null() {
+        return ACCESS;
+    }
+    // The native DOS caller supplies writable space for the current path and NUL.
+    let out = unsafe { core::slice::from_raw_parts_mut(buf, path.len() + 1) };
+    copy_dir(path, out);
     0
 }
 
 /// `$CURRENT_DIR` copy. A `0x05` directory byte is stored as `0xE5`.
-pub fn copy_dir(src: &[u8], dst: *mut u8) {
-    let mut source = 0usize;
-    let mut destination = 0usize;
-    if src.is_empty() {
-        unsafe { *dst = 0 }
-        return;
+fn copy_dir(src: &[u8], dst: &mut [u8]) {
+    let mut used = 0;
+    for (&byte, out) in src.iter().zip(dst.iter_mut()) {
+        if byte == 0 {
+            break;
+        }
+        *out = if byte == 0x05 { 0xe5 } else { byte };
+        used += 1;
     }
-    let mut result = src[source];
-    source += 1;
-    if result == 0 {
-        unsafe { *dst = 0 }
-        return;
-    }
-    if result != 0x05 {
-        if result == b'\\' {
-            unsafe { *dst.add(destination) = result }
-            destination += 1;
-            if source >= src.len() {
-                unsafe { *dst.add(destination) = 0 }
-                return;
-            }
-            result = src[source];
-            source += 1;
-        }
-        if result == 0x05 {
-            result = 0xe5;
-        }
-    } else {
-        result = 0xe5;
-    }
-    loop {
-        unsafe { *dst.add(destination) = result }
-        destination += 1;
-        if result == 0 {
-            return;
-        }
-        if source >= src.len() {
-            unsafe { *dst.add(destination) = 0 }
-            return;
-        }
-        result = src[source];
-        source += 1;
-        if result == 0 {
-            continue;
-        }
-        if result == b'\\' {
-            unsafe { *dst.add(destination) = result }
-            destination += 1;
-            if source >= src.len() {
-                unsafe { *dst.add(destination) = 0 }
-                return;
-            }
-            result = src[source];
-            source += 1;
-        }
-        if result == 0x05 {
-            result = 0xe5;
-        }
-    }
+    dst[used] = 0;
 }
 
 /// `Check_PathLen`. The length is above `DIRSTRLEN`.
@@ -201,7 +159,7 @@ pub fn show() {
     crate::bios::mscon::con_write_bytes(if path_fits(&long) { b" OK\r\n" } else { b" BAD\r\n" });
     let sample = b"\\\x05";
     let mut copied = [0u8; 4];
-    copy_dir(sample, copied.as_mut_ptr());
+    copy_dir(sample, &mut copied);
     let long = [b'A'; 68];
     let mut named = [0u8; 69];
     named[..68].copy_from_slice(&long);

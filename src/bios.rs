@@ -11,3 +11,5 @@ pub mod sysinit2;
 pub mod msclock;
 pub mod mscon;
 pub mod msbio1;
+pub(crate) mod ata;
+pub(crate) mod pc;

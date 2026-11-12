@@ -47,7 +47,8 @@ pub(super) fn run() {
     put_hex16(lo);
     puts("\n");
     let _prn = bios::mslpt::prn_write_bytes(b"PRN\r\n");
-    if bios::mslpt::prn_stat() == 0x0100 {
+    // A real LPT device may briefly be busy acknowledging the last byte.
+    if (0..4096).any(|_| bios::mslpt::prn_stat() == 0x0100) {
         puts("PRNS\n");
     }
     puts("PRNR");

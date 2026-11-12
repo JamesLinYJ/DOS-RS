@@ -13,6 +13,7 @@ use super::search::{self, Ent};
 const NO_MORE: u16 = 18;
 const PATH_NOT_FOUND: u16 = 3;
 
+#[derive(Clone, Copy)]
 struct Cursor {
     pattern: [u8; 11],
     attribute: u8,
@@ -20,11 +21,8 @@ struct Cursor {
     next_index: u16,
 }
 
-static mut ARMED: bool = false;
-static mut PATTERN: [u8; 11] = [b' '; 11];
-static mut REQUESTED: u8 = 0;
-static mut DRIVE: u8 = 1;
-static mut NEXT_INDEX: u16 = 0;
+static CURSOR: crate::kernel_cell::KernelCell<Option<Cursor>> =
+    crate::kernel_cell::KernelCell::new(None);
 
 pub struct Found {
     pub drive: u8,
@@ -120,27 +118,16 @@ fn search_from(start: u16) -> Result<Found, u16> {
 }
 
 fn store_cursor(pattern: [u8; 11], attribute: u8, drive: u8, next_index: u16) {
-    unsafe {
-        core::ptr::addr_of_mut!(PATTERN).write(pattern);
-        core::ptr::addr_of_mut!(REQUESTED).write(attribute);
-        core::ptr::addr_of_mut!(DRIVE).write(drive);
-        core::ptr::addr_of_mut!(NEXT_INDEX).write(next_index);
-        core::ptr::addr_of_mut!(ARMED).write(true);
-    }
+    *CURSOR.borrow() = Some(Cursor {
+        pattern,
+        attribute,
+        drive,
+        next_index,
+    });
 }
 
 fn load_cursor() -> Option<Cursor> {
-    unsafe {
-        if !core::ptr::addr_of!(ARMED).read() {
-            return None;
-        }
-        Some(Cursor {
-            pattern: core::ptr::addr_of!(PATTERN).read(),
-            attribute: core::ptr::addr_of!(REQUESTED).read(),
-            drive: core::ptr::addr_of!(DRIVE).read(),
-            next_index: core::ptr::addr_of!(NEXT_INDEX).read(),
-        })
-    }
+    *CURSOR.borrow()
 }
 
 fn allowed(found_attr: u8, requested: u8) -> bool {

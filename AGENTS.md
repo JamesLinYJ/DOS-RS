@@ -30,6 +30,8 @@ target/layout-tests
 
 For a runtime change, build both release kernels and run the [Quick start](README.md#quick-start). The smoke script also runs the host tests. After the builds, `scripts/qemu-smoke.sh doctor` checks the toolchain, both emulators, `timeout` and the kernel paths. Use the named failure and the serial output to find the first workload that diverged. Successful runs can save transcripts under `target/proof/` with `PROOF_DIR`.
 
+For device or port changes, also run `python3 scripts/qemu-devices.py`. The guest driver loader and interpreter forbid unsafe Rust. Keep physical I/O in the architecture and BIOS modules.
+
 ## Fixtures and translation records
 
 - [architecture.asm](tests/architecture.asm) is the source for the COM embedded by the regression runner. After editing it, run `nasm -f bin tests/architecture.asm -o tests/architecture.com`, rebuild the kernels and run the smoke suite.

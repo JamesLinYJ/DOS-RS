@@ -6,50 +6,38 @@
 
 use super::misc::Dpb;
 
-const IMAGE: &[u8] = include_bytes!("../../disks/msload.img");
 const SECTOR: usize = 512;
 
 pub const DISK_BYTES: usize = 64 * SECTOR;
 
-static mut DISK: [u8; DISK_BYTES] = [0; DISK_BYTES];
-static mut READY: bool = false;
+static DISK: crate::kernel_cell::KernelCell<[u8; DISK_BYTES]> =
+    crate::kernel_cell::KernelCell::new(*include_bytes!("../../disks/msload.img"));
 
-pub fn ensure() {
-    unsafe {
-        if READY {
-            return;
-        }
-        let n = IMAGE.len().min(DISK_BYTES);
-        DISK[..n].copy_from_slice(&IMAGE[..n]);
-        READY = true;
-    }
+fn sectors(sector: u32, count: u16) -> Option<core::ops::Range<usize>> {
+    let start = usize::try_from(sector).ok()?.checked_mul(SECTOR)?;
+    let end = start.checked_add(usize::from(count) * SECTOR)?;
+    (count > 0 && end <= DISK_BYTES).then_some(start..end)
 }
 
-/// `DREAD` / `DSKREAD` for `count` sectors at `sector` into `dst`.
 pub fn dread(sector: u32, count: u16, dst: &mut [u8]) -> bool {
-    ensure();
-    let bytes = count as usize * SECTOR;
-    let start = sector as usize * SECTOR;
-    if bytes == 0 || bytes > dst.len() || start.saturating_add(bytes) > DISK_BYTES {
+    let Some(range) = sectors(sector, count) else {
         return false;
-    }
-    unsafe {
-        dst[..bytes].copy_from_slice(&DISK[start..start + bytes]);
-    }
+    };
+    let Some(out) = dst.get_mut(..range.len()) else {
+        return false;
+    };
+    out.copy_from_slice(&DISK.borrow()[range]);
     true
 }
 
-/// Write sectors. `BUFWRITE` uses this for a dirty buffer.
 pub fn dwrite(sector: u32, count: u16, src: &[u8]) -> bool {
-    ensure();
-    let bytes = count as usize * SECTOR;
-    let start = sector as usize * SECTOR;
-    if bytes == 0 || bytes > src.len() || start.saturating_add(bytes) > DISK_BYTES {
+    let Some(range) = sectors(sector, count) else {
         return false;
-    }
-    unsafe {
-        DISK[start..start + bytes].copy_from_slice(&src[..bytes]);
-    }
+    };
+    let Some(bytes) = src.get(..range.len()) else {
+        return false;
+    };
+    DISK.borrow()[range].copy_from_slice(bytes);
     true
 }
 

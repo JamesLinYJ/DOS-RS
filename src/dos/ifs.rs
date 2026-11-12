@@ -16,7 +16,9 @@ const STACK_BYTES: u16 = 0x180;
 const RETRY_COUNT: u16 = 3;
 const INFO_RETRY: u8 = 8;
 
-static mut IN_DOS: u8 = 0;
+use core::sync::atomic::{AtomicU8, Ordering};
+
+static IN_DOS: AtomicU8 = AtomicU8::new(0);
 
 pub struct Answer {
     pub in_dos: u8,
@@ -29,11 +31,11 @@ pub struct Answer {
 /// One IFS service request. `info` is used by function 32.
 pub fn dos_call(function: u8, info: u8, left: &[u8], right: &mut [u8]) -> Answer {
     if function == ENTER_DOS {
-        write_in_dos(read_in_dos().wrapping_add(1));
+        IN_DOS.fetch_add(1, Ordering::Relaxed);
         return answer(false, false);
     }
     if function == LEAVE_DOS {
-        write_in_dos(read_in_dos().wrapping_sub(1));
+        IN_DOS.fetch_sub(1, Ordering::Relaxed);
         return answer(false, false);
     }
     if function == STACK_QUERY {
@@ -41,7 +43,7 @@ pub fn dos_call(function: u8, info: u8, left: &[u8], right: &mut [u8]) -> Answer
         reply.stack_bytes = STACK_BYTES;
         return reply;
     }
-    write_in_dos(read_in_dos().wrapping_add(1));
+    IN_DOS.fetch_add(1, Ordering::Relaxed);
     let mut failed = false;
     let mut same = false;
     let mut retry = 0u16;
@@ -57,7 +59,7 @@ pub fn dos_call(function: u8, info: u8, left: &[u8], right: &mut [u8]) -> Answer
     } else {
         failed = true;
     }
-    write_in_dos(read_in_dos().wrapping_sub(1));
+    IN_DOS.fetch_sub(1, Ordering::Relaxed);
     let mut reply = answer(failed, same);
     reply.retry = retry;
     reply
@@ -65,7 +67,7 @@ pub fn dos_call(function: u8, info: u8, left: &[u8], right: &mut [u8]) -> Answer
 
 fn answer(failed: bool, same: bool) -> Answer {
     Answer {
-        in_dos: read_in_dos(),
+        in_dos: IN_DOS.load(Ordering::Relaxed),
         stack_bytes: 0,
         retry: 0,
         failed,
@@ -109,14 +111,6 @@ fn fold(byte: u8) -> u8 {
 
 fn at(text: &[u8], index: usize) -> u8 {
     if index < text.len() { text[index] } else { 0 }
-}
-
-fn read_in_dos() -> u8 {
-    unsafe { core::ptr::addr_of!(IN_DOS).read() }
-}
-
-fn write_in_dos(value: u8) {
-    unsafe { core::ptr::addr_of_mut!(IN_DOS).write(value) }
 }
 
 pub fn show() {

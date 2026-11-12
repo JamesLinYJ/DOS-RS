@@ -15,7 +15,6 @@ pub fn close(_fcb: *const u8) -> u8 {
 
 /// AH=13h. AL is 0xFF when nothing was deleted.
 pub fn delete(fcb: *const u8) -> u8 {
-    search::ensure();
     let pat = packed_name(fcb);
     let mut any = false;
     let mut index = 0usize;
@@ -37,7 +36,6 @@ pub fn delete(fcb: *const u8) -> u8 {
 
 /// AH=17h. The new name starts at offset 0x11 of the real FCB.
 pub fn rename(fcb: *mut u8) -> u8 {
-    search::ensure();
     let (base, _) = split_mut(fcb);
     let src = packed_name(fcb);
     let mut dst = [b' '; 11];
@@ -65,7 +63,6 @@ pub fn rename(fcb: *mut u8) -> u8 {
 
 /// AH=23h. The random-record field becomes the length in records, rounded up.
 pub fn file_length(fcb: *mut u8) -> u8 {
-    search::ensure();
     let (base, _) = split_mut(fcb);
     let name = packed_name(fcb);
     let Some(index) = search::find_packed(&name) else {

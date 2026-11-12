@@ -4,7 +4,9 @@
 //! that bit with the flag. AL=3 and AL=4 return as they stand. AL=5 copies
 //! `BOOTDRIVE`, which this image leaves at 0. Any other AL becomes `0xFF`.
 
-static mut CNTC_FLAG: u8 = 0;
+use core::sync::atomic::{AtomicU8, Ordering};
+
+static CNTC_FLAG: AtomicU8 = AtomicU8::new(0);
 
 /// `MSCONST.ASM` `BOOTDRIVE` has no initializer, so the byte is 0.
 const BOOT_DRIVE: u8 = 0;
@@ -12,17 +14,16 @@ const BOOT_DRIVE: u8 = 0;
 /// Returns the AL and DL the interrupt hands back.
 pub fn set_ctrl_c(result: u8, data_low: u8) -> (u8, u8) {
     if result == 0 {
-        return (result, unsafe { CNTC_FLAG });
+        return (result, CNTC_FLAG.load(Ordering::Relaxed));
     }
     if result > 2 {
         return ctrl_c_extended(result, data_low);
     }
     if result == 2 {
-        let old = unsafe { CNTC_FLAG };
-        unsafe { CNTC_FLAG = data_low & 1 }
+        let old = CNTC_FLAG.swap(data_low & 1, Ordering::Relaxed);
         return (result, old);
     }
-    unsafe { CNTC_FLAG = data_low & 1 }
+    CNTC_FLAG.store(data_low & 1, Ordering::Relaxed);
     (result, data_low)
 }
 

@@ -86,7 +86,6 @@ fn get_rr(fcb: *const u8, recsiz: usize) -> u32 {
 
 /// AH=0Fh. Record size 0 becomes 128. AL is 0 or 0xFF.
 pub fn open(fcb: *mut u8) -> u8 {
-    search::ensure();
     let (base, _) = split_mut(fcb);
     let name = packed_name(fcb);
     let Some(index) = search::find_packed(&name) else {
@@ -128,7 +127,6 @@ pub fn open(fcb: *mut u8) -> u8 {
 
 /// AH=16h. An existing file is truncated. A new file is an owned root slot.
 pub fn create(fcb: *mut u8) -> u8 {
-    search::ensure();
     let name = packed_name(fcb);
     if let Some(index) = search::find_packed(&name) {
         let mut ent = search::slot(index);

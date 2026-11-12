@@ -1,9 +1,7 @@
 //! Printer driver from `BIOS/MSLPT.ASM`.
 //!
-//! `PRN$WRIT` retries only when INT 17h reports timeout. `PRN$STAT` uses
-//! AH=2. Under QEMU `-kernel` there is no printer ROM. AH=0 writes AL to
-//! COM1 and returns AH=0. AH=2 returns AH=80h, not busy and no error.
-//! `WAIT_COUNT` starts at 50h for each of the four devices.
+//! Reads LPT1 status and strobes its data port. `WAIT_COUNT` starts at 50h
+//! for each logical printer. The default PC backend drives the first port.
 
 use core::sync::atomic::{AtomicU16, Ordering};
 
@@ -106,12 +104,6 @@ fn prn_op(ah_cmd: u8, result: u8) -> (u8, bool) {
 }
 
 fn printer(command: u8, byte: u8) -> u8 {
-    if command == 0 {
-        crate::serial_putc(byte);
-        0
-    } else if command == 2 {
-        NOT_BUSY
-    } else {
-        0
-    }
+    let timed_out = command == 0 && !super::pc::print_byte(byte);
+    super::pc::printer_status() | u8::from(timed_out)
 }

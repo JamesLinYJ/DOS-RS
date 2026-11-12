@@ -57,7 +57,7 @@ impl Environment {
                 continue;
             }
             match bytes.next().map(|b| b.to_ascii_uppercase()) {
-                Some(b'P') => print(super::tcmd1a::cwd_text()),
+                Some(b'P') => print(crate::dos::search::cwd_text().as_bytes()),
                 Some(b'G') => print(b">"),
                 Some(b'$') | None => print(b"$"),
                 _ => {}

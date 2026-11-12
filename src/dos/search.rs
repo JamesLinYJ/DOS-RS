@@ -22,7 +22,10 @@ pub(crate) struct Ent {
     pub date: u16,
 }
 
-static mut ROOT: [Ent; SLOTS] = [Ent {
+use crate::kernel_cell::KernelCell;
+use core::sync::atomic::{AtomicPtr, Ordering};
+
+const EMPTY: Ent = Ent {
     name: [0; 11],
     live: false,
     dir: false,
@@ -34,65 +37,90 @@ static mut ROOT: [Ent; SLOTS] = [Ent {
     attr: 0,
     time: 0,
     date: 0,
-}; SLOTS];
-static mut READY: bool = false;
-static mut CWD: [u8; 32] = *b"A:\\\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
-static mut CWD_LEN: usize = 3;
-static mut DTA: *mut u8 = core::ptr::null_mut();
-static mut NEXT: usize = 0;
-static mut SATTR: u8 = 0;
-static mut STAR: bool = false;
-static mut PAT: [u8; 11] = [b' '; 11];
+};
 
-pub(crate) fn ensure() {
-    unsafe {
-        if READY {
-            return;
+const fn image_root() -> [Ent; SLOTS] {
+    let mut root = [EMPTY; SLOTS];
+    let mut i = 0;
+    while i < SLOTS {
+        let at = 3 * 512 + i * 32;
+        if IMAGE[at] == 0 {
+            break;
         }
-        let root = 3 * 512;
-        let mut index = 0usize;
-        while index < SLOTS {
-            let entry = &IMAGE[root + index * 32..root + index * 32 + 32];
-            if entry[0] == 0 {
-                break;
+        if IMAGE[at] != 0xe5 && IMAGE[at + 11] & 8 == 0 {
+            let mut j = 0;
+            while j < 11 {
+                root[i].name[j] = IMAGE[at + j];
+                j += 1;
             }
-            if entry[0] != 0xe5 && entry[11] & 0x08 == 0 {
-                let mut name = [0u8; 11];
-                name.copy_from_slice(&entry[..11]);
-                ROOT[index].name = name;
-                ROOT[index].live = true;
-                ROOT[index].cluster = u16::from_le_bytes([entry[26], entry[27]]);
-                ROOT[index].size = u16::from_le_bytes([entry[28], entry[29]]);
-                ROOT[index].attr = entry[11];
-                ROOT[index].time = u16::from_le_bytes([entry[22], entry[23]]);
-                ROOT[index].date = u16::from_le_bytes([entry[24], entry[25]]);
-            }
-            index += 1;
+            root[i].live = true;
+            root[i].cluster = u16::from_le_bytes([IMAGE[at + 26], IMAGE[at + 27]]);
+            root[i].size = u16::from_le_bytes([IMAGE[at + 28], IMAGE[at + 29]]);
+            root[i].attr = IMAGE[at + 11];
+            root[i].time = u16::from_le_bytes([IMAGE[at + 22], IMAGE[at + 23]]);
+            root[i].date = u16::from_le_bytes([IMAGE[at + 24], IMAGE[at + 25]]);
         }
-        READY = true;
+        i += 1;
+    }
+    root
+}
+static ROOT: KernelCell<[Ent; SLOTS]> = KernelCell::new(image_root());
+
+#[derive(Clone, Copy)]
+pub(crate) struct Cwd {
+    bytes: [u8; 32],
+    len: usize,
+}
+impl Cwd {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
     }
 }
+static CWD: KernelCell<Cwd> = KernelCell::new(Cwd {
+    bytes: {
+        let mut bytes = [0; 32];
+        bytes[0] = b'A';
+        bytes[1] = b':';
+        bytes[2] = 0x5c;
+        bytes
+    },
+    len: 3,
+});
+static DTA: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 
-pub fn cwd_text() -> &'static [u8] {
-    ensure();
-    unsafe { &CWD[..CWD_LEN] }
+struct Search {
+    pattern: [u8; 11],
+    attr: u8,
+    next: usize,
+    all: bool,
 }
+impl Search {
+    const fn new() -> Self {
+        Self {
+            pattern: [b' '; 11],
+            attr: 0,
+            next: 0,
+            all: false,
+        }
+    }
+}
+static SEARCH: KernelCell<Search> = KernelCell::new(Search::new());
+static FCB_SEARCH: KernelCell<Search> = KernelCell::new(Search::new());
 
+pub(crate) fn cwd_text() -> Cwd {
+    *CWD.borrow()
+}
 pub(crate) fn set_cwd(text: &[u8]) {
-    let n = text.len().min(32);
-    unsafe {
-        CWD[..n].copy_from_slice(&text[..n]);
-        CWD_LEN = n;
-    }
+    let mut cwd = CWD.borrow();
+    let n = text.len().min(cwd.bytes.len());
+    cwd.bytes[..n].copy_from_slice(&text[..n]);
+    cwd.len = n;
 }
-
 pub(crate) fn cwd_is_root() -> bool {
-    ensure();
-    unsafe { CWD_LEN == 3 }
+    CWD.borrow().len == 3
 }
 
 pub(crate) fn walk(mut visit: impl FnMut(usize, Ent)) {
-    ensure();
     let mut index = 0usize;
     while index < SLOTS {
         let ent = slot(index);
@@ -104,28 +132,17 @@ pub(crate) fn walk(mut visit: impl FnMut(usize, Ent)) {
 }
 
 pub(crate) fn for_live(mut visit: impl FnMut([u8; 11])) {
-    ensure();
-    unsafe {
-        let mut index = 0usize;
-        while index < SLOTS {
-            if ROOT[index].live {
-                visit(ROOT[index].name);
-            }
-            index += 1;
-        }
-    }
+    walk(|_, ent| visit(ent.name));
 }
 
 pub(crate) fn slot(index: usize) -> Ent {
-    unsafe { ROOT[index] }
+    ROOT.borrow()[index]
 }
-
 pub(crate) fn set_slot(index: usize, ent: Ent) {
-    unsafe { ROOT[index] = ent }
+    ROOT.borrow()[index] = ent;
 }
 
 pub(crate) fn find_packed(name: &[u8; 11]) -> Option<usize> {
-    ensure();
     let mut index = 0usize;
     while index < SLOTS {
         let ent = slot(index);
@@ -138,7 +155,6 @@ pub(crate) fn find_packed(name: &[u8; 11]) -> Option<usize> {
 }
 
 pub(crate) fn alloc_slot() -> Option<usize> {
-    ensure();
     let mut index = 0usize;
     while index < SLOTS {
         if !slot(index).live {
@@ -149,56 +165,63 @@ pub(crate) fn alloc_slot() -> Option<usize> {
     None
 }
 
+/// Restore the previous native DTA when a boot command's local buffer goes out of scope.
+pub(crate) struct SavedDta(*mut u8);
+impl Drop for SavedDta {
+    fn drop(&mut self) {
+        set_dta(self.0);
+    }
+}
+pub(crate) fn temporary_dta(ptr: *mut u8) -> SavedDta {
+    SavedDta(DTA.swap(ptr, Ordering::Relaxed))
+}
+
 pub fn set_dta(ptr: *mut u8) {
-    unsafe { DTA = ptr }
+    DTA.store(ptr, Ordering::Relaxed);
 }
 
 pub fn dta() -> *mut u8 {
-    unsafe { DTA }
+    DTA.load(Ordering::Relaxed)
 }
 
 pub fn find_first(name: *const u8, attr: u8) -> u16 {
-    ensure();
     let raw = read_asciiz(name);
     let text = &raw[..asciiz_len(&raw)];
-    unsafe {
-        SATTR = attr;
-        STAR = text == b"*.*" || text == b"*";
-        if !STAR {
-            match pack(text) {
-                Some(pat) => PAT = pat,
-                None => return NO_MORE,
-            }
-        }
-        NEXT = 0;
-    }
+    let all = matches!(text, b"*.*" | b"*");
+    let pattern = if all {
+        [b' '; 11]
+    } else if let Some(pat) = pack(text) {
+        pat
+    } else {
+        return NO_MORE;
+    };
+    *SEARCH.borrow() = Search {
+        pattern,
+        all,
+        attr,
+        next: 0,
+    };
     find_next()
 }
 
 pub fn find_next() -> u16 {
-    ensure();
-    loop {
-        let index = unsafe { NEXT };
-        if index >= SLOTS {
-            return NO_MORE;
-        }
-        unsafe { NEXT += 1 }
+    let mut search = SEARCH.borrow();
+    while search.next < SLOTS {
+        let index = search.next;
+        search.next += 1;
         let ent = slot(index);
-        if !visible(ent) {
-            continue;
-        }
-        #[allow(clippy::deref_addrof)]
-        let pat = unsafe { *(&raw const PAT) };
-        let matched = unsafe { STAR } || ent.name.eq_ignore_ascii_case(&pat);
-        if !matched {
+        if !visible(ent, search.attr)
+            || !(search.all || ent.name.eq_ignore_ascii_case(&search.pattern))
+        {
             continue;
         }
         write_dta(ent, index);
         return 0;
     }
+    NO_MORE
 }
 
-fn visible(ent: Ent) -> bool {
+fn visible(ent: Ent, sattr: u8) -> bool {
     if !ent.live {
         return false;
     }
@@ -209,12 +232,11 @@ fn visible(ent: Ent) -> bool {
     } else {
         0x20
     };
-    let sattr = unsafe { SATTR };
     file_attr & 0x1e & !sattr == 0
 }
 
 fn write_dta(ent: Ent, index: usize) {
-    let dta = unsafe { DTA };
+    let dta = DTA.load(Ordering::Relaxed);
     if dta.is_null() {
         return;
     }
@@ -316,7 +338,6 @@ pub(crate) fn asciiz_len(raw: &[u8]) -> usize {
 }
 
 pub(crate) fn lookup_asciiz(name: *const u8) -> Option<usize> {
-    ensure();
     let raw = read_asciiz(name);
     let text = &raw[..asciiz_len(&raw)];
     let text = text.strip_prefix(b"A:\\").unwrap_or(text);
@@ -346,10 +367,6 @@ fn up(byte: u8) -> u8 {
     }
 }
 
-static mut FCB_NEXT: usize = 0;
-static mut FCB_PAT: [u8; 11] = [b' '; 11];
-static mut FCB_ATTR: u8 = 0;
-
 pub(crate) fn name_match(pat: &[u8; 11], name: &[u8; 11]) -> bool {
     let mut i = 0usize;
     while i < 11 {
@@ -369,13 +386,12 @@ fn fcb_attr_ok(file_attr: u8, search_attr: u8) -> bool {
     file_attr & SPECIAL & !search_attr == 0
 }
 
-fn fcb_find(start: usize) -> Option<usize> {
-    let pat = unsafe { FCB_PAT };
-    let attr = unsafe { FCB_ATTR };
-    let mut index = start;
+fn fcb_find(search: &Search) -> Option<usize> {
+    let mut index = search.next;
     while index < SLOTS {
         let ent = slot(index);
-        if ent.live && fcb_attr_ok(ent.attr, attr) && name_match(&pat, &ent.name) {
+        if ent.live && fcb_attr_ok(ent.attr, search.attr) && name_match(&search.pattern, &ent.name)
+        {
             return Some(index);
         }
         index += 1;
@@ -411,23 +427,21 @@ fn write_fcb_dir(ent: &Ent, dta: *mut u8) {
 
 /// AH=11h. A volume-attribute search misses every file on this disk.
 pub fn fcb_search_first(fcb: *const u8) -> u8 {
-    ensure();
     let (_, attr) = crate::dos::fcb::split(fcb);
-    unsafe {
-        FCB_ATTR = attr;
-        FCB_PAT = crate::dos::fcb::packed_name(fcb);
-        FCB_NEXT = 0;
-    }
+    *FCB_SEARCH.borrow() = Search {
+        pattern: crate::dos::fcb::packed_name(fcb),
+        attr,
+        ..Search::new()
+    };
     fcb_search_next()
 }
 
 /// AH=12h.
 pub fn fcb_search_next() -> u8 {
-    ensure();
-    let start = unsafe { FCB_NEXT };
-    match fcb_find(start) {
+    let mut cursor = FCB_SEARCH.borrow();
+    match fcb_find(&cursor) {
         Some(index) => {
-            unsafe { FCB_NEXT = index + 1 }
+            cursor.next = index + 1;
             write_fcb_dir(&slot(index), dta());
             0
         }

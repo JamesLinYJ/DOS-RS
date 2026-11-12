@@ -18,7 +18,6 @@ struct Binding {
     live: bool,
 }
 
-static mut LAUNCH: [u8; 262144] = [0; 262144];
 
 pub(super) struct Environment([Binding; ROWS]);
 
@@ -247,12 +246,10 @@ fn launch_named(
         run_batch(&body[..length], ram, session, depth + 1);
         return;
     }
-    let image = launch_image();
-    let Some(length) = disk::read_file(name, image) else {
+    let Some(code) = super::run::spawn(args, name, ram, session) else {
         say(b"Cannot load program.\r\n");
         return;
     };
-    let code = super::run::spawn(&image[..length], args, name, ram, session);
     if code != 0 {
         say(b"Exit code: ");
         crate::bios::mscon::write_number(code);
@@ -302,8 +299,4 @@ fn split(text: &[u8]) -> (&[u8], &[u8]) {
 
 fn say(text: &[u8]) {
     crate::bios::mscon::con_write_bytes(text);
-}
-
-fn launch_image() -> &'static mut [u8; 262144] {
-    unsafe { &mut *core::ptr::addr_of_mut!(LAUNCH) }
 }

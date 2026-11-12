@@ -25,55 +25,50 @@ const TABLE: &[Row] = &[
     Row { code: 16, class: 3, action: 3, locus: 2 },
 ];
 
-static mut EXTERR: u16 = 0;
-static mut CLASS: u8 = 0;
-static mut ACTION: u8 = 0;
-static mut LOCUS: u8 = 1;
+struct ExtendedError {
+    code: u16,
+    class: u8,
+    action: u8,
+    locus: u8,
+}
 
-/// Store an extended error that was already mapped, including class, action, and locus.
+static LAST: crate::kernel_cell::KernelCell<ExtendedError> =
+    crate::kernel_cell::KernelCell::new(ExtendedError {
+        code: 0,
+        class: 0,
+        action: 0,
+        locus: 1,
+    });
+
 pub fn store(code: u16, class: u8, action: u8, locus: u8) {
-    unsafe {
-        EXTERR = code;
-        CLASS = class;
-        ACTION = action;
-        LOCUS = locus;
-    }
+    *LAST.borrow() = ExtendedError {
+        code,
+        class,
+        action,
+        locus,
+    };
 }
 
-/// `SYS_RET_ERR`. AH is cleared. The low byte is the error code.
 pub fn sys_ret_err(code: u16) -> u16 {
-    let result = (code & 0xff) as u8;
-    unsafe { EXTERR = u16::from(result) }
-    cal_lk();
-    u16::from(result)
-}
-
-/// `CAL_LK` over `ERR_TABLE_21`.
-fn cal_lk() {
-    let code = unsafe { EXTERR as u8 };
-    let mut index = 0usize;
-    while index < TABLE.len() {
-        if TABLE[index].code == code {
-            unsafe {
-                CLASS = TABLE[index].class;
-                ACTION = TABLE[index].action;
-                if TABLE[index].locus != 0xff {
-                    LOCUS = TABLE[index].locus;
-                }
-            }
-            return;
+    let mut last = LAST.borrow();
+    last.code = u16::from(code as u8);
+    if let Some(row) = TABLE.iter().find(|row| row.code == code as u8) {
+        last.class = row.class;
+        last.action = row.action;
+        if row.locus != 0xff {
+            last.locus = row.locus;
         }
-        index += 1;
     }
+    last.code
 }
 
-/// `$GetExtendedError`. AX, then class in BH, action in BL, locus in CH.
 pub fn get() -> (u16, u16, u16) {
-    unsafe {
-        let handle = (u16::from(CLASS) << 8) | u16::from(ACTION);
-        let count = u16::from(LOCUS) << 8;
-        (EXTERR, handle, count)
-    }
+    let last = LAST.borrow();
+    (
+        last.code,
+        u16::from_be_bytes([last.class, last.action]),
+        u16::from(last.locus) << 8,
+    )
 }
 
 pub fn show() {

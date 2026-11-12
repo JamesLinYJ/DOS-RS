@@ -4,8 +4,7 @@ use super::memory::GuestRam;
 use super::state::{CpuState, Segment, Slot};
 
 pub(super) struct Mz<'a> {
-    payload: &'a [u8],
-    relocations: &'a [u8],
+    module: Module<'a>,
     cs: u16,
     ip: u16,
     ss: u16,
@@ -14,7 +13,12 @@ pub(super) struct Mz<'a> {
     pub maximum: u16,
 }
 
-impl<'a> Mz<'a> {
+pub(super) struct Module<'a> {
+    payload: &'a [u8],
+    relocations: &'a [u8],
+}
+
+impl<'a> Module<'a> {
     pub fn parse(file: &'a [u8]) -> Option<Self> {
         let word = |at: usize| Some(u16::from_le_bytes(file.get(at..at + 2)?.try_into().ok()?));
         if !file.starts_with(b"MZ") {
@@ -45,10 +49,33 @@ impl<'a> Mz<'a> {
             let at = relocation_offset(reloc);
             payload.get(at..at + 2)?;
         }
+        Some(Self {
+            payload,
+            relocations,
+        })
+    }
+
+    pub(super) fn copy_to(&self, bytes: &mut [u8], segment: u16) -> Option<usize> {
+        bytes
+            .get_mut(..self.payload.len())?
+            .copy_from_slice(self.payload);
+        for reloc in self.relocations.chunks_exact(4) {
+            let i = relocation_offset(reloc);
+            let word = u16::from_le_bytes([bytes[i], bytes[i + 1]]).wrapping_add(segment);
+            bytes[i..i + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        Some(self.payload.len())
+    }
+}
+
+impl<'a> Mz<'a> {
+    pub fn parse(file: &'a [u8]) -> Option<Self> {
+        let module = Module::parse(file)?;
+        let word = |at: usize| Some(u16::from_le_bytes(file.get(at..at + 2)?.try_into().ok()?));
         let (cs, ip, ss, sp) = (word(22)?, word(20)?, word(14)?, word(16)?);
         let entry = (usize::from(cs) * 16 + usize::from(ip)) & 0xFFFFF;
-        payload.get(entry)?;
-        let base = 0x10 + payload.len().div_ceil(16);
+        module.payload.get(entry)?;
+        let base = 0x10 + module.payload.len().div_ceil(16);
         let stack_end = 0x10
             + usize::from(ss)
             + if sp == 0 {
@@ -61,8 +88,7 @@ impl<'a> Mz<'a> {
             .unwrap_or(u16::MAX)
             .max(minimum);
         Some(Self {
-            payload,
-            relocations,
+            module,
             cs,
             ip,
             ss,
@@ -75,12 +101,9 @@ impl<'a> Mz<'a> {
     pub fn load(&self, ram: &mut GuestRam, psp: u16, end: u16) -> CpuState {
         let load = psp + 0x10;
         let bytes = ram.paragraphs_mut(load, end);
-        bytes[..self.payload.len()].copy_from_slice(self.payload);
-        for reloc in self.relocations.chunks_exact(4) {
-            let i = relocation_offset(reloc);
-            let word = u16::from_le_bytes([bytes[i], bytes[i + 1]]).wrapping_add(load);
-            bytes[i..i + 2].copy_from_slice(&word.to_le_bytes());
-        }
+        self.module
+            .copy_to(bytes, load)
+            .expect("validated MZ placement");
         let mut cpu = CpuState::at_com(psp);
         cpu.set_instruction(self.ip);
         cpu.set_selector(Segment::Code, load.wrapping_add(self.cs));

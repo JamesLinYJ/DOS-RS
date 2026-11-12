@@ -1,5 +1,4 @@
-//! DOS console device. Teletype output goes to COM1. The boot machine has
-//! no keyboard backend, so a nonblocking input request reports busy.
+//! DOS console device. Teletype output reaches VGA and COM1. Input comes from the PC keyboard.
 
 use super::msbio1::{self, DONE, Request, UNKNOWN_COMMAND};
 
@@ -22,7 +21,7 @@ fn con_in(request: &mut Request<'_>) {
             }
             DONE
         }
-        5 => match keyboard_byte() {
+        5 => match super::pc::key(false).map(|key| key as u8) {
             Some(byte) => {
                 request.media = byte;
                 DONE | u16::from(byte)
@@ -45,7 +44,7 @@ fn con_in(request: &mut Request<'_>) {
 }
 
 fn keyboard_byte() -> Option<u8> {
-    None
+    super::pc::key(true).map(|key| key as u8)
 }
 
 pub(crate) fn write_number(mut value: u8) {

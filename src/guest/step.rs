@@ -180,7 +180,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xD5 => adjust_divide(cpu, ram, opcode),
         0xD6 => set_byte_from_carry(cpu),
         0xD7 => translate(cpu, ram, opcode),
-        0xE4 => read_port(cpu, ram, opcode),
+        0xE4..=0xE7 | 0xEC..=0xEF => port_io(cpu, ram, opcode),
         0xE0..=0xE2 => loop_count(cpu, ram, opcode),
         0xE3 => jump_count(cpu, ram, opcode),
         0xE8 => call_near(cpu, ram, opcode),
@@ -2153,11 +2153,28 @@ fn translate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     Outcome::Continue
 }
 
-fn read_port(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
-    if fetch(cpu, ram).is_none() {
-        return Outcome::Fault(opcode);
+fn port_io(cpu: &mut CpuState, ram: &GuestRam, opcode: u8) -> Outcome {
+    use crate::bios::pc::{port_read, port_write};
+    let port = if opcode & 8 == 0 {
+        let Some(immediate) = fetch(cpu, ram) else {
+            return Outcome::Fault(opcode);
+        };
+        u16::from(immediate)
+    } else {
+        cpu.wide(Slot::Data)
+    };
+    let word = opcode & 1 != 0;
+    if opcode & 2 != 0 {
+        port_write(port, cpu.low(Slot::Accumulator));
+        if word {
+            port_write(port.wrapping_add(1), cpu.high(Slot::Accumulator));
+        }
+    } else {
+        cpu.set_low(Slot::Accumulator, port_read(port));
+        if word {
+            cpu.set_high(Slot::Accumulator, port_read(port.wrapping_add(1)));
+        }
     }
-    cpu.set_low(Slot::Accumulator, 0xFF);
     Outcome::Continue
 }
 

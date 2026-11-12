@@ -394,13 +394,9 @@ fn exec_program(frame: &mut LogicalFrame) {
 }
 
 /// DOS date. 1980-01-01 is the unset clock, a Tuesday.
-static mut YEAR: u16 = 1980;
-static mut MONTH: u8 = 1;
-static mut DAY: u8 = 1;
-static mut HOUR: u8 = 0;
-static mut MINUTE: u8 = 0;
-static mut SECOND: u8 = 0;
-static mut HUNDREDTH: u8 = 0;
+use core::sync::atomic::{AtomicU32, Ordering};
+static DATE: AtomicU32 = AtomicU32::new((1980 << 16) | 0x0101);
+static TIME: AtomicU32 = AtomicU32::new(0);
 
 /// AH=44h. AL=0 and AL=8 are the slices of `$IOCTL` this boot uses.
 fn ioctl(frame: &mut LogicalFrame) {
@@ -505,10 +501,10 @@ fn read_handle(frame: &mut LogicalFrame) {
 
 /// AH=2Ah. CX is the year, DH the month, DL the day, AL the weekday.
 fn get_date(frame: &mut LogicalFrame) {
-    let (year, month, day) = unsafe { (YEAR, MONTH, DAY) };
+    let (year, month, day, weekday) = current_date();
     frame.store_cx(DosWord(year));
     frame.store_dx(DosWord((u16::from(month) << 8) | u16::from(day)));
-    frame.set_al(ResultByte(weekday(year, month, day)));
+    frame.set_al(ResultByte(weekday));
 }
 
 /// AH=2Bh. AL is 0 when the date is stored, and 0xFF when it is rejected.
@@ -516,21 +512,12 @@ fn set_date(frame: &mut LogicalFrame) {
     let year = frame.count as u16;
     let month = (frame.buffer >> 8) as u8;
     let day = frame.buffer as u8;
-    if date_ok(year, month, day) {
-        unsafe {
-            YEAR = year;
-            MONTH = month;
-            DAY = day;
-        }
-        frame.set_al(ResultByte(0));
-    } else {
-        frame.set_al(ResultByte(0xff));
-    }
+    frame.set_al(ResultByte(store_date(year, month, day)));
 }
 
 /// AH=2Ch. CH hours, CL minutes, DH seconds, DL hundredths.
 fn get_time(frame: &mut LogicalFrame) {
-    let (hour, minute, second, hundredth) = unsafe { (HOUR, MINUTE, SECOND, HUNDREDTH) };
+    let (hour, minute, second, hundredth) = current_time();
     frame.store_cx(DosWord((u16::from(hour) << 8) | u16::from(minute)));
     frame.store_dx(DosWord((u16::from(second) << 8) | u16::from(hundredth)));
 }
@@ -541,17 +528,7 @@ fn set_time(frame: &mut LogicalFrame) {
     let minute = frame.count as u8;
     let second = (frame.buffer >> 8) as u8;
     let hundredth = frame.buffer as u8;
-    if hour < 24 && minute < 60 && second < 60 && hundredth < 100 {
-        unsafe {
-            HOUR = hour;
-            MINUTE = minute;
-            SECOND = second;
-            HUNDREDTH = hundredth;
-        }
-        frame.set_al(ResultByte(0));
-    } else {
-        frame.set_al(ResultByte(0xff));
-    }
+    frame.set_al(ResultByte(store_time(hour, minute, second, hundredth)));
 }
 
 /// Sakamoto. 0 is Sunday, matching INT 21h AH=2Ah.
@@ -620,7 +597,8 @@ fn out_of_range(frame: &mut LogicalFrame) {
 }
 
 pub fn current_date() -> (u16, u8, u8, u8) {
-    let (year, month, day) = unsafe { (YEAR, MONTH, DAY) };
+    let [hi, lo, month, day] = DATE.load(Ordering::Relaxed).to_be_bytes();
+    let year = u16::from_be_bytes([hi, lo]);
     (year, month, day, weekday(year, month, day))
 }
 
@@ -628,27 +606,24 @@ pub fn store_date(year: u16, month: u8, day: u8) -> u8 {
     if !date_ok(year, month, day) {
         return 0xff;
     }
-    unsafe {
-        YEAR = year;
-        MONTH = month;
-        DAY = day;
-    }
+    DATE.store(
+        (u32::from(year) << 16) | u32::from(u16::from_be_bytes([month, day])),
+        Ordering::Relaxed,
+    );
     0
 }
 
 pub fn current_time() -> (u8, u8, u8, u8) {
-    unsafe { (HOUR, MINUTE, SECOND, HUNDREDTH) }
+    TIME.load(Ordering::Relaxed).to_be_bytes().into()
 }
 
 pub fn store_time(hour: u8, minute: u8, second: u8, hundredth: u8) -> u8 {
     if hour >= 24 || minute >= 60 || second >= 60 || hundredth >= 100 {
         return 0xff;
     }
-    unsafe {
-        HOUR = hour;
-        MINUTE = minute;
-        SECOND = second;
-        HUNDREDTH = hundredth;
-    }
+    TIME.store(
+        u32::from_be_bytes([hour, minute, second, hundredth]),
+        Ordering::Relaxed,
+    );
     0
 }

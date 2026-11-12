@@ -243,3 +243,20 @@ A printer redirect is stored and read back. `RD.COM` points `LPT1` at `\\SRV\PRT
 `EXEC.EXE` walks its arguments and runs each program. The shell runs `EXEC.EXE EXITCODE.COM`. The child exits with status 3, and the line is `exec: EXITCODE.COM returned 3`.
 
 `EXEFIX.EXE`, already recorded above, is also launched by the shell as `EXEFIX.EXE PACKME.EXE 1234 0010`. It writes those allocation words into `PACKME.EXE`. The serial line is `EXEFIX 1234 0010`.
+
+## Installable drivers
+
+The [device suite](../scripts/qemu-devices.py) builds its own FAT image. A DOS client opens two character names from a chained MZ driver, writes and reads a byte, then writes and reads a full sector through a flat block driver. It also reads LBA 7 from a separate IDE disk, writes to COM2 and LPT1, and waits for the BIOS key word 1E61h. QEMU supplies the key through its emulated PS/2 controller. The suite checks both host output files and the guest transcript on both CPU targets.
+
+An optional upstream FreeDOS driver exercises a separate implementation of the request ABI. To build the revision used in testing:
+
+```sh
+git clone https://github.com/FDOS/kernel.git target/freedos-kernel
+git -C target/freedos-kernel checkout ca25e3b26695074f754e1baffdfb4fd1452a6dbc
+nasm -f bin target/freedos-kernel/setver/setver.asm -o target/SETVER.SYS
+python3 scripts/qemu-devices.py --setver target/SETVER.SYS
+```
+
+The client checks the table pointer that SETVER installs through INT 21h AH=52h. EXEC uses matching table entries for the child's PSP version word and AH=30h response. In a separate x86_64 run, a configured table entry for WHOAMI.COM returned 7.10 through both interfaces. [FreeDOS driver source](https://github.com/FDOS/kernel/blob/ca25e3b26695074f754e1baffdfb4fd1452a6dbc/setver/setver.asm)
+
+The loader currently accepts up to sixteen resident headers and a 64 KiB load segment per image. INIT can call DOS character/string output, version and list-of-lists services. Firmware interrupt and port coverage is limited to the implemented PC devices. Installable block units support absolute I/O. Drive mounting, driver-installed IRQ handlers, XMS and EMS remain open.

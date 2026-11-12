@@ -149,7 +149,7 @@ pub fn show() {
         return;
     }
     let mut dta = [0u8; 128];
-    int_dta(dta.as_mut_ptr());
+    let _restore = crate::dos::search::temporary_dta(dta.as_mut_ptr());
     let mut probe = fcb;
     let sr = int_fcb(0x11, probe.as_mut_ptr());
     let nx = int_fcb(0x12, probe.as_mut_ptr());
@@ -190,9 +190,6 @@ fn int_fcb(function: u8, fcb: *mut u8) -> u8 {
     }
 }
 
-fn int_dta(dta: *mut u8) {
-    crate::dos::search::set_dta(dta);
-}
 
 fn put_hex16(value: u16) {
     put_hex8((value >> 8) as u8);

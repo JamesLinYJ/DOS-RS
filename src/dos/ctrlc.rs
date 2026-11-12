@@ -16,10 +16,9 @@ const ERR_MAP_24: [u8; 16] = [
     19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 31, 31, 34,
 ];
 
-static mut ALLOWED: u8 = 0;
-static mut FAILERR: u8 = 0;
-static mut ABORTING: bool = false;
-static mut WPERR: u8 = 0xff;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static ABORTING: AtomicBool = AtomicBool::new(false);
 
 /// `HardErr` area field. 0 DOS, 1 FAT, 2 directory, 3 data, then the read/write bit.
 pub fn area(sector: u16, first_fat: u16, dir_sector: u16, first_data: u16, readop: u8) -> u8 {
@@ -37,10 +36,7 @@ pub fn area(sector: u16, first_fat: u16, dir_sector: u16, first_data: u16, reado
 }
 
 /// `SET_I24_EXTENDED_ERROR`. Codes past the map stay as they are.
-pub fn set_i24(destination: u16, drive: u8) -> u16 {
-    if destination == 0 {
-        unsafe { WPERR = drive }
-    }
+pub fn set_i24(destination: u16, _drive: u8) -> u16 {
     let code = if (destination as usize) < ERR_MAP_24.len() {
         u16::from(ERR_MAP_24[destination as usize])
     } else {
@@ -58,15 +54,14 @@ pub fn set_i24(destination: u16, drive: u8) -> u16 {
 
 /// Triage AL. `ALLOWED` is the mask from the INT 24 AH register.
 pub fn user_reply(result: u8, allowed: u8) -> u8 {
-    unsafe { ALLOWED = allowed }
     if result < 1 {
-        if unsafe { ALLOWED } & ALLOWED_IGNORE == 0 {
+        if allowed & ALLOWED_IGNORE == 0 {
             return do_fail();
         }
         return result;
     }
     if result == 1 {
-        if unsafe { ALLOWED } & ALLOWED_RETRY == 0 {
+        if allowed & ALLOWED_RETRY == 0 {
             return do_fail();
         }
         return result;
@@ -74,32 +69,26 @@ pub fn user_reply(result: u8, allowed: u8) -> u8 {
     if result != 3 {
         return do_abort();
     }
-    if unsafe { ALLOWED } & ALLOWED_FAIL == 0 {
+    if allowed & ALLOWED_FAIL == 0 {
         return do_abort();
     }
     do_fail()
 }
 
 fn do_fail() -> u8 {
-    unsafe { FAILERR = FAILERR.wrapping_add(1) }
     3
 }
 
 fn do_abort() -> u8 {
-    if unsafe { ABORTING } {
+    if ABORTING.swap(true, Ordering::Relaxed) {
         return do_fail();
     }
-    unsafe { ABORTING = true }
     crate::dos::abort::dos_abort();
     0
 }
 
 pub fn show() {
-    unsafe {
-        FAILERR = 0;
-        ABORTING = false;
-        WPERR = 0xff;
-    }
+    ABORTING.store(false, Ordering::Relaxed);
     let spot = area(1, 1, 3, 4, 0);
     let mapped = set_i24(0, 0);
     let (status, handle, count) = ms_code::get();
@@ -108,7 +97,7 @@ pub fn show() {
     let retry = user_reply(1, allowed);
     let fail = user_reply(3, allowed);
     let _abort = user_reply(2, allowed);
-    let aborted = unsafe { ABORTING };
+    let aborted = ABORTING.load(Ordering::Relaxed);
     crate::bios::mscon::con_write_bytes(b"I24 AREA");
     put_hex8(spot);
     crate::bios::mscon::con_write_bytes(b" ER");

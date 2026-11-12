@@ -15,12 +15,13 @@ pub struct GuestRam {
     bytes: [u8; RAM_BYTES],
 }
 
-static mut STORAGE: GuestRam = GuestRam {
-    bytes: [0; RAM_BYTES],
-};
+static STORAGE: crate::kernel_cell::KernelCell<GuestRam> =
+    crate::kernel_cell::KernelCell::new(GuestRam {
+        bytes: [0; RAM_BYTES],
+    });
 
-pub fn storage() -> &'static mut GuestRam {
-    unsafe { &mut *core::ptr::addr_of_mut!(STORAGE) }
+pub(crate) fn storage() -> crate::kernel_cell::Guard<'static, GuestRam> {
+    STORAGE.borrow()
 }
 
 pub fn real_linear(segment: u16, offset: u16) -> Option<u32> {

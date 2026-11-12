@@ -1,186 +1,97 @@
 //! Memory arena from `DOS/ALLOC.ASM`.
 //!
-//! A free block has owner 0, which is `arena_owner_system`. The signature
-//! byte is `M` until the last block, which is `Z`. `$ALLOC` is first-fit.
+//! A free block has owner 0, which is `arena_owner_system`. The active block list
+//! tracks the DOS headers in segment order. Allocation uses first fit.
 //! The returned segment is the header plus one paragraph.
 
-const SIG_M: u8 = b'M';
-const SIG_Z: u8 = b'Z';
 const PDB: u16 = 0x00a0;
 const NOT_ENOUGH: u16 = 8;
 const INVALID_BLOCK: u16 = 9;
+const PARAGRAPHS: u16 = 16;
+const SLOTS: usize = PARAGRAPHS as usize + 1;
 
 #[derive(Clone, Copy)]
-struct Item {
-    live: bool,
-    seg: u16,
+struct Block {
+    header: u16,
     size: u16,
     owner: u16,
-    sig: u8,
 }
+struct Arena {
+    blocks: [Block; SLOTS],
+    used: usize,
+}
+static ARENA: crate::kernel_cell::KernelCell<Arena> = crate::kernel_cell::KernelCell::new(Arena {
+    blocks: [Block {
+        header: 0,
+        size: PARAGRAPHS,
+        owner: 0,
+    }; SLOTS],
+    used: 1,
+});
 
-// A block consumes at least its header. This also accommodates zero-size requests.
-const ARENA_PARAGRAPHS: u16 = 16;
-const SLOTS: usize = ARENA_PARAGRAPHS as usize + 1;
-
-static mut ITEMS: [Item; SLOTS] = [Item {
-    live: false,
-    seg: 0,
-    size: 0,
-    owner: 0,
-    sig: 0,
-}; SLOTS];
-static mut READY: bool = false;
-
-fn ensure() {
-    unsafe {
-        if READY {
-            return;
+impl Arena {
+    fn merge_next(&mut self, i: usize) {
+        if i + 1 < self.used && self.blocks[i + 1].owner == 0 {
+            self.blocks[i].size += 1 + self.blocks[i + 1].size;
+            self.blocks.copy_within(i + 2..self.used, i + 1);
+            self.used -= 1;
         }
-        ITEMS[0] = Item {
-            live: true,
-            seg: 0,
-            size: ARENA_PARAGRAPHS,
-            owner: 0,
-            sig: SIG_Z,
-        };
-        let mut i = 1usize;
-        while i < SLOTS {
-            ITEMS[i].live = false;
-            i += 1;
+    }
+    fn largest(&self) -> u16 {
+        self.blocks[..self.used]
+            .iter()
+            .filter(|b| b.owner == 0)
+            .map(|b| b.size)
+            .max()
+            .unwrap_or(0)
+    }
+    fn alloc(&mut self, request: u16) -> Option<u16> {
+        let i = self.blocks[..self.used]
+            .iter()
+            .position(|b| b.owner == 0 && b.size >= request)?;
+        let block = self.blocks[i];
+        if block.size > request {
+            self.blocks.copy_within(i + 1..self.used, i + 2);
+            self.used += 1;
+            self.blocks[i + 1] = Block {
+                header: block.header + request + 1,
+                size: block.size - request - 1,
+                owner: 0,
+            };
         }
-        READY = true;
+        self.blocks[i].size = request;
+        self.blocks[i].owner = PDB;
+        Some(block.header + 1)
     }
 }
 
-fn count() -> usize {
-    let mut n = 0usize;
-    unsafe {
-        while n < SLOTS && ITEMS[n].live {
-            n += 1;
-        }
-    }
-    n
-}
-
-fn coalesce(index: usize) {
-    loop {
-        let n = count();
-        if index + 1 >= n {
-            return;
-        }
-        unsafe {
-            if ITEMS[index].sig == SIG_Z {
-                return;
-            }
-            if ITEMS[index + 1].owner != 0 {
-                return;
-            }
-            ITEMS[index].size = ITEMS[index]
-                .size
-                .wrapping_add(ITEMS[index + 1].size)
-                .wrapping_add(1);
-            ITEMS[index].sig = ITEMS[index + 1].sig;
-        }
-        let mut j = index + 1;
-        while j + 1 < n {
-            unsafe { ITEMS[j] = ITEMS[j + 1] }
-            j += 1;
-        }
-        unsafe { ITEMS[n - 1].live = false }
-    }
-}
-
-/// Size of the biggest free block, in paragraphs. `$ALLOC` of `0xFFFF` returns this in BX.
 pub fn largest_free() -> u16 {
-    ensure();
-    let mut max = 0u16;
-    let n = count();
-    let mut index = 0usize;
-    while index < n {
-        unsafe {
-            if ITEMS[index].owner == 0 && ITEMS[index].size > max {
-                max = ITEMS[index].size;
-            }
-        }
-        index += 1;
-    }
-    max
+    ARENA.borrow().largest()
 }
 
-/// AH=48h. `Ok` is the memory segment. `Err` is the code and the largest block.
 pub fn alloc(request: u16) -> Result<u16, (u16, u16)> {
-    ensure();
-    let mut max = 0u16;
-    let mut index = 0usize;
-    while index < count() {
-        unsafe {
-            if ITEMS[index].owner == 0 {
-                coalesce(index);
-                let size = ITEMS[index].size;
-                if size > max {
-                    max = size;
-                }
-                if request <= size {
-                    return Ok(split(index, request));
-                }
-            }
-        }
-        index += 1;
+    let mut arena = ARENA.borrow();
+    if let Some(segment) = arena.alloc(request) {
+        return Ok(segment);
     }
     let _ = crate::dos::ms_code::sys_ret_err(NOT_ENOUGH);
-    Err((NOT_ENOUGH, max))
+    Err((NOT_ENOUGH, arena.largest()))
 }
 
-fn split(index: usize, request: u16) -> u16 {
-    unsafe {
-        let seg = ITEMS[index].seg;
-        let size = ITEMS[index].size;
-        if size != request {
-            let leftover = size - request;
-            let new_size = leftover - 1;
-            let new_seg = seg + request + 1;
-            let old_sig = ITEMS[index].sig;
-            let n = count();
-            let mut j = n;
-            while j > index + 1 {
-                ITEMS[j] = ITEMS[j - 1];
-                j -= 1;
-            }
-            ITEMS[index + 1] = Item {
-                live: true,
-                seg: new_seg,
-                size: new_size,
-                owner: 0,
-                sig: old_sig,
-            };
-            ITEMS[index].sig = SIG_M;
-            ITEMS[index].size = request;
-        }
-        ITEMS[index].owner = PDB;
-        seg + 1
+pub fn free(segment: u16) -> u16 {
+    let mut arena = ARENA.borrow();
+    let Some(i) = arena.blocks[..arena.used]
+        .iter()
+        .position(|b| b.owner == PDB && b.header + 1 == segment)
+    else {
+        return INVALID_BLOCK;
+    };
+    arena.blocks[i].owner = 0;
+    arena.merge_next(i);
+    if i > 0 && arena.blocks[i - 1].owner == 0 {
+        arena.merge_next(i - 1);
     }
-}
-
-/// AH=49h. `es` is the memory segment, one paragraph above the header.
-pub fn free(extra_segment: u16) -> u16 {
-    ensure();
-    let n = count();
-    let mut index = 0usize;
-    while index < n {
-        unsafe {
-            if ITEMS[index].seg + 1 == extra_segment && ITEMS[index].owner == PDB {
-                ITEMS[index].owner = 0;
-                coalesce(index);
-                if index > 0 && ITEMS[index - 1].owner == 0 {
-                    coalesce(index - 1);
-                }
-                return 0;
-            }
-        }
-        index += 1;
-    }
-    INVALID_BLOCK
+    0
 }
 
 pub fn show() {
