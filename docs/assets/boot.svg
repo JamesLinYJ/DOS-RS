@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 214" width="1000" height="214" role="img" aria-labelledby="title desc">
+  <title id="title">DOS-RS</title>
+  <desc id="desc">A freestanding Rust kernel for DOS programs. Selected COM1 lines from an i686 boot show HELLO.COM, a child process returning seven, and the guest architecture check passing.</desc>
+  <rect width="1000" height="214" rx="12" fill="#101a1c"/>
+  <path d="M0 18V12Q0 0 12 0H988Q1000 0 1000 12V18" fill="#1a292b"/>
+  <g font-family="ui-monospace, Consolas, 'Liberation Mono', monospace">
+    <text x="42" y="54" fill="#a1e6a9" font-size="14" letter-spacing="1.7">MS-DOS 4.0 / RUST</text>
+    <!-- Five-by-seven pixel lettering, drawn in local coordinates. -->
+    <g transform="translate(42 75) scale(8)" fill="#eff4e7">
+      <path d="M0 0h4v1H0z M0 1h1v5H0z M4 1h1v5H4z M0 6h4v1H0z"/>
+      <path transform="translate(7)" d="M1 0h3v1H1z M0 1h1v5H0z M4 1h1v5H4z M1 6h3v1H1z"/>
+      <path transform="translate(14)" d="M1 0h4v1H1z M0 1h1v2H0z M1 3h3v1H1z M4 4h1v2H4z M0 6h4v1H0z"/>
+      <path transform="translate(21)" d="M0 3h4v1H0z" fill="#a1e6a9"/>
+      <path transform="translate(27)" d="M0 0h4v1H0z M0 1h1v6H0z M4 1h1v2H4z M1 3h3v1H1z M2 4h1v1H2z M3 5h1v1H3z M4 6h1v1H4z"/>
+      <path transform="translate(34)" d="M1 0h4v1H1z M0 1h1v2H0z M1 3h3v1H1z M4 4h1v2H4z M0 6h4v1H0z"/>
+    </g>
+    <text x="42" y="174" fill="#bdceca" font-size="19">i686 + x86_64</text>
+    <path d="M473 43v132" stroke="#405452"/>
+    <text x="511" y="54" fill="#98aaa6" font-size="13" letter-spacing="1.5">COM1 / BOOT EXCERPT</text>
+    <g font-size="18">
+      <text x="511" y="87" fill="#e3ece4">dos4-rs i686</text>
+      <text x="511" y="115" fill="#c4d4cd">GUEST HELLO COM</text>
+      <text x="511" y="143" fill="#c4d4cd">FILE Z EXEC 7</text>
+      <text x="511" y="171" fill="#a1e6a9" font-weight="bold">GUEST ARCH OK</text>
+    </g>
+  </g>
+</svg>
