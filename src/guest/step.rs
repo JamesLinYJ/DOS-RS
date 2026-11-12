@@ -21,6 +21,7 @@ enum Operand {
 }
 
 pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
+    let start=cpu.instruction();
     let Some(mut opcode) = fetch(cpu, ram) else {
         return Outcome::Fault(0);
     };
@@ -36,6 +37,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         } else if opcode != 0xF0 {
             break;
         }
+        if cpu.instruction().wrapping_sub(start) >= 15 {return Outcome::Fault(opcode);}
         opcode = match fetch(cpu, ram) {
             Some(opcode) => opcode,
             None => return Outcome::Fault(0),
@@ -187,7 +189,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xE9 => jump_near(cpu, ram, opcode),
         0xEA => jump_far(cpu, ram, opcode),
         0xEB => branch(cpu, ram, opcode, true),
-        0xF2 | 0xF3 => repeat(cpu, ram, override_segment, opcode),
+        0xF2 | 0xF3 => repeat(cpu, ram, override_segment, opcode,start),
         0xF4 => Outcome::Halt,
         0xF7 => unary_word(cpu, ram, override_segment, opcode),
         0xFA => {
@@ -2427,6 +2429,7 @@ fn repeat(
     ram: &mut GuestRam,
     override_segment: Option<Segment>,
     opcode: u8,
+    start: u16,
 ) -> Outcome {
     let Some(mut next) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
@@ -2446,7 +2449,13 @@ fn repeat(
     }
     let stop_when_zero = opcode == 0xF2;
     let compare = matches!(next, 0xA6 | 0xA7 | 0xAE | 0xAF);
+    let mut iterations = 0;
     while cpu.wide(Slot::Count) != 0 {
+        if iterations == 64 {
+            cpu.set_instruction(start);
+            break;
+        }
+        iterations += 1;
         let ok = match next {
             0xA4 => copy_string(cpu, ram, source),
             0xA5 => copy_string_word(cpu, ram, source),

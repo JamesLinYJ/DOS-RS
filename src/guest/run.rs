@@ -10,8 +10,10 @@ use super::step::{self, Outcome};
 use crate::kernel_cell::KernelCell;
 
 mod drivers;
+mod runtime;
 mod smoke;
-pub use smoke::{run_shell, show};
+pub use runtime::{interactive, run_shell};
+pub use smoke::show;
 
 const LAUNCH_SEGMENT: u16 = 0x1600;
 const SHELL_SEGMENT: u16 = 0x0900;
@@ -48,6 +50,8 @@ fn load_root(
 }
 
 enum End {
+    Waiting,
+    Switch,
     Stopped(u8),
     Fault(u8),
     Other,
@@ -58,9 +62,23 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
     let mut steps = 0u32;
     while steps < limit {
         steps += 1;
+        let instruction = cpu.instruction();
         match step::step(cpu, ram) {
             Outcome::Continue => {}
             Outcome::Interrupt(0x2E) => super::command::invoke(cpu, ram, session),
+            Outcome::Interrupt(0x21) if matches!(cpu.high(Slot::Accumulator), 1 | 7 | 8) => {
+                if let Some(key) = crate::bios::pc::key(true) {
+                    cpu.set_low(Slot::Accumulator, key as u8);
+                    if cpu.high(Slot::Accumulator) == 1 {
+                        crate::bios::mscon::con_write_bytes(&[key as u8]);
+                    }
+                } else {
+                    cpu.set_instruction(instruction);
+                    if session.scheduled {
+                        return End::Waiting;
+                    }
+                }
+            }
             Outcome::Interrupt(0x21) => match service(cpu, ram, session) {
                 Action::Continue => {}
                 Action::Exit(code) => return End::Stopped(code),
@@ -71,12 +89,24 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
             Outcome::Interrupt(0x03) => {}
             Outcome::Interrupt(0x20) | Outcome::Halt => return End::Stopped(0),
             Outcome::Fault(opcode) => return End::Fault(opcode),
+            Outcome::Interrupt(0x16)
+                if matches!(cpu.high(Slot::Accumulator), 0 | 0x10)
+                    && crate::bios::pc::key(false).is_none() =>
+            {
+                cpu.set_instruction(instruction);
+                if session.scheduled {
+                    return End::Waiting;
+                }
+            }
             Outcome::Interrupt(vector) => {
                 if serve_bios(cpu, ram, vector) {
                 } else if !enter_vector(cpu, ram, session, vector) {
                     return End::Other;
                 }
             }
+        }
+        if session.pending.is_some() || session.batches.ready(session.child_depth) {
+            return End::Switch;
         }
     }
     End::Loop
@@ -91,6 +121,7 @@ const FILE_BYTES: usize = 262144;
 
 #[derive(Clone, Copy)]
 struct Opened {
+    terminal: usize,
     device: Option<drivers::Device>,
     dir: u16,
     bytes: usize,
@@ -105,11 +136,16 @@ struct Opened {
 
 const HANDLE_SLOTS: usize = 20;
 
-static FILE_POOL: KernelCell<[[u8; FILE_BYTES]; HANDLE_SLOTS]> =
-    KernelCell::new([[0; FILE_BYTES]; HANDLE_SLOTS]);
+static FILE_POOL: [KernelCell<[[u8; FILE_BYTES]; HANDLE_SLOTS]>; 4] =
+    [const { KernelCell::new([[0; FILE_BYTES]; HANDLE_SLOTS]) }; 4];
 
 pub(super) struct Session {
     drivers: drivers::Drivers,
+    terminal: usize,
+    pub(super) scheduled: bool,
+    pending: Option<CpuState>,
+    parents: [Option<Parent>; 8],
+    pub(super) batches: super::command::Batches,
     pub(super) environment: super::command::Environment,
     opens: [Option<Opened>; HANDLE_SLOTS],
     last_code: u16,
@@ -117,7 +153,7 @@ pub(super) struct Session {
     dta_offset: u16,
     prefix: u16,
     arena: Arena,
-    child_depth: u8,
+    pub(super) child_depth: u8,
     drive: u8,
     break_check: u8,
     extended_break: u8,
@@ -153,6 +189,8 @@ impl Session {
     fn new() -> Self {
         Self {
             drivers: drivers::Drivers::new(),
+            terminal:0, scheduled:false, pending:None,
+            parents:[const {None};8], batches:super::command::Batches::new(),
             environment: super::command::Environment::new(),
             opens: [None; HANDLE_SLOTS],
             last_code: 0,
@@ -1041,6 +1079,7 @@ fn current_process(cpu: &mut CpuState, session: &Session) {
 
 fn console_handle(handle: u16) -> Opened {
     Opened {
+        terminal:0,
         device: None,
         dir: 0,
         bytes: 0,
@@ -1159,7 +1198,7 @@ fn flush_opened(opened: &Opened) -> bool {
     super::disk::write_named_at(
         opened.dir,
         &opened.name,
-        &FILE_POOL.borrow()[opened.bytes][..opened.len],
+        &FILE_POOL[opened.terminal].borrow()[opened.bytes][..opened.len],
         0x20,
     )
 }
@@ -1410,7 +1449,7 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     };
-    let bytes = &FILE_POOL.borrow()[opened.bytes];
+    let bytes = &FILE_POOL[opened.terminal].borrow()[opened.bytes];
     let mut limit = requested;
     if &opened.name[8..11] == b"SKL" {
         let mut index = opened.pos;
@@ -1633,7 +1672,7 @@ fn open_named(
         });
         return Ok(slot as u16 + 3);
     }
-    let stored = &mut FILE_POOL.borrow()[slot];
+    let stored = &mut FILE_POOL[session.terminal].borrow()[slot];
     let length = if empty {
         stored.fill(0);
         0
@@ -1641,6 +1680,7 @@ fn open_named(
         super::disk::read_file_at(dir, &name, stored).ok_or(2u16)?
     };
     session.opens[slot] = Some(Opened {
+        terminal:session.terminal,
         device: None,
         dir,
         bytes: slot,
@@ -1679,8 +1719,9 @@ fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 0x27);
         return;
     }
-    FILE_POOL.borrow()[slot].fill(0);
+    FILE_POOL[session.terminal].borrow()[slot].fill(0);
     session.opens[slot] = Some(Opened {
+        terminal:session.terminal,
         device: None,
         dir,
         bytes: slot,
@@ -1705,6 +1746,7 @@ fn duplicate(cpu: &mut CpuState, session: &mut Session) {
     };
     let opened = if source < 3 {
         Opened {
+            terminal:0,
             device: None,
             dir: 0,
             bytes: 0,
@@ -1823,7 +1865,7 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     };
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
-    let bytes = &mut FILE_POOL.borrow()[opened.bytes];
+    let bytes = &mut FILE_POOL[opened.terminal].borrow()[opened.bytes];
     let mut seen = 0u16;
     while seen < count {
         if opened.pos >= FILE_BYTES {
@@ -1859,7 +1901,7 @@ fn read_stdio(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, han
     let requested = usize::from(cpu.wide(Slot::Count));
     let mut offset = cpu.wide(Slot::Data);
     let segment = cpu.selector(Segment::Data);
-    let bytes = &FILE_POOL.borrow()[opened.bytes];
+    let bytes = &FILE_POOL[opened.terminal].borrow()[opened.bytes];
     let mut moved = 0u16;
     while usize::from(moved) < requested && opened.pos < opened.len {
         let byte = bytes[opened.pos];
@@ -1890,7 +1932,7 @@ fn write_stdio(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session, handle
     let count = cpu.wide(Slot::Count);
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
-    let bytes = &mut FILE_POOL.borrow()[opened.bytes];
+    let bytes = &mut FILE_POOL[opened.terminal].borrow()[opened.bytes];
     let mut seen = 0u16;
     while seen < count {
         if opened.pos >= FILE_BYTES {
@@ -2042,7 +2084,7 @@ fn run_child(
     ram: &mut GuestRam,
     session: &mut Session,
 ) -> Result<u8, u16> {
-    // Each suspended interpreter retains a native stack frame on the 64 KiB boot stack.
+    // Limit nested EXEC consistently for the interactive and batch entry points.
     if session.child_depth == 8 {
         return Err(8);
     }
@@ -2060,42 +2102,59 @@ fn run_child(
         .load(ram, &mut session.arena)?
     };
     set_psp_version(ram, psp, version);
-    let parent = (
-        session.prefix,
-        session.current_psp,
-        session.dta_segment,
-        session.dta_offset,
-    );
-    let saved_stdio = session.stdio;
-    let inherited = session.opens.map(|f| f.is_some());
-    (
-        session.prefix,
-        session.current_psp,
-        session.dta_segment,
-        session.dta_offset,
-    ) = (psp, psp, psp, 0x80);
+    let depth = session.child_depth as usize;
+    session.parents[depth] = Some(Parent {
+        registers: None,
+        prefix: session.prefix,
+        psp: session.current_psp,
+        dta: (session.dta_segment, session.dta_offset),
+        stdio: session.stdio,
+        inherited: session.opens.map(|f| f.is_some()),
+    });
+    session.prefix = psp;
+    session.current_psp = psp;
+    session.dta_segment = psp;
+    session.dta_offset = 0x80;
     session.child_depth += 1;
+    if session.scheduled {
+        session.pending = Some(cpu);
+        return Ok(0);
+    }
     let end = drive(&mut cpu, ram, session, 8_000_000);
+    finish_child(session);
+    match end {
+        End::Stopped(code) => Ok(code),
+        _ => Err(1),
+    }
+}
+
+struct Parent {
+    registers: Option<CpuState>,
+    prefix: u16,
+    psp: u16,
+    dta: (u16, u16),
+    stdio: [Option<Opened>; 3],
+    inherited: [bool; HANDLE_SLOTS],
+}
+
+fn finish_child(session: &mut Session) -> Option<CpuState> {
     session.child_depth -= 1;
+    let parent = session.parents[session.child_depth as usize]
+        .take()
+        .expect("paired child exit");
     flush_stdio(session);
-    session.stdio = saved_stdio;
-    for (slot, was_open) in inherited.into_iter().enumerate() {
+    session.stdio = parent.stdio;
+    for (slot, was_open) in parent.inherited.into_iter().enumerate() {
         if !was_open && let Some(file) = session.opens[slot].take() {
             let _ = flush_opened(&file);
             release_locks(session, slot as u16 + 3);
         }
     }
-    (
-        session.prefix,
-        session.current_psp,
-        session.dta_segment,
-        session.dta_offset,
-    ) = parent;
-    session.arena.release_process(psp);
-    match end {
-        End::Stopped(code) => Ok(code),
-        _ => Err(1),
-    }
+    session.arena.release_process(session.prefix);
+    session.prefix = parent.prefix;
+    session.current_psp = parent.psp;
+    (session.dta_segment, session.dta_offset) = parent.dta;
+    parent.registers
 }
 
 fn set_psp_version(ram: &mut GuestRam, psp: u16, version: u16) {
@@ -4516,9 +4575,7 @@ fn keyboard(cpu: &mut CpuState) {
     let function = cpu.high(Slot::Accumulator);
     match function {
         0 | 0x10 => {
-            while crate::bios::pc::key(false).is_none() {
-                core::hint::spin_loop();
-            }
+
             cpu.set_wide(Slot::Accumulator, crate::bios::pc::key(true).unwrap_or(0));
         }
         1 | 0x11 => {

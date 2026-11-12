@@ -15,13 +15,17 @@ pub struct GuestRam {
     bytes: [u8; RAM_BYTES],
 }
 
-static STORAGE: crate::kernel_cell::KernelCell<GuestRam> =
+static STORAGE: [crate::kernel_cell::KernelCell<GuestRam>; 4] = [const {
     crate::kernel_cell::KernelCell::new(GuestRam {
         bytes: [0; RAM_BYTES],
-    });
+    })
+}; 4];
 
 pub(crate) fn storage() -> crate::kernel_cell::Guard<'static, GuestRam> {
-    STORAGE.borrow()
+    session_ram(0)
+}
+pub(crate) fn session_ram(id: usize) -> crate::kernel_cell::Guard<'static, GuestRam> {
+    STORAGE[id].borrow()
 }
 
 pub fn real_linear(segment: u16, offset: u16) -> Option<u32> {

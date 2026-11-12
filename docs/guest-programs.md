@@ -260,3 +260,9 @@ python3 scripts/qemu-devices.py --setver target/SETVER.SYS
 The client checks the table pointer that SETVER installs through INT 21h AH=52h. EXEC uses matching table entries for the child's PSP version word and AH=30h response. In a separate x86_64 run, a configured table entry for WHOAMI.COM returned 7.10 through both interfaces. [FreeDOS driver source](https://github.com/FDOS/kernel/blob/ca25e3b26695074f754e1baffdfb4fd1452a6dbc/setver/setver.asm)
 
 The loader currently accepts up to sixteen resident headers and a 64 KiB load segment per image. INIT can call DOS character/string output, version and list-of-lists services. Firmware interrupt and port coverage is limited to the implemented PC devices. Installable block units support absolute I/O. Drive mounting, driver-installed IRQ handlers, XMS and EMS remain open.
+
+The terminal regression uses four COM programs on one boot. SPIN.COM keeps polling
+the shared volume, WAITKEY.COM sleeps on INT 16h, CRASH.COM raises an unsupported
+opcode, and CALC.COM creates SHARED.TXT. The fourth terminal remains responsive,
+the first sees the new file, and the second receives its key after reactivation.
+Run `python3 scripts/qemu-terminals.py` or add `--display cocoa` on macOS.

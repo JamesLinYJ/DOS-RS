@@ -15,11 +15,11 @@ doctor() {
 		echo "want rustc 1.102.0-nightly from nightly-2026-11-08" >&2
 		missing=1
 	}
-	if [[ ! -f "$root/target/i686-unknown-none/release/dos4-rs" ]]; then
+	if [[ ! -f "$root/target/selftest/i686-unknown-none/release/dos4-rs" ]]; then
 		echo "missing i686 kernel. Build it before driving." >&2
 		missing=1
 	fi
-	if [[ ! -f "$root/target/x86_64-unknown-none/release/dos4-rs" ]]; then
+	if [[ ! -f "$root/target/selftest/x86_64-unknown-none/release/dos4-rs" ]]; then
 		echo "missing x86_64 kernel. Build it before driving." >&2
 		missing=1
 	fi
@@ -1552,6 +1552,8 @@ if [[ "${1:-}" == "doctor" ]]; then
 	exit 0
 fi
 
+(cd "$root" && cargo build --release --features kernel-selftest --target-dir target/selftest -Zjson-target-spec --target ./i686-unknown-none.json)
+(cd "$root" && cargo build --release --features kernel-selftest --target-dir target/selftest --target x86_64-unknown-none)
 doctor
 (
     test_dir="$(mktemp -d)"
@@ -1561,6 +1563,6 @@ doctor
 )
 printer_log="$(mktemp)"
 trap 'rm -f "$printer_log"' EXIT
-run_one i686 qemu-system-i386 "$root/target/i686-unknown-none/release/dos4-rs"
-run_one x86_64 qemu-system-x86_64 "$root/target/x86_64-unknown-none/release/dos4-rs"
+run_one i686 qemu-system-i386 "$root/target/selftest/i686-unknown-none/release/dos4-rs"
+run_one x86_64 qemu-system-x86_64 "$root/target/selftest/x86_64-unknown-none/release/dos4-rs"
 exit 0

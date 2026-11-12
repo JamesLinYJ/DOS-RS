@@ -1,5 +1,5 @@
 //! Programs driven during the QEMU boot regression suite.
-use super::{End, SHELL_CHILD, SHELL_SEGMENT, Session, drive, load_root, put_hex8};
+use super::{End, SHELL_CHILD, Session, run_shell, drive, load_root, put_hex8};
 use crate::guest::{disk, memory};
 
 const COM_SEGMENT: u16 = 0x0100;
@@ -54,53 +54,6 @@ fn show_saved() {
         index += 1;
     }
     crate::bios::mscon::con_write_bytes(b"\r\n");
-}
-
-pub fn run_shell() -> bool {
-    disk::boot();
-    let mut image = [0u8; 512];
-    let Some(length) = disk::read_file(b"COMMAND COM", &mut image) else {
-        crate::bios::mscon::con_write_bytes(b"Cannot find COMMAND.COM.\r\n");
-        return false;
-    };
-    let ram = &mut *memory::storage();
-    ram.clear();
-    let mut session = Session::new();
-    let Some(mut cpu) = load_root(
-        &image[..length],
-        b"COMMAND COM",
-        SHELL_SEGMENT,
-        &[],
-        ram,
-        &mut session,
-    ) else {
-        crate::bios::mscon::con_write_bytes(b"Cannot load COMMAND.COM.\r\n");
-        return false;
-    };
-    super::drivers::configure(ram, &mut session);
-    if cfg!(feature = "batch-console") {
-        crate::puts("Running AUTOEXEC.BAT\n\n");
-    }
-    match drive(&mut cpu, ram, &mut session, 100_000) {
-        End::Stopped(0) => return true,
-        End::Stopped(code) => {
-            crate::puts("Shell exit code: ");
-            crate::bios::mscon::write_number(code);
-            crate::puts("\n");
-        }
-        End::Fault(opcode) => {
-            crate::bios::mscon::con_write_bytes(b"Shell stopped at opcode 0x");
-            put_hex8(opcode);
-            crate::bios::mscon::con_write_bytes(b"\r\n");
-        }
-        End::Other => {
-            crate::bios::mscon::con_write_bytes(b"Shell stopped on an unsupported interrupt.\r\n")
-        }
-        End::Loop => {
-            crate::bios::mscon::con_write_bytes(b"Shell reached the instruction limit.\r\n")
-        }
-    }
-    false
 }
 
 fn report_shell_files() {
@@ -217,7 +170,7 @@ fn run_fixture(name: &[u8; 11], segment: u16, args: &[u8], limit: u16) {
             crate::bios::mscon::con_write_bytes(b"\r\n");
         }
         End::Other => crate::bios::mscon::con_write_bytes(b"GUEST INT\r\n"),
-        End::Loop => crate::bios::mscon::con_write_bytes(b"GUEST LOOP\r\n"),
+        End::Loop | End::Waiting | End::Switch => crate::bios::mscon::con_write_bytes(b"GUEST LOOP\r\n"),
     }
 }
 
@@ -248,6 +201,6 @@ fn architecture_probe() {
             crate::puts("\n");
         }
         End::Other => crate::puts("GUEST ARCH INT\n"),
-        End::Loop => crate::puts("GUEST ARCH LOOP\n"),
+        End::Loop | End::Waiting | End::Switch => crate::puts("GUEST ARCH LOOP\n"),
     }
 }

@@ -30,6 +30,8 @@ target/layout-tests
 
 For a runtime change, build both release kernels and run the [Quick start](README.md#quick-start). The smoke script also runs the host tests. After the builds, `scripts/qemu-smoke.sh doctor` checks the toolchain, both emulators, `timeout` and the kernel paths. Use the named failure and the serial output to find the first workload that diverged. Successful runs can save transcripts under `target/proof/` with `PROOF_DIR`.
 
+The default kernel boots the virtual-terminal scheduler. Keep guest state per session, and return to the scheduler for terminal input or nested EXEC. Run `python3 scripts/qemu-terminals.py` for scheduler or input changes.
+
 For device or port changes, also run `python3 scripts/qemu-devices.py`. The guest driver loader and interpreter forbid unsafe Rust. Keep physical I/O in the architecture and BIOS modules.
 
 ## Fixtures and translation records

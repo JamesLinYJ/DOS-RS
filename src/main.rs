@@ -19,15 +19,17 @@ mod smoke;
 pub extern "C" fn kmain() -> ! {
     arch::install_interrupts();
     puts(banner());
-    let success = if cfg!(feature = "batch-console") {
+    let success = if cfg!(feature = "kernel-selftest") {
+        smoke::run();
+        true
+    } else if cfg!(feature = "batch-console") {
         let completed = guest::run::run_shell();
         if completed {
             puts("\nBatch complete.\n");
         }
         completed
     } else {
-        smoke::run();
-        true
+        guest::run::interactive()
     };
     debug_exit(success)
 }

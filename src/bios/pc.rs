@@ -66,12 +66,14 @@ struct Keyboard {
     pending: Option<u16>,
     shift: u8,
     caps: bool,
+    alt: bool,
     extended: bool,
 }
 static KEYBOARD: KernelCell<Keyboard> = KernelCell::new(Keyboard {
     pending: None,
     shift: 0,
     caps: false,
+    alt: false,
     extended: false,
 });
 
@@ -92,6 +94,13 @@ impl Keyboard {
                 self.shift &= !bit;
             }
             return None;
+        }
+        if scan == 0x38 {
+            self.alt = down;
+            return None;
+        }
+        if self.alt && down && (0x3b..=0x3e).contains(&scan) {
+            return Some(u16::from(scan + 0x2d) << 8);
         }
         if !down {
             return None;
@@ -119,7 +128,7 @@ impl Keyboard {
     }
 }
 
-pub(crate) fn key(consume: bool) -> Option<u16> {
+fn physical_key(consume: bool) -> Option<u16> {
     let mut keyboard = KEYBOARD.borrow();
     while keyboard.pending.is_none() {
         let status = inb(0x64);
@@ -136,6 +145,7 @@ pub(crate) fn key(consume: bool) -> Option<u16> {
     }
 }
 
+pub(crate) const TERMINALS: usize = 4;
 const COLS: usize = 80;
 const ROWS: usize = 25;
 const SPACE: u16 = 0x0720;
@@ -143,31 +153,56 @@ const SPACE: u16 = 0x0720;
 struct TextScreen {
     cells: [u16; COLS * ROWS],
     cursor: usize,
-    initialized: bool,
+    keys: [u16; 32],
+    head: usize,
+    count: usize,
 }
-static SCREEN: KernelCell<TextScreen> = KernelCell::new(TextScreen {
-    cells: [SPACE; COLS * ROWS],
-    cursor: 0,
-    initialized: false,
-});
-
 impl TextScreen {
+    const fn new() -> Self {
+        Self {
+            cells: [SPACE; COLS * ROWS],
+            cursor: 0,
+            keys: [0; 32],
+            head: 0,
+            count: 0,
+        }
+    }
+    fn key(&mut self, consume: bool) -> Option<u16> {
+        if self.count == 0 {
+            return None;
+        }
+        let key = self.keys[self.head];
+        if consume {
+            self.head = (self.head + 1) % self.keys.len();
+            self.count -= 1;
+        }
+        Some(key)
+    }
+    fn enqueue(&mut self, key: u16) {
+        if self.count < self.keys.len() {
+            self.keys[(self.head + self.count) % self.keys.len()] = key;
+            self.count += 1;
+        }
+    }
     fn paint(&self, index: usize) {
-        // SAFETY: The x86 boot mappings identity-map the VGA text aperture.
-        // Every index comes from the fixed 80-column, 25-row character array.
+        // SAFETY: x86 startup identity maps the VGA aperture. Only in-bounds cell indices reach this method.
         let address = (0xb8000 + index * 2) as *mut u16;
         unsafe { address.write_volatile(self.cells[index]) };
     }
-    fn redraw(&self) {
-        for index in 0..self.cells.len() {
-            self.paint(index);
-        }
+    fn cursor(&self) {
+        let [lo, hi] = (self.cursor as u16).to_le_bytes();
+        outb(0x3d4, 14);
+        outb(0x3d5, hi);
+        outb(0x3d4, 15);
+        outb(0x3d5, lo);
     }
-    fn write(&mut self, byte: u8) {
-        if !self.initialized {
-            self.redraw();
-            self.initialized = true;
+    fn redraw(&self) {
+        for i in 0..self.cells.len() {
+            self.paint(i);
         }
+        self.cursor();
+    }
+    fn write(&mut self, byte: u8, visible: bool) {
         match byte {
             b'\r' => self.cursor -= self.cursor % COLS,
             b'\n' => self.cursor += COLS,
@@ -176,7 +211,9 @@ impl TextScreen {
             0..=31 => return,
             _ => {
                 self.cells[self.cursor] = 0x0700 | u16::from(byte);
-                self.paint(self.cursor);
+                if visible {
+                    self.paint(self.cursor);
+                }
                 self.cursor += 1;
             }
         }
@@ -184,18 +221,68 @@ impl TextScreen {
             self.cells.copy_within(COLS.., 0);
             self.cells[(ROWS - 1) * COLS..].fill(SPACE);
             self.cursor -= COLS;
-            self.redraw();
+            if visible {
+                self.redraw();
+            }
+        } else if visible {
+            self.cursor();
         }
-        let [lo, hi] = (self.cursor as u16).to_le_bytes();
-        outb(0x3d4, 14);
-        outb(0x3d5, hi);
-        outb(0x3d4, 15);
-        outb(0x3d5, lo);
     }
 }
 
+struct Consoles {
+    screens: [TextScreen; TERMINALS],
+    foreground: usize,
+    running: usize,
+    multiplexed: bool,
+    initialized: bool,
+}
+static CONSOLES: KernelCell<Consoles> = KernelCell::new(Consoles {
+    screens: [const { TextScreen::new() }; TERMINALS],
+    foreground: 0,
+    running: 0,
+    multiplexed: false,
+    initialized: false,
+});
+
+pub(crate) fn enable_terminals() {
+    CONSOLES.borrow().multiplexed = true;
+}
+pub(crate) fn route_output(id: usize) {
+    CONSOLES.borrow().running = id;
+}
+pub(crate) fn poll_keyboard() -> usize {
+    let mut consoles = CONSOLES.borrow();
+    for _ in 0..32 {
+        let Some(key) = physical_key(true) else { break };
+        if (0x6800..=0x6b00).contains(&key) && key as u8 == 0 {
+            consoles.foreground = usize::from((key >> 8) - 0x68);
+            consoles.screens[consoles.foreground].redraw();
+        } else {
+            let id = consoles.foreground;
+            consoles.screens[id].enqueue(key);
+        }
+    }
+    consoles.foreground
+}
+pub(crate) fn key(consume: bool) -> Option<u16> {
+    let mut consoles = CONSOLES.borrow();
+    if consoles.multiplexed {
+        let id = consoles.running;
+        consoles.screens[id].key(consume)
+    } else {
+        physical_key(consume)
+    }
+}
 pub(crate) fn display(byte: u8) {
-    SCREEN.borrow().write(byte);
+    let mut consoles = CONSOLES.borrow();
+    let id = consoles.running;
+    let visible = id == consoles.foreground;
+    if !consoles.initialized {
+        consoles.screens[id].redraw();
+        consoles.initialized = true;
+    }
+    consoles.screens[id].write(byte, visible);
 }
 
 // Guest IN/OUT is routed only to peripherals implemented by the PC backend.

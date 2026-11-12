@@ -18,7 +18,6 @@ struct Binding {
     live: bool,
 }
 
-
 pub(super) struct Environment([Binding; ROWS]);
 
 impl Environment {
@@ -80,10 +79,16 @@ pub(super) fn invoke(cpu: &CpuState, ram: &mut GuestRam, session: &mut Session) 
         length += 1;
         offset = offset.wrapping_add(1);
     }
-    execute(&line[..length], ram, session, 0);
+    execute(&line[..length], ram, session, 0, true);
 }
 
-fn execute(line: &[u8], ram: &mut GuestRam, session: &mut Session, depth: u8) {
+pub(super) fn execute(
+    line: &[u8],
+    ram: &mut GuestRam,
+    session: &mut Session,
+    depth: u8,
+    echo: bool,
+) {
     let line = line.trim_ascii();
     if line.is_empty() || depth > 4 {
         return;
@@ -141,14 +146,24 @@ fn execute(line: &[u8], ram: &mut GuestRam, session: &mut Session, depth: u8) {
         );
     } else if verb.eq_ignore_ascii_case(b"SET") {
         assign(rest, &mut session.environment);
-    } else if let Some(file) = disk::canonical(verb) {
-        let mut path = [0; 64];
-        let len = disk::current_path(&mut path);
-        say(b"A:\\");
-        say(&path[..len]);
-        say(b"> ");
-        say(line);
-        say(b"\r\n");
+    } else if let Some(mut file) = disk::canonical(verb) {
+        if !verb.contains(&b'.') {
+            for ext in [b"COM", b"EXE", b"BAT"] {
+                file[8..].copy_from_slice(ext);
+                if disk::exists(&file) {
+                    break;
+                }
+            }
+        }
+        if echo {
+            let mut path = [0; 64];
+            let len = disk::current_path(&mut path);
+            say(b"A:\\");
+            say(&path[..len]);
+            say(b"> ");
+            say(line);
+            say(b"\r\n");
+        }
         launch_named(&file, rest, ram, session, depth);
     }
 }
@@ -243,7 +258,13 @@ fn launch_named(
             say(b"Cannot read batch file.\r\n");
             return;
         };
-        run_batch(&body[..length], ram, session, depth + 1);
+        if session.scheduled {
+            if !session.batches.push(body, length, session.child_depth) {
+                say(b"Batch nesting limit reached.\r\n");
+            }
+        } else {
+            run_batch(&body[..length], ram, session, depth + 1);
+        }
         return;
     }
     let Some(code) = super::run::spawn(args, name, ram, session) else {
@@ -259,7 +280,7 @@ fn launch_named(
 
 fn run_batch(body: &[u8], ram: &mut GuestRam, session: &mut Session, depth: u8) {
     for line in body.split(|&byte| matches!(byte, b'\r' | b'\n')) {
-        execute(line, ram, session, depth);
+        execute(line, ram, session, depth, true);
     }
 }
 
@@ -299,4 +320,64 @@ fn split(text: &[u8]) -> (&[u8], &[u8]) {
 
 fn say(text: &[u8]) {
     crate::bios::mscon::con_write_bytes(text);
+}
+
+struct Batch {
+    body: [u8; 512],
+    end: usize,
+    pos: usize,
+    owner: u8,
+}
+pub(super) struct Batches {
+    stack: [Option<Batch>; 5],
+    depth: usize,
+}
+impl Batches {
+    pub(super) fn new() -> Self {
+        Self {
+            stack: [const { None }; 5],
+            depth: 0,
+        }
+    }
+    fn push(&mut self, body: [u8; 512], end: usize, owner: u8) -> bool {
+        if self.depth == self.stack.len() {
+            return false;
+        }
+        self.stack[self.depth] = Some(Batch {
+            body,
+            end,
+            pos: 0,
+            owner,
+        });
+        self.depth += 1;
+        true
+    }
+    pub(super) fn ready(&self, owner: u8) -> bool {
+        self.depth > 0
+            && self.stack[self.depth - 1]
+                .as_ref()
+                .is_some_and(|b| b.owner == owner)
+    }
+    pub(super) fn line(&mut self, owner: u8, out: &mut [u8; 512]) -> Option<usize> {
+        if !self.ready(owner) {
+            return None;
+        }
+        let top = self.depth - 1;
+        let b = self.stack[top].as_mut()?;
+        let line = &b.body[b.pos..b.end];
+        let n = line
+            .iter()
+            .position(|v| matches!(v, b'\n' | b'\r'))
+            .unwrap_or(line.len());
+        out[..n].copy_from_slice(&line[..n]);
+        b.pos += n;
+        while b.pos < b.end && matches!(b.body[b.pos], b'\n' | b'\r') {
+            b.pos += 1;
+        }
+        if b.pos == b.end {
+            self.stack[top] = None;
+            self.depth -= 1;
+        }
+        Some(n)
+    }
 }
