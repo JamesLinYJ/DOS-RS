@@ -32,7 +32,7 @@ Opcode `8D` with a register source is not a memory operand. Compat16's `execute_
 
 `BUILDIDX.EXE` is the message-index builder from that same tree, `v4.0/src/TOOLS/BUILDIDX.EXE`, under the same MIT license. The shell runs it with an empty tail, and it prints `Incorrect number of parms  given to BUILDIDX.`
 
-`BUILDMSG.EXE` is the message builder from that same tree, `v4.0/src/TOOLS/BUILDMSG.EXE`, under the same MIT license. The shell runs it with an empty tail. It prints `BuildMsg - PSP at 0b00` and `Allocatable memory size is 526944`, then returns status 1. The segment is the program prefix function 62h returns.
+`BUILDMSG.EXE` is the message builder from that same tree, `v4.0/src/TOOLS/BUILDMSG.EXE`, under the same MIT license. The shell runs it with an empty tail. It prints `BuildMsg - PSP at 0b00` and `Allocatable memory size is 526928`, then returns status 1. The segment is the program prefix function 62h returns.
 
 `MENUBLD.EXE` is the menu builder from that same tree, `v4.0/src/TOOLS/MENUBLD.EXE`, under the same MIT license. The shell runs it with an empty tail. It prints `Couldn't open  menu creation files.` and returns status 1.
 
@@ -70,7 +70,7 @@ The volume is 3632 sectors. Sixteen FAT sectors and 256 root entries stay under 
 
 `MENUBLD.EXE` still prints `Couldn't open  menu creation files.` when the tail is empty. The shell then runs `MENUBLD.EXE MENU.MNU USAMS.MSG`. It reads the menu, the message file, and `USAMS.IDX`, and writes `MENUM.C`. The line is `All four files have been opened for menu creation.`, the directory line is `Found: MENUM.C`, and the file contains `menu-ok`.
 
-`BUILDMSG.EXE` still prints `Allocatable memory size is 526944` and returns status 1 when the tail is empty. The shell then runs `BUILDMSG.EXE USAMS BMSG.SKL`. The message file has a `BMSG` class, so the index contains it. The builder writes `BMSG.CTL` and the include files. The line is `Created include file [BMSG.CLA]`, the directory line is `Found: BMSG.CTL`, and the file begins `$M_NUM_CLS  EQU 1`. The `:DEF` handler records the message number and writes the length line from that number. It does not copy the quoted skeleton text into the message table, so that quote is not added to `BMSG.CLA`.
+`BUILDMSG.EXE` still prints `Allocatable memory size is 526928` and returns status 1 when the tail is empty. The shell then runs `BUILDMSG.EXE USAMS BMSG.SKL`. The message file has a `BMSG` class, so the index contains it. The builder writes `BMSG.CTL` and the include files. The line is `Created include file [BMSG.CLA]`, the directory line is `Found: BMSG.CTL`, and the file begins `$M_NUM_CLS  EQU 1`. The `:DEF` handler records the message number and writes the length line from that number. It does not copy the quoted skeleton text into the message table, so that quote is not added to `BMSG.CLA`.
 
 Function 44h subfunction 0 returns the device word. Handles 0 through 2 that are still the console stay `80D3`. A disk file on drive A that has not been written returns `0040`. A write clears that clean bit, so the word is `0000`. `IOCHK.COM` writes one byte and prints `IOCTL 0000`.
 

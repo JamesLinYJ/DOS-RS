@@ -19,6 +19,7 @@ fn start(ram: &mut GuestRam, session: &mut Session) -> Option<CpuState> {
         session,
     )?;
     drivers::configure(ram, session);
+    session.arena.publish(ram);
     Some(cpu)
 }
 
@@ -118,7 +119,7 @@ impl Task {
                     self.cpu = if self.session.child_depth == 0 {
                         None
                     } else {
-                        finish_child(&mut self.session)
+                        finish_child(&mut self.session, ram)
                     };
                     self.prompt = false;
                 }

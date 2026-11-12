@@ -1,6 +1,8 @@
 //! Conventional-memory ownership. All bounds are paragraph segments, end exclusive.
 
-use super::memory::CONVENTIONAL_END;
+use super::memory::{CONVENTIONAL_END, GuestRam};
+
+pub(super) const FIRST_MCB: u16 = 0xa0;
 
 #[derive(Clone, Copy, Default)]
 struct Block {
@@ -36,7 +38,7 @@ impl Arena {
         let mut chosen = None;
         for (next_start, next_end) in self.blocks[..self.used]
             .iter()
-            .map(|b| (b.start, b.end))
+            .map(|b| (b.start - 1, b.end.saturating_add(1)))
             .chain(core::iter::once((CONVENTIONAL_END, CONVENTIONAL_END)))
         {
             let room = next_start.saturating_sub(start);
@@ -73,17 +75,21 @@ impl Arena {
         if self.used + 2 > self.blocks.len() {
             return Err(MemoryError::NoRoom(0));
         }
-        let total = min.checked_add(env).ok_or(MemoryError::NoRoom(0))?;
+        let total = min
+            .checked_add(env)
+            .and_then(|n| n.checked_add(1))
+            .ok_or(MemoryError::NoRoom(0))?;
         let floor = preferred_psp
             .checked_sub(env)
-            .filter(|s| *s >= 0xA0)
+            .and_then(|n| n.checked_sub(1))
+            .filter(|s| *s > FIRST_MCB)
             .ok_or(MemoryError::NoRoom(0))?;
         let (base, room) = self.gap(floor, total, 0)?;
-        let psp = base + env;
-        let end = psp + max.min(room - env);
+        let psp = base + env + 1;
+        let end = psp + max.min(room - env - 1);
         self.insert(Block {
             start: base,
-            end: psp,
+            end: psp - 1,
             owner: psp,
         });
         self.insert(Block {
@@ -128,7 +134,7 @@ impl Arena {
         let i = self.locate(owner, start)?;
         let next = self.blocks[..self.used]
             .get(i + 1)
-            .map_or(CONVENTIONAL_END, |b| b.start);
+            .map_or(CONVENTIONAL_END, |b| b.start - 1);
         let room = next - start;
         if size == 0 || size > room || (start == owner && size < 0x10) {
             return Err(MemoryError::NoRoom(room));
@@ -136,6 +142,29 @@ impl Arena {
         let end = start + size;
         self.blocks[i].end = end;
         Ok(end)
+    }
+
+    /// Publish DOS M/Z headers in the paragraphs reserved by the allocator.
+    pub fn publish(&self, ram: &mut GuestRam) {
+        let mut next = FIRST_MCB;
+        for block in &self.blocks[..self.used] {
+            let header = block.start - 1;
+            if next < header {
+                Self::header(ram, next, header, 0);
+            }
+            Self::header(ram, header, block.end, block.owner);
+            next = block.end;
+        }
+        if next < CONVENTIONAL_END {
+            Self::header(ram, next, CONVENTIONAL_END, 0);
+        }
+    }
+
+    fn header(ram: &mut GuestRam, at: u16, end: u16, owner: u16) {
+        let bytes = ram.paragraphs_mut(at, at + 1);
+        bytes[0] = if end == CONVENTIONAL_END { b'Z' } else { b'M' };
+        bytes[1..3].copy_from_slice(&owner.to_le_bytes());
+        bytes[3..5].copy_from_slice(&(end - at - 1).to_le_bytes());
     }
 
     pub fn release_process(&mut self, owner: u16) {

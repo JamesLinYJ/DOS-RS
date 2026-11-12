@@ -29,16 +29,16 @@ fn placement_reserves_psp_environment_and_stack_for_every_process() {
     let (parent, end) = arena.process(ROOT, 3, 0x200, 0x200).unwrap();
     assert_eq!((parent, end), (ROOT, ROOT + 0x200));
     let heap = arena.alloc(parent, 32, 0).unwrap();
-    assert_eq!(heap, end);
+    assert_eq!(heap, end+1);
     let (child, _) = arena.process(ROOT, 3, 0x100, 0x100).unwrap();
-    assert_eq!(child - 3, heap + 32);
+    assert_eq!(child - 4, heap + 33);
     assert!(matches!(
         arena.free(child, heap),
         Err(MemoryError::InvalidBlock)
     ));
     arena.alloc(child, 0x111, 0).unwrap();
     arena.release_process(child);
-    assert_eq!(arena.alloc(parent, 0x111, 0).unwrap(), heap + 32);
+    assert_eq!(arena.alloc(parent, 0x111, 0).unwrap(), heap + 33);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn free_and_resize_require_an_exact_owned_start() {
     ));
     assert_eq!(arena.resize(ROOT, a, 18).unwrap(), a + 18);
     assert_eq!(arena.resize(ROOT, a, 1).unwrap(), a + 1);
-    assert_eq!(arena.alloc(ROOT, 2, 0).unwrap(), a + 1);
+    assert_eq!(arena.alloc(ROOT, 2, 0).unwrap(), a + 2);
 }
 
 #[test]

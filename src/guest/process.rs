@@ -90,7 +90,7 @@ impl Program<'_> {
         let (psp, end) = arena
             .process(self.preferred_psp, env_size, min, max)
             .map_err(|_| 8u16)?;
-        let env = psp - env_size;
+        let env = psp - env_size - 1;
         for i in 0..env_len {
             let byte = if self.environment == 0 {
                 default_env[i]
@@ -99,7 +99,7 @@ impl Program<'_> {
             };
             ram.store(env, i as u16, byte);
         }
-        let trailer = &mut ram.paragraphs_mut(env, psp)[env_len..];
+        let trailer = &mut ram.paragraphs_mut(env, psp - 1)[env_len..];
         trailer.fill(0);
         trailer[..5].copy_from_slice(b"\x01\0A:\\");
         trailer[5..5 + base].copy_from_slice(&self.name[..base]);
@@ -125,6 +125,7 @@ impl Program<'_> {
                 cpu
             }
         };
+        arena.publish(ram);
         Ok((psp, cpu))
     }
 }

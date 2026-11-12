@@ -75,6 +75,7 @@ python3 scripts/qemu-devices.py --setver /path/to/SETVER.SYS
 | Workload | What to look for in the serial output |
 | --- | --- |
 | COM and MZ loading | `GUEST HELLO COM` and `HELLO EXE` come from two different executable formats. |
+| DOS ownership | Per-process PSP handle tables share open descriptions on DUP and EXEC. Programs can walk the MCB chain from the list of lists. |
 | Child processes | `FILE Z EXEC 7` shows a parent reading a file, launching a child and receiving its exit code. |
 | DOS development tools | `MASM OK` comes from the assembled and linked program. `L1 OK` comes from the large-model C program. |
 | Runtime regression | `GUEST ARCH OK` covers the version registers, a self-modifying instruction and nested EXEC. |

@@ -11,6 +11,12 @@ use crate::kernel_cell::KernelCell;
 
 mod drivers;
 mod runtime;
+mod handles;
+mod locks;
+mod fcb;
+use fcb::{fcb_find, fcb_delete, fcb_open, fcb_close, fcb_read, fcb_write, fcb_create, fcb_rename, fcb_random_read, fcb_random_write, fcb_block_read, fcb_block_write, fcb_place, fcb_size};
+mod bios;
+use bios::serve_bios;
 mod smoke;
 pub use runtime::{interactive, run_shell};
 pub use smoke::show;
@@ -42,6 +48,7 @@ fn load_root(
     };
     let (psp, cpu) = program.load(ram, &mut session.arena).ok()?;
     set_psp_version(ram, psp, crate::dos::getset::VERSION.0);
+    session.handles.publish(ram,psp);
     session.prefix = psp;
     session.current_psp = psp;
     session.dta_segment = psp;
@@ -147,7 +154,7 @@ pub(super) struct Session {
     parents: [Option<Parent>; 8],
     pub(super) batches: super::command::Batches,
     pub(super) environment: super::command::Environment,
-    opens: [Option<Opened>; HANDLE_SLOTS],
+    handles:handles::Handles,
     last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
@@ -162,7 +169,6 @@ pub(super) struct Session {
     extended_class: u8,
     extended_action: u8,
     extended_locus: u8,
-    stdio: [Option<Opened>; 3],
     vector_segment: [u16; 256],
     vector_offset: [u16; 256],
     vector_live: [bool; 256],
@@ -170,11 +176,9 @@ pub(super) struct Session {
     strategy: u8,
     code_page: u16,
     switch_char: u8,
-    handle_limit: u16,
     machine_name: [u8; 15],
     machine_defined: bool,
     redirects: [Redirect; 4],
-    locks: [RegionLock; 8],
     year: u16,
     month: u8,
     day: u8,
@@ -192,7 +196,7 @@ impl Session {
             terminal:0, scheduled:false, pending:None,
             parents:[const {None};8], batches:super::command::Batches::new(),
             environment: super::command::Environment::new(),
-            opens: [None; HANDLE_SLOTS],
+            handles:handles::Handles::new(),
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,
@@ -207,7 +211,6 @@ impl Session {
             extended_class: 0,
             extended_action: 0,
             extended_locus: 0,
-            stdio: [None, None, None],
             vector_segment: [0; 256],
             vector_offset: [0; 256],
             vector_live: [false; 256],
@@ -215,11 +218,9 @@ impl Session {
             strategy: 0,
             code_page: 437,
             switch_char: b'/',
-            handle_limit: HANDLE_SLOTS as u16,
             machine_name: [b' '; 15],
             machine_defined: false,
             redirects: [Redirect::empty(); 4],
-            locks: [RegionLock::empty(); 8],
             year: 1980,
             month: 1,
             day: 1,
@@ -246,6 +247,23 @@ fn direct_console(cpu: &mut CpuState) {
 }
 
 fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Action {
+    let function = cpu.high(Slot::Accumulator);
+    let result = dispatch(cpu, ram, session);
+    if function == 0x46 {
+        locks::discard_closed(session);
+    }
+    if matches!(function, 0x48..=0x4a) {
+        session.arena.publish(ram);
+    }
+    if matches!(
+        function,
+        0x3c..=0x3e | 0x45 | 0x46 | 0x5a | 0x5b | 0x67 | 0x6c
+    ) {
+        session.handles.publish(ram, session.prefix);
+    }
+    result
+}
+fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Action {
     // A registered block unit currently exposes raw sectors. Until it has a
     // filesystem mount, never let a path on that unit mutate the boot volume.
     let function = cpu.high(Slot::Accumulator);
@@ -682,7 +700,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
             Action::Continue
         }
         0x5C => {
-            lock_file(cpu, session);
+            locks::service(cpu, session);
             Action::Continue
         }
         0x6C => {
@@ -1094,81 +1112,23 @@ fn console_handle(handle: u16) -> Opened {
 }
 
 fn copy_handle(session: &Session, handle: u16) -> Option<Opened> {
-    if handle < 3 {
-        if let Some(opened) = session.stdio[usize::from(handle)] {
-            return Some(opened);
-        }
-        return Some(console_handle(handle));
-    }
-    session
-        .opens
-        .get(usize::from(handle - 3))
-        .copied()
-        .flatten()
+    session.handles.get(handle).copied()
 }
-
 fn force_duplicate(cpu: &mut CpuState, session: &mut Session) {
-    let source = cpu.wide(Slot::Base);
-    let target = cpu.wide(Slot::Count);
-    let Some(opened) = copy_handle(session, source) else {
-        fail(cpu, session, 6);
-        return;
-    };
-    if target >= session.handle_limit || target >= (HANDLE_SLOTS as u16).saturating_add(3) {
-        fail(cpu, session, 6);
-        return;
+    match session
+        .handles
+        .duplicate(cpu.wide(Slot::Base), Some(cpu.wide(Slot::Count)))
+    {
+        Ok(_) => cpu.set_carry(false),
+        Err(code) => fail(cpu, session, code),
     }
-    if source == target {
-        cpu.set_carry(false);
-        return;
-    }
-    if target < 3 {
-        session.stdio[usize::from(target)] = Some(opened);
-        cpu.set_carry(false);
-        return;
-    }
-    let index = usize::from(target - 3);
-    if let Some(previous) = session.opens[index] {
-        let _ = flush_opened(&previous);
-    }
-    session.opens[index] = Some(opened);
-    cpu.set_carry(false);
 }
-
 fn disk_reset(cpu: &mut CpuState, session: &mut Session) {
-    let mut index = 0usize;
-    while index < session.stdio.len() {
-        if let Some(opened) = session.stdio[index].as_mut() {
-            if !flush_opened(opened) {
-                fail(cpu, session, 1);
-                return;
-            }
-            opened.dirty = false;
-        }
-        index += 1;
-    }
-    index = 0;
-    while index < session.opens.len() {
-        if let Some(opened) = session.opens[index].as_mut() {
-            if !flush_opened(opened) {
-                fail(cpu, session, 1);
-                return;
-            }
-            opened.dirty = false;
-        }
-        index += 1;
-    }
-    cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
-fn flush_stdio(session: &Session) {
-    let mut index = 0usize;
-    while index < session.stdio.len() {
-        if let Some(opened) = session.stdio[index] {
-            let _ = flush_opened(&opened);
-        }
-        index += 1;
+    if session.handles.commit_all() {
+        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_carry(false);
+    } else {
+        fail(cpu, session, 5);
     }
 }
 
@@ -1182,7 +1142,13 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 2);
         return;
     };
-    match open_named(session, dir, name, access, false) {
+    match open_named(
+        session,
+        dir,
+        name,
+        access | cpu.low(Slot::Accumulator) & 0x80,
+        false,
+    ) {
         Ok(handle) => {
             cpu.set_wide(Slot::Accumulator, handle);
             cpu.set_carry(false);
@@ -1204,207 +1170,27 @@ fn flush_opened(opened: &Opened) -> bool {
 }
 
 fn commit_file(cpu: &mut CpuState, session: &mut Session) {
-    let handle = cpu.wide(Slot::Base);
-    let result = if handle < 3 {
-        let index = usize::from(handle);
-        if let Some(opened) = session.stdio[index].as_mut() {
-            if flush_opened(opened) {
-                opened.dirty = false;
-                Commit::Done
-            } else {
-                Commit::Failed
-            }
-        } else {
-            Commit::Done
-        }
+    let Some(opened) = session.handles.get_mut(cpu.wide(Slot::Base)) else {
+        fail(cpu, session, 6);
+        return;
+    };
+    if flush_opened(opened) {
+        opened.dirty = false;
+        cpu.set_carry(false);
     } else {
-        let index = usize::from(handle - 3);
-        if let Some(opened) = session.opens.get_mut(index).and_then(|slot| slot.as_mut()) {
-            if flush_opened(opened) {
-                opened.dirty = false;
-                Commit::Done
-            } else {
-                Commit::Failed
-            }
-        } else {
-            Commit::Missing
-        }
-    };
-    match result {
-        Commit::Done => cpu.set_carry(false),
-        Commit::Missing => fail(cpu, session, 6),
-        Commit::Failed => fail(cpu, session, 5),
-    }
-}
-
-enum Commit {
-    Done,
-    Missing,
-    Failed,
-}
-
-fn lock_file(cpu: &mut CpuState, session: &mut Session) {
-    let handle = cpu.wide(Slot::Base);
-    let name = match handle_name(session, handle) {
-        Ok(name) => name,
-        Err(code) => {
-            fail(cpu, session, code);
-            return;
-        }
-    };
-    let start = (u32::from(cpu.wide(Slot::Count)) << 16) | u32::from(cpu.wide(Slot::Data));
-    let length = (u32::from(cpu.wide(Slot::Source)) << 16) | u32::from(cpu.wide(Slot::Dest));
-    match cpu.low(Slot::Accumulator) {
-        0 => add_lock(cpu, session, handle, name, start, length),
-        1 => remove_lock(cpu, session, handle, &name, start, length),
-        _ => fail(cpu, session, 1),
-    }
-}
-
-fn handle_name(session: &Session, handle: u16) -> Result<[u8; 11], u16> {
-    let opened = if handle < 3 {
-        session.stdio[usize::from(handle)].as_ref()
-    } else {
-        let index = usize::from(handle - 3);
-        session.opens.get(index).and_then(|slot| slot.as_ref())
-    };
-    match opened {
-        None => Err(6),
-        Some(opened) if !opened.named => Err(1),
-        Some(opened) => Ok(opened.name),
-    }
-}
-
-fn add_lock(
-    cpu: &mut CpuState,
-    session: &mut Session,
-    handle: u16,
-    name: [u8; 11],
-    start: u32,
-    length: u32,
-) {
-    let mut index = 0usize;
-    while index < session.locks.len() {
-        let held = session.locks[index];
-        if held.live && held.name == name && ranges_overlap(start, length, held.start, held.length) {
-            fail(cpu, session, 0x21);
-            return;
-        }
-        index += 1;
-    }
-    index = 0;
-    while index < session.locks.len() {
-        if !session.locks[index].live {
-            session.locks[index] = RegionLock {
-                owner: handle,
-                name,
-                start,
-                length,
-                live: true,
-            };
-            cpu.set_carry(false);
-            return;
-        }
-        index += 1;
-    }
-    fail(cpu, session, 0x24);
-}
-
-fn remove_lock(
-    cpu: &mut CpuState,
-    session: &mut Session,
-    handle: u16,
-    name: &[u8; 11],
-    start: u32,
-    length: u32,
-) {
-    let mut index = 0usize;
-    while index < session.locks.len() {
-        let held = session.locks[index];
-        if held.live && held.owner == handle && held.name == *name && held.start == start && held.length == length
-        {
-            session.locks[index].live = false;
-            cpu.set_carry(false);
-            return;
-        }
-        index += 1;
-    }
-    fail(cpu, session, 0x21);
-}
-
-fn release_locks(session: &mut Session, handle: u16) {
-    let mut index = 0usize;
-    while index < session.locks.len() {
-        if session.locks[index].live && session.locks[index].owner == handle {
-            session.locks[index].live = false;
-        }
-        index += 1;
-    }
-}
-
-fn region_blocked(session: &Session, handle: u16, name: &[u8; 11], start: u32, length: u32) -> bool {
-    let mut index = 0usize;
-    while index < session.locks.len() {
-        let held = session.locks[index];
-        if held.live
-            && held.owner != handle
-            && held.name == *name
-            && ranges_overlap(start, length, held.start, held.length)
-        {
-            return true;
-        }
-        index += 1;
-    }
-    false
-}
-
-fn ranges_overlap(start: u32, length: u32, other: u32, other_length: u32) -> bool {
-    if length == 0 || other_length == 0 {
-        return false;
-    }
-    let end = start.saturating_add(length);
-    let other_end = other.saturating_add(other_length);
-    start < other_end && other < end
-}
-
-#[derive(Clone, Copy)]
-struct RegionLock {
-    owner: u16,
-    name: [u8; 11],
-    start: u32,
-    length: u32,
-    live: bool,
-}
-
-impl RegionLock {
-    const fn empty() -> Self {
-        Self {
-            owner: 0,
-            name: [b' '; 11],
-            start: 0,
-            length: 0,
-            live: false,
-        }
+        fail(cpu, session, 5);
     }
 }
 
 fn close_file(cpu: &mut CpuState, session: &mut Session) {
-    let handle = cpu.wide(Slot::Base);
-    let opened = handle
-        .checked_sub(3)
-        .map(usize::from)
-        .and_then(|slot| session.opens.get(slot).copied().flatten());
-    let Some(opened) = opened else {
-        fail(cpu, session, 6);
-        return;
-    };
-    if !flush_opened(&opened) {
-        fail(cpu, session, 5);
-        return;
+    let h = cpu.wide(Slot::Base);
+    match session.handles.close(h) {
+        Ok(()) => {
+            locks::discard_closed(session);
+            cpu.set_carry(false);
+        }
+        Err(code) => fail(cpu, session, code),
     }
-    release_locks(session, handle);
-    session.opens[usize::from(handle - 3)] = None;
-    cpu.set_carry(false);
 }
 
 fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
@@ -1415,24 +1201,15 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let requested = usize::from(cpu.wide(Slot::Count));
     let mut offset = cpu.wide(Slot::Data);
     let segment = cpu.selector(Segment::Data);
-    if handle < 3 {
-        if session.stdio[usize::from(handle)].is_some() {
-            read_stdio(cpu, ram, session, handle);
-            return;
-        }
+    let Some(found) = copy_handle(session, handle) else {
+        fail(cpu, session, 6);
+        return;
+    };
+    if found.console {
         cpu.set_wide(Slot::Accumulator, 0);
         cpu.set_carry(false);
         return;
     }
-    let Some(found) = session
-        .opens
-        .get(usize::from(handle - 3))
-        .copied()
-        .flatten()
-    else {
-        fail(cpu, session, 6);
-        return;
-    };
     if found.access == 1 {
         fail(cpu, session, 5);
         return;
@@ -1440,12 +1217,12 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if requested > 0 {
         let start = u32::try_from(found.pos).unwrap_or(u32::MAX);
         let span = u32::try_from(requested).unwrap_or(u32::MAX);
-        if region_blocked(session, handle, &found.name, start, span) {
+        if locks::blocked(session, handle, start, span) {
             fail(cpu, session, 0x21);
             return;
         }
     }
-    let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
+    let Some(opened) = session.handles.get_mut(handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -1488,7 +1265,7 @@ fn create_temp(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         fail(cpu, session, 3);
         return;
     }
-    if free_handle(session).is_none() {
+    if session.handles.available().is_none() {
         fail(cpu, session, 4);
         return;
     }
@@ -1615,7 +1392,7 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 2);
         return;
     };
-    if free_handle(session).is_none() {
+    if session.handles.available().is_none() {
         fail(cpu, session, 4);
         return;
     }
@@ -1644,7 +1421,7 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 2);
         return;
     };
-    let handle = match open_named(session, dir, name, access, empty) {
+    let handle = match open_named(session, dir, name, access | cpu.low(Slot::Base)&0x80, empty) {
         Ok(handle) => handle,
         Err(code) => {
             fail(cpu, session, code);
@@ -1663,134 +1440,74 @@ fn open_named(
     access: u8,
     empty: bool,
 ) -> Result<u16, u16> {
-    let slot = free_handle(session).ok_or(4u16)?;
-    if let Some(device) = session.drivers.find(&name) {
-        session.opens[slot] = Some(Opened {
+    let (handle, slot) = session.handles.available().ok_or(4u16)?;
+    let inherit = access & 0x80 == 0;
+    let access = access & 7;
+    let file = if let Some(device) = session.drivers.find(&name) {
+        Opened {
             device: Some(device),
             access,
             ..console_handle(0)
-        });
-        return Ok(slot as u16 + 3);
-    }
-    let stored = &mut FILE_POOL[session.terminal].borrow()[slot];
-    let length = if empty {
-        stored.fill(0);
-        0
+        }
     } else {
-        super::disk::read_file_at(dir, &name, stored).ok_or(2u16)?
+        let stored = &mut FILE_POOL[session.terminal].borrow()[slot];
+        let len = if empty {
+            0
+        } else {
+            super::disk::read_file_at(dir, &name, stored).ok_or(2u16)?
+        };
+        Opened {
+            device: None,
+            terminal: session.terminal,
+            dir,
+            bytes: slot,
+            len,
+            pos: 0,
+            name,
+            named: true,
+            console: false,
+            access,
+            dirty: false,
+        }
     };
-    session.opens[slot] = Some(Opened {
-        terminal:session.terminal,
-        device: None,
-        dir,
-        bytes: slot,
-        len: length,
-        pos: 0,
-        name,
-        named: true,
-        console: false,
-        access,
-        dirty: false,
-    });
-    Ok(slot as u16 + 3)
+    session.handles.insert(handle, slot, file, inherit);
+    Ok(handle as u16)
 }
-
 fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
     let Some((dir, name)) = search_spec(&guest_text(cpu, ram)) else {
         fail(cpu, session, 2);
         return;
     };
-    let attr = (cpu.wide(Slot::Count) as u8) & 0x27;
-    let Some(slot) = free_handle(session) else {
+    if session.handles.available().is_none() {
         fail(cpu, session, 4);
         return;
-    };
-    if session.drivers.find(&name).is_some() {
-        match open_named(session, dir, name, 2, true) {
-            Ok(handle) => {
-                cpu.set_wide(Slot::Accumulator, handle);
-                cpu.set_carry(false);
-            }
-            Err(code) => fail(cpu, session, code),
-        }
-        return;
     }
-    if !super::disk::write_named_at(dir, &name, b"", attr) {
+    if session.drivers.find(&name).is_none()
+        && !super::disk::write_named_at(dir, &name, b"", cpu.low(Slot::Count) & 0x27)
+    {
         fail(cpu, session, 0x27);
         return;
     }
-    FILE_POOL[session.terminal].borrow()[slot].fill(0);
-    session.opens[slot] = Some(Opened {
-        terminal:session.terminal,
-        device: None,
-        dir,
-        bytes: slot,
-        len: 0,
-        pos: 0,
-        name,
-        named: true,
-        console: false,
-        access: 2,
-        dirty: false,
-    });
-    cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
-    cpu.set_carry(false);
-}
-
-fn duplicate(cpu: &mut CpuState, session: &mut Session) {
-    let source = cpu.wide(Slot::Base);
-    let Some(slot) = free_handle(session) else {
-        cpu.set_wide(Slot::Accumulator, 4);
-        cpu.set_carry(true);
-        return;
-    };
-    let opened = if source < 3 {
-        Opened {
-            terminal:0,
-            device: None,
-            dir: 0,
-            bytes: 0,
-            len: 0,
-            pos: 0,
-            name: [b' '; 11],
-            named: false,
-            console: true,
-            access: if source == 0 { 0 } else { 1 },
-            dirty: false,
+    match open_named(session, dir, name, 2, true) {
+        Ok(h) => {
+            cpu.set_wide(Slot::Accumulator, h);
+            cpu.set_carry(false);
         }
-    } else {
-        let Some(found) = session
-            .opens
-            .get(usize::from(source - 3))
-            .copied()
-            .flatten()
-        else {
-            cpu.set_wide(Slot::Accumulator, 6);
-            cpu.set_carry(true);
-            return;
-        };
-        found
-    };
-    session.opens[slot] = Some(opened);
-    cpu.set_wide(Slot::Accumulator, (slot as u16).wrapping_add(3));
-    cpu.set_carry(false);
-}
-
-fn free_handle(session: &Session) -> Option<usize> {
-    let mut slot = 0usize;
-    let room = usize::from(session.handle_limit.saturating_sub(3));
-    while slot < session.opens.len() && slot < room {
-        if session.opens[slot].is_none() {
-            return Some(slot);
-        }
-        slot += 1;
+        Err(code) => fail(cpu, session, code),
     }
-    None
 }
-
+fn duplicate(cpu: &mut CpuState, session: &mut Session) {
+    match session.handles.duplicate(cpu.wide(Slot::Base), None) {
+        Ok(h) => {
+            cpu.set_wide(Slot::Accumulator, h);
+            cpu.set_carry(false);
+        }
+        Err(code) => fail(cpu, session, code),
+    }
+}
 fn set_handle_count(cpu: &mut CpuState, session: &mut Session) {
     let requested = cpu.wide(Slot::Base);
-    if requested < open_handle_span(session) {
+    if requested < session.handles.span() {
         fail(cpu, session, 4);
         return;
     }
@@ -1798,48 +1515,18 @@ fn set_handle_count(cpu: &mut CpuState, session: &mut Session) {
         fail(cpu, session, 8);
         return;
     }
-    session.handle_limit = requested;
+    session.handles.job.limit = requested;
     cpu.set_carry(false);
 }
 
-fn open_handle_span(session: &Session) -> u16 {
-    let mut needed = 3u16;
-    let mut slot = 0usize;
-    while slot < session.opens.len() {
-        if session.opens[slot].is_some() {
-            let span = (slot as u16).saturating_add(4);
-            if span > needed {
-                needed = span;
-            }
-        }
-        slot += 1;
-    }
-    needed
-}
+
 
 fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if drivers::handle_io(cpu, ram, session, true) {
         return;
     }
     let handle = cpu.wide(Slot::Base);
-    if handle < 3 && session.stdio[usize::from(handle)].is_some() {
-        write_stdio(cpu, ram, session, handle);
-        return;
-    }
-    if handle == 1 || handle == 2 {
-        write_console(cpu, ram);
-        return;
-    }
-    if handle < 3 {
-        fail(cpu, session, 6);
-        return;
-    }
-    let Some(found) = session
-        .opens
-        .get(usize::from(handle - 3))
-        .copied()
-        .flatten()
-    else {
+    let Some(found) = copy_handle(session, handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -1854,12 +1541,12 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let count = cpu.wide(Slot::Count);
     if count > 0 {
         let start = u32::try_from(found.pos).unwrap_or(u32::MAX);
-        if region_blocked(session, handle, &found.name, start, u32::from(count)) {
+        if locks::blocked(session, handle, start, u32::from(count)) {
             fail(cpu, session, 0x21);
             return;
         }
     }
-    let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
+    let Some(opened) = session.handles.get_mut(handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -1867,6 +1554,9 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let mut offset = cpu.wide(Slot::Data);
     let bytes = &mut FILE_POOL[opened.terminal].borrow()[opened.bytes];
     let mut seen = 0u16;
+    if opened.pos > opened.len && opened.pos < FILE_BYTES {
+        bytes[opened.len..opened.pos].fill(0);
+    }
     while seen < count {
         if opened.pos >= FILE_BYTES {
             break;
@@ -1883,77 +1573,16 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         seen += 1;
     }
     if count == 0 {
-        opened.len = opened.pos;
-    }
-    opened.dirty = true;
-    cpu.set_wide(Slot::Accumulator, seen);
-    cpu.set_carry(false);
-}
-
-fn read_stdio(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, handle: u16) {
-    let Some(mut opened) = session.stdio[usize::from(handle)] else {
-        return;
-    };
-    if opened.access == 1 {
-        fail(cpu, session, 5);
-        return;
-    }
-    let requested = usize::from(cpu.wide(Slot::Count));
-    let mut offset = cpu.wide(Slot::Data);
-    let segment = cpu.selector(Segment::Data);
-    let bytes = &FILE_POOL[opened.terminal].borrow()[opened.bytes];
-    let mut moved = 0u16;
-    while usize::from(moved) < requested && opened.pos < opened.len {
-        let byte = bytes[opened.pos];
-        if !ram.store(segment, offset, byte) {
-            break;
+        if opened.pos > FILE_BYTES {
+            fail(cpu, session, 0x27);
+            return;
         }
-        opened.pos += 1;
-        offset = offset.wrapping_add(1);
-        moved += 1;
-    }
-    session.stdio[usize::from(handle)] = Some(opened);
-    cpu.set_wide(Slot::Accumulator, moved);
-    cpu.set_carry(false);
-}
-
-fn write_stdio(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session, handle: u16) {
-    let Some(mut opened) = session.stdio[usize::from(handle)] else {
-        return;
-    };
-    if opened.console {
-        write_console(cpu, ram);
-        return;
-    }
-    if !opened.named || opened.access == 0 {
-        fail(cpu, session, 5);
-        return;
-    }
-    let count = cpu.wide(Slot::Count);
-    let segment = cpu.selector(Segment::Data);
-    let mut offset = cpu.wide(Slot::Data);
-    let bytes = &mut FILE_POOL[opened.terminal].borrow()[opened.bytes];
-    let mut seen = 0u16;
-    while seen < count {
-        if opened.pos >= FILE_BYTES {
-            break;
-        }
-        let Some(byte) = ram.load(segment, offset) else {
-            break;
-        };
-        bytes[opened.pos] = byte;
-        opened.pos += 1;
         if opened.pos > opened.len {
-            opened.len = opened.pos;
+            bytes[opened.len..opened.pos].fill(0);
         }
-        offset = offset.wrapping_add(1);
-        seen += 1;
-    }
-    if count == 0 {
         opened.len = opened.pos;
     }
     opened.dirty = true;
-    session.stdio[usize::from(handle)] = Some(opened);
     cpu.set_wide(Slot::Accumulator, seen);
     cpu.set_carry(false);
 }
@@ -2108,9 +1737,9 @@ fn run_child(
         prefix: session.prefix,
         psp: session.current_psp,
         dta: (session.dta_segment, session.dta_offset),
-        stdio: session.stdio,
-        inherited: session.opens.map(|f| f.is_some()),
+        job: session.handles.inherit(),
     });
+    session.handles.publish(ram, psp);
     session.prefix = psp;
     session.current_psp = psp;
     session.dta_segment = psp;
@@ -2121,7 +1750,7 @@ fn run_child(
         return Ok(0);
     }
     let end = drive(&mut cpu, ram, session, 8_000_000);
-    finish_child(session);
+    finish_child(session, ram);
     match end {
         End::Stopped(code) => Ok(code),
         _ => Err(1),
@@ -2133,24 +1762,20 @@ struct Parent {
     prefix: u16,
     psp: u16,
     dta: (u16, u16),
-    stdio: [Option<Opened>; 3],
-    inherited: [bool; HANDLE_SLOTS],
+    job:handles::Job,
 }
 
-fn finish_child(session: &mut Session) -> Option<CpuState> {
+fn finish_child(session: &mut Session, ram: &mut GuestRam) -> Option<CpuState> {
     session.child_depth -= 1;
     let parent = session.parents[session.child_depth as usize]
         .take()
         .expect("paired child exit");
-    flush_stdio(session);
-    session.stdio = parent.stdio;
-    for (slot, was_open) in parent.inherited.into_iter().enumerate() {
-        if !was_open && let Some(file) = session.opens[slot].take() {
-            let _ = flush_opened(&file);
-            release_locks(session, slot as u16 + 3);
-        }
+    if !session.handles.leave(parent.job) {
+        crate::puts("Cannot commit child file.\n");
     }
+    locks::discard_closed(session);
     session.arena.release_process(session.prefix);
+    session.arena.publish(ram);
     session.prefix = parent.prefix;
     session.current_psp = parent.psp;
     (session.dta_segment, session.dta_offset) = parent.dta;
@@ -2480,688 +2105,6 @@ fn rename_path(cpu: &mut CpuState, ram: &GuestRam) {
     cpu.set_carry(!super::disk::rename_file(&from, &to));
 }
 
-fn load_fcb(ram: &GuestRam, segment: u16, offset: u16) -> Option<[u8; 37]> {
-    let mut raw = [0u8; 37];
-    for (index, byte) in raw.iter_mut().enumerate() {
-        *byte = ram.load(segment, offset.wrapping_add(index as u16))?;
-    }
-    Some(raw)
-}
-
-fn fcb_name(raw: &[u8; 37]) -> [u8; 11] {
-    let mut name = [b' '; 11];
-    name.copy_from_slice(&raw[1..12]);
-    name
-}
-
-fn fcb_find(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session, continued: bool) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    if raw[0] > 1 {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    let start = if continued {
-        u16::from_le_bytes([raw[0x18], raw[0x19]])
-    } else {
-        0
-    };
-    let Some(found) = super::disk::find_match(super::disk::working_directory(), &fcb_name(&raw), 0, start)
-    else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let next_index = found.index.saturating_add(1).to_le_bytes();
-    if !ram.store(segment, offset.wrapping_add(0x18), next_index[0])
-        || !ram.store(segment, offset.wrapping_add(0x19), next_index[1])
-        || !write_found_fcb(ram, session, &found)
-    {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
-fn write_found_fcb(ram: &mut GuestRam, session: &Session, found: &super::disk::DirMatch) -> bool {
-    let (segment, offset) = dta_target(session);
-    let size = found.size.to_le_bytes();
-    let time = found.time.to_le_bytes();
-    let date = found.date.to_le_bytes();
-    let mut raw = [0u8; 33];
-    raw[0] = 1;
-    raw[1..12].copy_from_slice(&found.name);
-    raw[0x0E] = 128;
-    raw[0x10..0x14].copy_from_slice(&size);
-    raw[0x14..0x16].copy_from_slice(&date);
-    raw[0x16..0x18].copy_from_slice(&time);
-    for (index, byte) in raw.iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(index as u16), *byte) {
-            return false;
-        }
-    }
-    true
-}
-
-fn fcb_delete(cpu: &mut CpuState, ram: &mut GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    if super::disk::remove_file(&fcb_name(&raw)) {
-        cpu.set_low(Slot::Accumulator, 0);
-        cpu.set_carry(false);
-    } else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-    }
-}
-
-fn fcb_open(cpu: &mut CpuState, ram: &mut GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let (time, date) = super::disk::stamp(&name).unwrap_or((0, 0));
-    if raw[0] == 0 && !ram.store(segment, offset, 1) {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    let size = (len as u32).to_le_bytes();
-    let time_bytes = time.to_le_bytes();
-    let date_bytes = date.to_le_bytes();
-    let fields = [
-        (0x0C, 0),
-        (0x0D, 0),
-        (0x0E, 128),
-        (0x0F, 0),
-        (0x10, size[0]),
-        (0x11, size[1]),
-        (0x12, size[2]),
-        (0x13, size[3]),
-        (0x14, date_bytes[0]),
-        (0x15, date_bytes[1]),
-        (0x16, time_bytes[0]),
-        (0x17, time_bytes[1]),
-        (0x20, 0),
-    ];
-    for (at, byte) in fields {
-        if !ram.store(segment, offset.wrapping_add(at), byte) {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            return;
-        }
-    }
-    cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
-fn fcb_close(cpu: &mut CpuState, ram: &GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let size = u32::from_le_bytes([raw[0x10], raw[0x11], raw[0x12], raw[0x13]]);
-    let time = u16::from_le_bytes([raw[0x16], raw[0x17]]);
-    let date = u16::from_le_bytes([raw[0x14], raw[0x15]]);
-    if super::disk::finish_fcb(&fcb_name(&raw), size, time, date) {
-        cpu.set_low(Slot::Accumulator, 0);
-        cpu.set_carry(false);
-    } else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-    }
-}
-
-fn fcb_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let mut record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
-    if record == 0 {
-        record = 128;
-    }
-    let block = u32::from(u16::from_le_bytes([raw[0x0C], raw[0x0D]]));
-    let current = u32::from(raw[0x20]);
-    let index = block.saturating_mul(128).saturating_add(current);
-    let start = index.saturating_mul(record);
-    if start >= len as u32 {
-        cpu.set_low(Slot::Accumulator, 1);
-        return;
-    }
-    let take = record.min((len as u32) - start);
-    if start >= 128 || start + take > 128 {
-        cpu.set_low(Slot::Accumulator, 2);
-        return;
-    }
-    let mut file = [0u8; 128];
-    if super::disk::read_file(&name, &mut file).is_none() {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    let (dta_segment, dta_offset) = dta_target(session);
-    let mut copied = 0u32;
-    while copied < record {
-        let byte = if copied < take {
-            file[(start + copied) as usize]
-        } else {
-            0
-        };
-        if !ram.store(dta_segment, dta_offset.wrapping_add(copied as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 2);
-            return;
-        }
-        copied += 1;
-    }
-    let next = current + 1;
-    let (block_next, record_next) = if next >= 128 {
-        (block + 1, 0u8)
-    } else {
-        (block, next as u8)
-    };
-    let block_bytes = (block_next as u16).to_le_bytes();
-    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
-        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
-        || !ram.store(segment, offset.wrapping_add(0x20), record_next)
-    {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    cpu.set_low(Slot::Accumulator, if take < record { 3 } else { 0 });
-    cpu.set_carry(false);
-}
-
-fn fcb_write(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let mut record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
-    if record == 0 {
-        record = 128;
-    }
-    let block = u32::from(u16::from_le_bytes([raw[0x0C], raw[0x0D]]));
-    let current = u32::from(raw[0x20]);
-    let index = block.saturating_mul(128).saturating_add(current);
-    let start = index.saturating_mul(record);
-    let end = start.saturating_add(record);
-    if record > 128 || len > 128 || end > 128 {
-        cpu.set_low(Slot::Accumulator, 1);
-        return;
-    }
-    let mut file = [0u8; 128];
-    if len > 0 && super::disk::read_file(&name, &mut file[..len]).is_none() {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    let (dta_segment, dta_offset) = dta_target(session);
-    let mut copied = 0u32;
-    while copied < record {
-        let Some(byte) = ram.load(dta_segment, dta_offset.wrapping_add(copied as u16)) else {
-            cpu.set_low(Slot::Accumulator, 2);
-            return;
-        };
-        file[(start + copied) as usize] = byte;
-        copied += 1;
-    }
-    let new_len = (len as u32).max(end) as usize;
-    if !super::disk::write_file(&name, &file[..new_len]) {
-        cpu.set_low(Slot::Accumulator, 1);
-        return;
-    }
-    let size = (new_len as u32).to_le_bytes();
-    for (index, byte) in size.into_iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(0x10 + index as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            return;
-        }
-    }
-    let next = current + 1;
-    let (block_next, record_next) = if next >= 128 {
-        (block + 1, 0u8)
-    } else {
-        (block, next as u8)
-    };
-    let block_bytes = (block_next as u16).to_le_bytes();
-    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
-        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
-        || !ram.store(segment, offset.wrapping_add(0x20), record_next)
-    {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
-fn fcb_create(cpu: &mut CpuState, ram: &mut GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    if !super::disk::write_named(&fcb_name(&raw), b"", 0x20) {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    fcb_open(cpu, ram);
-}
-
-fn fcb_rename(cpu: &mut CpuState, ram: &mut GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let mut to = [b' '; 11];
-    to.copy_from_slice(&raw[0x12..0x1D]);
-    if super::disk::rename_file(&fcb_name(&raw), &to) {
-        cpu.set_low(Slot::Accumulator, 0);
-        cpu.set_carry(false);
-    } else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-    }
-}
-
-fn fcb_random_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let record = fcb_record(&raw);
-    let start = random_index(&raw, record).saturating_mul(record);
-    if start >= len as u32 {
-        cpu.set_low(Slot::Accumulator, 1);
-        return;
-    }
-    let take = record.min((len as u32) - start);
-    if start >= 128 || start + take > 128 {
-        cpu.set_low(Slot::Accumulator, 2);
-        return;
-    }
-    let mut file = [0u8; 128];
-    if super::disk::read_file(&name, &mut file).is_none() {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    let (dta_segment, dta_offset) = dta_target(session);
-    let mut copied = 0u32;
-    while copied < record {
-        let byte = if copied < take {
-            file[(start + copied) as usize]
-        } else {
-            0
-        };
-        if !ram.store(dta_segment, dta_offset.wrapping_add(copied as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 2);
-            return;
-        }
-        copied += 1;
-    }
-    cpu.set_low(Slot::Accumulator, if take < record { 3 } else { 0 });
-    cpu.set_carry(false);
-}
-
-fn fcb_random_write(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let record = fcb_record(&raw);
-    let start = random_index(&raw, record).saturating_mul(record);
-    let end = start.saturating_add(record);
-    if record > 128 || len > 128 || end > 128 {
-        cpu.set_low(Slot::Accumulator, 1);
-        return;
-    }
-    let mut file = [0u8; 128];
-    if len > 0 && super::disk::read_file(&name, &mut file[..len]).is_none() {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    }
-    let (dta_segment, dta_offset) = dta_target(session);
-    let mut copied = 0u32;
-    while copied < record {
-        let Some(byte) = ram.load(dta_segment, dta_offset.wrapping_add(copied as u16)) else {
-            cpu.set_low(Slot::Accumulator, 2);
-            return;
-        };
-        file[(start + copied) as usize] = byte;
-        copied += 1;
-    }
-    let new_len = (len as u32).max(end) as usize;
-    if !super::disk::write_file(&name, &file[..new_len]) {
-        cpu.set_low(Slot::Accumulator, 1);
-        return;
-    }
-    let size = (new_len as u32).to_le_bytes();
-    for (index, byte) in size.into_iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(0x10 + index as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            return;
-        }
-    }
-    cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
-fn fcb_block_read(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    };
-    let record = fcb_record(&raw);
-    if record > 128 || len > 128 {
-        cpu.set_low(Slot::Accumulator, 2);
-        cpu.set_carry(false);
-        return;
-    }
-    let mut file = [0u8; 128];
-    if len > 0 && super::disk::read_file(&name, &mut file[..len]).is_none() {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    }
-    let mut index = random_index(&raw, record);
-    let want = cpu.wide(Slot::Count);
-    let (dta_segment, mut dta_offset) = dta_target(session);
-    let mut done = 0u16;
-    let mut status = 0u8;
-    while done < want {
-        let start = index.saturating_mul(record);
-        if start >= len as u32 {
-            status = 1;
-            break;
-        }
-        let take = record.min((len as u32) - start);
-        if start.saturating_add(record) > 128 {
-            status = 2;
-            break;
-        }
-        let mut copied = 0u32;
-        let mut stored = true;
-        while copied < record {
-            let byte = if copied < take {
-                file[(start + copied) as usize]
-            } else {
-                0
-            };
-            if !ram.store(dta_segment, dta_offset.wrapping_add(copied as u16), byte) {
-                stored = false;
-                break;
-            }
-            copied += 1;
-        }
-        if !stored {
-            status = 2;
-            break;
-        }
-        dta_offset = dta_offset.wrapping_add(record as u16);
-        index = index.saturating_add(1);
-        done = done.saturating_add(1);
-        if take < record {
-            status = 3;
-            break;
-        }
-    }
-    let mut bytes = index.to_le_bytes();
-    if record >= 64 {
-        bytes[3] = 0;
-    }
-    for (at, byte) in bytes.into_iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(0x21 + at as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            cpu.set_carry(true);
-            return;
-        }
-    }
-    let block = u16::try_from(index / 128).unwrap_or(u16::MAX);
-    let block_bytes = block.to_le_bytes();
-    let current = u8::try_from(index % 128).unwrap_or(u8::MAX);
-    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
-        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
-        || !ram.store(segment, offset.wrapping_add(0x20), current)
-    {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    }
-    cpu.set_wide(Slot::Count, done);
-    cpu.set_low(Slot::Accumulator, status);
-    cpu.set_carry(false);
-}
-
-fn fcb_block_write(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    };
-    let name = fcb_name(&raw);
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    };
-    let record = fcb_record(&raw);
-    if record > 128 || len > 128 {
-        cpu.set_low(Slot::Accumulator, 1);
-        cpu.set_carry(false);
-        return;
-    }
-    let mut file = [0u8; 128];
-    if len > 0 && super::disk::read_file(&name, &mut file[..len]).is_none() {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    }
-    let mut index = random_index(&raw, record);
-    let want = cpu.wide(Slot::Count);
-    let (dta_segment, mut dta_offset) = dta_target(session);
-    let mut done = 0u16;
-    let mut status = 0u8;
-    while done < want {
-        let start = index.saturating_mul(record);
-        if start.saturating_add(record) > 128 {
-            status = 1;
-            break;
-        }
-        let mut piece = [0u8; 128];
-        let mut copied = 0u32;
-        let mut loaded = true;
-        while copied < record {
-            let Some(byte) = ram.load(dta_segment, dta_offset.wrapping_add(copied as u16)) else {
-                loaded = false;
-                break;
-            };
-            piece[copied as usize] = byte;
-            copied += 1;
-        }
-        if !loaded {
-            status = 2;
-            break;
-        }
-        let mut placed = 0u32;
-        while placed < record {
-            file[(start + placed) as usize] = piece[placed as usize];
-            placed += 1;
-        }
-        dta_offset = dta_offset.wrapping_add(record as u16);
-        index = index.saturating_add(1);
-        done = done.saturating_add(1);
-    }
-    let end = index.saturating_mul(record);
-    let Ok(old) = u32::try_from(len) else {
-        cpu.set_low(Slot::Accumulator, 1);
-        cpu.set_carry(false);
-        return;
-    };
-    let new_len = old.max(end);
-    if done > 0 {
-        let Ok(bytes_len) = usize::try_from(new_len) else {
-            cpu.set_low(Slot::Accumulator, 1);
-            cpu.set_carry(false);
-            return;
-        };
-        if bytes_len > file.len() || !super::disk::write_file(&name, &file[..bytes_len]) {
-            cpu.set_low(Slot::Accumulator, 1);
-            cpu.set_wide(Slot::Count, 0);
-            cpu.set_carry(false);
-            return;
-        }
-        let size_bytes = new_len.to_le_bytes();
-        for (at, byte) in size_bytes.into_iter().enumerate() {
-            if !ram.store(segment, offset.wrapping_add(0x10 + at as u16), byte) {
-                cpu.set_low(Slot::Accumulator, 0xFF);
-                cpu.set_carry(true);
-                return;
-            }
-        }
-    }
-    let mut place = index.to_le_bytes();
-    if record >= 64 {
-        place[3] = 0;
-    }
-    for (at, byte) in place.into_iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(0x21 + at as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            cpu.set_carry(true);
-            return;
-        }
-    }
-    let block = u16::try_from(index / 128).unwrap_or(u16::MAX);
-    let block_bytes = block.to_le_bytes();
-    let current = u8::try_from(index % 128).unwrap_or(u8::MAX);
-    if !ram.store(segment, offset.wrapping_add(0x0C), block_bytes[0])
-        || !ram.store(segment, offset.wrapping_add(0x0D), block_bytes[1])
-        || !ram.store(segment, offset.wrapping_add(0x20), current)
-    {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    }
-    cpu.set_wide(Slot::Count, done);
-    cpu.set_low(Slot::Accumulator, status);
-    cpu.set_carry(false);
-}
-
-fn fcb_place(cpu: &mut CpuState, ram: &mut GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let Some(raw) = load_fcb(ram, segment, offset) else {
-        return;
-    };
-    let block = u32::from(u16::from_le_bytes([raw[0x0C], raw[0x0D]]));
-    let index = block.saturating_mul(128).saturating_add(u32::from(raw[0x20]));
-    let bytes = index.to_le_bytes();
-    for (index, byte) in bytes.into_iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(0x21 + index as u16), byte) {
-            return;
-        }
-    }
-    cpu.set_carry(false);
-}
-
-fn fcb_record(raw: &[u8; 37]) -> u32 {
-    let record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
-    if record == 0 { 128 } else { record }
-}
-
-fn random_index(raw: &[u8; 37], record: u32) -> u32 {
-    u32::from_le_bytes([
-        raw[0x21],
-        raw[0x22],
-        raw[0x23],
-        if record < 64 { raw[0x24] } else { 0 },
-    ])
-}
-
-fn fcb_size(cpu: &mut CpuState, ram: &mut GuestRam) {
-    let segment = cpu.selector(Segment::Data);
-    let offset = cpu.wide(Slot::Data);
-    let mut raw = [0u8; 37];
-    for (index, byte) in raw.iter_mut().enumerate() {
-        let Some(loaded) = ram.load(segment, offset.wrapping_add(index as u16)) else {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            return;
-        };
-        *byte = loaded;
-    }
-    let mut name = [b' '; 11];
-    name.copy_from_slice(&raw[1..12]);
-    let mut record = u32::from(u16::from_le_bytes([raw[0x0E], raw[0x0F]]));
-    if record == 0 {
-        record = 128;
-    }
-    let Some(len) = super::disk::file_len(&name) else {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        return;
-    };
-    let records = (len as u32).div_ceil(record);
-    for (index, byte) in records.to_le_bytes().into_iter().enumerate() {
-        if !ram.store(segment, offset.wrapping_add(0x21 + index as u16), byte) {
-            cpu.set_low(Slot::Accumulator, 0xFF);
-            return;
-        }
-    }
-    cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
 fn file_time(cpu: &mut CpuState, session: &mut Session) {
     let sub = cpu.low(Slot::Accumulator);
     if sub > 1 {
@@ -3173,10 +2116,7 @@ fn file_time(cpu: &mut CpuState, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     }
-    let looked = session.opens.get(usize::from(handle - 3)).and_then(|slot| {
-        slot.as_ref()
-            .map(|opened| (opened.dir, opened.name, opened.named, opened.console))
-    });
+    let looked=session.handles.get(handle).map(|f|(f.dir,f.name,f.named,f.console));
     let Some((dir, name, named, console)) = looked else {
         fail(cpu, session, 6);
         return;
@@ -3209,7 +2149,7 @@ fn seek_file(cpu: &mut CpuState, session: &mut Session) {
         cpu.set_carry(true);
         return;
     }
-    let Some(Some(opened)) = session.opens.get_mut(usize::from(handle - 3)) else {
+    let Some(opened) = session.handles.get_mut(handle) else {
         cpu.set_carry(true);
         return;
     };
@@ -3759,6 +2699,7 @@ fn list_of_lists(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
         return;
     };
     let (segment, offset) = session.drivers.list_address();
+    store_bytes(ram,segment,offset-2,&super::arena::FIRST_MCB.to_le_bytes());
     let sector = per_sector.to_le_bytes();
     let mut raw = [0u8; 0x34];
     raw[0x10] = sector[0];
@@ -4422,7 +3363,7 @@ fn logical_map(cpu: &mut CpuState, session: &mut Session) {
 fn local_handle(cpu: &mut CpuState, session: &mut Session) {
     let handle = cpu.wide(Slot::Base);
     if handle >= 3 {
-        let Some(Some(_)) = session.opens.get(usize::from(handle - 3)).copied() else {
+        let Some(_) = session.handles.get(handle) else {
             fail(cpu, session, 6);
             return;
         };
@@ -4463,7 +3404,7 @@ fn output_status(cpu: &mut CpuState, session: &mut Session) {
         cpu.set_carry(false);
         return;
     }
-    let Some(Some(_)) = session.opens.get(usize::from(handle - 3)).copied() else {
+    let Some(_) = session.handles.get(handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -4478,7 +3419,7 @@ fn input_status(cpu: &mut CpuState, session: &mut Session) {
         cpu.set_carry(false);
         return;
     }
-    let Some(Some(opened)) = session.opens.get(usize::from(handle - 3)).copied() else {
+    let Some(opened) = session.handles.get(handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -4493,24 +3434,13 @@ fn input_status(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn file_device_word(session: &Session, handle: u16) -> u16 {
-    if handle < 3 {
-        if let Some(opened) = session.stdio[usize::from(handle)]
-            && !opened.console
-        {
-            return written_file_word(opened.dirty);
+    session.handles.get(handle).map_or(0x0040, |f| {
+        if f.console {
+            0x80d3
+        } else {
+            written_file_word(f.dirty)
         }
-        return 0x80D3;
-    }
-    let Some(slot) = session.opens.get(usize::from(handle - 3)) else {
-        return 0x0040;
-    };
-    let Some(opened) = slot else {
-        return 0x0040;
-    };
-    if opened.console {
-        return 0x80D3;
-    }
-    written_file_word(opened.dirty)
+    })
 }
 
 fn written_file_word(written: bool) -> u16 {
@@ -4542,218 +3472,3 @@ fn guest_push(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
     ram.store(segment, pointer, bytes[0]) && ram.store(segment, pointer.wrapping_add(1), bytes[1])
 }
 
-fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> bool {
-    match vector {
-        0x10 => video(cpu),
-        0x13 => read_sectors(cpu, ram),
-        0x14 => serial_bios(cpu),
-        0x17 => printer_bios(cpu),
-        0x16 => keyboard(cpu),
-        0x1A => clock(cpu),
-        _ => return false,
-    }
-    true
-}
-
-fn video(cpu: &mut CpuState) {
-    match cpu.high(Slot::Accumulator) {
-        0x0E => {
-            crate::bios::mscon::con_write_bytes(&[cpu.low(Slot::Accumulator)]);
-            cpu.set_carry(false);
-        }
-        0x0F => {
-            cpu.set_high(Slot::Accumulator, 80);
-            cpu.set_low(Slot::Accumulator, 3);
-            cpu.set_high(Slot::Base, 0);
-            cpu.set_carry(false);
-        }
-        _ => cpu.set_carry(true),
-    }
-}
-
-fn keyboard(cpu: &mut CpuState) {
-    let function = cpu.high(Slot::Accumulator);
-    match function {
-        0 | 0x10 => {
-
-            cpu.set_wide(Slot::Accumulator, crate::bios::pc::key(true).unwrap_or(0));
-        }
-        1 | 0x11 => {
-            let key = crate::bios::pc::key(false);
-            cpu.set_zero(key.is_none());
-            cpu.set_wide(Slot::Accumulator, key.unwrap_or(0));
-        }
-        _ => {
-            cpu.set_carry(true);
-            return;
-        }
-    }
-    cpu.set_carry(false);
-}
-
-fn serial_bios(cpu: &mut CpuState) {
-    use crate::bios::pc;
-    let Some(&base) = pc::UARTS.get(usize::from(cpu.wide(Slot::Data))) else {
-        cpu.set_high(Slot::Accumulator, 0x80);
-        return;
-    };
-    let function = cpu.high(Slot::Accumulator);
-    let mut byte = cpu.low(Slot::Accumulator);
-    let ok = match function {
-        0 => {
-            pc::configure_serial(base, byte);
-            true
-        }
-        1 => pc::serial_write(base, byte),
-        2 => {
-            if let Some(read) = pc::serial_read(base) {
-                byte = read;
-                true
-            } else {
-                false
-            }
-        }
-        3 => true,
-        _ => false,
-    };
-    let status = pc::serial_status(base);
-    cpu.set_wide(Slot::Accumulator, status);
-    if matches!(function, 1 | 2) {
-        cpu.set_low(Slot::Accumulator, byte);
-    }
-    if !ok {
-        cpu.set_high(Slot::Accumulator, (status >> 8) as u8 | 0x80);
-    }
-}
-
-fn printer_bios(cpu: &mut CpuState) {
-    use crate::bios::pc;
-    let ok = cpu.wide(Slot::Data) == 0
-        && match cpu.high(Slot::Accumulator) {
-            0 => pc::print_byte(cpu.low(Slot::Accumulator)),
-            2 => true,
-            _ => false,
-        };
-    cpu.set_high(Slot::Accumulator, pc::printer_status() | u8::from(!ok));
-}
-
-fn clock(cpu: &mut CpuState) {
-    if cpu.high(Slot::Accumulator) == 0 {
-        cpu.set_wide(Slot::Count, 0);
-        cpu.set_wide(Slot::Data, 1);
-        cpu.set_low(Slot::Accumulator, 0);
-        cpu.set_carry(false);
-    } else {
-        cpu.set_carry(true);
-    }
-}
-
-fn read_sectors(cpu: &mut CpuState, ram: &mut GuestRam) {
-    if cpu.low(Slot::Data) == 0x80 {
-        if !ide_read(cpu, ram) {
-            cpu.set_high(Slot::Accumulator, 1);
-            cpu.set_carry(true);
-        }
-        return;
-    }
-    if cpu.high(Slot::Accumulator) != 2 || !copy_sectors(cpu, ram) {
-        cpu.set_high(Slot::Accumulator, 1);
-        cpu.set_carry(true);
-    }
-}
-
-/// INT 13h extended reads use a 16-byte disk address packet at DS:SI.
-fn ide_read(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
-    use crate::bios::ata;
-    let Some(capacity) = ata::capacity() else {
-        return false;
-    };
-    match cpu.high(Slot::Accumulator) {
-        0x41 if cpu.wide(Slot::Base) == 0x55aa => {
-            cpu.set_wide(Slot::Base, 0xaa55);
-            cpu.set_wide(Slot::Count, 1);
-            cpu.set_high(Slot::Accumulator, 0x30);
-        }
-        0x42 => {
-            let ds = cpu.selector(Segment::Data);
-            let si = cpu.wide(Slot::Source);
-            let word = |at| read_word(ram, ds, si.wrapping_add(at)).unwrap();
-            if word(0) != 16 || word(12) != 0 || word(14) != 0 {
-                return false;
-            }
-            let (count, offset, segment) = (word(2), word(4), word(6));
-            let first = u32::from(word(8)) | (u32::from(word(10)) << 16);
-            if !(1..=127).contains(&count)
-                || first.saturating_add(u32::from(count)) > capacity
-                || u32::from(offset) + u32::from(count) * 512 > 65536
-            {
-                return false;
-            }
-            let mut sector = [0u8; 512];
-            for index in 0..count {
-                if !ata::read(first + u32::from(index), &mut sector) {
-                    for (i, byte) in index.to_le_bytes().into_iter().enumerate() {
-                        ram.store(ds, si.wrapping_add(2 + i as u16), byte);
-                    }
-                    return false;
-                }
-                let start = offset + index * 512;
-                for (i, byte) in sector.iter().enumerate() {
-                    ram.store(segment, start + i as u16, *byte);
-                }
-            }
-            cpu.set_high(Slot::Accumulator, 0);
-        }
-        _ => return false,
-    }
-    cpu.set_carry(false);
-    true
-}
-
-fn copy_sectors(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
-    super::disk::with_media(|image| copy_chs(cpu, ram, image))
-}
-
-fn copy_chs(cpu: &mut CpuState, ram: &mut GuestRam, image: &[u8]) -> bool {
-    if image.len() < 30 {
-        return false;
-    }
-    let per_track = u16::from_le_bytes([image[24], image[25]]);
-    let heads = u16::from_le_bytes([image[26], image[27]]);
-    let count = cpu.low(Slot::Accumulator);
-    if per_track == 0 || heads == 0 || count == 0 || cpu.low(Slot::Data) != 0 {
-        return false;
-    }
-    let packed = cpu.low(Slot::Count);
-    let sector = packed & 0x3F;
-    if sector == 0 || u16::from(sector) > per_track || u16::from(cpu.high(Slot::Data)) >= heads {
-        return false;
-    }
-    let cylinder = u32::from(cpu.high(Slot::Count)) | (u32::from(packed & 0xC0) << 2);
-    let head = u32::from(cpu.high(Slot::Data));
-    let linear = (cylinder * u32::from(heads) + head) * u32::from(per_track) + u32::from(sector - 1);
-    let Some(start) = (linear as usize).checked_mul(512) else {
-        return false;
-    };
-    let Some(bytes) = usize::from(count).checked_mul(512) else {
-        return false;
-    };
-    let Some(end) = start.checked_add(bytes) else {
-        return false;
-    };
-    let Some(data) = image.get(start..end) else {
-        return false;
-    };
-    let segment = cpu.selector(Segment::Extra);
-    let mut offset = cpu.wide(Slot::Base);
-    for byte in data {
-        if !ram.store(segment, offset, *byte) {
-            return false;
-        }
-        offset = offset.wrapping_add(1);
-    }
-    cpu.set_low(Slot::Accumulator, count);
-    cpu.set_high(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-    true
-}

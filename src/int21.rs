@@ -531,27 +531,6 @@ fn set_time(frame: &mut LogicalFrame) {
     frame.set_al(ResultByte(store_time(hour, minute, second, hundredth)));
 }
 
-/// Sakamoto. 0 is Sunday, matching INT 21h AH=2Ah.
-fn weekday(year: u16, month: u8, day: u8) -> u8 {
-    let table = [0i32, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
-    let mut y = i32::from(year);
-    let m = i32::from(month);
-    if m < 3 {
-        y -= 1;
-    }
-    let w = (y + y / 4 - y / 100 + y / 400 + table[(m - 1) as usize] + i32::from(day)).rem_euclid(7);
-    w as u8
-}
-
-fn date_ok(year: u16, month: u8, day: u8) -> bool {
-    if !(1980..=2099).contains(&year) || !(1..=12).contains(&month) || day == 0 {
-        return false;
-    }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = [0u8, 31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    day <= days[month as usize]
-}
-
 /// AH=2Eh. `$SET_VERIFY_ON_WRITE`. AL bit 0 is the flag.
 fn set_verify_on_write(frame: &mut LogicalFrame) {
     crate::dos::getset::set_verify((frame.status & 0xff) as u8);
@@ -599,11 +578,18 @@ fn out_of_range(frame: &mut LogicalFrame) {
 pub fn current_date() -> (u16, u8, u8, u8) {
     let [hi, lo, month, day] = DATE.load(Ordering::Relaxed).to_be_bytes();
     let year = u16::from_be_bytes([hi, lo]);
-    (year, month, day, weekday(year, month, day))
+    (
+        year,
+        month,
+        day,
+        crate::dos::time::set_date(year, month, day)
+            .expect("validated DOS date")
+            .weekday,
+    )
 }
 
 pub fn store_date(year: u16, month: u8, day: u8) -> u8 {
-    if !date_ok(year, month, day) {
+    if crate::dos::time::set_date(year, month, day).is_err() {
         return 0xff;
     }
     DATE.store(
@@ -618,7 +604,7 @@ pub fn current_time() -> (u8, u8, u8, u8) {
 }
 
 pub fn store_time(hour: u8, minute: u8, second: u8, hundredth: u8) -> u8 {
-    if hour >= 24 || minute >= 60 || second >= 60 || hundredth >= 100 {
+    if crate::dos::time::set_time(hour, minute, second, hundredth).is_err() {
         return 0xff;
     }
     TIME.store(

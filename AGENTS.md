@@ -16,6 +16,7 @@ Start with the execution path you are changing. Native INT 21h calls enter throu
 
 - **Registers.** Native handlers write DOS results into the low register words. For AH=30h, both adapters use the version words in `src/dos/getset.rs` and preserve incoming carry. Exercise CF clear and set when changing this path.
 - **Memory.** Instruction fetch and data access share guest RAM, including segment aliases. The arena tracks paragraph ownership. Root programs, shell launches and EXEC use the same loader. A failed load must leave parent memory and available blocks intact.
+- **Processes.** Publish the per-process JFT in the PSP and the arena as an MCB chain. DUP and EXEC share an open description and seek position. A process closing an inherited handle releases only its reference.
 - **Disk.** Guest file services, executable lookup and BIOS sector reads see the mounted volume. A file created and closed by a DOS program must be visible to its next EXEC. Failed replacement on a full volume must preserve the old file.
 
 ## Run the checks
