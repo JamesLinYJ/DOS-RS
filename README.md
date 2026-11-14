@@ -35,7 +35,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 
 **显示和设备**　UEFI 用 GOP 帧缓冲绘制彩色文本，BIOS 默认用 VGA 文本模式。开启 `--pc386` 后，传统 BIOS 也可在 QEMU 标准 VGA 上使用 640×480 图形模式。两条路径都支持 DOS 字符属性和终端切换。已验证 PS/2、串口、打印、IDE 扇区读取、FreeDOS SETVER.SYS、DOS 字符及块设备、xHCI 上的 USB 2.0 高速存储，以及 Intel 82540EM 的以太网帧收发。Intel 8265、AX200 和 AX210 目前实现 PCI 探测，固件加载和联网仍待完成。蓝牙已有 USB HCI 控制命令和 LE 扫描路径，待实物验证。
 
-## 用持久 C 盘运行 Windows 安装程序
+## 在内存 C 盘安装中文版 Windows 3.2
 
 以下 macOS 示例使用已挂载的内存盘 `/Volumes/DOSRS-RAM`。启动介质、UEFI 变量和可写 C 盘都放在该卷上。只需创建一次 C 盘，关闭 QEMU 后复用同一镜像即可。卸载内存盘或重启 Mac 会丢失该卷内容。
 
@@ -52,7 +52,19 @@ python3 scripts/qemu.py --arch x86_64 --pc386 --ram-dir "$RAM_DIR" --c-disk "$C_
 
 在 DOS-RS 提示符依次输入 `C:`、`CD \WINSETUP`、`SETUP.EXE`。A 盘是内置的临时启动卷，C 盘是 IDE 主盘上的裸 FAT 卷，支持 512 字节扇区，当前整卷上限为 64 MiB。普通文件支持按偏移读写，关闭文件时将改动写回镜像。安装测试不附带 Microsoft 安装介质。
 
-`--pc386` 启用保护模式解释器与会话独立的 VGA 平面显存。原版 SETUP 的彩色文本欢迎页已在 i686 和 x86_64 上验证，图形阶段可以用 Windows 自带的显示驱动绘出中文姓名对话框。完整安装、冷启动进入中文程序管理器及 NTFS 写入仍待验收。
+原版简体中文 Windows 3.2 已在 x86_64 DOS-RS 上完成安装。选择 Express Setup，输入姓名；安装器询问如何更新 A 盘配置时，选择将建议的配置保存到 Windows 目录。打印机选“无连接的打印机”，跳过教程。看到“Windows 3.2 已安装完毕”后选择返回 MS-DOS。
+
+关闭 QEMU，用同一条启动命令和同一块 C 盘重新开机，在 DOS-RS 提示符输入以下命令：
+
+```dos
+C:
+CD \WINDOWS
+WIN.COM /S
+```
+
+标准模式已在 x86_64 / UEFI 和 i686 / 传统 BIOS 两种组合下冷启动进入中文程序管理器。640×480、16 色 VGA 和键盘操作已验证；从“文件 → 运行”可启动 `CALC`。386 增强模式与 NTFS 系统卷写入仍待验收。[验收记录](docs/guest-programs.md#windows-32-simplified-chinese)
+
+![i686 传统 BIOS 冷启动后的中文程序管理器及主群组](docs/assets/windows32-progman.png)
 
 ## 运行回归
 

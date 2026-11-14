@@ -259,10 +259,17 @@ python3 scripts/qemu-devices.py --setver target/SETVER.SYS
 
 The client checks the table pointer that SETVER installs through INT 21h AH=52h. EXEC uses matching table entries for the child's PSP version word and AH=30h response. In a separate x86_64 run, a configured table entry for WHOAMI.COM returned 7.10 through both interfaces. [FreeDOS driver source](https://github.com/FDOS/kernel/blob/ca25e3b26695074f754e1baffdfb4fd1452a6dbc/setver/setver.asm)
 
-The loader currently accepts up to sixteen resident headers and a 64 KiB load segment per image. INIT can call DOS character/string output, version and list-of-lists services. Firmware interrupt and port coverage is limited to the implemented PC devices. Installable block units support absolute I/O. Drive mounting, driver-installed IRQ handlers, XMS and EMS remain open.
+The loader currently accepts up to sixteen resident headers and a 64 KiB load segment per image. INIT can call DOS character/string output, version and list-of-lists services. Firmware interrupt and port coverage is limited to the implemented PC devices. Installable block units support absolute I/O. DOS block-driver units currently expose raw sectors. The ATA FAT volume and session-local XMS and EMS managers have separate regression suites.
 
 The terminal regression uses four COM programs on one boot. SPIN.COM keeps polling
 the shared volume, WAITKEY.COM sleeps on INT 16h, CRASH.COM raises an unsupported
 opcode, and CALC.COM creates SHARED.TXT. The fourth terminal remains responsive,
 the first sees the new file, and the second receives its key after reactivation.
 Run `python3 scripts/qemu-terminals.py` or add `--display cocoa` on macOS.
+
+
+## Windows 3.2 Simplified Chinese
+
+The original eleven installation disks supplied the files in `C:\WINSETUP` on a 64 MiB raw FAT16 disk in a macOS RAM volume. The x86_64 UEFI kernel ran `SETUP.EXE` through text setup, the Chinese graphical installer, program group creation and the final confirmation screen. Setup returned to DOS and the QEMU process exited. A fresh x86_64 UEFI process reopened the same C disk and an i686 BIOS process booted a byte-identical copy. Each ran `C:\WINDOWS\WIN.COM /S` from DOS-RS and displayed the populated Chinese Program Manager. The x86_64 guest opened Calculator from the Run dialog and computed 2 + 3 = 5.
+
+The FAT check found 806 files and 34,899 KiB free after installation. SHA-256 of the installed `WIN.COM` was `b23982ecd051c13df6aca26fec9e7616771619f1809b2c61e78da0893fb07ff7`. The main group file `CMAINGRP.GRP` was 7,260 bytes. Both cold boots used the keyboard and the installer's no-mouse configuration. See the [startup commands and screenshot](../README.md).
