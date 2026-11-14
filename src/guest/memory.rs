@@ -1,8 +1,12 @@
 //! Checked guest RAM.
 //!
 //! Each session has 640 KiB of conventional memory, a VGA/ROM window,
-//! an A20 gate and 8 MiB of extended RAM. All addresses are guest offsets.
+//! an A20 gate and configurable extended RAM. All addresses are guest offsets.
+#[cfg(not(test))]
+pub const RAM_BYTES: usize = include!(concat!(env!("OUT_DIR"), "/guest-ram-bytes.rs"));
+#[cfg(test)]
 pub const RAM_BYTES: usize = 9 * 1024 * 1024;
+const EMS_MASK: u64 = (1 << (EMS_PAGE / KIB)) - 1;
 
 pub(super) const EXT_START: usize = 0x110000;
 pub(super) const KIB: usize = 1024;
@@ -86,7 +90,7 @@ impl GuestRam {
     }
 
     /// A single bitmap accounts for XMS blocks and aligned 16 KiB EMS pages.
-    pub(super) fn free_runs(&self, mut visit: impl FnMut(usize, usize)) {
+    fn free_runs(&self, mut visit: impl FnMut(usize, usize)) {
         let mut start = 0;
         for i in 0..=EXT_UNITS {
             if i == EXT_UNITS || self.units[i / 64] & (1u64 << (i % 64)) != 0 {
@@ -97,6 +101,15 @@ impl GuestRam {
             }
         }
     }
+    pub(super) fn xms_free_bytes(&self) -> (usize, usize) {
+        let (mut largest, mut total) = (0, 0);
+        self.free_runs(|_, bytes| {
+            largest = largest.max(bytes);
+            total += bytes;
+        });
+        (largest, total)
+    }
+
     pub(super) fn mark(&mut self, start: usize, len: usize, used: bool) {
         let unit = (start - EXT_START) / KIB;
         for i in unit..unit + len / KIB {
@@ -108,31 +121,48 @@ impl GuestRam {
             }
         }
     }
-    pub(super) fn allocate_ext(&mut self, len: usize, ems: bool) -> Option<usize> {
+    pub(super) fn allocate_ext(&mut self, len: usize) -> Option<usize> {
         if len == 0 {
             return Some(EXT_START);
         }
-        let mut found = None;
-        self.free_runs(|s, n| {
-            if n >= len {
-                if ems {
-                    let base = (s + n - len) & !(EMS_PAGE - 1);
-                    if base >= s {
-                        found = Some(base);
-                    }
-                } else if found.is_none() {
-                    found = Some(s);
-                }
+        let mut first = None;
+        self.free_runs(|start, room| {
+            if first.is_none() && room >= len {
+                first = Some(start);
             }
         });
-        let start = found?;
+        let start = first?;
         self.mark(start, len, true);
         Some(start)
     }
     pub(super) fn free_ems(&self) -> usize {
-        let mut pages = 0;
-        self.free_runs(|s, n| pages += ((s + n) / EMS_PAGE).saturating_sub(s.div_ceil(EMS_PAGE)));
-        pages
+        self.units
+            .iter()
+            .map(|word| {
+                (0..4)
+                    .filter(|i| (*word >> (16 * i)) & EMS_MASK == 0)
+                    .count()
+            })
+            .sum()
+    }
+    /// Allocate in descending physical order, leaving low memory contiguous for XMS.
+    /// The caller first reserves enough free pages under the same exclusive RAM borrow.
+    pub(super) fn allocate_ems(&mut self, count: u16, mut assign: impl FnMut(usize, u16)) {
+        let mut n = 0;
+        for (w, word) in self.units.iter_mut().enumerate().rev() {
+            for group in (0..4).rev() {
+                if n == count {
+                    return;
+                }
+                let mask = EMS_MASK << (group * 16);
+                if *word & mask == 0 {
+                    *word |= mask;
+                    assign(w * 4 + group, n);
+                    n += 1;
+                }
+            }
+        }
+        debug_assert_eq!(n, count);
     }
     fn mapped(&self, linear: usize) -> usize {
         if (EMS_FRAME..EMS_FRAME + 4 * EMS_PAGE).contains(&linear) {

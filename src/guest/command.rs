@@ -173,6 +173,22 @@ pub(super) fn execute(
                     break;
                 }
             }
+            if verb.eq_ignore_ascii_case(b"MEM") && !disk::exists(&file) {
+                if rest.is_empty() {
+                    let (largest, total) = ram.xms_free_bytes();
+                    say(b"XMS and EMS share this terminal's extended memory.\r\n");
+                    say(b"Free XMS:     ");
+                    crate::platform::number((total / 1024) as u32);
+                    say(b" KiB\r\nLargest XMS:  ");
+                    crate::platform::number((largest / 1024) as u32);
+                    say(b" KiB\r\nFree EMS:     ");
+                    crate::platform::number(ram.free_ems() as u32);
+                    say(b" pages of 16 KiB\r\n");
+                } else {
+                    say(b"Use MEM for a summary or install FreeDOS MEM for switches.\r\n");
+                }
+                return;
+            }
         }
         if echo {
             let mut path = [0; 64];

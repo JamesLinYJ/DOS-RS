@@ -23,7 +23,7 @@ mov [xms],bx
 mov [xms+2],es
 mov ah,88h
 call far [xms]
-mov [initial],dx
+mov [initial],edx
 mov edx,256
 xcall 89h
 mov [xhandle],dx
@@ -46,6 +46,26 @@ mov ax,[xhandle]
 mov [si+4],ax
 xcall 0bh
 cmp word [copy],05aa5h
+jne fail
+; Out-of-range offsets and transfers past a valid offset have distinct errors.
+mov si,readblock
+mov dword [si+6],0ffffffffh
+mov ah,0bh
+call far [xms]
+cmp bl,0a4h
+jne fail
+mov dword [si+6],256*1024-1
+mov ah,0bh
+call far [xms]
+cmp bl,0a7h
+jne fail
+mov dword [si+6],16
+; Forward overlapping moves must preserve the bytes that have not yet been copied.
+mov si,overlap
+mov [si+8],ds
+mov [si+14],ds
+xcall 0bh
+cmp word [sequence+4],3344h
 jne fail
 mov dx,[xhandle]
 mov ebx,512
@@ -106,8 +126,8 @@ cmp word [copy],4567h
 jne fail
 mov ah,88h
 call far [xms]
-add dx,512+64
-cmp dx,[initial]
+add edx,512+64
+cmp edx,[initial]
 jne fail
 ; An invalid restore must leave both live mappings intact.
 push cs
@@ -161,7 +181,78 @@ mov dx,[xhandle]
 xcall 0ah
 mov ah,88h
 call far [xms]
-cmp dx,[initial]
+cmp edx,[initial]
+jne fail
+; Request the entire shared pool through each API and check the other cannot allocate.
+mov edx,[initial]
+xcall 89h
+mov [xhandle],dx
+; Persist data at the last word of an allocation, including beyond the 64 MiB boundary.
+mov eax,[initial]
+shl eax,10
+sub eax,2
+mov word [copy],0
+mov [moveblock+12],eax
+mov [readblock+6],eax
+mov [moveblock+10],dx
+mov [readblock+4],dx
+mov si,moveblock
+xcall 0bh
+mov si,readblock
+xcall 0bh
+cmp word [copy],05aa5h
+jne fail
+ecall 4200h
+test bx,bx
+jnz fail
+mov bx,1
+mov ax,4300h
+int 67h
+cmp ah,88h
+jne fail
+mov dx,[xhandle]
+xcall 0ah
+mov ah,08h
+call far [xms]
+mov edx,[initial]
+cmp edx,65535
+jbe classic
+cmp ax,65535
+jne fail
+jmp max_ems
+classic: cmp ax,dx
+jne fail
+max_ems: ecall 4200h
+cmp bx,dx
+jne fail
+ecall 4300h
+mov [emhandle],dx
+dec bx
+mov [lastpage],bx
+ecall 4400h
+mov ax,0d000h
+mov es,ax
+mov word [es:3ffeh],0cafeh
+xor bx,bx
+ecall 4400h
+mov bx,[lastpage]
+ecall 4400h
+cmp word [es:3ffeh],0cafeh
+jne fail
+mov ah,88h
+call far [xms]
+test edx,edx
+jnz fail
+mov edx,1
+mov ah,89h
+call far [xms]
+cmp bl,0a0h
+jne fail
+mov dx,[emhandle]
+ecall 4500h
+mov ah,88h
+call far [xms]
+cmp edx,[initial]
 jne fail
 mov dx,ok
 jmp report
@@ -189,8 +280,12 @@ mapbuf times 26 db 0
 key dd 0
 newpages dw 1,0
 oldpages dw 0,0
+sequence dw 1122h,3344h,5566h
+overlap dd 4
+dw 0,sequence,0,0,sequence+2,0
 xms dd 0
-initial dw 0
+initial dd 0
+lastpage dw 0
 xhandle dw 0
 upper dw 0
 emhandle dw 0

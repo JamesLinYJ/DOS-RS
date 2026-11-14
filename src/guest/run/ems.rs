@@ -78,7 +78,7 @@ impl Ems {
             .ok_or(0x83)
     }
     fn physical(&self, pair: (u16, u16)) -> Result<Option<usize>, u8> {
-        if pair.1 == EMPTY {
+        if pair == UNMAPPED {
             return Ok(None);
         }
         self.handle(pair.0)?;
@@ -201,12 +201,7 @@ impl Ems {
                 }
             }
         } else {
-            for logical in old..count {
-                let addr = ram
-                    .allocate_ext(EMS_PAGE, true)
-                    .expect("free aligned pages were counted");
-                self.owners[(addr - EXT_START) / EMS_PAGE] = (id, logical);
-            }
+            ram.allocate_ems(count - old, |page, n| self.owners[page] = (id, old + n));
         }
         self.handles[usize::from(id)].as_mut().unwrap().pages = count;
         Ok(())

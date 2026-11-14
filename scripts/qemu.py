@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,15 @@ def build(arch, target_dir, image=None, features=None):
 def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
     machine, name = ARCH[arch]
     work.mkdir(parents=True, exist_ok=True)
+    # SizeOfImage includes all four session arenas even when the PE file is small.
+    with kernel.open("rb") as file:
+        file.seek(0x3C)
+        pe = struct.unpack("<I", file.read(4))[0]
+        file.seek(pe + 24 + 56)
+        image_bytes = struct.unpack("<I", file.read(4))[0]
+    memory = str(
+        max(256, ((image_bytes + (192 << 20) + (63 << 20)) // (64 << 20)) * 64)
+    )
     if mode == "bios":
         disk = work / "bios.img"
         subprocess.run(
@@ -63,7 +73,7 @@ def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
         return [
             "qemu-system-" + machine,
             "-m",
-            "256",
+            memory,
             "-smp",
             str(cpus),
             "-no-reboot",
@@ -90,7 +100,7 @@ def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
         "-smp",
         str(cpus),
         "-m",
-        "256",
+        memory,
         "-drive",
         f"if=pflash,unit=0,format=raw,readonly=on,file={code}",
         "-drive",
@@ -110,9 +120,14 @@ def main():
     cli.add_argument("--cpus", type=int, default=4)
     cli.add_argument("--display", default=None)
     cli.add_argument("--kernel", type=Path)
+    cli.add_argument("--extended-mib", type=int, help="extended MiB per DOS session (1..128)")
     cli.add_argument("--image", type=Path)
     cli.add_argument("extra", nargs=argparse.REMAINDER)
     args = cli.parse_args()
+    if args.extended_mib is not None:
+        if args.kernel or not 1 <= args.extended_mib <= 128:
+            cli.error("--extended-mib requires building a kernel and a value from 1 to 128")
+        os.environ["DOS_RS_EXT_MIB"] = str(args.extended_mib)
     kernel = args.kernel or build(args.arch, ROOT / "target", args.image)
     with tempfile.TemporaryDirectory() as temp:
         cmd = boot_args(kernel, args.arch, Path(temp), args.cpus, args.firmware)

@@ -3,6 +3,21 @@ fn main() {
     println!("cargo:rustc-link-arg=/base:0x1000000");
     println!("cargo:rustc-link-arg=/export:dos_rs_bios_entry");
     build_cpu_library(std::path::Path::new(&dir));
+    println!("cargo:rerun-if-env-changed=DOS_RS_EXT_MIB");
+    let mib = std::env::var("DOS_RS_EXT_MIB")
+        .unwrap_or_else(|_| "8".into())
+        .parse::<usize>()
+        .expect("DOS_RS_EXT_MIB must be an integer");
+    assert!(
+        (1..=128).contains(&mib),
+        "per-session extended memory must be 1..128 MiB"
+    );
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    std::fs::write(
+        out.join("guest-ram-bytes.rs"),
+        ((mib + 1) * 1024 * 1024).to_string(),
+    )
+    .unwrap();
     println!("cargo:rerun-if-env-changed=DOS_RS_GUEST_IMAGE");
     let image = std::env::var_os("DOS_RS_GUEST_IMAGE")
         .map(std::path::PathBuf::from)

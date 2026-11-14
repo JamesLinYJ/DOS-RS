@@ -2,6 +2,7 @@
 """Run simultaneous DOS programs on four virtual terminals on both targets."""
 
 import argparse
+import os
 import re
 import qemu
 from pathlib import Path
@@ -112,7 +113,12 @@ def check(out, image, arch, display, cpus, firmware):
             raise RuntimeError(f"{arch} missing distinct APIC IDs: {stats}")
         if any(int(count) == 0 for slot, _, count in stats if 0 < int(slot) <= 4):
             raise RuntimeError(f"{arch} idle terminal worker: {stats}")
+        key("alt-f4")
         enter("color 1e")
+        enter("mem")
+        free_kib = int(os.environ.get("DOS_RS_EXT_MIB", "8")) * 1024 - 64
+        wait(f"Free XMS:     {free_kib} KiB")
+        wait(f"Free EMS:     {free_kib // 16} pages of 16 KiB")
         enter("ver")
         wait("DOS-RS (DOS 4.00)")
         (out / (arch + ".ppm")).unlink(missing_ok=True)

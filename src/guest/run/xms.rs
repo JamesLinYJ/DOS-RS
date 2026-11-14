@@ -1,6 +1,5 @@
 //! Session-local XMS 3.0 manager. Addresses and handles are always guest values.
 use super::{CpuState, GuestRam, Segment, Slot};
-use crate::guest::memory::EXT_START as START;
 mod umb;
 const BLOCKS: usize = 32;
 pub(in crate::guest) const ENTRY: (u16, u16) = (0xf000, 0x0100);
@@ -33,13 +32,30 @@ impl Xms {
             .filter(|i| self.blocks.get(*i).is_some_and(Option::is_some))
             .ok_or(0xa2)
     }
-    fn range(&self, handle: u16, offset: u32, len: usize, ram: &GuestRam) -> Option<usize> {
-        if handle == 0 {
-            let start = ram.address((offset >> 16) as u16, offset as u16);
-            return (start.checked_add(len)? <= START).then_some(start);
+    fn move_address(
+        &self,
+        handle: u16,
+        offset: u32,
+        len: usize,
+        handle_error: u8,
+    ) -> Result<usize, u8> {
+        let (base, size, offset) = if handle == 0 {
+            // Function 0Bh addresses the HMA independently of the caller's A20 gate.
+            (
+                0,
+                0x10fff0,
+                ((offset >> 16) as usize) * 16 + usize::from(offset as u16),
+            )
+        } else {
+            let i = self.index(handle).map_err(|_| handle_error)?;
+            let block = self.blocks[i].unwrap();
+            (block.start, block.len, offset as usize)
+        };
+        let available = size.checked_sub(offset).ok_or(handle_error + 1)?;
+        if len > available {
+            return Err(0xa7);
         }
-        let b = self.blocks[self.index(handle).ok()?]?;
-        ((offset as usize).checked_add(len)? <= b.len).then_some(b.start + offset as usize)
+        Ok(base + offset)
     }
     pub fn call(&mut self, cpu: &mut CpuState, ram: &mut GuestRam) {
         let function = cpu.high(Slot::Accumulator);
@@ -79,18 +95,17 @@ impl Xms {
                     return Ok(());
                 }
                 8 | 0x88 => {
-                    let (mut max, mut total) = (0, 0);
-                    ram.free_runs(|_, len| {
-                        max = max.max(len);
-                        total += len
-                    });
+                    let (max, total) = ram.xms_free_bytes();
                     if function == 0x88 {
                         cpu.set_dword(Slot::Accumulator, (max / 1024) as u32);
                         cpu.set_dword(Slot::Data, (total / 1024) as u32);
                         cpu.set_dword(Slot::Count, (super::super::memory::RAM_BYTES - 1) as u32);
                     } else {
-                        cpu.set_wide(Slot::Accumulator, (max / 1024) as u16);
-                        cpu.set_wide(Slot::Data, (total / 1024) as u16);
+                        cpu.set_wide(
+                            Slot::Accumulator,
+                            (max / 1024).min(u16::MAX as usize) as u16,
+                        );
+                        cpu.set_wide(Slot::Data, (total / 1024).min(u16::MAX as usize) as u16);
                     }
                     cpu.set_low(Slot::Base, if total == 0 { 0xa0 } else { 0 });
                     return Ok(());
@@ -103,7 +118,7 @@ impl Xms {
                         u32::from(dx)
                     };
                     let len = (size as usize).checked_mul(1024).ok_or(0xa0)?;
-                    let pos = ram.allocate_ext(len, false);
+                    let pos = ram.allocate_ext(len);
                     self.blocks[i] = Some(Block {
                         start: pos.ok_or(0xa0)?,
                         len,
@@ -136,17 +151,8 @@ impl Xms {
                     if len % 2 != 0 {
                         return Err(0xa7);
                     }
-                    if u16at(4) != 0 {
-                        self.index(u16at(4)).map_err(|_| 0xa3)?;
-                    }
-                    if u16at(10) != 0 {
-                        self.index(u16at(10)).map_err(|_| 0xa5)?;
-                    }
-                    let src = self.range(u16at(4), u32at(6), len, ram).ok_or(0xa4)?;
-                    let dst = self.range(u16at(10), u32at(12), len, ram).ok_or(0xa6)?;
-                    if dst > src && dst - src < len {
-                        return Err(0xa8);
-                    }
+                    let src = self.move_address(u16at(4), u32at(6), len, 0xa3)?;
+                    let dst = self.move_address(u16at(10), u32at(12), len, 0xa5)?;
                     ram.move_physical(src, dst, len).ok_or(0xa7)?;
                 }
                 12 | 13 => {
@@ -175,7 +181,7 @@ impl Xms {
                             self.blocks.iter().filter(|b| b.is_none()).count() as u16,
                         );
                     } else {
-                        cpu.set_wide(Slot::Data, (b.len / 1024) as u16);
+                        cpu.set_wide(Slot::Data, (b.len / 1024).min(u16::MAX as usize) as u16);
                     }
                     cpu.set_wide(Slot::Accumulator, 1);
                     return Ok(());
@@ -193,7 +199,7 @@ impl Xms {
                     };
                     let len = (size as usize).checked_mul(1024).ok_or(0xa0)?;
                     ram.mark(b.start, b.len, false);
-                    let Some(start) = ram.allocate_ext(len, false) else {
+                    let Some(start) = ram.allocate_ext(len) else {
                         ram.mark(b.start, b.len, true);
                         return Err(0xa0);
                     };

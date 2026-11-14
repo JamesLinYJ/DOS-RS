@@ -6,6 +6,52 @@ pub(super) fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> 
         0x10 => video(cpu, ram),
         0x11 => cpu.set_wide(Slot::Accumulator, 0x0421),
         0x12 => cpu.set_wide(Slot::Accumulator, 640),
+        0x15 if cpu.dword(Slot::Accumulator) == 0xe820 && cpu.dword(Slot::Data) == 0x534d4150 => {
+            // E820 describes this DOS machine, independently of host firmware.
+            let map = [
+                (0u64, 0xa0000u64, 1u32),
+                (0xa0000, 0x60000, 2),
+                (
+                    0x100000,
+                    (super::super::memory::RAM_BYTES - 0x100000) as u64,
+                    1,
+                ),
+            ];
+            let n = cpu.dword(Slot::Base) as usize;
+            if cpu.dword(Slot::Count) < 20 || n >= map.len() {
+                cpu.set_carry(true);
+                return true;
+            }
+            let (base, len, kind) = map[n];
+            let seg = cpu.selector(Segment::Extra);
+            let offset = cpu.wide(Slot::Dest);
+            for (i, b) in base
+                .to_le_bytes()
+                .into_iter()
+                .chain(len.to_le_bytes())
+                .chain(kind.to_le_bytes())
+                .enumerate()
+            {
+                ram.store(seg, offset.wrapping_add(i as u16), b);
+            }
+            cpu.set_dword(Slot::Accumulator, 0x534d4150);
+            cpu.set_dword(
+                Slot::Base,
+                if n + 1 == map.len() { 0 } else { n as u32 + 1 },
+            );
+            cpu.set_dword(Slot::Count, 20);
+            cpu.set_carry(false);
+        }
+        0x15 if cpu.wide(Slot::Accumulator) == 0xe801 => {
+            let kb = (super::super::memory::RAM_BYTES - 0x100000) / 1024;
+            let low = kb.min(15 * 1024) as u16;
+            let high = (kb.saturating_sub(15 * 1024) / 64) as u16;
+            cpu.set_wide(Slot::Accumulator, low);
+            cpu.set_wide(Slot::Count, low);
+            cpu.set_wide(Slot::Base, high);
+            cpu.set_wide(Slot::Data, high);
+            cpu.set_carry(false);
+        }
         0x15 => match cpu.high(Slot::Accumulator) {
             0x24 => {
                 match cpu.low(Slot::Accumulator) {
@@ -31,7 +77,7 @@ pub(super) fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> 
             0x88 => {
                 cpu.set_wide(
                     Slot::Accumulator,
-                    ((super::super::memory::RAM_BYTES - 0x100000) / 1024) as u16,
+                    ((super::super::memory::RAM_BYTES - 0x100000) / 1024).min(0xffff) as u16,
                 );
                 cpu.set_carry(false);
             }

@@ -53,6 +53,7 @@ woke db 'KEY DELIVERED',13,10,'$'
 db 63h
 %else
 private_frame 05aa2h
+push dx
 mov ax,3c00h
 xor cx,cx
 mov dx,path
@@ -67,6 +68,13 @@ jc fail
 mov ah,3eh
 int 21h
 jc fail
+cmp word [es:16],05aa2h
+jne fail
+pop dx
+mov ax,4500h
+int 67h
+test ah,ah
+jnz fail
 mov dx,done
 call print
 mov ax,4c00h

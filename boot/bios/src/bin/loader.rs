@@ -67,7 +67,7 @@ pub extern "C" fn _start(drive: u16, table: *const u8) -> ! {
             && file > 0
             && file <= 0x800000
             && capacity > file
-            && capacity <= 0x8000000
+            && capacity <= i32::MAX as u32
     );
     assert_eq!(1 + stub.div_ceil(512) + file.div_ceil(512), sectors);
     let memory = unsafe { e820::query_memory_map() }.unwrap();
