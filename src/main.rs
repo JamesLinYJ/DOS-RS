@@ -10,6 +10,7 @@ mod bios;
 mod boot;
 mod cmd;
 mod dos;
+mod drivers;
 mod guest;
 mod int21;
 mod kernel_cell;

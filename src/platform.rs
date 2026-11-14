@@ -33,6 +33,7 @@ pub(crate) fn initialize(handoff: crate::boot::Handoff) {
     }
     WORKERS.store(ONLINE.load(Acquire).count_ones() as usize, Release);
     PCI.borrow().scan();
+    crate::drivers::bind(PCI.borrow().devices());
     crate::puts("CPUs online: ");
     number(ONLINE.load(Acquire).count_ones());
     crate::puts(" / ");

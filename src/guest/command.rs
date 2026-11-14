@@ -94,6 +94,9 @@ pub(super) fn execute(
         return;
     }
     let (verb, rest) = split(line);
+    if crate::drivers::command(verb, rest) {
+        return;
+    }
     if verb.eq_ignore_ascii_case(b"HW") {
         crate::platform::report();
     } else if verb.eq_ignore_ascii_case(b"COLOR") {
