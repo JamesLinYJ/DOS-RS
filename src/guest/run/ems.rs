@@ -6,6 +6,7 @@ pub(in crate::guest) const ENTRY: (u16, u16) = (0xf100, 0);
 pub(in crate::guest) const RETURN: (u16, u16) = (ENTRY.0, 0x20);
 const PAGES: usize = (RAM_BYTES - EXT_START) / EMS_PAGE;
 const HANDLES: usize = 64;
+const ALT_SETS: usize = 7;
 const EMPTY: u16 = u16::MAX;
 type Map = [(u16, u16); 4];
 const UNMAPPED: (u16, u16) = (EMPTY, EMPTY);
@@ -25,6 +26,8 @@ pub(super) struct Ems {
     // Indexed by physical expanded-memory page; no contiguous allocation required.
     owners: [(u16, u16); PAGES],
     map: Map,
+    active_set: u8,
+    banks: [Option<Map>; ALT_SETS + 1],
     alt_area: Option<Far>,
     os_key: Option<u32>,
     os_enabled: bool,
@@ -65,6 +68,8 @@ impl Ems {
             handles,
             owners: [UNMAPPED; PAGES],
             map: [UNMAPPED; 4],
+            active_set: 0,
+            banks: core::array::from_fn(|i| (i == 0).then_some([UNMAPPED; 4])),
             alt_area: None,
             os_key: None,
             os_enabled: true,
@@ -92,6 +97,7 @@ impl Ems {
         }
         ram.frame = physical;
         self.map = map;
+        self.banks[usize::from(self.active_set)] = Some(map);
         Ok(())
     }
     fn slot(value: u16, mode: u8) -> Result<usize, u8> {
@@ -195,6 +201,9 @@ impl Ems {
             let mut map = self.map;
             invalidate(&mut map);
             self.apply(ram, map)?;
+            for bank in self.banks.iter_mut().flatten() {
+                invalidate(bank);
+            }
             for h in self.handles.iter_mut().flatten() {
                 if let Some(saved) = h.saved.as_mut() {
                     invalidate(saved);
@@ -477,32 +486,60 @@ impl Ems {
                 }
             }
             0x59 if al == 0 => {
-                for (i, w) in [1024u16, 0, 16, 0, 0].into_iter().enumerate() {
+                for (i, w) in [1024u16, ALT_SETS as u16, 16, 0, 0].into_iter().enumerate() {
                     dst.put(ram, i as u16 * 2, &w.to_le_bytes());
                 }
             }
+            0x59 => return Err(0x8f),
             0x5b => match al {
                 0 => {
-                    cpu.set_low(Slot::Base, 0);
-                    let addr = self.alt_area.unwrap_or(Far { seg: 0, off: 0 });
-                    if self.alt_area.is_some() {
-                        Self::save(self.map, ram, addr);
+                    cpu.set_low(Slot::Base, self.active_set);
+                    if self.active_set == 0 {
+                        let addr = self.alt_area.unwrap_or(Far { seg: 0, off: 0 });
+                        if self.alt_area.is_some() {
+                            Self::save(self.map, ram, addr);
+                        }
+                        cpu.set_selector(Segment::Extra, addr.seg);
+                        cpu.set_wide(Slot::Dest, addr.off);
                     }
-                    cpu.set_selector(Segment::Extra, addr.seg);
-                    cpu.set_wide(Slot::Dest, addr.off);
                 }
                 1 => {
-                    if bx as u8 != 0 {
-                        return Err(0x9c);
+                    let bank = bx as u8;
+                    let mut map = self
+                        .banks
+                        .get(usize::from(bank))
+                        .copied()
+                        .flatten()
+                        .ok_or(0x9d)?;
+                    if bank == 0 {
+                        let area = (dst.seg != 0 || dst.off != 0).then_some(dst);
+                        if let Some(src) = area {
+                            map = self.restore(ram, src)?;
+                        }
+                        self.alt_area = area;
                     }
-                    let new = self.restore(ram, dst)?;
-                    self.apply(ram, new)?;
-                    self.alt_area = Some(dst);
+                    self.active_set = bank;
+                    self.apply(ram, map)?;
                 }
                 2 => cpu.set_wide(Slot::Data, 16),
-                3 | 5 => cpu.set_low(Slot::Base, 0),
+                3 => {
+                    let n = self.banks.iter().position(Option::is_none).ok_or(0x9b)?;
+                    self.banks[n] = Some(self.map);
+                    cpu.set_low(Slot::Base, n as u8);
+                }
+                4 if bx as u8 != 0 => {
+                    let bank = bx as u8;
+                    if bank == self.active_set {
+                        return Err(0x9d);
+                    }
+                    self.banks
+                        .get_mut(usize::from(bank))
+                        .and_then(Option::take)
+                        .ok_or(0x9d)?;
+                }
+                5 => cpu.set_low(Slot::Base, 0), // DMA register sets are not exposed.
                 4 | 8 if bx as u8 == 0 => {}
-                4 | 8 => return Err(0x9c),
+                8 => return Err(0x9c),
                 6 | 7 => return Err(if bx as u8 == 0 { 0x9e } else { 0x9c }),
                 _ => return Err(0x8f),
             },

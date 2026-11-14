@@ -132,7 +132,15 @@ mov dx,[upper]
 xcall 11h
 mov dx,0ffffh
 xcall 1
+xcall 3
 xcall 5
+mov ah,4
+call far [xms]
+test ax,ax
+jnz fail
+cmp bl,94h
+jne fail
+xcall 7
 mov ax,0ffffh
 mov es,ax
 mov word [es:18h],0beefh
@@ -220,6 +228,49 @@ mov ax,0d000h
 mov es,ax
 cmp word [es:16],1234h
 jne fail
+; Fill every alternate map register set, then change page zero in one bank.
+push ds
+pop es
+mov di,mapbuf
+ecall 5900h
+mov cx,[mapbuf+2]
+cmp cx,7
+jne fail
+xor si,si
+.bank_alloc:
+ecall 5b03h
+mov [banks+si],bl
+inc si
+loop .bank_alloc
+mov ax,5b03h
+int 67h
+cmp ah,9bh
+jne fail
+mov bl,[banks]
+ecall 5b01h
+mov dx,[emhandle]
+mov bx,1
+ecall 4400h
+mov ax,0d000h
+mov es,ax
+cmp word [es:16],4567h
+jne fail
+xor bx,bx
+mov es,bx
+xor di,di
+ecall 5b01h
+mov ax,0d000h
+mov es,ax
+cmp word [es:16],1234h
+jne fail
+mov cx,7
+xor si,si
+.bank_free:
+mov bl,[banks+si]
+ecall 5b04h
+inc si
+loop .bank_free
+mov dx,[emhandle]
 ecall 4500h
 mov dx,[xhandle]
 xcall 0ah
@@ -321,6 +372,7 @@ dw oldpages,0
 times 4 dw 0
 partial dw 1,0d000h
 mapbuf times 26 db 0
+banks times 7 db 0
 key dd 0
 newpages dw 1,0
 oldpages dw 0,0

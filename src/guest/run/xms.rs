@@ -86,6 +86,9 @@ impl Xms {
                         _ => self.local = self.local.checked_sub(1).ok_or(0x82)?,
                     };
                     ram.a20 = self.global || self.local != 0;
+                    if matches!(function, 4 | 6) && ram.a20 {
+                        return Err(0x94);
+                    }
                 }
                 7 => {
                     cpu.set_wide(Slot::Accumulator, u16::from(ram.a20));
