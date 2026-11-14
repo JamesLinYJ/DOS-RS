@@ -38,7 +38,7 @@ fn identity(session: &Session, h: u16) -> Result<(FileKey, Owner), u16> {
     }
     Ok((
         FileKey {
-            directory: u32::from(file.dir),
+            directory: file.dir,
             name: file.name,
         },
         Owner {

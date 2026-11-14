@@ -2,7 +2,7 @@
 
 use super::memory::{CONVENTIONAL_END, GuestRam};
 
-pub(super) const FIRST_MCB: u16 = 0xa0;
+pub(super) const FIRST_MCB: u16 = 0x150; // below this are the BDA, DOS tables and resident SFT
 pub(super) const UMB_ROOT: u16 = CONVENTIONAL_END - 1;
 const LOW: (u16, u16) = (0x0c00, UMB_ROOT);
 // Segment intervals for data. Each has room for its first MCB and the
@@ -97,7 +97,16 @@ impl Arena {
             .and_then(|n| n.checked_sub(1))
             .filter(|s| *s > FIRST_MCB)
             .ok_or(MemoryError::NoRoom(0))?;
-        let (base, room) = self.gap(&[(floor, UMB_ROOT)], total, 0)?;
+        let range = [(floor, UMB_ROOT)];
+        let request = if max == u16::MAX {
+            match self.gap(&range, u16::MAX, 0) {
+                Err(MemoryError::NoRoom(largest)) if largest >= total => largest,
+                _ => total,
+            }
+        } else {
+            total
+        };
+        let (base, room) = self.gap(&range, request, 0)?;
         let psp = base + env + 1;
         let end = psp + max.min(room - env - 1);
         self.insert(Block {

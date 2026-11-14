@@ -292,15 +292,24 @@ pub(crate) fn enable_terminals() {
 pub(crate) fn route_output(id: usize) {
     CONSOLES.borrow().running = id;
 }
-pub(crate) fn poll_keyboard() -> usize {
+pub(crate) fn poll_keyboard(mut raw_input: impl FnMut(usize, u8) -> bool) -> usize {
     let mut consoles = CONSOLES.borrow();
+    let mut keyboard = KEYBOARD.borrow();
     for _ in 0..32 {
-        let Some(key) = physical_key(true) else { break };
-        if (0x6800..=0x6b00).contains(&key) && key as u8 == 0 {
-            consoles.foreground = usize::from((key >> 8) - 0x68);
+        if inb(0x64) & 0x21 != 1 {
+            break;
+        }
+        let code = inb(0x60);
+        let key = keyboard.decode(code);
+        let id = consoles.foreground;
+        if let Some(0x6800 | 0x6900 | 0x6a00 | 0x6b00) = key {
+            // Release Alt in the outgoing guest before consuming its switch chord.
+            raw_input(id, 0xb8);
+            consoles.foreground = usize::from(code - 0x3b);
             consoles.screens[consoles.foreground].redraw();
-        } else {
-            let id = consoles.foreground;
+        } else if !raw_input(id, code)
+            && let Some(key) = key
+        {
             consoles.screens[id].enqueue(key);
         }
     }
@@ -359,4 +368,11 @@ pub(crate) fn port_write(port: u16, value: u8) {
     if peripheral_port(port) {
         outb(port, value);
     }
+}
+
+#[cfg(feature = "pc386")]
+pub(crate) fn restore_text() {
+    let consoles = CONSOLES.borrow();
+    super::screen::clear_graphics();
+    consoles.screens[consoles.foreground].redraw();
 }

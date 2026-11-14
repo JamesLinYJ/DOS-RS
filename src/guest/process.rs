@@ -45,6 +45,8 @@ impl CommandTail {
 
 pub(super) struct Program<'a> {
     pub name: &'a [u8; 11],
+    /// Absolute DOS directory prefix, including its trailing separator.
+    pub directory: &'a [u8],
     pub image: &'a [u8],
     pub preferred_psp: u16,
     /// Initial paragraphs for a flat COM image; MZ images supply their own bounds.
@@ -69,7 +71,14 @@ impl Program<'_> {
                 }
                 let size = (0x102 + self.image.len()).div_ceil(16) as u16;
                 let size = size.max(self.com_paragraphs);
-                (size, size)
+                (
+                    size,
+                    if cfg!(feature = "pc386") && self.com_paragraphs >= 0x1000 {
+                        u16::MAX
+                    } else {
+                        size
+                    },
+                )
             }
         };
 
@@ -85,8 +94,8 @@ impl Program<'_> {
         // Two terminators, a word count, and the full ASCIIZ program name.
         let base = self.name[..8].iter().position(|&b| b == b' ').unwrap_or(8);
         let ext = self.name[8..].iter().position(|&b| b == b' ').unwrap_or(3);
-        let env_size =
-            (env_len + 2 + 3 + base + usize::from(ext != 0) + ext + 1).div_ceil(16) as u16;
+        let env_size = (env_len + 2 + self.directory.len() + base + usize::from(ext != 0) + ext + 1)
+            .div_ceil(16) as u16;
         let (psp, end) = arena
             .process(self.preferred_psp, env_size, min, max)
             .map_err(|_| 8u16)?;
@@ -101,11 +110,13 @@ impl Program<'_> {
         }
         let trailer = &mut ram.paragraphs_mut(env, psp - 1)[env_len..];
         trailer.fill(0);
-        trailer[..5].copy_from_slice(b"\x01\0A:\\");
-        trailer[5..5 + base].copy_from_slice(&self.name[..base]);
+        trailer[..2].copy_from_slice(&1u16.to_le_bytes());
+        let file = 2 + self.directory.len();
+        trailer[2..file].copy_from_slice(self.directory);
+        trailer[file..file + base].copy_from_slice(&self.name[..base]);
         if ext > 0 {
-            trailer[5 + base] = b'.';
-            trailer[6 + base..6 + base + ext].copy_from_slice(&self.name[8..8 + ext]);
+            trailer[file + base] = b'.';
+            trailer[file + base + 1..file + base + 1 + ext].copy_from_slice(&self.name[8..8 + ext]);
         }
         let block = ram.paragraphs_mut(psp, end);
         block.fill(0);
@@ -121,7 +132,7 @@ impl Program<'_> {
             None => {
                 block[0x100..0x100 + self.image.len()].copy_from_slice(self.image);
                 let mut cpu = CpuState::at_com(psp);
-                cpu.set_wide(Slot::Stack, (block.len() - 2) as u16);
+                cpu.set_wide(Slot::Stack, (block.len().min(0x10000) - 2) as u16);
                 cpu
             }
         };

@@ -9,6 +9,7 @@ const STACK: usize = 0x300000;
 pub struct BiosInfo {
     len: u32,
     capacity: u32,
+    staging: u32,
 }
 static GDT: [u64; 4] = [
     0,
@@ -79,7 +80,7 @@ pub extern "C" fn _start(info: &BiosInfo) -> ! {
     // E820 validated the staging, stack and destination ranges. They do not overlap.
     let (entry, wide) = unsafe {
         map(
-            core::slice::from_raw_parts(0x400000 as *const u8, info.len as usize),
+            core::slice::from_raw_parts(info.staging as *const u8, info.len as usize),
             core::slice::from_raw_parts_mut(BASE as *mut u8, info.capacity as usize),
         )
     };

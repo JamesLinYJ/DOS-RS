@@ -6,6 +6,7 @@ extern crate self as bootloader_x86_64_bios_common;
 pub struct BiosInfo {
     image_len: u32,
     image_capacity: u32,
+    staging: u32,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -62,20 +63,21 @@ pub extern "C" fn _start(drive: u16, table: *const u8) -> ! {
     let field = |n: usize| u32::from_le_bytes(buffer.0[n..n + 4].try_into().unwrap());
     let (stub, file, capacity) = (field(8), field(12), field(16));
     assert!(
-        stub > 0
-            && stub < 0x100000
-            && file > 0
-            && file <= 0x800000
-            && capacity > file
-            && capacity <= i32::MAX as u32
+        stub > 0 && stub < 0x100000 && file > 0 && capacity > file && capacity <= i32::MAX as u32
     );
     assert_eq!(1 + stub.div_ceil(512) + file.div_ceil(512), sectors);
+    // Keep the on-disk PE outside the destination that the mapper clears.
+    let staging = 0x01000000u32
+        .checked_add(capacity)
+        .unwrap()
+        .next_multiple_of(4096);
+    let end = staging.checked_add(file.next_multiple_of(512)).unwrap();
     let memory = unsafe { e820::query_memory_map() }.unwrap();
     assert!(memory.iter().any(|r| r.region_type == 1
         && r.start_addr <= 0x100000
-        && r.start_addr.saturating_add(r.len) >= 0x1000000 + u64::from(capacity)));
+        && r.start_addr.saturating_add(r.len) >= u64::from(end)));
     lba += 1;
-    for (start, bytes) in [(0x100000u32, stub), (0x400000, file)] {
+    for (start, bytes) in [(0x100000u32, stub), (staging, file)] {
         let mut left = bytes.div_ceil(512);
         let mut addr = start;
         while left > 0 {
@@ -92,6 +94,7 @@ pub extern "C" fn _start(drive: u16, table: *const u8) -> ! {
     let mut info = BiosInfo {
         image_len: file,
         image_capacity: capacity,
+        staging,
     };
     mode::enter_protected_mode_and_jump_to_stage_3(0x100000 as *const u8, &mut info);
     fail(b'R')

@@ -41,7 +41,7 @@ run_one() {
 		-parallel "file:$printer_log" \
 		-monitor none -nic none \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-		-drive if=floppy,index=0,format=raw,file="$root/disks/msload.img" \
+		-drive if=floppy,index=0,format=raw,readonly=on,file="$root/disks/msload.img" \
 		>"$out" 2>&1
 	local status=$?
 	set -e

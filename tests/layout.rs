@@ -13,8 +13,8 @@ mod process;
 #[path = "../src/guest/state.rs"]
 mod state;
 
-use arena::{Arena, MemoryError};
 use arena::UMB_ROOT as END;
+use arena::{Arena, MemoryError};
 use memory::read_word;
 use process::{CommandTail, Program};
 use std::sync::Mutex;
@@ -29,7 +29,7 @@ fn placement_reserves_psp_environment_and_stack_for_every_process() {
     let (parent, end) = arena.process(ROOT, 3, 0x200, 0x200).unwrap();
     assert_eq!((parent, end), (ROOT, ROOT + 0x200));
     let heap = arena.alloc(parent, 32, 0).unwrap();
-    assert_eq!(heap, end+1);
+    assert_eq!(heap, end + 1);
     let (child, _) = arena.process(ROOT, 3, 0x100, 0x100).unwrap();
     assert_eq!(child - 4, heap + 33);
     assert!(matches!(
@@ -92,11 +92,17 @@ fn linked_upper_regions_reserve_the_ems_frame_and_survive_unlink() {
     arena.upper_linked = true;
     let xms = arena.alloc(arena::XMS_OWNER, 0x7fe, 0x40).unwrap();
     assert_eq!(xms, 0xc801);
-    assert!(matches!(arena.alloc(ROOT, 1, 0x40), Err(MemoryError::NoRoom(0))));
+    assert!(matches!(
+        arena.alloc(ROOT, 1, 0x40),
+        Err(MemoryError::NoRoom(0))
+    ));
     let fallback = arena.alloc(ROOT, 1, 0x80).unwrap();
     assert_eq!(fallback, FLOOR);
     arena.upper_linked = false;
-    assert!(matches!(arena.free(ROOT, xms), Err(MemoryError::InvalidBlock)));
+    assert!(matches!(
+        arena.free(ROOT, xms),
+        Err(MemoryError::InvalidBlock)
+    ));
     arena.free(arena::XMS_OWNER, xms).unwrap();
     arena.free(8, driver).unwrap();
 }
@@ -152,6 +158,7 @@ fn mz_loads_declared_bytes_and_applies_relocations_once() {
 fn program(image: &[u8]) -> Program<'_> {
     Program {
         name: b"TEST    EXE",
+        directory: b"A:\\",
         image,
         preferred_psp: ROOT,
         com_paragraphs: 0x1000,
@@ -272,4 +279,37 @@ fn kernel_storage_rejects_a_second_borrow_and_releases_on_unwind() {
     }));
     assert!(result.is_err());
     assert_eq!(*cell.borrow(), 42);
+}
+
+#[test]
+fn color_status_reports_display_blank_and_vertical_retrace() {
+    let _guard = RAM_LOCK.lock().unwrap();
+    let mut ram = memory::storage();
+    ram.clear();
+    let mut seen = [false; 10];
+    for _ in 0..45000 {
+        let status = ram.system_port(0x3da, false, 0).unwrap();
+        assert_eq!(status & !9, 0);
+        seen[usize::from(status)] = true;
+    }
+    assert!(seen[0] && seen[1] && seen[9]);
+}
+
+#[test]
+fn zero_allocation_mz_relocates_at_top_of_the_largest_process_block() {
+    let _guard = RAM_LOCK.lock().unwrap();
+    let mut ram = memory::storage();
+    ram.clear();
+    let mut arena = Arena::new();
+    arena.process(ROOT + 0x120, 2, 0x100, 0x100).unwrap();
+    let mut file = mz_file();
+    file[10..14].fill(0);
+    file[16..18].copy_from_slice(&16u16.to_le_bytes());
+    let (psp, cpu) = program(&file).load(&mut ram, &mut arena).unwrap();
+    let code = cpu.selector(state::Segment::Code);
+    assert!(psp > ROOT + 0x120);
+    assert_eq!(read_word(&ram, psp, 2), Some(END));
+    assert_eq!(code, END - 1);
+    assert_eq!(read_word(&ram, code, 1), Some(code + 2));
+    assert_eq!(cpu.selector(state::Segment::Extra), psp);
 }

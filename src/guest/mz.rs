@@ -9,6 +9,7 @@ pub(super) struct Mz<'a> {
     ip: u16,
     ss: u16,
     sp: u16,
+    top_loaded: bool,
     pub minimum: u16,
     pub maximum: u16,
 }
@@ -88,22 +89,33 @@ impl<'a> Mz<'a> {
                 usize::from(sp).div_ceil(16)
             };
         let minimum = u16::try_from((base + usize::from(word(10)?)).max(stack_end)).ok()?;
-        let maximum = u16::try_from(base + usize::from(word(12)?))
-            .unwrap_or(u16::MAX)
-            .max(minimum);
+        let top_loaded = word(10)? == 0 && word(12)? == 0;
+        let maximum = if top_loaded {
+            u16::MAX
+        } else {
+            u16::try_from(base + usize::from(word(12)?))
+                .unwrap_or(u16::MAX)
+                .max(minimum)
+        };
         Some(Self {
             module,
             cs,
             ip,
             ss,
             sp,
+            top_loaded,
             minimum,
             maximum,
         })
     }
 
     pub fn load(&self, ram: &mut GuestRam, psp: u16, end: u16) -> CpuState {
-        let load = psp + 0x10;
+        // A zero minimum and maximum requests DOS high loading within the PSP's block.
+        let load = if self.top_loaded {
+            end - (self.minimum - 0x10)
+        } else {
+            psp + 0x10
+        };
         let bytes = ram.paragraphs_mut(load, end);
         self.module
             .copy_to(bytes, load)

@@ -90,7 +90,7 @@ pub(super) fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> 
         0x14 => serial_bios(cpu),
         0x17 => printer_bios(cpu),
         0x16 => keyboard(cpu),
-        0x1A => clock(cpu),
+        0x1A => clock(cpu, ram),
         _ => return false,
     }
     true
@@ -105,7 +105,27 @@ fn video(cpu: &mut CpuState, ram: &mut GuestRam) {
         crate::bios::pc::position(row, col);
     };
     match cpu.high(Slot::Accumulator) {
+        #[cfg(feature = "pc386")]
+        0 if cpu.low(Slot::Accumulator) & 0x7f == 0x12
+            && crate::bios::screen::supports_graphics() =>
+        {
+            ram.graphics
+                .get_or_insert_with(super::super::vga::Graphics::new)
+                .planar_mode(cpu.low(Slot::Accumulator) & 0x80 == 0);
+            ram.store(0x40, 0x49, 0x12);
+            ram.store(0x40, 0x84, 29);
+            ram.store(0x40, 0x4c, 0);
+            ram.store(0x40, 0x4d, 0xa0);
+            cpu.set_low(Slot::Accumulator, 0x20);
+            cpu.set_carry(false);
+        }
         0 if matches!(cpu.low(Slot::Accumulator) & 0x7f, 2 | 3 | 7) => {
+            #[cfg(feature = "pc386")]
+            if let Some(g) = &mut ram.graphics {
+                g.active = false;
+            }
+            ram.store(0x40, 0x84, 24);
+            ram.store(0x40, 0x4d, 16);
             let mode = cpu.low(Slot::Accumulator);
             ram.store(0x40, 0x49, mode & 0x7f);
             if mode & 0x80 == 0 {
@@ -179,6 +199,68 @@ fn video(cpu: &mut CpuState, ram: &mut GuestRam) {
                 };
                 ram.write_text(r, c, u16::from_be_bytes([attr, cpu.low(Slot::Accumulator)]));
             }
+            cpu.set_carry(false);
+        }
+        #[cfg(feature = "pc386")]
+        0x10 if ram.graphics.is_some() => {
+            let g = ram.graphics.as_ref().unwrap();
+            let es = cpu.selector(Segment::Extra);
+            let dx = cpu.wide(Slot::Data);
+            match cpu.low(Slot::Accumulator) {
+                0 if cpu.low(Slot::Base) < 16 => {
+                    g.attribute(cpu.low(Slot::Base), cpu.high(Slot::Base))
+                }
+                1 => g.attribute(17, cpu.high(Slot::Base)),
+                2 => {
+                    for i in 0..17u16 {
+                        g.attribute(
+                            if i == 16 { 17 } else { i as u8 },
+                            ram.load(es, dx.wrapping_add(i)).unwrap(),
+                        );
+                    }
+                }
+                0x10 => {
+                    g.write(0x3c8, cpu.low(Slot::Base));
+                    for component in [
+                        cpu.high(Slot::Data),
+                        cpu.high(Slot::Count),
+                        cpu.low(Slot::Count),
+                    ] {
+                        g.write(0x3c9, component);
+                    }
+                }
+                0x12 => {
+                    g.write(0x3c8, cpu.low(Slot::Base));
+                    let mut offset = dx;
+                    for _ in 0..cpu.wide(Slot::Count).min(256) {
+                        for _ in 0..3 {
+                            g.write(0x3c9, ram.load(es, offset).unwrap());
+                            offset = offset.wrapping_add(1);
+                        }
+                    }
+                }
+                _ => {
+                    cpu.set_carry(true);
+                    return;
+                }
+            }
+            cpu.set_carry(false);
+        }
+        0x11 if cpu.low(Slot::Accumulator) == 0x30 => {
+            let pointer = match cpu.high(Slot::Base) {
+                0 => 0x4000 + 128 * 8,
+                1 | 6 => 0x4800,
+                3 => 0x4000,
+                4 => 0x4400,
+                _ => {
+                    cpu.set_carry(true);
+                    return;
+                }
+            };
+            cpu.set_selector(Segment::Extra, 0xf000);
+            cpu.set_wide(Slot::Frame, pointer);
+            cpu.set_wide(Slot::Count, read_word(ram, 0x40, 0x85).unwrap_or(16));
+            cpu.set_low(Slot::Data, ram.load(0x40, 0x84).unwrap_or(24));
             cpu.set_carry(false);
         }
         0x12 if cpu.low(Slot::Base) == 0x10 => {
@@ -270,11 +352,12 @@ fn printer_bios(cpu: &mut CpuState) {
     cpu.set_high(Slot::Accumulator, pc::printer_status() | u8::from(!ok));
 }
 
-fn clock(cpu: &mut CpuState) {
+fn clock(cpu: &mut CpuState, ram: &mut GuestRam) {
     if cpu.high(Slot::Accumulator) == 0 {
-        cpu.set_wide(Slot::Count, 0);
-        cpu.set_wide(Slot::Data, 1);
-        cpu.set_low(Slot::Accumulator, 0);
+        cpu.set_wide(Slot::Count, read_word(ram, 0x40, 0x6e).unwrap_or(0));
+        cpu.set_wide(Slot::Data, read_word(ram, 0x40, 0x6c).unwrap_or(0));
+        cpu.set_low(Slot::Accumulator, ram.load(0x40, 0x70).unwrap_or(0));
+        ram.store(0x40, 0x70, 0);
         cpu.set_carry(false);
     } else {
         cpu.set_carry(true);

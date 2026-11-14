@@ -94,6 +94,15 @@ pub(super) fn execute(
         return;
     }
     let (verb, rest) = split(line);
+    if verb.len() == 2 && verb[1] == b':' && rest.is_empty() {
+        let drive = verb[0].to_ascii_uppercase().wrapping_sub(b'A');
+        if disk::select_drive(drive) {
+            session.drive = drive;
+        } else {
+            say(b"Invalid drive.\r\n");
+        }
+        return;
+    }
     if crate::drivers::command(verb, rest) {
         return;
     }
@@ -165,15 +174,15 @@ pub(super) fn execute(
         );
     } else if verb.eq_ignore_ascii_case(b"SET") {
         assign(rest, &mut session.environment);
-    } else if let Some(mut file) = disk::canonical(verb) {
+    } else if let Some((dir, mut file)) = disk::path_name(verb) {
         if !verb.contains(&b'.') {
             for ext in [b"COM", b"EXE", b"BAT"] {
                 file[8..].copy_from_slice(ext);
-                if disk::exists(&file) {
+                if disk::exists_at(dir, &file) {
                     break;
                 }
             }
-            if verb.eq_ignore_ascii_case(b"MEM") && !disk::exists(&file) {
+            if verb.eq_ignore_ascii_case(b"MEM") && !disk::exists_at(dir, &file) {
                 if rest.is_empty() {
                     let (largest, total) = ram.xms_free_bytes();
                     say(b"XMS and EMS share this terminal's extended memory.\r\n");
@@ -193,22 +202,22 @@ pub(super) fn execute(
         if echo {
             let mut path = [0; 64];
             let len = disk::current_path(&mut path);
-            say(b"A:\\");
+            say(&[b'A' + session.drive, b':', b'\\']);
             say(&path[..len]);
             say(b"> ");
             say(line);
             say(b"\r\n");
         }
-        launch_named(&file, rest, ram, session, depth);
+        launch_named(dir, &file, rest, ram, session, depth);
     }
 }
 
 fn directory(rest: &[u8]) {
-    let Some(name) = disk::canonical(rest) else {
+    let Some((dir, name)) = disk::path_name(rest) else {
         say(b"File not found.\r\n");
         return;
     };
-    if disk::exists(&name) {
+    if disk::exists_at(dir, &name) {
         say(b"Found: ");
         say(rest);
         say(b"\r\n");
@@ -218,12 +227,12 @@ fn directory(rest: &[u8]) {
 }
 
 fn show_file(rest: &[u8]) {
-    let Some(name) = disk::canonical(rest) else {
+    let Some((dir, name)) = disk::path_name(rest) else {
         say(b"Cannot read file.\r\n");
         return;
     };
     let mut body = [0u8; 256];
-    let Some(length) = disk::read_head(&name, &mut body) else {
+    let Some(length) = disk::read_range(dir, &name, 0, &mut body) else {
         say(b"Cannot read file.\r\n");
         return;
     };
@@ -232,16 +241,17 @@ fn show_file(rest: &[u8]) {
 }
 
 fn copy(from: &[u8], to: &[u8]) {
-    let (Some(source), Some(dest)) = (disk::canonical(from), disk::canonical(to)) else {
+    let (Some((src, source)), Some((dst, dest))) = (disk::path_name(from), disk::path_name(to))
+    else {
         say(b"Copy failed.\r\n");
         return;
     };
     let mut body = [0u8; 128];
-    let Some(length) = disk::read_file(&source, &mut body) else {
+    let Some(length) = disk::read_file_at(src, &source, &mut body) else {
         say(b"Copy failed.\r\n");
         return;
     };
-    if disk::write_file(&dest, &body[..length]) {
+    if disk::write_named_at(dst, &dest, &body[..length], 0x20) && disk::flush(dst) {
         say(b"File copied.\r\n");
     } else {
         say(b"Copy failed.\r\n");
@@ -249,19 +259,24 @@ fn copy(from: &[u8], to: &[u8]) {
 }
 
 fn one(rest: &[u8], act: fn(&[u8; 11]) -> bool, ok: &[u8], fail: &[u8]) {
-    let Some(name) = disk::canonical(rest) else {
+    let Some((dir, name)) = disk::path_name(rest) else {
         say(fail);
         return;
     };
-    if act(&name) { say(ok) } else { say(fail) }
+    if disk::in_dir(dir, || act(&name)) && disk::flush(dir) {
+        say(ok)
+    } else {
+        say(fail)
+    }
 }
 
 fn two(from: &[u8], to: &[u8], act: fn(&[u8; 11], &[u8; 11]) -> bool, ok: &[u8], fail: &[u8]) {
-    let (Some(source), Some(dest)) = (disk::canonical(from), disk::canonical(to)) else {
+    let (Some((src, source)), Some((dst, dest))) = (disk::path_name(from), disk::path_name(to))
+    else {
         say(fail);
         return;
     };
-    if act(&source, &dest) {
+    if src == dst && disk::in_dir(src, || act(&source, &dest)) && disk::flush(dst) {
         say(ok)
     } else {
         say(fail)
@@ -281,6 +296,7 @@ fn assign(rest: &[u8], environment: &mut Environment) {
 }
 
 fn launch_named(
+    dir: u32,
     name: &[u8; 11],
     args: &[u8],
     ram: &mut GuestRam,
@@ -289,7 +305,7 @@ fn launch_named(
 ) {
     if &name[8..11] == b"BAT" {
         let mut body = [0u8; 512];
-        let Some(length) = disk::read_file(name, &mut body) else {
+        let Some(length) = disk::read_file_at(dir, name, &mut body) else {
             say(b"Cannot read batch file.\r\n");
             return;
         };
@@ -302,7 +318,7 @@ fn launch_named(
         }
         return;
     }
-    let Some(code) = super::run::spawn(args, name, ram, session) else {
+    let Some(code) = super::run::spawn_at(dir, args, name, ram, session) else {
         say(b"Cannot load program.\r\n");
         return;
     };

@@ -10,18 +10,21 @@ use super::step::{self, Outcome};
 use crate::kernel_cell::KernelCell;
 
 mod drivers;
-mod runtime;
-mod handles;
-pub(super) mod xms;
 pub(super) mod ems;
-mod locks;
 mod fcb;
-use fcb::{fcb_find, fcb_delete, fcb_open, fcb_close, fcb_read, fcb_write, fcb_create, fcb_rename, fcb_random_read, fcb_random_write, fcb_block_read, fcb_block_write, fcb_place, fcb_size};
+mod handles;
+mod locks;
+mod runtime;
+pub(super) mod xms;
+use fcb::{
+    fcb_block_read, fcb_block_write, fcb_close, fcb_create, fcb_delete, fcb_find, fcb_open,
+    fcb_place, fcb_random_read, fcb_random_write, fcb_read, fcb_rename, fcb_size, fcb_write,
+};
 mod bios;
 use bios::serve_bios;
 mod smoke;
-pub use runtime::{interactive, run_shell};
 pub(crate) use runtime::worker_tick;
+pub use runtime::{interactive, run_shell};
 pub use smoke::show;
 
 const LAUNCH_SEGMENT: u16 = 0x1600;
@@ -37,6 +40,7 @@ fn load_root(
     session: &mut Session,
 ) -> Option<CpuState> {
     let program = Program {
+        directory: b"A:\\",
         name,
         image,
         preferred_psp,
@@ -51,7 +55,7 @@ fn load_root(
     };
     let (psp, cpu) = program.load(ram, &mut session.arena).ok()?;
     set_psp_version(ram, psp, crate::dos::getset::VERSION.0);
-    session.handles.publish(ram,psp);
+    session.handles.publish(ram, psp);
     session.prefix = psp;
     session.current_psp = psp;
     session.dta_segment = psp;
@@ -72,8 +76,7 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
     let mut steps = 0u32;
     while steps < limit {
         steps += 1;
-        let instruction = cpu.instruction();
-        let event = step::step(cpu, ram);
+        let (event, instruction) = step::slice(cpu, ram, 1);
         if let Some(end) = handle_event(event, instruction, cpu, ram, session) {
             return end;
         }
@@ -86,21 +89,27 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
 
 fn serve_port(cpu: &mut CpuState, ram: &mut GuestRam, port: u16, write: bool, word: bool) {
     use crate::bios::pc::{port_read, port_write};
-    if !word && let Some(result) = ram.system_port(port, write, cpu.low(Slot::Accumulator)) {
+    for i in 0..=u16::from(word) {
+        let port = port.wrapping_add(i);
+        let value = if i == 0 {
+            cpu.low(Slot::Accumulator)
+        } else {
+            cpu.high(Slot::Accumulator)
+        };
+        let result = ram.system_port(port, write, value).unwrap_or_else(|| {
+            if write {
+                port_write(port, value);
+                0
+            } else {
+                port_read(port)
+            }
+        });
         if !write {
-            cpu.set_low(Slot::Accumulator, result);
-        }
-        return;
-    }
-    if write {
-        port_write(port, cpu.low(Slot::Accumulator));
-        if word {
-            port_write(port.wrapping_add(1), cpu.high(Slot::Accumulator));
-        }
-    } else {
-        cpu.set_low(Slot::Accumulator, port_read(port));
-        if word {
-            cpu.set_high(Slot::Accumulator, port_read(port.wrapping_add(1)));
+            if i == 0 {
+                cpu.set_low(Slot::Accumulator, result);
+            } else {
+                cpu.set_high(Slot::Accumulator, result);
+            }
         }
     }
 }
@@ -113,6 +122,41 @@ fn handle_event(
     session: &mut Session,
 ) -> Option<End> {
     match event {
+        #[cfg(feature = "pc386")]
+        Outcome::Firmware(v) => {
+            if (v == 0x16 && matches!(cpu.high(Slot::Accumulator), 0 | 0x10)
+                || v == 0x21 && matches!(cpu.high(Slot::Accumulator), 1 | 7 | 8))
+                && crate::bios::pc::key(false).is_none()
+            {
+                return session.scheduled.then_some(End::Waiting);
+            }
+            if step::interrupt_return(cpu, ram, 0xcf) != Outcome::Continue {
+                return Some(End::Fault(0xcf));
+            }
+            if matches!(v, 0x08 | 0x09) {
+                if let Some(at) = &ram.at {
+                    at.eoi();
+                }
+                if v == 8 {
+                    let low = read_word(ram, 0x40, 0x6c).unwrap();
+                    let high = read_word(ram, 0x40, 0x6e).unwrap();
+                    let count = ((u32::from(high) << 16) | u32::from(low)) + 1;
+                    store_bytes(ram, 0x40, 0x6c, &(count % 0x1800b0).to_le_bytes());
+                    if count == 0x1800b0 {
+                        ram.store(0x40, 0x70, 1);
+                    }
+                }
+                return None;
+            }
+            if matches!(v, 0x1c | 0x28 | 0x2a) {
+                return None;
+            }
+            if v == 0x2f {
+                multiplex(cpu);
+                return None;
+            }
+            return handle_event(Outcome::Interrupt(v), cpu.instruction(), cpu, ram, session);
+        }
         Outcome::Continue => {}
         Outcome::EmsReturn => session.ems.return_call(cpu, ram),
         Outcome::Ems => {
@@ -169,14 +213,7 @@ fn handle_event(
                 // An unclaimed multiplex call chains to the final IRET. Probes
                 // use AL=0 on entry and observe that no TSR claimed it.
                 if vector == 0x2f {
-                    match cpu.wide(Slot::Accumulator) {
-                        0x4300 => cpu.set_low(Slot::Accumulator, 0x80),
-                        0x4310 => {
-                            cpu.set_selector(Segment::Extra, xms::ENTRY.0);
-                            cpu.set_wide(Slot::Base, xms::ENTRY.1);
-                        }
-                        _ => {}
-                    }
+                    multiplex(cpu);
                     return None;
                 }
                 return Some(End::Other(vector));
@@ -186,20 +223,26 @@ fn handle_event(
     None
 }
 
+fn multiplex(cpu: &mut CpuState) {
+    match cpu.wide(Slot::Accumulator) {
+        0x4300 => cpu.set_low(Slot::Accumulator, 0x80),
+        0x4310 => {
+            cpu.set_selector(Segment::Extra, xms::ENTRY.0);
+            cpu.set_wide(Slot::Base, xms::ENTRY.1);
+        }
+        _ => {}
+    }
+}
+
 enum Action {
     Continue,
     Exit(u8),
 }
 
-const FILE_BYTES: usize = 262144;
-
 #[derive(Clone, Copy)]
 struct Opened {
-    terminal: usize,
     device: Option<drivers::Device>,
-    dir: u16,
-    bytes: usize,
-    len: usize,
+    dir: u32,
     pos: usize,
     name: [u8; 11],
     named: bool,
@@ -210,8 +253,8 @@ struct Opened {
 
 const HANDLE_SLOTS: usize = 20;
 
-static FILE_POOL: [KernelCell<[[u8; FILE_BYTES]; HANDLE_SLOTS]>; 4] =
-    [const { KernelCell::new([[0; FILE_BYTES]; HANDLE_SLOTS]) }; 4];
+// A single INT 21h transfer fits in CX. Open descriptions carry only metadata.
+static TRANSFER: KernelCell<[u8; u16::MAX as usize]> = KernelCell::new([0; u16::MAX as usize]);
 
 pub(super) struct Session {
     drivers: drivers::Drivers,
@@ -221,16 +264,16 @@ pub(super) struct Session {
     parents: [Option<Parent>; 8],
     pub(super) batches: super::command::Batches,
     pub(super) environment: super::command::Environment,
-    handles:handles::Handles,
-    xms:xms::Xms,
-    ems:ems::Ems,
+    handles: handles::Handles,
+    xms: xms::Xms,
+    ems: ems::Ems,
     last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
     prefix: u16,
     arena: Arena,
     pub(super) child_depth: u8,
-    drive: u8,
+    pub(super) drive: u8,
     break_check: u8,
     extended_break: u8,
     current_psp: u16,
@@ -262,12 +305,15 @@ impl Session {
     fn new() -> Self {
         Self {
             drivers: drivers::Drivers::new(),
-            terminal:0, scheduled:false, pending:None,
-            parents:[const {None};8], batches:super::command::Batches::new(),
+            terminal: 0,
+            scheduled: false,
+            pending: None,
+            parents: [const { None }; 8],
+            batches: super::command::Batches::new(),
             environment: super::command::Environment::new(),
-            handles:handles::Handles::new(),
-            xms:xms::Xms::new(),
-            ems:ems::Ems::new(),
+            handles: handles::Handles::new(),
+            xms: xms::Xms::new(),
+            ems: ems::Ems::new(),
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,
@@ -328,7 +374,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
     }
     if matches!(
         function,
-        0x3c..=0x3e | 0x45 | 0x46 | 0x5a | 0x5b | 0x67 | 0x6c
+        0x3c..=0x40 | 0x42 | 0x45 | 0x46 | 0x5a | 0x5b | 0x67 | 0x6c
     ) {
         session.handles.publish(ram, session.prefix);
     }
@@ -427,10 +473,10 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
         }
         0x0E => {
             let requested = cpu.low(Slot::Data);
-            if requested < 2 {
+            if super::disk::select_drive(requested) {
                 session.drive = requested;
             }
-            cpu.set_low(Slot::Accumulator, 2);
+            cpu.set_low(Slot::Accumulator, session.drivers.count());
             cpu.set_carry(false);
             Action::Continue
         }
@@ -553,8 +599,15 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             session.vector_segment[id] = cpu.selector(Segment::Data);
             session.vector_offset[id] = cpu.wide(Slot::Data);
             session.vector_live[id] = true;
-            let at=(id*4) as u16;
-            for (i,b) in session.vector_offset[id].to_le_bytes().into_iter().chain(session.vector_segment[id].to_le_bytes()).enumerate(){ram.store(0,at+i as u16,b);}
+            let at = (id * 4) as u16;
+            for (i, b) in session.vector_offset[id]
+                .to_le_bytes()
+                .into_iter()
+                .chain(session.vector_segment[id].to_le_bytes())
+                .enumerate()
+            {
+                ram.store(0, at + i as u16, b);
+            }
             cpu.set_carry(false);
             Action::Continue
         }
@@ -611,8 +664,11 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
                 cpu.set_selector(Segment::Extra, session.vector_segment[id]);
                 cpu.set_wide(Slot::Base, session.vector_offset[id]);
             } else {
-                cpu.set_selector(Segment::Extra,read_word(ram,0,id as u16*4+2).unwrap());
-                cpu.set_wide(Slot::Base,read_word(ram,0,id as u16*4).unwrap());
+                cpu.set_selector(
+                    Segment::Extra,
+                    read_word(ram, 0, id as u16 * 4 + 2).unwrap(),
+                );
+                cpu.set_wide(Slot::Base, read_word(ram, 0, id as u16 * 4).unwrap());
             }
             cpu.set_carry(false);
             Action::Continue
@@ -743,6 +799,19 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             list_of_lists(cpu, ram, session);
             Action::Continue
         }
+        0x55 => {
+            let destination = cpu.wide(Slot::Data);
+            create_psp(cpu, ram, session);
+            if cpu.flags() & 1 == 0 {
+                let limit = cpu.wide(Slot::Source);
+                store_bytes(ram, destination, 2, &limit.to_le_bytes());
+                store_bytes(ram, destination, 0x34, &[0x18, 0]);
+                store_bytes(ram, destination, 0x36, &destination.to_le_bytes());
+                session.current_psp = destination;
+                cpu.set_low(Slot::Accumulator, 0xf0);
+            }
+            Action::Continue
+        }
         0x54 => {
             cpu.set_low(Slot::Accumulator, session.verify);
             cpu.set_carry(false);
@@ -870,10 +939,7 @@ fn extended_error(cpu: &mut CpuState, session: &Session) {
         (u16::from(session.extended_class) << 8) | u16::from(session.extended_action),
     );
     let kept = cpu.wide(Slot::Count) & 0x00FF;
-    cpu.set_wide(
-        Slot::Count,
-        kept | (u16::from(session.extended_locus) << 8),
-    );
+    cpu.set_wide(Slot::Count, kept | (u16::from(session.extended_locus) << 8));
     cpu.set_selector(Segment::Extra, 0);
     cpu.set_wide(Slot::Dest, 0);
     cpu.set_carry(false);
@@ -1179,13 +1245,10 @@ fn current_process(cpu: &mut CpuState, session: &Session) {
 
 fn console_handle(handle: u16) -> Opened {
     Opened {
-        terminal:0,
         device: None,
         dir: 0,
-        bytes: 0,
-        len: 0,
         pos: 0,
-        name: [b' '; 11],
+        name: *b"CON        ",
         named: false,
         console: true,
         access: if handle == 0 { 0 } else { 1 },
@@ -1206,7 +1269,7 @@ fn force_duplicate(cpu: &mut CpuState, session: &mut Session) {
     }
 }
 fn disk_reset(cpu: &mut CpuState, session: &mut Session) {
-    if session.handles.commit_all() {
+    if session.handles.commit_all() && super::disk::drive_root(2).is_none_or(super::disk::flush) {
         cpu.set_low(Slot::Accumulator, 0);
         cpu.set_carry(false);
     } else {
@@ -1240,15 +1303,7 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
 }
 
 fn flush_opened(opened: &Opened) -> bool {
-    if !opened.dirty || !opened.named || opened.console {
-        return true;
-    }
-    super::disk::write_named_at(
-        opened.dir,
-        &opened.name,
-        &FILE_POOL[opened.terminal].borrow()[opened.bytes][..opened.len],
-        0x20,
-    )
+    !opened.named || super::disk::flush(opened.dir)
 }
 
 fn commit_file(cpu: &mut CpuState, session: &mut Session) {
@@ -1308,30 +1363,34 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     };
-    let bytes = &FILE_POOL[opened.terminal].borrow()[opened.bytes];
-    let mut limit = requested;
-    if &opened.name[8..11] == b"SKL" {
-        let mut index = opened.pos;
-        let end = opened.len.min(opened.pos.saturating_add(requested));
-        while index < end {
-            index += 1;
-            if bytes[index - 1] == b'\n' {
-                break;
-            }
-        }
-        limit = index - opened.pos;
-    }
-    let mut moved = 0u16;
-    while usize::from(moved) < limit && opened.pos < opened.len {
-        let byte = bytes[opened.pos];
+    let mut transfer = TRANSFER.borrow();
+    let Some(n) = super::disk::read_range(
+        opened.dir,
+        &opened.name,
+        opened.pos,
+        &mut transfer[..requested],
+    ) else {
+        fail(cpu, session, 5);
+        return;
+    };
+    let limit = if &opened.name[8..] == b"SKL" {
+        transfer[..n]
+            .iter()
+            .position(|&byte| byte == b'\n')
+            .map_or(n, |i| i + 1)
+    } else {
+        n
+    };
+    let mut moved = 0;
+    for &byte in &transfer[..limit] {
         if !ram.store(segment, offset, byte) {
             break;
         }
-        opened.pos += 1;
         offset = offset.wrapping_add(1);
         moved += 1;
     }
-    cpu.set_wide(Slot::Accumulator, moved);
+    opened.pos += moved;
+    cpu.set_wide(Slot::Accumulator, moved as u16);
     cpu.set_carry(false);
 }
 
@@ -1351,38 +1410,36 @@ fn create_temp(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         fail(cpu, session, 4);
         return;
     }
-    let saved = super::disk::working_directory();
-    if let Err(code) = temp_directory(&text[..length]) {
-        super::disk::set_working(saved);
-        fail(cpu, session, code);
+    let path = text[..length].trim_ascii_start();
+    if !path.last().is_some_and(|b| matches!(*b, b'/' | 92)) {
+        fail(cpu, session, 3);
         return;
     }
-    let attr = (cpu.wide(Slot::Count) as u8) & 0x27;
-    let mut serial = 0u32;
-    let mut name = [b' '; 11];
-    let chosen = loop {
-        if serial > 0xFFFF {
-            super::disk::set_working(saved);
-            fail(cpu, session, 4);
-            return;
-        }
-        hex_name(serial, &mut name);
-        if !super::disk::exists(&name) {
-            break name;
-        }
-        serial += 1;
+    if super::disk::path_start(path).is_none() {
+        fail(cpu, session, 15);
+        return;
+    }
+    let Some(dir) = super::disk::resolve_dir(path) else {
+        fail(cpu, session, 3);
+        return;
     };
-    if !super::disk::write_named(&chosen, b"", attr) {
-        super::disk::set_working(saved);
-        fail(cpu, session, 5);
-        return;
-    }
-    let Ok(handle) = open_named(session, super::disk::working_directory(), chosen, 2, true) else {
-        super::disk::set_working(saved);
+    let attr = (cpu.wide(Slot::Count) as u8) & 0x27;
+    let mut name = [b' '; 11];
+    let Some(chosen) = (0..=0xffff).find_map(|serial| {
+        hex_name(serial, &mut name);
+        (!super::disk::exists_at(dir, &name)).then_some(name)
+    }) else {
         fail(cpu, session, 4);
         return;
     };
-    super::disk::set_working(saved);
+    if !super::disk::write_named_at(dir, &chosen, b"", attr) {
+        fail(cpu, session, 5);
+        return;
+    }
+    let Ok(handle) = open_named(session, dir, chosen, 2, true) else {
+        fail(cpu, session, 4);
+        return;
+    };
     let mut index = 0usize;
     let mut offset = start.wrapping_add(length as u16);
     while index < 8 {
@@ -1399,36 +1456,6 @@ fn create_temp(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     }
     cpu.set_wide(Slot::Accumulator, handle);
     cpu.set_carry(false);
-}
-
-fn temp_directory(text: &[u8]) -> Result<(), u16> {
-    let mut cursor = 0usize;
-    while cursor < text.len() && text[cursor] == b' ' {
-        cursor += 1;
-    }
-    if cursor >= text.len() {
-        return Err(3);
-    }
-    if cursor + 1 < text.len() && text[cursor + 1] == b':' {
-        let letter = ascii_upper(text[cursor]);
-        if !letter.is_ascii_uppercase() || letter > b'B' {
-            return Err(15);
-        }
-        cursor += 2;
-    }
-    let last = text[text.len() - 1];
-    if cursor >= text.len() || (last != b'\\' && last != b'/') {
-        return Err(3);
-    }
-    let body = &text[cursor..text.len() - 1];
-    if body.is_empty() {
-        super::disk::change_dir(b"\\");
-        return Ok(());
-    }
-    if body.contains(&b'\\') || body.contains(&b'/') || !super::disk::change_dir(body) {
-        return Err(3);
-    }
-    Ok(())
 }
 
 fn hex_name(serial: u32, name: &mut [u8; 11]) {
@@ -1503,7 +1530,13 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 2);
         return;
     };
-    let handle = match open_named(session, dir, name, access | cpu.low(Slot::Base)&0x80, empty) {
+    let handle = match open_named(
+        session,
+        dir,
+        name,
+        access | cpu.low(Slot::Base) & 0x80,
+        empty,
+    ) {
         Ok(handle) => handle,
         Err(code) => {
             fail(cpu, session, code);
@@ -1517,7 +1550,7 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
 
 fn open_named(
     session: &mut Session,
-    dir: u16,
+    dir: u32,
     name: [u8; 11],
     access: u8,
     empty: bool,
@@ -1528,22 +1561,17 @@ fn open_named(
     let file = if let Some(device) = session.drivers.find(&name) {
         Opened {
             device: Some(device),
+            name,
             access,
             ..console_handle(0)
         }
     } else {
-        let stored = &mut FILE_POOL[session.terminal].borrow()[slot];
-        let len = if empty {
-            0
-        } else {
-            super::disk::read_file_at(dir, &name, stored).ok_or(2u16)?
-        };
+        if !empty {
+            super::disk::file_len_at(dir, &name).ok_or(2u16)?;
+        }
         Opened {
             device: None,
-            terminal: session.terminal,
             dir,
-            bytes: slot,
-            len,
             pos: 0,
             name,
             named: true,
@@ -1601,8 +1629,6 @@ fn set_handle_count(cpu: &mut CpuState, session: &mut Session) {
     cpu.set_carry(false);
 }
 
-
-
 fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if drivers::handle_io(cpu, ram, session, true) {
         return;
@@ -1634,36 +1660,27 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     };
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
-    let bytes = &mut FILE_POOL[opened.terminal].borrow()[opened.bytes];
+    let mut transfer = TRANSFER.borrow();
     let mut seen = 0u16;
-    if opened.pos > opened.len && opened.pos < FILE_BYTES {
-        bytes[opened.len..opened.pos].fill(0);
-    }
-    while seen < count {
-        if opened.pos >= FILE_BYTES {
-            break;
-        }
-        let Some(byte) = ram.load(segment, offset) else {
-            break;
+    for byte in &mut transfer[..usize::from(count)] {
+        let Some(value) = ram.load(segment, offset) else {
+            fail(cpu, session, 5);
+            return;
         };
-        bytes[opened.pos] = byte;
-        opened.pos += 1;
-        if opened.pos > opened.len {
-            opened.len = opened.pos;
-        }
+        *byte = value;
         offset = offset.wrapping_add(1);
         seen += 1;
     }
-    if count == 0 {
-        if opened.pos > FILE_BYTES {
-            fail(cpu, session, 0x27);
-            return;
-        }
-        if opened.pos > opened.len {
-            bytes[opened.len..opened.pos].fill(0);
-        }
-        opened.len = opened.pos;
+    if !super::disk::write_range(
+        opened.dir,
+        &opened.name,
+        opened.pos,
+        &transfer[..usize::from(seen)],
+    ) {
+        fail(cpu, session, 0x27);
+        return;
     }
+    opened.pos += usize::from(seen);
     opened.dirty = true;
     cpu.set_wide(Slot::Accumulator, seen);
     cpu.set_carry(false);
@@ -1714,6 +1731,7 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     };
     let given = read_word(ram, block_segment, block_offset).unwrap_or(0);
     let program = Program {
+        directory: b"A:\\",
         name: &name,
         image: &[],
         preferred_psp: LAUNCH_SEGMENT,
@@ -1736,28 +1754,6 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     }
 }
 
-fn file_component(text: &[u8; 64]) -> Option<[u8; 11]> {
-    let mut start = 0usize;
-    let mut end = 0usize;
-    while end < text.len() && text[end] != 0 {
-        if text[end] == b'\\' || text[end] == b'/' || text[end] == b':' {
-            start = end + 1;
-        }
-        end += 1;
-    }
-    if start >= end {
-        return None;
-    }
-    let mut bare = [0u8; 64];
-    let mut index = 0usize;
-    while start < end && index + 1 < bare.len() {
-        bare[index] = text[start];
-        index += 1;
-        start += 1;
-    }
-    dos_name(&bare)
-}
-
 fn memory_status(cpu: &mut CpuState, session: &mut Session, result: Result<(), MemoryError>) {
     match result {
         Ok(()) => cpu.set_carry(false),
@@ -1769,13 +1765,15 @@ fn memory_status(cpu: &mut CpuState, session: &mut Session, result: Result<(), M
     }
 }
 
-pub(super) fn spawn(
+pub(super) fn spawn_at(
+    dir: u32,
     args: &[u8],
     name: &[u8; 11],
     ram: &mut GuestRam,
     session: &mut Session,
 ) -> Option<u8> {
     let program = Program {
+        directory: b"A:\\",
         name,
         image: &[],
         preferred_psp: SHELL_CHILD,
@@ -1784,14 +1782,14 @@ pub(super) fn spawn(
         parent: session.prefix,
         tail: CommandTail::arguments(args),
     };
-    match run_child(super::disk::working_directory(), program, ram, session) {
+    match run_child(dir, program, ram, session) {
         Err(2) => None,
         result => Some(result.unwrap_or(0xff)),
     }
 }
 
 fn run_child(
-    dir: u16,
+    dir: u32,
     program: Program<'_>,
     ram: &mut GuestRam,
     session: &mut Session,
@@ -1807,12 +1805,37 @@ fn run_child(
     let (psp, mut cpu) = {
         let mut image = EXEC_IMAGE.borrow();
         let length = super::disk::read_file_at(dir, program.name, &mut image[..]).ok_or(2u16)?;
+        let mut directory = [0; 68];
+        directory[..3].copy_from_slice(b"A:\\");
+        directory[0] += if super::disk::root(dir) != 0 {
+            2
+        } else {
+            session.drive.min(1)
+        };
+        let mut end =
+            3 + super::disk::in_dir(dir, || super::disk::current_path(&mut directory[3..67]));
+        if end > 3 {
+            directory[end] = b'\\';
+            end += 1;
+        }
         Program {
+            directory: &directory[..end],
             image: &image[..length],
             ..program
         }
         .load(ram, &mut session.arena)?
     };
+    #[cfg(feature = "pc386")]
+    if session
+        .parents
+        .iter()
+        .flatten()
+        .any(|p| p.registers.as_ref().is_some_and(|c| c.machine.is_some()))
+        || session.vector_live[0x2f]
+    {
+        let machine = super::pc386::Machine::new(&cpu, ram);
+        cpu.machine = Some(alloc::boxed::Box::new(machine));
+    }
     set_psp_version(ram, psp, version);
     let depth = session.child_depth as usize;
     session.parents[depth] = Some(Parent {
@@ -1873,7 +1896,7 @@ struct Parent {
     prefix: u16,
     psp: u16,
     dta: (u16, u16),
-    job:handles::Job,
+    job: handles::Job,
 }
 
 fn finish_child(session: &mut Session, ram: &mut GuestRam) -> Option<CpuState> {
@@ -2006,12 +2029,7 @@ struct ParsedField {
     written: bool,
 }
 
-fn read_name(
-    ram: &GuestRam,
-    segment: u16,
-    cursor: &mut u16,
-    wild: &mut bool,
-) -> ParsedField {
+fn read_name(ram: &GuestRam, segment: u16, cursor: &mut u16, wild: &mut bool) -> ParsedField {
     read_field(ram, segment, cursor, wild, 8, true)
 }
 
@@ -2185,10 +2203,11 @@ fn put_hex8(value: u8) {
 }
 
 fn named(cpu: &CpuState, ram: &GuestRam, act: fn(&[u8; 11]) -> bool) -> bool {
-    let Some(name) = dos_name(&guest_text(cpu, ram)) else {
+    let text = guest_text(cpu, ram);
+    let Some((dir, name)) = search_spec(&text) else {
         return false;
     };
-    act(&name)
+    super::disk::in_dir(dir, || act(&name)) && super::disk::flush(dir)
 }
 
 fn change_directory(cpu: &CpuState, ram: &GuestRam) -> bool {
@@ -2201,19 +2220,21 @@ fn change_directory(cpu: &CpuState, ram: &GuestRam) -> bool {
 }
 
 fn rename_path(cpu: &mut CpuState, ram: &GuestRam) {
-    let Some(from) = dos_name(&guest_text(cpu, ram)) else {
-        cpu.set_carry(true);
-        return;
-    };
-    let Some(to) = dos_name(&bytes_at(
+    let from = search_spec(&guest_text(cpu, ram));
+    let to = search_spec(&bytes_at(
         ram,
         cpu.selector(Segment::Extra),
         cpu.wide(Slot::Dest),
-    )) else {
-        cpu.set_carry(true);
-        return;
-    };
-    cpu.set_carry(!super::disk::rename_file(&from, &to));
+    ));
+    let ok = from.zip(to).is_some_and(|((source, old), (dest, new))| {
+        source == dest
+            && super::disk::in_dir(source, || super::disk::rename_file(&old, &new))
+            && super::disk::flush(source)
+    });
+    if !ok {
+        cpu.set_wide(Slot::Accumulator, 5);
+    }
+    cpu.set_carry(!ok);
 }
 
 fn file_time(cpu: &mut CpuState, session: &mut Session) {
@@ -2227,7 +2248,10 @@ fn file_time(cpu: &mut CpuState, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     }
-    let looked=session.handles.get(handle).map(|f|(f.dir,f.name,f.named,f.console));
+    let looked = session
+        .handles
+        .get(handle)
+        .map(|f| (f.dir, f.name, f.named, f.console));
     let Some((dir, name, named, console)) = looked else {
         fail(cpu, session, 6);
         return;
@@ -2269,7 +2293,8 @@ fn seek_file(cpu: &mut CpuState, session: &mut Session) {
     let next = match method {
         0 => offset,
         1 => (opened.pos as u32).wrapping_add(offset),
-        2 => (opened.len as u32).wrapping_add(offset),
+        2 => (super::disk::file_len_at(opened.dir, &opened.name).unwrap_or(0) as u32)
+            .wrapping_add(offset),
         _ => {
             cpu.set_carry(true);
             return;
@@ -2282,13 +2307,13 @@ fn seek_file(cpu: &mut CpuState, session: &mut Session) {
 }
 
 fn read_attribute(cpu: &mut CpuState, ram: &GuestRam) {
-    let Some(name) = file_component(&guest_text(cpu, ram)) else {
+    let Some((dir, name)) = search_spec(&guest_text(cpu, ram)) else {
         cpu.set_carry(true);
         return;
     };
     let action = cpu.low(Slot::Accumulator);
     if action == 0 {
-        let Some(attr) = super::disk::attribute(&name) else {
+        let Some(attr) = super::disk::in_dir(dir, || super::disk::attribute(&name)) else {
             cpu.set_wide(Slot::Accumulator, 2);
             cpu.set_carry(true);
             return;
@@ -2297,7 +2322,12 @@ fn read_attribute(cpu: &mut CpuState, ram: &GuestRam) {
         cpu.set_carry(false);
         return;
     }
-    if action == 1 && super::disk::set_attribute(&name, cpu.low(Slot::Count)) {
+    if action == 1
+        && super::disk::in_dir(dir, || {
+            super::disk::set_attribute(&name, cpu.low(Slot::Count))
+        })
+        && super::disk::flush(dir)
+    {
         cpu.set_carry(false);
         return;
     }
@@ -2356,12 +2386,12 @@ fn canonical_path(text: &[u8; 64], current: u8) -> Result<Canon, u16> {
             return Err(15);
         }
         drive = letter - b'A';
-        if drive > 1 {
+        if super::disk::drive_root(drive).is_none() {
             return Err(15);
         }
         cursor += 2;
     }
-    if drive > 1 {
+    if super::disk::drive_root(drive).is_none() {
         return Err(15);
     }
     let absolute = cursor < end && (text[cursor] == b'\\' || text[cursor] == b'/');
@@ -2370,7 +2400,8 @@ fn canonical_path(text: &[u8; 64], current: u8) -> Result<Canon, u16> {
     let mut count = 0usize;
     if !absolute {
         let mut prefix = [0u8; 64];
-        let prefix_len = super::disk::current_path(&mut prefix);
+        let dir = super::disk::drive_directory(drive).ok_or(15u16)?;
+        let prefix_len = super::disk::in_dir(dir, || super::disk::current_path(&mut prefix));
         take_parts(&prefix[..prefix_len], &mut parts, &mut lengths, &mut count)?;
     }
     take_parts(&text[cursor..end], &mut parts, &mut lengths, &mut count)?;
@@ -2509,12 +2540,12 @@ fn path_char(byte: u8) -> bool {
 
 fn current_directory(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let drive = cpu.low(Slot::Data);
-    if drive > 1 {
+    let Some(dir) = volume_for(drive) else {
         fail(cpu, session, 15);
         return;
-    }
+    };
     let mut path = [0u8; 64];
-    let length = super::disk::current_path(&mut path);
+    let length = super::disk::in_dir(dir, || super::disk::current_path(&mut path));
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Source);
     let mut index = 0usize;
@@ -2537,6 +2568,7 @@ fn find_first(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let text = guest_text(cpu, ram);
     if let Some(letter) = drive_letter(&text)
         && letter != b'A'
+        && !(letter == b'C' && super::disk::has_c())
     {
         fail(cpu, session, 15);
         return;
@@ -2578,10 +2610,12 @@ fn find_next(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         fail(cpu, session, 18);
         return;
     };
-    let Some(dir) = read_word(ram, segment, base.wrapping_add(15)) else {
+    let mut directory = [0; 4];
+    if !load_bytes(ram, segment, base.wrapping_add(15), &mut directory) {
         fail(cpu, session, 18);
         return;
     };
+    let dir = u32::from_le_bytes(directory);
     let Some(found) = super::disk::find_match(dir, &template, attr, start) else {
         fail(cpu, session, 18);
         return;
@@ -2602,7 +2636,7 @@ fn drive_letter(text: &[u8; 64]) -> Option<u8> {
     }
 }
 
-fn search_spec(text: &[u8; 64]) -> Option<(u16, [u8; 11])> {
+fn search_spec(text: &[u8; 64]) -> Option<(u32, [u8; 11])> {
     let mut end = 0usize;
     while end < text.len() && text[end] != 0 {
         end += 1;
@@ -2610,16 +2644,9 @@ fn search_spec(text: &[u8; 64]) -> Option<(u16, [u8; 11])> {
     if end == 0 {
         return None;
     }
-    let mut cursor = 0usize;
-    let mut dir = super::disk::working_directory();
-    if end >= 2 && text[1] == b':' {
-        cursor = 2;
-        dir = 0;
-    }
-    if cursor < end && (text[cursor] == b'\\' || text[cursor] == b'/') {
-        dir = 0;
-        cursor += 1;
-    }
+    let (mut dir, text) = super::disk::path_start(&text[..end])?;
+    let cursor = 0;
+    let end = text.len();
     let mut last = cursor;
     let mut index = cursor;
     while index < end {
@@ -2635,7 +2662,7 @@ fn search_spec(text: &[u8; 64]) -> Option<(u16, [u8; 11])> {
     Some((dir, component_template(&text[last..end])))
 }
 
-fn directory_at(parent: u16, text: &[u8]) -> Option<u16> {
+fn directory_at(parent: u32, text: &[u8]) -> Option<u32> {
     if text == b"." || text.is_empty() {
         return Some(parent);
     }
@@ -2707,7 +2734,7 @@ fn component_template(text: &[u8]) -> [u8; 11] {
 fn write_match(
     ram: &mut GuestRam,
     session: &Session,
-    dir: u16,
+    dir: u32,
     template: &[u8; 11],
     search_attr: u8,
     found: &super::disk::DirMatch,
@@ -2718,7 +2745,11 @@ fn write_match(
     }
     let mut index = 0usize;
     while index < template.len() {
-        if !ram.store(segment, base.wrapping_add(1 + index as u16), template[index]) {
+        if !ram.store(
+            segment,
+            base.wrapping_add(1 + index as u16),
+            template[index],
+        ) {
             return false;
         }
         index += 1;
@@ -2733,9 +2764,7 @@ fn write_match(
         return false;
     }
     let place = dir.to_le_bytes();
-    if !ram.store(segment, base.wrapping_add(15), place[0])
-        || !ram.store(segment, base.wrapping_add(16), place[1])
-    {
+    if !store_bytes(ram, segment, base.wrapping_add(15), &place) {
         return false;
     }
     if !ram.store(segment, base.wrapping_add(0x15), found.attr) {
@@ -2792,7 +2821,11 @@ fn write_match(
     }
     let mut slot = 0usize;
     while slot < shown.len() {
-        if !ram.store(segment, base.wrapping_add(0x1E).wrapping_add(slot as u16), shown[slot]) {
+        if !ram.store(
+            segment,
+            base.wrapping_add(0x1E).wrapping_add(slot as u16),
+            shown[slot],
+        ) {
             return false;
         }
         slot += 1;
@@ -2810,13 +2843,20 @@ fn list_of_lists(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
         return;
     };
     let (segment, offset) = session.drivers.list_address();
-    store_bytes(ram,segment,offset-2,&super::arena::FIRST_MCB.to_le_bytes());
+    store_bytes(
+        ram,
+        segment,
+        offset - 2,
+        &super::arena::FIRST_MCB.to_le_bytes(),
+    );
     let sector = per_sector.to_le_bytes();
     let mut raw = [0u8; 0x34];
+    session.handles.publish_sft(ram);
+    raw[6..8].copy_from_slice(&handles::SFT_SEGMENT.to_le_bytes());
     raw[0x10] = sector[0];
     raw[0x11] = sector[1];
     raw[0x20] = 2;
-    raw[0x21] = 2;
+    raw[0x21] = session.drivers.count();
     let header: [u8; 18] = [
         0xFF, 0xFF, 0xFF, 0xFF, 0x04, 0x80, 0, 0, 0, 0, b'N', b'U', b'L', b' ', b' ', b' ', b' ',
         b' ',
@@ -2838,12 +2878,9 @@ fn list_of_lists(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
 
 fn drive_parameters(cpu: &mut CpuState, ram: &mut GuestRam) {
     let drive = cpu.low(Slot::Data);
-    if drive > 2 {
-        cpu.set_low(Slot::Accumulator, 0xFF);
-        cpu.set_carry(true);
-        return;
-    }
-    let Some(block) = super::disk::drive_block() else {
+    let Some(block) =
+        volume_for(drive).and_then(|d| super::disk::in_dir(d, super::disk::drive_block))
+    else {
         cpu.set_low(Slot::Accumulator, 0xFF);
         cpu.set_carry(true);
         return;
@@ -2901,17 +2938,17 @@ fn indos_flag(cpu: &mut CpuState, ram: &mut GuestRam) {
 
 fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
     let drive = cpu.low(Slot::Data);
-    if drive > 1 {
-        cpu.set_low(Slot::Accumulator, 0xFF);
+    let Some(dir) = volume_for(drive) else {
+        cpu.set_low(Slot::Accumulator, 0xff);
         cpu.set_carry(true);
         return;
-    }
-    let Some((per_cluster, per_sector, _free, total)) = super::disk::allocation() else {
+    };
+    let Some((per_cluster, per_sector, _free, total)) = super::disk::allocation_at(dir) else {
         cpu.set_low(Slot::Accumulator, 0xFF);
         cpu.set_carry(true);
         return;
     };
-    let media = super::disk::media_id();
+    let media = super::disk::in_dir(dir, super::disk::media_id);
     if !ram.store(0x50, 0, media) {
         cpu.set_low(Slot::Accumulator, 0xFF);
         cpu.set_carry(true);
@@ -2927,10 +2964,10 @@ fn drive_info(cpu: &mut CpuState, ram: &mut GuestRam) {
 
 fn volume_serial(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let drive = cpu.low(Slot::Base);
-    if drive > 2 {
+    let Some(dir) = volume_for(drive) else {
         fail(cpu, session, 15);
         return;
-    }
+    };
     let segment = cpu.selector(Segment::Data);
     let offset = cpu.wide(Slot::Data);
     if read_word(ram, segment, offset) != Some(0) {
@@ -2939,7 +2976,8 @@ fn volume_serial(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) 
     }
     match cpu.low(Slot::Accumulator) {
         0 => {
-            let Some((serial, label, kind)) = super::disk::volume_id() else {
+            let Some((serial, label, kind)) = super::disk::in_dir(dir, super::disk::volume_id)
+            else {
                 fail(cpu, session, 15);
                 return;
             };
@@ -2961,7 +2999,9 @@ fn volume_serial(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) 
                 fail(cpu, session, 5);
                 return;
             }
-            if super::disk::set_volume_id(&serial, &label) {
+            if super::disk::in_dir(dir, || super::disk::set_volume_id(&serial, &label))
+                && super::disk::flush(dir)
+            {
                 cpu.set_carry(false);
             } else {
                 fail(cpu, session, 15);
@@ -3408,14 +3448,17 @@ fn country_info(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     cpu.set_carry(false);
 }
 
-fn report_space(cpu: &mut CpuState) {
-    let drive = cpu.low(Slot::Data);
-    if drive > 1 {
-        cpu.set_wide(Slot::Accumulator, 0xFFFF);
-        cpu.set_carry(true);
-        return;
+fn volume_for(dos_drive: u8) -> Option<u32> {
+    if dos_drive == 0 {
+        Some(super::disk::working_directory())
+    } else {
+        super::disk::drive_directory(dos_drive - 1)
     }
-    let Some((per_cluster, per_sector, free_units, total_units)) = super::disk::allocation()
+}
+
+fn report_space(cpu: &mut CpuState) {
+    let Some((per_cluster, per_sector, free_units, total_units)) =
+        volume_for(cpu.low(Slot::Data)).and_then(super::disk::allocation_at)
     else {
         cpu.set_wide(Slot::Accumulator, 0xFFFF);
         cpu.set_carry(true);
@@ -3485,7 +3528,7 @@ fn local_handle(cpu: &mut CpuState, session: &mut Session) {
 
 fn local_drive(cpu: &mut CpuState, session: &mut Session) {
     let drive = cpu.low(Slot::Base);
-    if drive > 2 {
+    if volume_for(drive).is_none() {
         fail(cpu, session, 15);
         return;
     }
@@ -3495,11 +3538,14 @@ fn local_drive(cpu: &mut CpuState, session: &mut Session) {
 
 fn removable_drive(cpu: &mut CpuState, session: &mut Session) {
     let drive = cpu.low(Slot::Base);
-    if drive > 2 {
+    if volume_for(drive).is_none() {
         fail(cpu, session, 15);
         return;
     }
-    cpu.set_wide(Slot::Accumulator, 0);
+    cpu.set_wide(
+        Slot::Accumulator,
+        u16::from(volume_for(drive).is_some_and(|d| super::disk::root(d) != 0)),
+    );
     cpu.set_carry(false);
 }
 
@@ -3539,7 +3585,11 @@ fn input_status(cpu: &mut CpuState, session: &mut Session) {
         cpu.set_carry(false);
         return;
     }
-    let ready = if opened.pos < opened.len { 0xFF } else { 0 };
+    let ready = if opened.pos < super::disk::file_len_at(opened.dir, &opened.name).unwrap_or(0) {
+        0xFF
+    } else {
+        0
+    };
     cpu.set_low(Slot::Accumulator, ready);
     cpu.set_carry(false);
 }
@@ -3582,4 +3632,3 @@ fn guest_push(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
     let segment = cpu.selector(Segment::Stack);
     ram.store(segment, pointer, bytes[0]) && ram.store(segment, pointer.wrapping_add(1), bytes[1])
 }
-

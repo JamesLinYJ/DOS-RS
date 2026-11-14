@@ -48,7 +48,7 @@ struct Task {
     cpu: Option<CpuState>,
     waiting: bool,
     prompt: bool,
-    cwd: u16,
+    cwd: disk::Directories,
     line: [u8; 126],
     used: usize,
 }
@@ -58,7 +58,7 @@ impl Task {
         let mut session = Session::new();
         session.terminal = id;
         session.scheduled = true;
-        disk::set_working(0);
+        disk::restore(disk::Directories::ROOTS);
         let attr = pc::color(0x0b);
         crate::puts("DOS-RS terminal ");
         crate::bios::mscon::write_number((id + 1) as u8);
@@ -73,7 +73,7 @@ impl Task {
             cpu,
             waiting: false,
             prompt: false,
-            cwd: 0,
+            cwd: disk::directories(),
             line: [0; 126],
             used: 0,
         }
@@ -169,7 +169,8 @@ impl Task {
             let mut path = [0; 64];
             let length = disk::current_path(&mut path);
             let attr = pc::prompt_color();
-            crate::puts("A:\\");
+            crate::putc(b'A' + self.session.drive);
+            crate::puts(":\\");
             crate::bios::mscon::con_write_bytes(&path[..length]);
             crate::puts("> ");
             pc::color(attr);
@@ -225,13 +226,7 @@ pub(crate) fn worker_tick(worker: usize) -> bool {
             let mut handoff = SLICES[id].borrow();
             let slice = handoff.as_mut().unwrap();
             let mut ram = memory::session_ram(id);
-            for _ in 0..1024 {
-                slice.instruction = slice.cpu.instruction();
-                slice.event = step::step(&mut slice.cpu, &mut ram);
-                if slice.event != Outcome::Continue {
-                    break;
-                }
-            }
+            (slice.event, slice.instruction) = step::slice(&mut slice.cpu, &mut ram, 1024);
         }
         state.store(DONE, Release);
         worked = true;
@@ -242,8 +237,24 @@ pub(crate) fn worker_tick(worker: usize) -> bool {
 pub fn interactive() -> ! {
     disk::boot();
     pc::enable_terminals();
+    #[cfg(feature = "pc386")]
+    let mut painted: Option<usize> = None;
+    #[cfg(feature = "pc386")]
+    let mut graphical = [false; pc::TERMINALS];
+    #[cfg(feature = "pc386")]
+    let mut scans: [alloc::collections::VecDeque<u8>; pc::TERMINALS] =
+        core::array::from_fn(|_| alloc::collections::VecDeque::new());
     loop {
-        let foreground = pc::poll_keyboard();
+        let foreground = pc::poll_keyboard(|_id, _code| {
+            #[cfg(feature = "pc386")]
+            if graphical[_id] {
+                if scans[_id].len() < 128 {
+                    scans[_id].push_back(_code);
+                }
+                return true;
+            }
+            false
+        });
         for (id, slot) in TASKS.iter().enumerate() {
             let state = STATE[id].load(Acquire);
             if state == RUNNING {
@@ -256,7 +267,7 @@ pub fn interactive() -> ! {
             pc::route_output(id);
             let mut ram = memory::session_ram(id);
             let task = task.get_or_insert_with(|| Task::boot(id, &mut ram));
-            disk::set_working(task.cwd);
+            disk::restore(task.cwd);
             let completed = if state == DONE {
                 let slice = SLICES[id].borrow().take().unwrap();
                 task.cpu = Some(slice.cpu);
@@ -265,9 +276,34 @@ pub fn interactive() -> ! {
             } else {
                 None
             };
+            #[cfg(feature = "pc386")]
+            {
+                // Only touch the controller after the worker has returned the session.
+                graphical[id] = ram.graphics.as_ref().is_some_and(|g| g.active);
+                if graphical[id]
+                    && let Some(at) = &ram.at
+                {
+                    for code in scans[id].drain(..) {
+                        at.key(code);
+                    }
+                } else {
+                    scans[id].clear();
+                }
+            }
+            #[cfg(feature = "pc386")]
+            if id == foreground {
+                if let Some(g) = &mut ram.graphics
+                    && g.active
+                {
+                    g.render(painted != Some(id));
+                    painted = Some(id);
+                } else if painted.take().is_some() {
+                    pc::restore_text();
+                }
+            }
             ram.updated_text(pc::guest_text_row);
             task.tick(&mut ram, completed);
-            task.cwd = disk::working_directory();
+            task.cwd = disk::directories();
             if crate::platform::worker(id) != 0
                 && !task.waiting
                 && !task.session.batches.ready(task.session.child_depth)

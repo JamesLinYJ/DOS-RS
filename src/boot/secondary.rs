@@ -1,7 +1,11 @@
 //! Set up the EDK II CPU library's documented MP_CPU_EXCHANGE_INFO ABI.
 use crate::platform::MAX_CPUS;
 use core::{mem::size_of, ptr::NonNull};
-const STACK: usize = 64 * 1024;
+const STACK: usize = if cfg!(feature = "pc386") {
+    512 * 1024
+} else {
+    64 * 1024
+};
 #[repr(C, align(16))]
 struct Stacks([[u8; STACK]; MAX_CPUS]);
 static mut STACKS: Stacks = Stacks([[0; STACK]; MAX_CPUS]);

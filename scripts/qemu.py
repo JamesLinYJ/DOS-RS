@@ -2,6 +2,7 @@
 """Build and boot DOS-RS in QEMU using BIOS or UEFI."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -62,6 +63,8 @@ def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
         pe = struct.unpack("<I", file.read(4))[0]
         file.seek(pe + 24 + 56)
         image_bytes = struct.unpack("<I", file.read(4))[0]
+    if mode == "bios":
+        image_bytes += kernel.stat().st_size
     memory = str(
         max(256, ((image_bytes + (192 << 20) + (63 << 20)) // (64 << 20)) * 64)
     )
@@ -113,6 +116,27 @@ def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
     ]
 
 
+def ram_disk(source, directory):
+    source = source.resolve()
+    directory = directory.resolve()
+    if source.is_relative_to(directory):
+        return source
+    # Retain a session's C: across QEMU restarts without altering its seed image.
+    tag = hashlib.sha256(os.fsencode(source)).hexdigest()[:16]
+    dest = directory / f"{source.stem}-{tag}.img"
+    if dest.is_file():
+        return dest
+    with tempfile.NamedTemporaryFile(dir=directory) as temporary:
+        with source.open("rb") as stream:
+            shutil.copyfileobj(stream, temporary)
+        temporary.flush()
+        try:
+            os.link(temporary.name, dest)
+        except FileExistsError:
+            pass
+    return dest
+
+
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--arch", choices=ARCH, default="x86_64")
@@ -122,15 +146,30 @@ def main():
     cli.add_argument("--kernel", type=Path)
     cli.add_argument("--extended-mib", type=int, help="extended MiB per DOS session (1..128)")
     cli.add_argument("--image", type=Path)
+    cli.add_argument("--pc386", action="store_true", help="enable the protected-mode CPU and VGA graphics")
+    cli.add_argument("--ram-dir", type=Path, help="keep QEMU disks and firmware variables on this mounted RAM volume")
+    cli.add_argument("--c-disk", type=Path, help="attach an existing writable raw FAT volume as C:")
     cli.add_argument("extra", nargs=argparse.REMAINDER)
     args = cli.parse_args()
     if args.extended_mib is not None:
         if args.kernel or not 1 <= args.extended_mib <= 128:
             cli.error("--extended-mib requires building a kernel and a value from 1 to 128")
         os.environ["DOS_RS_EXT_MIB"] = str(args.extended_mib)
-    kernel = args.kernel or build(args.arch, ROOT / "target", args.image)
-    with tempfile.TemporaryDirectory() as temp:
+    if args.c_disk and not args.c_disk.is_file():
+        cli.error("--c-disk must refer to an existing disk image")
+    if args.ram_dir and not args.ram_dir.is_dir():
+        cli.error("--ram-dir must refer to a mounted directory")
+    if args.pc386 and args.kernel:
+        cli.error("--pc386 selects a build feature and requires building the kernel")
+    kernel = args.kernel or build(args.arch, ROOT / "target", args.image.resolve() if args.image else None,
+                                  "pc386" if args.pc386 else None)
+    with tempfile.TemporaryDirectory(dir=args.ram_dir) as temp:
         cmd = boot_args(kernel, args.arch, Path(temp), args.cpus, args.firmware)
+        if args.c_disk:
+            disk = ram_disk(args.c_disk, args.ram_dir) if args.ram_dir else args.c_disk.resolve()
+            print(f"C: {disk}", flush=True)
+            filename = str(disk).replace(",", ",,")
+            cmd += ["-drive", f"if=ide,index=0,format=raw,file={filename}"]
         if args.display:
             cmd += ["-display", args.display]
         extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra

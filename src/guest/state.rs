@@ -76,8 +76,10 @@ impl Segment {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CpuState {
+    #[cfg(feature = "pc386")]
+    pub(super) machine: Option<alloc::boxed::Box<super::pc386::Machine>>,
     words: [u32; 8],
     selectors: [u16; 4],
     instruction: u16,
@@ -90,6 +92,8 @@ pub struct CpuState {
 impl CpuState {
     pub fn at_com(segment: u16) -> Self {
         let mut state = Self {
+            #[cfg(feature = "pc386")]
+            machine: None,
             words: [0; 8],
             selectors: [0; 4],
             instruction: 0x0100,

@@ -142,6 +142,31 @@ pub(super) fn step(
 ) -> Outcome {
     let result = (|| -> Option<()> {
         match opcode {
+            0xf7 => {
+                let m = fetch(cpu, ram)?;
+                let op = decode(cpu, ram, m, seg)?;
+                let v = read(cpu, ram, &op)?;
+                match (m >> 3) & 7 {
+                    0 => {
+                        let mask = imm(cpu, ram)?;
+                        alu(cpu, 4, v, mask);
+                    }
+                    2 => write(cpu, ram, &op, !v)?,
+                    3 => {
+                        let result = alu(cpu, 5, 0, v);
+                        write(cpu, ram, &op, result)?;
+                    }
+                    _ => return None,
+                }
+            }
+            0x87 => {
+                let m = fetch(cpu, ram)?;
+                let reg = Slot::from_index(m >> 3);
+                let op = decode(cpu, ram, m, seg)?;
+                let old = read(cpu, ram, &op)?;
+                write(cpu, ram, &op, cpu.dword(reg))?;
+                cpu.set_dword(reg, old);
+            }
             0xc1 | 0xd1 | 0xd3 => {
                 let m = fetch(cpu, ram)?;
                 let op = decode(cpu, ram, m, seg)?;

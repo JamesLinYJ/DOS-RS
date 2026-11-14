@@ -1,5 +1,7 @@
 //! Register a bus driver here; DOS and the scheduler consume device services.
 #![forbid(unsafe_code)]
+#[cfg(feature = "pc386")]
+mod display;
 mod net;
 mod usb;
 mod wireless;
@@ -10,6 +12,11 @@ struct PciDriver {
     attach: fn(Device) -> Result<(), &'static str>,
 }
 const PCI_DRIVERS: &[PciDriver] = &[
+    #[cfg(feature = "pc386")]
+    PciDriver {
+        matches: display::matches,
+        attach: display::attach,
+    },
     PciDriver {
         matches: usb::matches,
         attach: usb::attach,

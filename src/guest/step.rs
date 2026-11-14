@@ -15,7 +15,13 @@ pub enum Outcome {
     Ems,
     EmsReturn,
     Interrupt(u8),
-    Port { port: u16, write: bool, word: bool },
+    #[cfg(feature = "pc386")]
+    Firmware(u8),
+    Port {
+        port: u16,
+        write: bool,
+        word: bool,
+    },
     Halt,
     Fault(u8),
 }
@@ -25,16 +31,58 @@ enum Operand {
     Memory { segment: Segment, offset: u16 },
 }
 
+/// Run ordinary instructions until the next service or the scheduler's budget.
+pub fn slice(cpu: &mut CpuState, ram: &mut GuestRam, budget: u32) -> (Outcome, u16) {
+    #[cfg(feature = "pc386")]
+    if let Some(mut machine) = cpu.machine.take() {
+        let result = machine.slice(cpu, ram, budget);
+        cpu.machine = Some(machine);
+        return result;
+    }
+    let mut at = cpu.instruction();
+    for _ in 0..budget {
+        at = cpu.instruction();
+        let event = step(cpu, ram);
+        #[cfg(feature = "pc386")]
+        if matches!(event, Outcome::Fault(_)) {
+            cpu.set_instruction(at);
+            let mut machine = alloc::boxed::Box::new(super::pc386::Machine::new(cpu, ram));
+            let result = machine.slice(cpu, ram, 1);
+            cpu.machine = Some(machine);
+            return result;
+        }
+        if event != Outcome::Continue {
+            return (event, at);
+        }
+    }
+    (Outcome::Continue, at)
+}
+
+#[cfg(feature = "pc386")]
+pub(super) fn firmware(cs: u16, ip: u16) -> Option<u8> {
+    (cs == 0xf000 && (0x200..0x400).contains(&ip) && ip & 1 == 0).then(|| ((ip - 0x200) / 2) as u8)
+}
 pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
-    let start=cpu.instruction();
-    if (cpu.selector(Segment::Code),start)==super::run::xms::ENTRY{return Outcome::Xms;}
-    if (cpu.selector(Segment::Code),start)==super::run::ems::ENTRY{return Outcome::Ems;}
-    if (cpu.selector(Segment::Code),start)==super::run::ems::RETURN{return Outcome::EmsReturn;}
+    let start = cpu.instruction();
+    #[cfg(feature = "pc386")]
+    if let Some(v) = firmware(cpu.selector(Segment::Code), start) {
+        return Outcome::Firmware(v);
+    }
+    if (cpu.selector(Segment::Code), start) == super::run::xms::ENTRY {
+        return Outcome::Xms;
+    }
+    if (cpu.selector(Segment::Code), start) == super::run::ems::ENTRY {
+        return Outcome::Ems;
+    }
+    if (cpu.selector(Segment::Code), start) == super::run::ems::RETURN {
+        return Outcome::EmsReturn;
+    }
     let Some(mut opcode) = fetch(cpu, ram) else {
         return Outcome::Fault(0);
     };
     let mut override_segment = None;
     let mut dword = false;
+    let mut address32 = false;
     loop {
         if matches!(opcode, 0x26 | 0x2E | 0x36 | 0x3E) {
             override_segment = Some(match opcode {
@@ -43,21 +91,45 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
                 0x36 => Segment::Stack,
                 _ => Segment::Data,
             });
+        } else if opcode == 0x67 {
+            address32 = true;
         } else if opcode == 0x66 {
-            dword=true;
+            dword = true;
         } else if opcode != 0xF0 {
             break;
         }
-        if cpu.instruction().wrapping_sub(start) >= 15 {return Outcome::Fault(opcode);}
+        if cpu.instruction().wrapping_sub(start) >= 15 {
+            return Outcome::Fault(opcode);
+        }
         opcode = match fetch(cpu, ram) {
             Some(opcode) => opcode,
             None => return Outcome::Fault(0),
         };
     }
-    if dword {return operand32::step(cpu,ram,override_segment,opcode);}
+    if address32 {
+        if opcode == 0xe3 {
+            let Some(disp) = fetch(cpu, ram) else {
+                return Outcome::Fault(opcode);
+            };
+            if cpu.dword(Slot::Count) == 0 {
+                cpu.set_instruction(cpu.instruction().wrapping_add_signed(i16::from(disp as i8)));
+            }
+            return Outcome::Continue;
+        }
+        return Outcome::Fault(opcode);
+    }
+    if dword {
+        return operand32::step(cpu, ram, override_segment, opcode);
+    }
     match opcode {
-        0x00..=0x05 | 0x08..=0x0D | 0x10..=0x15 | 0x18..=0x1D | 0x20..=0x25 | 0x28..=0x2D
-        | 0x30..=0x35 | 0x38..=0x3D => arithmetic(cpu, ram, override_segment, opcode),
+        0x00..=0x05
+        | 0x08..=0x0D
+        | 0x10..=0x15
+        | 0x18..=0x1D
+        | 0x20..=0x25
+        | 0x28..=0x2D
+        | 0x30..=0x35
+        | 0x38..=0x3D => arithmetic(cpu, ram, override_segment, opcode),
         0x37 => adjust_ascii_add(cpu),
         0x3F => adjust_ascii_sub(cpu),
         0x06 => push_segment(cpu, ram, Segment::Extra, opcode),
@@ -201,7 +273,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xE9 => jump_near(cpu, ram, opcode),
         0xEA => jump_far(cpu, ram, opcode),
         0xEB => branch(cpu, ram, opcode, true),
-        0xF2 | 0xF3 => repeat(cpu, ram, override_segment, opcode,start),
+        0xF2 | 0xF3 => repeat(cpu, ram, override_segment, opcode, start),
         0xF4 => Outcome::Halt,
         0xF7 => unary_word(cpu, ram, override_segment, opcode),
         0xFA => {
@@ -358,7 +430,10 @@ fn move_word_immediate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Ou
     let Some(high) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
-    cpu.set_wide(Slot::from_index(opcode & 7), u16::from_le_bytes([low, high]));
+    cpu.set_wide(
+        Slot::from_index(opcode & 7),
+        u16::from_le_bytes([low, high]),
+    );
     Outcome::Continue
 }
 
@@ -447,12 +522,7 @@ fn increment(cpu: &mut CpuState, opcode: u8) -> Outcome {
 
 fn push_all(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     let saved = cpu.wide(Slot::Stack);
-    let order = [
-        Slot::Accumulator,
-        Slot::Count,
-        Slot::Data,
-        Slot::Base,
-    ];
+    let order = [Slot::Accumulator, Slot::Count, Slot::Data, Slot::Base];
     for slot in order {
         if !push_word(cpu, ram, cpu.wide(slot)) {
             return Outcome::Fault(0x60);
@@ -1110,7 +1180,9 @@ fn return_far_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outco
     Outcome::Continue
 }
 
-pub(super) fn far_return(cpu:&mut CpuState,ram:&mut GuestRam)->bool{return_far(cpu,ram,0xcb)==Outcome::Continue}
+pub(super) fn far_return(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
+    return_far(cpu, ram, 0xcb) == Outcome::Continue
+}
 
 fn return_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let Some(next) = pop_word(cpu, ram) else {
@@ -1486,8 +1558,8 @@ fn multiply_byte(
             Outcome::Continue
         }
         5 => {
-            let product = i16::from(cpu.low(Slot::Accumulator) as i8)
-                .wrapping_mul(i16::from(value as i8));
+            let product =
+                i16::from(cpu.low(Slot::Accumulator) as i8).wrapping_mul(i16::from(value as i8));
             cpu.set_wide(Slot::Accumulator, product as u16);
             note_multiply_overflow(cpu, product != i16::from(product as i8));
             Outcome::Continue
@@ -1646,7 +1718,10 @@ fn shift_once(
     };
     let carry_in = cpu.flags() & 1 != 0;
     let (result, carried) = match operation {
-        0 => ((value << 1) | u8::from(value & 0x80 != 0), value & 0x80 != 0),
+        0 => (
+            (value << 1) | u8::from(value & 0x80 != 0),
+            value & 0x80 != 0,
+        ),
         1 => ((value >> 1) | ((value & 1) << 7), value & 1 != 0),
         2 => ((value << 1) | u8::from(carry_in), value & 0x80 != 0),
         3 => ((value >> 1) | (u8::from(carry_in) << 7), value & 1 != 0),
@@ -2187,7 +2262,11 @@ fn port_io(cpu: &mut CpuState, ram: &GuestRam, opcode: u8) -> Outcome {
     } else {
         cpu.wide(Slot::Data)
     };
-    Outcome::Port {port, write:opcode & 2 != 0, word:opcode & 1 != 0}
+    Outcome::Port {
+        port,
+        write: opcode & 2 != 0,
+        word: opcode & 1 != 0,
+    }
 }
 
 fn unary_word(
@@ -2243,8 +2322,8 @@ fn unary_word(
             Outcome::Continue
         }
         5 => {
-            let product = i32::from(cpu.wide(Slot::Accumulator) as i16)
-                .wrapping_mul(i32::from(value as i16));
+            let product =
+                i32::from(cpu.wide(Slot::Accumulator) as i16).wrapping_mul(i32::from(value as i16));
             cpu.set_wide(Slot::Accumulator, product as u16);
             cpu.set_wide(Slot::Data, (product >> 16) as u16);
             note_multiply_overflow(cpu, product != i32::from(product as i16));
@@ -2254,8 +2333,8 @@ fn unary_word(
             if value == 0 {
                 return Outcome::Fault(opcode);
             }
-            let dividend = (u32::from(cpu.wide(Slot::Data)) << 16)
-                | u32::from(cpu.wide(Slot::Accumulator));
+            let dividend =
+                (u32::from(cpu.wide(Slot::Data)) << 16) | u32::from(cpu.wide(Slot::Accumulator));
             let quotient = dividend / u32::from(value);
             if quotient > 0xFFFF {
                 return Outcome::Fault(opcode);
@@ -2503,11 +2582,7 @@ fn repeat(
     Outcome::Continue
 }
 
-fn copy_string(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-) -> bool {
+fn copy_string(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
     let source = cpu.wide(Slot::Source);
     let dest = cpu.wide(Slot::Dest);
     let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
@@ -2523,7 +2598,11 @@ fn copy_string(
 
 fn store_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let dest = cpu.wide(Slot::Dest);
-    if !ram.store(cpu.selector(Segment::Extra), dest, cpu.low(Slot::Accumulator)) {
+    if !ram.store(
+        cpu.selector(Segment::Extra),
+        dest,
+        cpu.low(Slot::Accumulator),
+    ) {
         return Outcome::Fault(opcode);
     }
     cpu.set_wide(Slot::Dest, step_index(cpu, dest));
@@ -2666,10 +2745,22 @@ fn address(cpu: &CpuState, rm: u8, displacement: u16) -> (Segment, u16) {
                 .wrapping_add(cpu.wide(Slot::Dest))
                 .wrapping_add(displacement),
         ),
-        4 => (Segment::Data, cpu.wide(Slot::Source).wrapping_add(displacement)),
-        5 => (Segment::Data, cpu.wide(Slot::Dest).wrapping_add(displacement)),
-        6 => (Segment::Stack, cpu.wide(Slot::Frame).wrapping_add(displacement)),
-        _ => (Segment::Data, cpu.wide(Slot::Base).wrapping_add(displacement)),
+        4 => (
+            Segment::Data,
+            cpu.wide(Slot::Source).wrapping_add(displacement),
+        ),
+        5 => (
+            Segment::Data,
+            cpu.wide(Slot::Dest).wrapping_add(displacement),
+        ),
+        6 => (
+            Segment::Stack,
+            cpu.wide(Slot::Frame).wrapping_add(displacement),
+        ),
+        _ => (
+            Segment::Data,
+            cpu.wide(Slot::Base).wrapping_add(displacement),
+        ),
     }
 }
 

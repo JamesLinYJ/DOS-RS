@@ -5,6 +5,8 @@
 #![no_std]
 #![no_main]
 
+#[cfg(feature = "pc386")]
+extern crate alloc;
 mod arch;
 mod bios;
 mod boot;
@@ -12,12 +14,16 @@ mod cmd;
 mod dos;
 mod drivers;
 mod guest;
+#[cfg(feature = "pc386")]
+mod heap;
 mod int21;
 mod kernel_cell;
 mod platform;
 mod smoke;
 
 pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
+    #[cfg(feature = "pc386")]
+    heap::initialize();
     arch::install_interrupts();
     bios::pc::configure_serial(0x3f8, 0xe3);
     let attr = bios::pc::color(0x0b);
@@ -140,6 +146,17 @@ fn inb(port: u16) -> u8 {
 }
 
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    if let Some(loc) = info.location() {
+        for b in loc.file().bytes() {
+            arch::outb(0x3f8, b);
+        }
+        for b in loc.line().to_be_bytes() {
+            for part in [b >> 4, b & 15] {
+                arch::outb(0x3f8, b"0123456789ABCDEF"[usize::from(part)]);
+            }
+        }
+        arch::outb(0x3f8, 10);
+    }
     loop {}
 }

@@ -16,3 +16,12 @@ mod process;
 pub mod run;
 pub mod state;
 pub mod step;
+
+#[cfg(feature = "pc386")]
+mod pc386;
+
+#[cfg(feature = "pc386")]
+mod vga;
+
+#[cfg(feature = "pc386")]
+mod at;

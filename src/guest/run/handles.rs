@@ -2,6 +2,10 @@
 use super::{GuestRam, HANDLE_SLOTS, Opened, console_handle, flush_opened};
 
 const UNUSED: u8 = 0xff;
+const SYSTEM_FILES: usize = 40;
+pub(super) const SFT_SEGMENT: u16 = 0x00a0;
+const SFT_ENTRY: usize = 0x3b;
+
 #[derive(Clone, Copy)]
 pub(super) struct Job {
     map: [u8; HANDLE_SLOTS],
@@ -16,7 +20,7 @@ struct Description {
 
 pub(super) struct Handles {
     pub job: Job,
-    descriptions: [Option<Description>; HANDLE_SLOTS],
+    descriptions: [Option<Description>; SYSTEM_FILES],
 }
 
 impl Handles {
@@ -26,7 +30,7 @@ impl Handles {
                 map: [UNUSED; HANDLE_SLOTS],
                 limit: HANDLE_SLOTS as u16,
             },
-            descriptions: [None; HANDLE_SLOTS],
+            descriptions: [None; SYSTEM_FILES],
         };
         for h in 0..3 {
             table.insert(h, h, console_handle(h as u16), true);
@@ -131,7 +135,41 @@ impl Handles {
         self.job = parent;
         ok
     }
+    pub fn publish_sft(&self, ram: &mut GuestRam) {
+        let table = ram.paragraphs_mut(
+            SFT_SEGMENT,
+            SFT_SEGMENT + (6 + SYSTEM_FILES * SFT_ENTRY).div_ceil(16) as u16,
+        );
+        table[..4].fill(0xff);
+        table[4..6].copy_from_slice(&(SYSTEM_FILES as u16).to_le_bytes());
+        for (entry, desc) in table[6..]
+            .chunks_exact_mut(SFT_ENTRY)
+            .zip(&self.descriptions)
+        {
+            entry.fill(0);
+            let Some(desc) = desc else {
+                continue;
+            };
+            entry[..2].copy_from_slice(&desc.refs.to_le_bytes());
+            entry[2] = desc.file.access;
+            entry[5..7].copy_from_slice(
+                &(if desc.file.named {
+                    if super::super::disk::root(desc.file.dir) != 0 {
+                        2u16
+                    } else {
+                        0
+                    }
+                } else {
+                    0x80
+                })
+                .to_le_bytes(),
+            );
+            entry[0x15..0x19].copy_from_slice(&(desc.file.pos as u32).to_le_bytes());
+            entry[0x20..0x2b].copy_from_slice(&desc.file.name);
+        }
+    }
     pub fn publish(&self, ram: &mut GuestRam, psp: u16) {
+        self.publish_sft(ram);
         let page = ram.paragraphs_mut(psp, psp + 0x10);
         page[0x18..0x18 + HANDLE_SLOTS].copy_from_slice(&self.job.map);
         page[0x32..0x34].copy_from_slice(&self.job.limit.to_le_bytes());

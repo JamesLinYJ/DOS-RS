@@ -4,7 +4,7 @@ use font8x8::{
     BASIC_FONTS, BLOCK_FONTS, BOX_FONTS, GREEK_FONTS, LATIN_FONTS, MISC_FONTS, UnicodeFonts,
 };
 /// The guest selects glyphs by OEM byte. Map the upper half of IBM code page 437.
-fn glyph(byte: u8) -> [u8; 8] {
+pub(crate) fn glyph(byte: u8) -> [u8; 8] {
     const EXTENDED: [char; 128] = [
         'Ç', 'ü', 'é', 'â', 'ä', 'à', 'å', 'ç', 'ê', 'ë', 'è', 'ï', 'î', 'ì', 'Ä', 'Å', 'É', 'æ',
         'Æ', 'ô', 'ö', 'ò', 'û', 'ù', 'ÿ', 'Ö', 'Ü', '¢', '£', '¥', '₧', 'ƒ', 'á', 'í', 'ó', 'ú',
@@ -32,6 +32,8 @@ fn glyph(byte: u8) -> [u8; 8] {
 struct Frame {
     base: usize,
     stride: usize,
+    width: usize,
+    height: usize,
     rgb: bool,
     origin: usize,
 }
@@ -54,25 +56,25 @@ pub(crate) fn initialize(
             .and_then(|n| n.checked_mul(4))
             .is_some_and(|n| n <= len && base.checked_add(n).is_some())
     {
-        // The validated framebuffer includes the entire visible surface.
-        for at in 0..stride * height {
-            unsafe {
-                (base as *mut u32).add(at).write_volatile(0);
-            }
-        }
         let origin = (height - 400) / 2 * stride + (width - 640) / 2;
-        *FRAME.borrow() = Some(Frame {
+        let frame = Frame {
             base,
             stride,
+            width,
+            height,
             rgb,
             origin,
-        });
+        };
+        frame.clear();
+        *FRAME.borrow() = Some(frame);
     }
 }
 pub(crate) fn vga_text() {
     *FRAME.borrow() = Some(Frame {
         base: 0xb8000,
         stride: 0,
+        width: 0,
+        height: 0,
         rgb: false,
         origin: 0,
     });
@@ -128,10 +130,63 @@ pub(super) fn cell(index: usize, word: u16, cursor: bool) {
         let bits = if cursor && y >= 14 { 0xff } else { rows[y / 2] };
         for x in 0..8 {
             let color = if bits & (1 << x) != 0 { fg } else { bg };
-            // The GOP geometry was checked at handoff; index is an 80×25 cell.
-            unsafe {
-                ((f.base as *mut u32).add(first + y * f.stride + x)).write_volatile(color);
+            f.pixel(first + y * f.stride + x, color);
+        }
+    }
+}
+
+#[cfg(feature = "pc386")]
+pub(crate) fn supports_graphics() -> bool {
+    FRAME
+        .borrow()
+        .as_ref()
+        .is_some_and(|f| f.width >= 640 && f.height >= 480)
+}
+#[cfg(feature = "pc386")]
+pub(crate) fn clear_graphics() {
+    let fb = FRAME.borrow();
+    if let Some(f) = fb.as_ref() {
+        f.clear();
+    }
+}
+impl Frame {
+    fn clear(&self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                self.pixel(y * self.stride + x, 0);
             }
+        }
+    }
+    fn pixel(&self, offset: usize, value: u32) {
+        // Every caller clips to the visible area validated by initialize().
+        debug_assert!(self.stride != 0 && offset < self.stride * self.height);
+        unsafe {
+            (self.base as *mut u32).add(offset).write_volatile(value);
+        }
+    }
+}
+#[cfg(feature = "pc386")]
+pub(crate) fn graphics(width: usize, height: usize, pixels: &[u8]) {
+    let fb = FRAME.borrow();
+    let Some(f) = fb.as_ref() else { return };
+    if width == 0
+        || height == 0
+        || width > f.width
+        || height > f.height
+        || width.checked_mul(height).and_then(|n| n.checked_mul(4)) != Some(pixels.len())
+    {
+        return;
+    }
+    let (left, top) = ((f.width - width) / 2, (f.height - height) / 2);
+    for (y, row) in pixels.chunks_exact(width * 4).enumerate() {
+        for (x, p) in row.chunks_exact(4).enumerate() {
+            let [r, g, b] = [p[0], p[1], p[2]];
+            let value = if f.rgb {
+                u32::from_le_bytes([r, g, b, 0])
+            } else {
+                u32::from_le_bytes([b, g, r, 0])
+            };
+            f.pixel((top + y) * f.stride + left + x, value);
         }
     }
 }

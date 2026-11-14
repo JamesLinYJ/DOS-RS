@@ -37,11 +37,15 @@ pub(super) enum Device {
 }
 
 impl Drivers {
+    pub(super) fn count(&self) -> u8 {
+        self.drive_count
+    }
+
     pub(super) fn new() -> Self {
         Self {
             headers: [None; DEVICE_LIMIT],
             scratch: 0,
-            drive_count: 2,
+            drive_count: if disk::has_c() { 3 } else { 2 },
         }
     }
 
@@ -103,7 +107,7 @@ impl Drivers {
 
     pub(super) fn is_raw_volume(&self, letter: u8) -> bool {
         let drive = letter.to_ascii_uppercase().wrapping_sub(b'A');
-        (2..self.drive_count).contains(&drive)
+        ((if disk::has_c() { 3 } else { 2 })..self.drive_count).contains(&drive)
     }
 
     pub(super) fn list_address(&self) -> (u16, u16) {
@@ -154,7 +158,13 @@ pub(super) fn configure(ram: &mut GuestRam, session: &mut Session) {
             .split(u8::is_ascii_whitespace)
             .next()
             .unwrap_or_default();
-        let result = install(filename, spec, key.eq_ignore_ascii_case(b"DEVICEHIGH"), ram, session);
+        let result = install(
+            filename,
+            spec,
+            key.eq_ignore_ascii_case(b"DEVICEHIGH"),
+            ram,
+            session,
+        );
         crate::puts(if result.is_ok() {
             "Loaded driver "
         } else {
@@ -210,7 +220,9 @@ fn install(
     let bytes = ram.paragraphs_mut(segment, segment + room);
     bytes.fill(0);
     let size = if let Some(module) = module {
-        module.copy_to(bytes, segment).expect("validated module fits workspace")
+        module
+            .copy_to(bytes, segment)
+            .expect("validated module fits workspace")
     } else {
         bytes[..length].copy_from_slice(file);
         length
@@ -332,7 +344,9 @@ fn execute(header: Header, ram: &mut GuestRam, session: &mut Session) -> Result<
             }
             match step::step(&mut cpu, ram) {
                 Outcome::Continue => {}
-                Outcome::Port{port,write,word} => super::serve_port(&mut cpu,ram,port,write,word),
+                Outcome::Port { port, write, word } => {
+                    super::serve_port(&mut cpu, ram, port, write, word)
+                }
                 Outcome::Interrupt(0x21)
                     if matches!(cpu.high(Slot::Accumulator), 0x02 | 0x09 | 0x30 | 0x52) =>
                 {

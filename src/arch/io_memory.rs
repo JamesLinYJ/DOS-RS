@@ -35,6 +35,10 @@ impl Registers {
             ptr::write_volatile((self.base + offset) as *mut u32, value);
         }
     }
+    #[cfg(feature = "pc386")]
+    pub(crate) fn aperture(self) -> (usize, usize) {
+        (self.base, self.len)
+    }
     pub(crate) fn fits(self, offset: usize, length: usize) -> bool {
         offset
             .checked_add(length)
