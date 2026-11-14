@@ -1,0 +1,210 @@
+; A DOS client of the published XMS far-call and LIM EMS interrupt ABIs.
+bits 16
+org 100h
+%macro xcall 1
+    mov ah,%1
+    call far [xms]
+    cmp ax,1
+    jne fail
+%endmacro
+%macro ecall 1
+    mov ax,%1
+    int 67h
+    test ah,ah
+    jnz fail
+%endmacro
+mov ax,4300h
+int 2fh
+cmp al,80h
+jne fail
+mov ax,4310h
+int 2fh
+mov [xms],bx
+mov [xms+2],es
+mov ah,88h
+call far [xms]
+mov [initial],dx
+mov edx,256
+xcall 89h
+mov [xhandle],dx
+xcall 0ch
+mov dx,[xhandle]
+mov ah,0ah
+call far [xms]
+cmp bl,0abh
+jne fail
+mov dx,[xhandle]
+xcall 0dh
+mov si,moveblock
+mov [si+8],ds
+mov ax,[xhandle]
+mov [si+10],ax
+xcall 0bh
+mov si,readblock
+mov [si+14],ds
+mov ax,[xhandle]
+mov [si+4],ax
+xcall 0bh
+cmp word [copy],05aa5h
+jne fail
+mov dx,[xhandle]
+mov ebx,512
+xcall 8fh
+mov dx,[xhandle]
+xcall 8eh
+cmp edx,512
+jne fail
+mov dx,64
+xcall 10h
+mov [upper],bx
+mov es,bx
+mov word [es:2],1234h
+mov dx,bx
+mov bx,32
+xcall 12h
+cmp word [es:2],1234h
+jne fail
+mov dx,[upper]
+xcall 11h
+mov dx,0ffffh
+xcall 1
+xcall 5
+mov ax,0ffffh
+mov es,ax
+mov word [es:18h],0beefh
+xcall 6
+xcall 2
+mov bx,4
+ecall 4300h
+mov [emhandle],dx
+ecall 4100h
+mov es,bx
+xor bx,bx
+ecall 4400h
+ecall 4401h
+mov word [es:16],1234h
+cmp word [es:4010h],1234h
+jne fail
+ecall 4700h
+mov bx,1
+ecall 4400h
+mov word [es:16],4567h
+ecall 4800h
+cmp word [es:16],1234h
+jne fail
+mov bx,1
+ecall 4401h
+cmp word [es:4010h],4567h
+jne fail
+push cs
+pop es
+mov si,emove
+mov [si+5],dx
+mov [si+16],ds
+ecall 5700h
+cmp word [copy],4567h
+jne fail
+mov ah,88h
+call far [xms]
+add dx,512+64
+cmp dx,[initial]
+jne fail
+; An invalid restore must leave both live mappings intact.
+push cs
+pop es
+mov di,mapbuf
+ecall 4e00h
+mov word [mapbuf+2],2000
+mov si,mapbuf
+mov ax,4e01h
+int 67h
+cmp ah,0a3h
+jne fail
+mov ax,0d000h
+mov es,ax
+cmp word [es:16],1234h
+jne fail
+; Check partial save/restore and OS function-set control on the live manager.
+push cs
+pop es
+mov si,partial
+mov di,mapbuf
+ecall 4f00h
+mov bx,1
+mov dx,[emhandle]
+ecall 4400h
+mov si,mapbuf
+ecall 4f01h
+ecall 5d01h
+mov [key],bx
+mov [key+2],cx
+mov ax,5900h
+int 67h
+cmp ah,0a4h
+jne fail
+mov bx,[key]
+mov cx,[key+2]
+ecall 5d00h
+ecall 5d02h
+mov dx,[emhandle]
+mov si,mapcall
+mov [si+2],ds
+mov [si+7],ds
+mov [si+12],ds
+ecall 5600h
+mov ax,0d000h
+mov es,ax
+cmp word [es:16],1234h
+jne fail
+ecall 4500h
+mov dx,[xhandle]
+xcall 0ah
+mov ah,88h
+call far [xms]
+cmp dx,[initial]
+jne fail
+mov dx,ok
+jmp report
+fail: mov dx,bad
+report: mov ah,9
+int 21h
+mov ax,4c00h
+int 21h
+ok db 'XMS EMS MEMORY CHECK PASSED',13,10,'$'
+bad db 'XMS EMS MEMORY CHECK FAILED',13,10,'$'
+mapped:
+mov ax,0d000h
+mov es,ax
+cmp word [es:16],4567h
+jne fail
+retf
+mapcall dw mapped,0
+db 1
+dw newpages,0
+db 1
+dw oldpages,0
+times 4 dw 0
+partial dw 1,0d000h
+mapbuf times 26 db 0
+key dd 0
+newpages dw 1,0
+oldpages dw 0,0
+xms dd 0
+initial dw 0
+xhandle dw 0
+upper dw 0
+emhandle dw 0
+value dw 05aa5h
+copy dw 0
+moveblock dd 2
+dw 0,value,0,0
+dd 16
+readblock dd 2
+dw 0
+dd 16
+dw 0,copy,0
+emove dd 2
+db 1
+dw 0,16,1
+db 0
+dw 0,copy,0

@@ -1,24 +1,30 @@
 //! Boot entry. One `kmain` per target binary.
 //!
-//! Starts the architecture gate, runs the boot workloads and exits through QEMU.
+//! Starts the kernel services, then enters the interactive DOS scheduler or the selected test profile.
 
 #![no_std]
 #![no_main]
 
 mod arch;
 mod bios;
+mod boot;
 mod cmd;
 mod dos;
 mod guest;
 mod int21;
 mod kernel_cell;
+mod platform;
 mod smoke;
 
-/// Multiboot calls this. It does not return.
-#[unsafe(no_mangle)]
-pub extern "C" fn kmain() -> ! {
+pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
     arch::install_interrupts();
+    bios::pc::configure_serial(0x3f8, 0xe3);
+    let attr = bios::pc::color(0x0b);
     puts(banner());
+    bios::pc::color(attr);
+    puts(firmware);
+    puts("\n");
+    platform::initialize(handoff);
     let success = if cfg!(feature = "kernel-selftest") {
         smoke::run();
         true
@@ -54,7 +60,7 @@ struct VersionLine {
 }
 
 fn invoke_int21(carry_in: bool) -> VersionLine {
-    let (version, oem, serial, carry) = arch::get_version(carry_in);
+    let (version, oem, serial, carry) = int21::version_call(carry_in);
     VersionLine {
         version,
         oem,

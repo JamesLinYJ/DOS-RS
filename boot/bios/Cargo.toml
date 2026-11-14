@@ -1,0 +1,26 @@
+[package]
+name = "dos-rs-bios"
+version = "0.1.0"
+edition = "2024"
+autobins = false
+
+[[bin]]
+name = "mbr"
+path = "../../target/bios-cpu/bios/boot_sector/src/main.rs"
+
+[[bin]]
+name = "loader"
+path = "src/bin/loader.rs"
+
+[[bin]]
+name = "enter"
+path = "src/bin/enter.rs"
+
+[dependencies]
+x86 = { version = "0.52", default-features = false }
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1

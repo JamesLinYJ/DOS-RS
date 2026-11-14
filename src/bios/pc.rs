@@ -153,6 +153,7 @@ const SPACE: u16 = 0x0720;
 struct TextScreen {
     cells: [u16; COLS * ROWS],
     cursor: usize,
+    attribute: u8,
     keys: [u16; 32],
     head: usize,
     count: usize,
@@ -162,6 +163,7 @@ impl TextScreen {
         Self {
             cells: [SPACE; COLS * ROWS],
             cursor: 0,
+            attribute: 7,
             keys: [0; 32],
             head: 0,
             count: 0,
@@ -185,16 +187,10 @@ impl TextScreen {
         }
     }
     fn paint(&self, index: usize) {
-        // SAFETY: x86 startup identity maps the VGA aperture. Only in-bounds cell indices reach this method.
-        let address = (0xb8000 + index * 2) as *mut u16;
-        unsafe { address.write_volatile(self.cells[index]) };
+        super::screen::cell(index, self.cells[index], false);
     }
     fn cursor(&self) {
-        let [lo, hi] = (self.cursor as u16).to_le_bytes();
-        outb(0x3d4, 14);
-        outb(0x3d5, hi);
-        outb(0x3d4, 15);
-        outb(0x3d5, lo);
+        super::screen::cell(self.cursor, self.cells[self.cursor], true);
     }
     fn redraw(&self) {
         for i in 0..self.cells.len() {
@@ -203,6 +199,9 @@ impl TextScreen {
         self.cursor();
     }
     fn write(&mut self, byte: u8, visible: bool) {
+        if visible {
+            self.paint(self.cursor);
+        }
         match byte {
             b'\r' => self.cursor -= self.cursor % COLS,
             b'\n' => self.cursor += COLS,
@@ -210,7 +209,7 @@ impl TextScreen {
             b'\t' => self.cursor += 8 - self.cursor % 8,
             0..=31 => return,
             _ => {
-                self.cells[self.cursor] = 0x0700 | u16::from(byte);
+                self.cells[self.cursor] = u16::from_be_bytes([self.attribute, byte]);
                 if visible {
                     self.paint(self.cursor);
                 }
@@ -219,7 +218,7 @@ impl TextScreen {
         }
         if self.cursor >= self.cells.len() {
             self.cells.copy_within(COLS.., 0);
-            self.cells[(ROWS - 1) * COLS..].fill(SPACE);
+            self.cells[(ROWS - 1) * COLS..].fill(u16::from_be_bytes([self.attribute, b' ']));
             self.cursor -= COLS;
             if visible {
                 self.redraw();
@@ -245,6 +244,48 @@ static CONSOLES: KernelCell<Consoles> = KernelCell::new(Consoles {
     initialized: false,
 });
 
+pub(crate) fn color(attribute: u8) -> u8 {
+    let mut c = CONSOLES.borrow();
+    let id = c.running;
+    core::mem::replace(&mut c.screens[id].attribute, attribute)
+}
+/// Use the shell accent only while the terminal still uses the default attribute.
+pub(crate) fn prompt_color() -> u8 {
+    let mut c = CONSOLES.borrow();
+    let id = c.running;
+    let s = &mut c.screens[id];
+    let original = s.attribute;
+    if original == 7 {
+        s.attribute = 0x0a;
+    }
+    original
+}
+pub(crate) fn recolor(attribute: u8) {
+    let mut c = CONSOLES.borrow();
+    let id = c.running;
+    let visible = id == c.foreground;
+    let screen = &mut c.screens[id];
+    screen.attribute = attribute;
+    for cell in &mut screen.cells {
+        *cell = (*cell & 255) | (u16::from(attribute) << 8);
+    }
+    if visible {
+        screen.redraw();
+    }
+}
+pub(crate) fn position(row: u8, col: u8) {
+    let mut c = CONSOLES.borrow();
+    let id = c.running;
+    let visible = id == c.foreground;
+    let s = &mut c.screens[id];
+    if visible {
+        s.paint(s.cursor);
+    }
+    s.cursor = usize::from(row.min(24)) * 80 + usize::from(col.min(79));
+    if visible {
+        s.cursor();
+    }
+}
 pub(crate) fn enable_terminals() {
     CONSOLES.borrow().multiplexed = true;
 }
@@ -272,6 +313,22 @@ pub(crate) fn key(consume: bool) -> Option<u16> {
         consoles.screens[id].key(consume)
     } else {
         physical_key(consume)
+    }
+}
+pub(crate) fn guest_text_row(row: usize, bytes: &[u8]) {
+    let mut consoles = CONSOLES.borrow();
+    let id = consoles.running;
+    let visible = id == consoles.foreground;
+    let screen = &mut consoles.screens[id];
+    for (col, pair) in bytes.chunks_exact(2).take(COLS).enumerate() {
+        let i = row * COLS + col;
+        let value = u16::from_le_bytes([pair[0], pair[1]]);
+        if screen.cells[i] != value {
+            screen.cells[i] = value;
+            if visible {
+                screen.paint(i);
+            }
+        }
     }
 }
 pub(crate) fn display(byte: u8) {

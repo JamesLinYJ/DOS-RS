@@ -2,9 +2,14 @@
 use super::{
     CpuState, End, GuestRam, SHELL_SEGMENT, Session, drive, drivers, finish_child, load_root,
 };
+use super::{Outcome, handle_event, step};
 use crate::bios::pc;
 use crate::guest::{command, disk, memory};
 use crate::kernel_cell::KernelCell;
+use core::sync::atomic::{
+    AtomicU8,
+    Ordering::{Acquire, Release},
+};
 
 fn start(ram: &mut GuestRam, session: &mut Session) -> Option<CpuState> {
     ram.clear();
@@ -54,8 +59,10 @@ impl Task {
         session.terminal = id;
         session.scheduled = true;
         disk::set_working(0);
+        let attr = pc::color(0x0b);
         crate::puts("DOS-RS terminal ");
         crate::bios::mscon::write_number((id + 1) as u8);
+        pc::color(attr);
         crate::puts("   Alt+F1..F4 to switch\n");
         let cpu = start(ram, &mut session);
         if cpu.is_none() {
@@ -81,7 +88,7 @@ impl Task {
         }
     }
 
-    fn tick(&mut self, ram: &mut GuestRam) {
+    fn tick(&mut self, ram: &mut GuestRam, completed: Option<(Outcome, u16)>) {
         if self.waiting && pc::key(false).is_none() {
             return;
         }
@@ -97,7 +104,20 @@ impl Task {
             return;
         }
         if let Some(cpu) = self.cpu.as_mut() {
-            match drive(cpu, ram, &mut self.session, 1024) {
+            let end = if let Some((event, ip)) = completed {
+                handle_event(event, ip, cpu, ram, &mut self.session).unwrap_or_else(|| {
+                    if self.session.pending.is_some() {
+                        End::Switch
+                    } else {
+                        End::Loop
+                    }
+                })
+            } else if crate::platform::worker(self.session.terminal) == 0 {
+                drive(cpu, ram, &mut self.session, 1024)
+            } else {
+                End::Loop
+            };
+            match end {
                 End::Loop => {}
                 End::Switch => self.accept_child(),
                 End::Waiting => self.waiting = true,
@@ -107,13 +127,32 @@ impl Task {
                         End::Fault(op) => {
                             crate::puts("Program stopped at opcode ");
                             super::put_hex8(op);
+                            crate::puts(" at ");
+                            crate::put_hex16(cpu.selector(super::Segment::Code));
+                            crate::putc(b':');
+                            crate::put_hex16(cpu.instruction());
+                            crate::puts("  ");
+                            for n in 0..6 {
+                                super::put_hex8(
+                                    ram.load(
+                                        cpu.selector(super::Segment::Code),
+                                        cpu.instruction().wrapping_add(n),
+                                    )
+                                    .unwrap_or(0),
+                                );
+                            }
                             crate::puts("\n");
                             0xff
                         }
-                        _ => {
-                            crate::puts("Unsupported interrupt.\n");
+                        End::Other(vector) => {
+                            crate::puts("Unsupported interrupt ");
+                            super::put_hex8(vector);
+                            crate::puts(" AX=");
+                            crate::put_hex16(cpu.wide(super::Slot::Accumulator));
+                            crate::puts("\n");
                             0xff
                         }
+                        _ => unreachable!(),
                     };
                     self.session.last_code = u16::from(code);
                     self.cpu = if self.session.child_depth == 0 {
@@ -129,9 +168,11 @@ impl Task {
         if !self.prompt {
             let mut path = [0; 64];
             let length = disk::current_path(&mut path);
+            let attr = pc::prompt_color();
             crate::puts("A:\\");
             crate::bios::mscon::con_write_bytes(&path[..length]);
             crate::puts("> ");
+            pc::color(attr);
             self.prompt = true;
         }
         let Some(key) = pc::key(true) else { return };
@@ -160,12 +201,54 @@ impl Task {
 static TASKS: [KernelCell<Option<Task>>; pc::TERMINALS] =
     [const { KernelCell::new(None) }; pc::TERMINALS];
 
+// Only the assigned worker touches RUNNING guest RAM. The boot processor
+// services I/O, DOS and shell events after acquiring the completed context.
+const IDLE: u8 = 0;
+const RUNNING: u8 = 1;
+const DONE: u8 = 2;
+struct Slice {
+    cpu: CpuState,
+    event: Outcome,
+    instruction: u16,
+}
+static STATE: [AtomicU8; pc::TERMINALS] = [const { AtomicU8::new(IDLE) }; pc::TERMINALS];
+static SLICES: [KernelCell<Option<Slice>>; pc::TERMINALS] =
+    [const { KernelCell::new(None) }; pc::TERMINALS];
+
+pub(crate) fn worker_tick(worker: usize) -> bool {
+    let mut worked = false;
+    for (id, state) in STATE.iter().enumerate() {
+        if state.load(Acquire) != RUNNING || crate::platform::worker(id) != worker {
+            continue;
+        }
+        {
+            let mut handoff = SLICES[id].borrow();
+            let slice = handoff.as_mut().unwrap();
+            let mut ram = memory::session_ram(id);
+            for _ in 0..1024 {
+                slice.instruction = slice.cpu.instruction();
+                slice.event = step::step(&mut slice.cpu, &mut ram);
+                if slice.event != Outcome::Continue {
+                    break;
+                }
+            }
+        }
+        state.store(DONE, Release);
+        worked = true;
+    }
+    worked
+}
+
 pub fn interactive() -> ! {
     disk::boot();
     pc::enable_terminals();
     loop {
         let foreground = pc::poll_keyboard();
         for (id, slot) in TASKS.iter().enumerate() {
+            let state = STATE[id].load(Acquire);
+            if state == RUNNING {
+                continue;
+            }
             let mut task = slot.borrow();
             if task.is_none() && id != foreground {
                 continue;
@@ -174,8 +257,30 @@ pub fn interactive() -> ! {
             let mut ram = memory::session_ram(id);
             let task = task.get_or_insert_with(|| Task::boot(id, &mut ram));
             disk::set_working(task.cwd);
-            task.tick(&mut ram);
+            let completed = if state == DONE {
+                let slice = SLICES[id].borrow().take().unwrap();
+                task.cpu = Some(slice.cpu);
+                STATE[id].store(IDLE, Release);
+                Some((slice.event, slice.instruction))
+            } else {
+                None
+            };
+            ram.updated_text(pc::guest_text_row);
+            task.tick(&mut ram, completed);
             task.cwd = disk::working_directory();
+            if crate::platform::worker(id) != 0
+                && !task.waiting
+                && !task.session.batches.ready(task.session.child_depth)
+                && let Some(cpu) = task.cpu.take()
+            {
+                *SLICES[id].borrow() = Some(Slice {
+                    cpu,
+                    event: Outcome::Continue,
+                    instruction: 0,
+                });
+                drop(ram);
+                STATE[id].store(RUNNING, Release);
+            }
         }
         core::hint::spin_loop();
     }

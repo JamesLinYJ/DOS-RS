@@ -169,7 +169,7 @@ fn run_fixture(name: &[u8; 11], segment: u16, args: &[u8], limit: u16) {
             put_hex8(opcode);
             crate::bios::mscon::con_write_bytes(b"\r\n");
         }
-        End::Other => crate::bios::mscon::con_write_bytes(b"GUEST INT\r\n"),
+        End::Other(_) => crate::bios::mscon::con_write_bytes(b"GUEST INT\r\n"),
         End::Loop | End::Waiting | End::Switch => crate::bios::mscon::con_write_bytes(b"GUEST LOOP\r\n"),
     }
 }
@@ -200,7 +200,7 @@ fn architecture_probe() {
             crate::put_hex16(cpu.instruction());
             crate::puts("\n");
         }
-        End::Other => crate::puts("GUEST ARCH INT\n"),
+        End::Other(_) => crate::puts("GUEST ARCH INT\n"),
         End::Loop | End::Waiting | End::Switch => crate::puts("GUEST ARCH LOOP\n"),
     }
 }

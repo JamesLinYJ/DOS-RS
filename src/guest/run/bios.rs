@@ -3,7 +3,43 @@ use super::*;
 
 pub(super) fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> bool {
     match vector {
-        0x10 => video(cpu),
+        0x10 => video(cpu, ram),
+        0x11 => cpu.set_wide(Slot::Accumulator, 0x0421),
+        0x12 => cpu.set_wide(Slot::Accumulator, 640),
+        0x15 => match cpu.high(Slot::Accumulator) {
+            0x24 => {
+                match cpu.low(Slot::Accumulator) {
+                    0 => ram.a20 = false,
+                    1 => ram.a20 = true,
+                    2 => cpu.set_low(Slot::Accumulator, u8::from(ram.a20)),
+                    3 => cpu.set_wide(Slot::Base, 3),
+                    _ => {
+                        cpu.set_high(Slot::Accumulator, 0x86);
+                        cpu.set_carry(true);
+                        return true;
+                    }
+                }
+                cpu.set_high(Slot::Accumulator, 0);
+                cpu.set_carry(false);
+            }
+            0xc0 => {
+                cpu.set_selector(Segment::Extra, 0xf000);
+                cpu.set_wide(Slot::Base, 0xe6f5);
+                cpu.set_high(Slot::Accumulator, 0);
+                cpu.set_carry(false);
+            }
+            0x88 => {
+                cpu.set_wide(
+                    Slot::Accumulator,
+                    ((super::super::memory::RAM_BYTES - 0x100000) / 1024) as u16,
+                );
+                cpu.set_carry(false);
+            }
+            _ => {
+                cpu.set_high(Slot::Accumulator, 0x86);
+                cpu.set_carry(true);
+            }
+        },
         0x13 => read_sectors(cpu, ram),
         0x14 => serial_bios(cpu),
         0x17 => printer_bios(cpu),
@@ -14,15 +50,108 @@ pub(super) fn serve_bios(cpu: &mut CpuState, ram: &mut GuestRam, vector: u8) -> 
     true
 }
 
-fn video(cpu: &mut CpuState) {
+fn video(cpu: &mut CpuState, ram: &mut GuestRam) {
+    let row = ram.load(0x40, 0x51).unwrap_or(0);
+    let col = ram.load(0x40, 0x50).unwrap_or(0);
+    let set_cursor = |ram: &mut GuestRam, row: u8, col: u8| {
+        ram.store(0x40, 0x50, col.min(79));
+        ram.store(0x40, 0x51, row.min(24));
+        crate::bios::pc::position(row, col);
+    };
     match cpu.high(Slot::Accumulator) {
+        0 if matches!(cpu.low(Slot::Accumulator) & 0x7f, 2 | 3 | 7) => {
+            let mode = cpu.low(Slot::Accumulator);
+            ram.store(0x40, 0x49, mode & 0x7f);
+            if mode & 0x80 == 0 {
+                for r in 0..25 {
+                    for c in 0..80 {
+                        ram.write_text(r, c, 0x0720);
+                    }
+                }
+            }
+            set_cursor(ram, 0, 0);
+            cpu.set_carry(false);
+        }
+        1 => {
+            ram.store(0x40, 0x60, cpu.low(Slot::Count));
+            ram.store(0x40, 0x61, cpu.high(Slot::Count));
+            cpu.set_carry(false);
+        }
+        2 => {
+            set_cursor(ram, cpu.high(Slot::Data), cpu.low(Slot::Data));
+            cpu.set_carry(false);
+        }
+        3 => {
+            cpu.set_wide(Slot::Data, u16::from_be_bytes([row, col]));
+            cpu.set_wide(
+                Slot::Count,
+                u16::from_be_bytes([
+                    ram.load(0x40, 0x61).unwrap_or(6),
+                    ram.load(0x40, 0x60).unwrap_or(7),
+                ]),
+            );
+            cpu.set_carry(false);
+        }
+        6 | 7 => {
+            let (top, left) = (cpu.high(Slot::Count).min(24), cpu.low(Slot::Count).min(79));
+            let (bottom, right) = (cpu.high(Slot::Data).min(24), cpu.low(Slot::Data).min(79));
+            let lines = cpu.low(Slot::Accumulator);
+            let down = cpu.high(Slot::Accumulator) == 7;
+            let blank = u16::from_be_bytes([cpu.high(Slot::Base), 32]);
+            for n in top..=bottom {
+                let r = if down { bottom - (n - top) } else { n };
+                for c in left..=right {
+                    let source = if down {
+                        r.checked_sub(lines)
+                    } else {
+                        r.checked_add(lines)
+                    };
+                    let word = if let Some(y) =
+                        source.filter(|y| lines != 0 && (top..=bottom).contains(y))
+                    {
+                        ram.text(y, c)
+                    } else {
+                        blank
+                    };
+                    ram.write_text(r, c, word);
+                }
+            }
+            cpu.set_carry(false);
+        }
+        8 => {
+            cpu.set_wide(Slot::Accumulator, ram.text(row, col));
+            cpu.set_carry(false);
+        }
+        9 | 10 => {
+            let pos = usize::from(row) * 80 + usize::from(col);
+            for i in pos..(pos + usize::from(cpu.wide(Slot::Count))).min(2000) {
+                let (r, c) = ((i / 80) as u8, (i % 80) as u8);
+                let attr = if cpu.high(Slot::Accumulator) == 9 {
+                    cpu.low(Slot::Base)
+                } else {
+                    (ram.text(r, c) >> 8) as u8
+                };
+                ram.write_text(r, c, u16::from_be_bytes([attr, cpu.low(Slot::Accumulator)]));
+            }
+            cpu.set_carry(false);
+        }
+        0x12 if cpu.low(Slot::Base) == 0x10 => {
+            cpu.set_wide(Slot::Base, 3); // color display, 256 KiB VGA memory
+            cpu.set_wide(Slot::Count, 9);
+            cpu.set_carry(false);
+        }
+        0x1a if cpu.low(Slot::Accumulator) == 0 => {
+            cpu.set_low(Slot::Accumulator, 0x1a);
+            cpu.set_wide(Slot::Base, 8);
+            cpu.set_carry(false);
+        }
         0x0E => {
             crate::bios::mscon::con_write_bytes(&[cpu.low(Slot::Accumulator)]);
             cpu.set_carry(false);
         }
         0x0F => {
             cpu.set_high(Slot::Accumulator, 80);
-            cpu.set_low(Slot::Accumulator, 3);
+            cpu.set_low(Slot::Accumulator, ram.load(0x40, 0x49).unwrap_or(3));
             cpu.set_high(Slot::Base, 0);
             cpu.set_carry(false);
         }

@@ -94,7 +94,23 @@ pub(super) fn execute(
         return;
     }
     let (verb, rest) = split(line);
-    if verb.eq_ignore_ascii_case(b"VER") {
+    if verb.eq_ignore_ascii_case(b"HW") {
+        crate::platform::report();
+    } else if verb.eq_ignore_ascii_case(b"COLOR") {
+        let value = core::str::from_utf8(rest)
+            .ok()
+            .and_then(|s| u8::from_str_radix(s, 16).ok());
+        if rest.is_empty() {
+            crate::bios::pc::recolor(7);
+        } else if let Some(v) = value
+            && rest.len() == 2
+            && v >> 4 != v & 15
+        {
+            crate::bios::pc::recolor(v);
+        } else {
+            say(b"COLOR <background><foreground> (hex digits)\r\n");
+        }
+    } else if verb.eq_ignore_ascii_case(b"VER") {
         say(b"DOS-RS (DOS 4.00)\r\n");
     } else if verb.eq_ignore_ascii_case(b"ECHO") {
         let mut expanded = [0; 80];

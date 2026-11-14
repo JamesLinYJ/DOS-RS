@@ -30,6 +30,7 @@ pub(super) struct Drivers {
 pub(super) enum Device {
     Console,
     Null,
+    ExpandedMemory,
     Serial(u16),
     Printer,
     Resident(Header),
@@ -53,6 +54,7 @@ impl Drivers {
         }
         Some(match base {
             b"CON     " => Device::Console,
+            b"EMMXXXX0" => Device::ExpandedMemory,
             b"NUL     " => Device::Null,
             b"COM1    " | b"AUX     " => Device::Serial(pc::UARTS[0]),
             b"COM2    " => Device::Serial(pc::UARTS[1]),
@@ -328,6 +330,7 @@ fn execute(header: Header, ram: &mut GuestRam, session: &mut Session) -> Result<
             }
             match step::step(&mut cpu, ram) {
                 Outcome::Continue => {}
+                Outcome::Port{port,write,word} => super::serve_port(&mut cpu,ram,port,write,word),
                 Outcome::Interrupt(0x21)
                     if matches!(cpu.high(Slot::Accumulator), 0x02 | 0x09 | 0x30 | 0x52) =>
                 {
@@ -441,7 +444,7 @@ pub(super) fn ioctl(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessio
                     Ok(status != 0xff && status & (if function == 6 { 1 } else { 0x20 }) != 0)
                 }
                 Device::Printer => Ok(function == 7 && pc::printer_status() & 0x80 != 0),
-                Device::Null => Ok(true),
+                Device::ExpandedMemory | Device::Null => Ok(true),
             };
             ready.map(|yes| cpu.set_low(Slot::Accumulator, if yes { 0xff } else { 0 }))
         }

@@ -12,6 +12,8 @@ use crate::kernel_cell::KernelCell;
 mod drivers;
 mod runtime;
 mod handles;
+pub(super) mod xms;
+pub(super) mod ems;
 mod locks;
 mod fcb;
 use fcb::{fcb_find, fcb_delete, fcb_open, fcb_close, fcb_read, fcb_write, fcb_create, fcb_rename, fcb_random_read, fcb_random_write, fcb_block_read, fcb_block_write, fcb_place, fcb_size};
@@ -19,6 +21,7 @@ mod bios;
 use bios::serve_bios;
 mod smoke;
 pub use runtime::{interactive, run_shell};
+pub(crate) use runtime::worker_tick;
 pub use smoke::show;
 
 const LAUNCH_SEGMENT: u16 = 0x1600;
@@ -61,7 +64,7 @@ enum End {
     Switch,
     Stopped(u8),
     Fault(u8),
-    Other,
+    Other(u8),
     Loop,
 }
 
@@ -70,53 +73,117 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
     while steps < limit {
         steps += 1;
         let instruction = cpu.instruction();
-        match step::step(cpu, ram) {
-            Outcome::Continue => {}
-            Outcome::Interrupt(0x2E) => super::command::invoke(cpu, ram, session),
-            Outcome::Interrupt(0x21) if matches!(cpu.high(Slot::Accumulator), 1 | 7 | 8) => {
-                if let Some(key) = crate::bios::pc::key(true) {
-                    cpu.set_low(Slot::Accumulator, key as u8);
-                    if cpu.high(Slot::Accumulator) == 1 {
-                        crate::bios::mscon::con_write_bytes(&[key as u8]);
-                    }
-                } else {
-                    cpu.set_instruction(instruction);
-                    if session.scheduled {
-                        return End::Waiting;
-                    }
-                }
-            }
-            Outcome::Interrupt(0x21) => match service(cpu, ram, session) {
-                Action::Continue => {}
-                Action::Exit(code) => return End::Stopped(code),
-            },
-            Outcome::Interrupt(v @ (0x25 | 0x26)) => {
-                drivers::absolute(cpu, ram, session, v == 0x26)
-            }
-            Outcome::Interrupt(0x03) => {}
-            Outcome::Interrupt(0x20) | Outcome::Halt => return End::Stopped(0),
-            Outcome::Fault(opcode) => return End::Fault(opcode),
-            Outcome::Interrupt(0x16)
-                if matches!(cpu.high(Slot::Accumulator), 0 | 0x10)
-                    && crate::bios::pc::key(false).is_none() =>
-            {
-                cpu.set_instruction(instruction);
-                if session.scheduled {
-                    return End::Waiting;
-                }
-            }
-            Outcome::Interrupt(vector) => {
-                if serve_bios(cpu, ram, vector) {
-                } else if !enter_vector(cpu, ram, session, vector) {
-                    return End::Other;
-                }
-            }
+        let event = step::step(cpu, ram);
+        if let Some(end) = handle_event(event, instruction, cpu, ram, session) {
+            return end;
         }
         if session.pending.is_some() || session.batches.ready(session.child_depth) {
             return End::Switch;
         }
     }
     End::Loop
+}
+
+fn serve_port(cpu: &mut CpuState, ram: &mut GuestRam, port: u16, write: bool, word: bool) {
+    use crate::bios::pc::{port_read, port_write};
+    if !word && let Some(result) = ram.system_port(port, write, cpu.low(Slot::Accumulator)) {
+        if !write {
+            cpu.set_low(Slot::Accumulator, result);
+        }
+        return;
+    }
+    if write {
+        port_write(port, cpu.low(Slot::Accumulator));
+        if word {
+            port_write(port.wrapping_add(1), cpu.high(Slot::Accumulator));
+        }
+    } else {
+        cpu.set_low(Slot::Accumulator, port_read(port));
+        if word {
+            cpu.set_high(Slot::Accumulator, port_read(port.wrapping_add(1)));
+        }
+    }
+}
+
+fn handle_event(
+    event: Outcome,
+    instruction: u16,
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    session: &mut Session,
+) -> Option<End> {
+    match event {
+        Outcome::Continue => {}
+        Outcome::EmsReturn => session.ems.return_call(cpu, ram),
+        Outcome::Ems => {
+            if step::interrupt_return(cpu, ram, 0xcf) != Outcome::Continue {
+                return Some(End::Fault(0xcf));
+            }
+            session.ems.call(cpu, ram);
+        }
+        Outcome::Interrupt(0x67) if !session.vector_live[0x67] => session.ems.call(cpu, ram),
+        Outcome::Xms => {
+            session.xms.call(cpu, ram);
+            if !step::far_return(cpu, ram) {
+                return Some(End::Fault(0xcb));
+            }
+        }
+        Outcome::Port { port, write, word } => serve_port(cpu, ram, port, write, word),
+        Outcome::Interrupt(0x2E) => super::command::invoke(cpu, ram, session),
+        Outcome::Interrupt(0x21) if matches!(cpu.high(Slot::Accumulator), 1 | 7 | 8) => {
+            if let Some(key) = crate::bios::pc::key(true) {
+                cpu.set_low(Slot::Accumulator, key as u8);
+                if cpu.high(Slot::Accumulator) == 1 {
+                    crate::bios::mscon::con_write_bytes(&[key as u8]);
+                }
+            } else {
+                cpu.set_instruction(instruction);
+                if session.scheduled {
+                    return Some(End::Waiting);
+                }
+            }
+        }
+        Outcome::Interrupt(0x21) => match service(cpu, ram, session) {
+            Action::Continue => {}
+            Action::Exit(code) => return Some(End::Stopped(code)),
+        },
+        Outcome::Interrupt(v @ (0x25 | 0x26)) => drivers::absolute(cpu, ram, session, v == 0x26),
+        Outcome::Interrupt(0x03) => {}
+        Outcome::Interrupt(0x20) | Outcome::Halt => return Some(End::Stopped(0)),
+        Outcome::Fault(opcode) => {
+            cpu.set_instruction(instruction);
+            return Some(End::Fault(opcode));
+        }
+        Outcome::Interrupt(0x16)
+            if matches!(cpu.high(Slot::Accumulator), 0 | 0x10)
+                && crate::bios::pc::key(false).is_none() =>
+        {
+            cpu.set_instruction(instruction);
+            if session.scheduled {
+                return Some(End::Waiting);
+            }
+        }
+        Outcome::Interrupt(vector) => {
+            if serve_bios(cpu, ram, vector) {
+            } else if !enter_vector(cpu, ram, session, vector) {
+                // An unclaimed multiplex call chains to the final IRET. Probes
+                // use AL=0 on entry and observe that no TSR claimed it.
+                if vector == 0x2f {
+                    match cpu.wide(Slot::Accumulator) {
+                        0x4300 => cpu.set_low(Slot::Accumulator, 0x80),
+                        0x4310 => {
+                            cpu.set_selector(Segment::Extra, xms::ENTRY.0);
+                            cpu.set_wide(Slot::Base, xms::ENTRY.1);
+                        }
+                        _ => {}
+                    }
+                    return None;
+                }
+                return Some(End::Other(vector));
+            }
+        }
+    }
+    None
 }
 
 enum Action {
@@ -155,6 +222,8 @@ pub(super) struct Session {
     pub(super) batches: super::command::Batches,
     pub(super) environment: super::command::Environment,
     handles:handles::Handles,
+    xms:xms::Xms,
+    ems:ems::Ems,
     last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
@@ -197,6 +266,8 @@ impl Session {
             parents:[const {None};8], batches:super::command::Batches::new(),
             environment: super::command::Environment::new(),
             handles:handles::Handles::new(),
+            xms:xms::Xms::new(),
+            ems:ems::Ems::new(),
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,
@@ -482,6 +553,8 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             session.vector_segment[id] = cpu.selector(Segment::Data);
             session.vector_offset[id] = cpu.wide(Slot::Data);
             session.vector_live[id] = true;
+            let at=(id*4) as u16;
+            for (i,b) in session.vector_offset[id].to_le_bytes().into_iter().chain(session.vector_segment[id].to_le_bytes()).enumerate(){ram.store(0,at+i as u16,b);}
             cpu.set_carry(false);
             Action::Continue
         }
@@ -538,8 +611,8 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
                 cpu.set_selector(Segment::Extra, session.vector_segment[id]);
                 cpu.set_wide(Slot::Base, session.vector_offset[id]);
             } else {
-                cpu.set_selector(Segment::Extra, 0);
-                cpu.set_wide(Slot::Base, 0);
+                cpu.set_selector(Segment::Extra,read_word(ram,0,id as u16*4+2).unwrap());
+                cpu.set_wide(Slot::Base,read_word(ram,0,id as u16*4).unwrap());
             }
             cpu.set_carry(false);
             Action::Continue
@@ -1615,7 +1688,8 @@ fn write_console(cpu: &mut CpuState, ram: &GuestRam) {
 
 // The loader copies the image into guest RAM before execution. Release this
 // scratch space at that point so recursive EXEC can reuse it.
-static EXEC_IMAGE: KernelCell<[u8; FILE_BYTES]> = KernelCell::new([0; FILE_BYTES]);
+const EXEC_BYTES: usize = 640 * 1024;
+static EXEC_IMAGE: KernelCell<[u8; EXEC_BYTES]> = KernelCell::new([0; EXEC_BYTES]);
 
 fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     if cpu.low(Slot::Accumulator) != 0 {
@@ -1750,6 +1824,34 @@ fn run_child(
         return Ok(0);
     }
     let end = drive(&mut cpu, ram, session, 8_000_000);
+    if cfg!(feature = "batch-console") && !matches!(end, End::Stopped(_)) {
+        match end {
+            End::Fault(op) => {
+                crate::puts("Unsupported opcode ");
+                put_hex8(op);
+            }
+            End::Other(v) => {
+                crate::puts("Unsupported interrupt ");
+                put_hex8(v);
+            }
+            _ => crate::puts("Batch execution limit"),
+        }
+        crate::puts(" at ");
+        crate::put_hex16(cpu.selector(Segment::Code));
+        crate::putc(b':');
+        crate::put_hex16(cpu.instruction());
+        crate::puts("  ");
+        for i in 0..6 {
+            put_hex8(
+                ram.load(
+                    cpu.selector(Segment::Code),
+                    cpu.instruction().wrapping_add(i),
+                )
+                .unwrap(),
+            );
+        }
+        crate::puts("\n");
+    }
     finish_child(session, ram);
     match end {
         End::Stopped(code) => Ok(code),

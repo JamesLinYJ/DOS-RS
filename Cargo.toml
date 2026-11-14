@@ -12,3 +12,8 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[dependencies]
+font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
+uefi = { version = "0.38", default-features = false }
+x86 = { version = "0.52.0", default-features = false }

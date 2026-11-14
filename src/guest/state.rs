@@ -78,7 +78,7 @@ impl Segment {
 
 #[derive(Clone, Debug)]
 pub struct CpuState {
-    words: [u16; 8],
+    words: [u32; 8],
     selectors: [u16; 4],
     instruction: u16,
     flags: u16,
@@ -105,13 +105,20 @@ impl CpuState {
     }
 
     pub fn wide(&self, slot: Slot) -> u16 {
-        self.words[slot.index()]
+        self.words[slot.index()] as u16
     }
 
     pub fn set_wide(&mut self, slot: Slot, value: u16) {
-        self.words[slot.index()] = value;
+        let word = &mut self.words[slot.index()];
+        *word = (*word & 0xffff0000) | u32::from(value);
     }
 
+    pub fn dword(&self, slot: Slot) -> u32 {
+        self.words[slot.index()]
+    }
+    pub fn set_dword(&mut self, slot: Slot, value: u32) {
+        self.words[slot.index()] = value;
+    }
     pub fn low(&self, slot: Slot) -> u8 {
         self.wide(slot) as u8
     }

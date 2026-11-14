@@ -1,7 +1,23 @@
 ; Independent 8086 processes for the virtual terminal regression.
 bits 16
 org 100h
+%macro private_frame 1
+mov bx,1
+mov ax,4300h
+int 67h
+test ah,ah
+jnz fail
+xor bx,bx
+mov ax,4400h
+int 67h
+test ah,ah
+jnz fail
+mov ax,0d000h
+mov es,ax
+mov word [es:16],%1
+%endmacro
 %ifdef SPIN
+private_frame 0a551h
 mov dx, ready
 call print
 again:
@@ -12,6 +28,8 @@ jc again
 mov bx, ax
 mov ah, 3eh
 int 21h
+cmp word [es:16],0a551h
+jne fail
 mov dx, seen
 call print
 jmp $
@@ -34,6 +52,7 @@ woke db 'KEY DELIVERED',13,10,'$'
 %elifdef CRASH
 db 63h
 %else
+private_frame 05aa2h
 mov ax,3c00h
 xor cx,cx
 mov dx,path

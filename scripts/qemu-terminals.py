@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Run simultaneous DOS programs on four virtual terminals on both targets."""
+
 import argparse
-import os
+import re
+import qemu
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,8 +17,18 @@ def prepare(out):
     shutil.copyfile(ROOT / "disks/guest12.img", image)
     for name in ["SPIN", "WAITKEY", "CRASH", "CALC"]:
         program = out / (name + ".COM")
-        subprocess.run(["nasm", "-f", "bin", "-D" + name, ROOT / "tests/terminals.asm",
-                        "-o", program], check=True)
+        subprocess.run(
+            [
+                "nasm",
+                "-f",
+                "bin",
+                "-D" + name,
+                ROOT / "tests/terminals.asm",
+                "-o",
+                program,
+            ],
+            check=True,
+        )
         subprocess.run(["mcopy", "-o", "-i", image, program, "::"], check=True)
     batch = out / "AUTOEXEC.BAT"
     batch.write_bytes(b"ECHO Ready\r\n")
@@ -24,18 +36,26 @@ def prepare(out):
     return image
 
 
-def check(out, image, target, display):
-    arch = target.split("-")[0]
-    emulator = "qemu-system-" + ("i386" if arch == "i686" else "x86_64")
-    build = ["cargo", "build", "--release", "--target-dir", ROOT / "target/terminals"]
-    build += ["-Zjson-target-spec", "--target", "./i686-unknown-none.json"] if arch == "i686" else ["--target", target]
-    subprocess.run(build, cwd=ROOT, env={**os.environ, "DOS_RS_GUEST_IMAGE": str(image)}, check=True)
-    kernel = ROOT / "target/terminals" / target / "release/dos4-rs"
+def check(out, image, arch, display, cpus, firmware):
+    kernel = qemu.build(arch, ROOT / "target/terminals", image)
     log = out / (arch + ".txt")
     log.write_bytes(b"")
-    cmd = [emulator, "-kernel", kernel, "-display", display, "-vga", "std", "-m", "64",
-           "-serial", "file:" + str(log), "-monitor", "stdio", "-nic", "none", "-no-reboot"]
-    vm = subprocess.Popen(cmd, cwd=out, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+    cmd = qemu.boot_args(kernel, arch, out / (arch + "-boot"), cpus, firmware)
+    cmd += [
+        "-display",
+        display,
+        "-vga",
+        "std",
+        "-serial",
+        "file:" + str(log),
+        "-monitor",
+        "stdio",
+        "-nic",
+        "none",
+    ]
+    vm = subprocess.Popen(
+        cmd, cwd=out, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL
+    )
 
     def monitor(command):
         vm.stdin.write((command + "\n").encode())
@@ -43,7 +63,7 @@ def check(out, image, target, display):
 
     def key(name):
         monitor("sendkey " + name + " 15")
-        time.sleep(.035)
+        time.sleep(0.035)
 
     def enter(line):
         for char in line:
@@ -57,10 +77,11 @@ def check(out, image, target, display):
                 return
             if vm.poll() is not None:
                 break
-            time.sleep(.03)
+            time.sleep(0.03)
         raise RuntimeError(f"{arch} missing {marker!r}\n{log.read_bytes()[-1600:]!r}")
 
     try:
+        wait(f"CPUs online: {cpus} / {cpus}")
         wait("A:\\> ")
         enter("spin.com")
         wait("BACKGROUND RUNNING")
@@ -82,12 +103,47 @@ def check(out, image, target, display):
         wait("KEY DELIVERED")
         enter("type shared.txt")
         wait("VT shared file")
+        enter("hw")
+        wait("PCI 00:")
+        stats = re.findall(
+            rb"CPU (\d+)  APIC (\d+)  guest slices (\d+)", log.read_bytes()
+        )
+        if len({apic for _, apic, _ in stats}) != cpus:
+            raise RuntimeError(f"{arch} missing distinct APIC IDs: {stats}")
+        if any(int(count) == 0 for slot, _, count in stats if 0 < int(slot) <= 4):
+            raise RuntimeError(f"{arch} idle terminal worker: {stats}")
+        enter("color 1e")
+        enter("ver")
+        wait("DOS-RS (DOS 4.00)")
         (out / (arch + ".ppm")).unlink(missing_ok=True)
         monitor(f"screendump {arch}.ppm")
         end = time.monotonic() + 3
-        while not (out / (arch + ".ppm")).exists() and time.monotonic() < end:
-            time.sleep(.02)
-        print(f"{arch} four-terminal check passed", flush=True)
+        frame = out / (arch + ".ppm")
+        while time.monotonic() < end:
+            if frame.exists():
+                header = frame.read_bytes().split(b"\n", 3)
+                if len(header) == 4 and header[0] == b"P6":
+                    width, height = map(int, header[1].split())
+                    if len(header[3]) == width * height * 3:
+                        break
+            time.sleep(0.02)
+        else:
+            raise RuntimeError(f"{arch} incomplete QEMU screendump")
+        from collections import Counter
+
+        colors = Counter(zip(*[iter(header[3])] * 3))
+        blue = sum(
+            n for (r, g, b), n in colors.items() if r < 32 and g < 32 and b > 120
+        )
+        yellow = sum(
+            n for (r, g, b), n in colors.items() if r > 190 and g > 190 and b < 150
+        )
+        if blue < 10000 or yellow < 100:
+            raise RuntimeError(f"COLOR 1E failed: {colors.most_common(8)}")
+        print(
+            f"{arch}/{firmware}: four terminals, {blue} blue and {yellow} yellow pixels",
+            flush=True,
+        )
     finally:
         if vm.poll() is None:
             monitor("quit")
@@ -98,9 +154,11 @@ if __name__ == "__main__":
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--output", type=Path, default=ROOT / "target/terminal-proof")
     cli.add_argument("--display", default="none")
+    cli.add_argument("--cpus", type=int, default=4)
+    cli.add_argument("--firmware", choices=["uefi", "bios"], default="uefi")
     args = cli.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     image = prepare(out)
-    for target in ["i686-unknown-none", "x86_64-unknown-none"]:
-        check(out, image, target, args.display)
+    for arch in qemu.ARCH:
+        check(out, image, arch, args.display, args.cpus, args.firmware)

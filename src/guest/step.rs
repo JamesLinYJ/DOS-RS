@@ -3,6 +3,7 @@
 //! An interrupt result means the pointer already addresses the next
 //! instruction. The caller performs the service.
 
+mod operand32;
 use super::alu;
 use super::memory::GuestRam;
 use super::state::{CpuState, Segment, Slot};
@@ -10,7 +11,11 @@ use super::state::{CpuState, Segment, Slot};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Outcome {
     Continue,
+    Xms,
+    Ems,
+    EmsReturn,
     Interrupt(u8),
+    Port { port: u16, write: bool, word: bool },
     Halt,
     Fault(u8),
 }
@@ -22,10 +27,14 @@ enum Operand {
 
 pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     let start=cpu.instruction();
+    if (cpu.selector(Segment::Code),start)==super::run::xms::ENTRY{return Outcome::Xms;}
+    if (cpu.selector(Segment::Code),start)==super::run::ems::ENTRY{return Outcome::Ems;}
+    if (cpu.selector(Segment::Code),start)==super::run::ems::RETURN{return Outcome::EmsReturn;}
     let Some(mut opcode) = fetch(cpu, ram) else {
         return Outcome::Fault(0);
     };
     let mut override_segment = None;
+    let mut dword = false;
     loop {
         if matches!(opcode, 0x26 | 0x2E | 0x36 | 0x3E) {
             override_segment = Some(match opcode {
@@ -34,6 +43,8 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
                 0x36 => Segment::Stack,
                 _ => Segment::Data,
             });
+        } else if opcode == 0x66 {
+            dword=true;
         } else if opcode != 0xF0 {
             break;
         }
@@ -43,6 +54,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             None => return Outcome::Fault(0),
         };
     }
+    if dword {return operand32::step(cpu,ram,override_segment,opcode);}
     match opcode {
         0x00..=0x05 | 0x08..=0x0D | 0x10..=0x15 | 0x18..=0x1D | 0x20..=0x25 | 0x28..=0x2D
         | 0x30..=0x35 | 0x38..=0x3D => arithmetic(cpu, ram, override_segment, opcode),
@@ -369,6 +381,15 @@ fn machine_status(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome
     let Some(extended) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
+    if (0x80..=0x8f).contains(&extended) {
+        let (Some(lo), Some(hi)) = (fetch(cpu, ram), fetch(cpu, ram)) else {
+            return Outcome::Fault(opcode);
+        };
+        if condition(cpu.flags(), extended & 15) {
+            cpu.set_instruction(cpu.instruction().wrapping_add(u16::from_le_bytes([lo, hi])));
+        }
+        return Outcome::Continue;
+    }
     if extended == 0x01 {
         return status_word(cpu, ram, opcode);
     }
@@ -1088,6 +1109,8 @@ fn return_far_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outco
     cpu.set_wide(Slot::Stack, cpu.wide(Slot::Stack).wrapping_add(extra));
     Outcome::Continue
 }
+
+pub(super) fn far_return(cpu:&mut CpuState,ram:&mut GuestRam)->bool{return_far(cpu,ram,0xcb)==Outcome::Continue}
 
 fn return_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let Some(next) = pop_word(cpu, ram) else {
@@ -1855,7 +1878,7 @@ fn store_word_immediate(
     }
 }
 
-fn interrupt_return(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+pub(super) fn interrupt_return(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let Some(next) = pop_word(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
@@ -2156,7 +2179,6 @@ fn translate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
 }
 
 fn port_io(cpu: &mut CpuState, ram: &GuestRam, opcode: u8) -> Outcome {
-    use crate::bios::pc::{port_read, port_write};
     let port = if opcode & 8 == 0 {
         let Some(immediate) = fetch(cpu, ram) else {
             return Outcome::Fault(opcode);
@@ -2165,19 +2187,7 @@ fn port_io(cpu: &mut CpuState, ram: &GuestRam, opcode: u8) -> Outcome {
     } else {
         cpu.wide(Slot::Data)
     };
-    let word = opcode & 1 != 0;
-    if opcode & 2 != 0 {
-        port_write(port, cpu.low(Slot::Accumulator));
-        if word {
-            port_write(port.wrapping_add(1), cpu.high(Slot::Accumulator));
-        }
-    } else {
-        cpu.set_low(Slot::Accumulator, port_read(port));
-        if word {
-            cpu.set_high(Slot::Accumulator, port_read(port.wrapping_add(1)));
-        }
-    }
-    Outcome::Continue
+    Outcome::Port {port, write:opcode & 2 != 0, word:opcode & 1 != 0}
 }
 
 fn unary_word(
@@ -2726,7 +2736,7 @@ fn push_word(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
     ram.store(segment, pointer, bytes[0]) && ram.store(segment, pointer.wrapping_add(1), bytes[1])
 }
 
-fn pop_word(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<u16> {
+fn pop_word(cpu: &mut CpuState, ram: &GuestRam) -> Option<u16> {
     let pointer = cpu.wide(Slot::Stack);
     let segment = cpu.selector(Segment::Stack);
     let low = ram.load(segment, pointer)?;

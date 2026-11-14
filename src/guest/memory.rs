@@ -1,23 +1,37 @@
 //! Checked guest RAM.
 //!
-//! A real-mode address is `segment * 16 + offset`. Address line A20
-//! is not driven, so the sum is folded into the first megabyte. Conventional
-//! memory is the first 640KiB of that map. The byte must sit inside this
-//! buffer. The buffer is not a host pointer handed to guest code.
+//! Each session has 640 KiB of conventional memory, a VGA/ROM window,
+//! an A20 gate and 8 MiB of extended RAM. All addresses are guest offsets.
+pub const RAM_BYTES: usize = 9 * 1024 * 1024;
 
-/// One megabyte, the real-mode space with the high address bit folded in.
-pub const RAM_BYTES: usize = 0x100000;
+pub(super) const EXT_START: usize = 0x110000;
+pub(super) const KIB: usize = 1024;
+const EXT_UNITS: usize = (RAM_BYTES - EXT_START) / KIB;
+pub(super) const EMS_PAGE: usize = 0x4000;
+pub(super) const EMS_FRAME: usize = 0xd0000;
 
 /// First paragraph past conventional memory. 640KiB.
 pub const CONVENTIONAL_END: u16 = 0xA000;
 
 pub struct GuestRam {
     bytes: [u8; RAM_BYTES],
+    pub(crate) a20: bool,
+    units: [u64; EXT_UNITS.div_ceil(64)],
+    pub(super) frame: [Option<usize>; 4],
+    dirty_rows: u32,
+    kbc_command: u8,
+    kbc_output: Option<u8>,
 }
 
 static STORAGE: [crate::kernel_cell::KernelCell<GuestRam>; 4] = [const {
     crate::kernel_cell::KernelCell::new(GuestRam {
         bytes: [0; RAM_BYTES],
+        units: [0; EXT_UNITS.div_ceil(64)],
+        frame: [None; 4],
+        a20: false,
+        dirty_rows: 0,
+        kbc_command: 0,
+        kbc_output: None,
     })
 }; 4];
 
@@ -37,27 +51,186 @@ pub fn real_linear(segment: u16, offset: u16) -> Option<u32> {
 
 impl GuestRam {
     pub fn clear(&mut self) {
+        self.units.fill(0);
+        self.frame = [None; 4];
         self.bytes.fill(0);
+        self.a20 = false;
+        self.kbc_command = 0;
+        self.kbc_output = None;
         // Microsoft C walks a message list at FFFF:0758. That address folds
         // to 0748 here. A word of all ones is the empty list, so the walk ends.
+        // BIOS Data Area and the conventional AT configuration table.
+        self.bytes[0x410..0x412].copy_from_slice(&0x0421u16.to_le_bytes());
+        self.bytes[0x413..0x415].copy_from_slice(&640u16.to_le_bytes());
+        self.dirty_rows = 0;
+        for pair in self.bytes[0xb8000..0xb8000 + 4000].chunks_exact_mut(2) {
+            pair.copy_from_slice(&[32, 7]);
+        }
+        self.bytes[0x67 * 4..0x67 * 4 + 4].copy_from_slice(&[0, 0, 0, 0xf1]);
+        self.bytes[0xf1000 + 10..0xf1000 + 18].copy_from_slice(b"EMMXXXX0");
+        self.bytes[0x449] = 3;
+        self.bytes[0x44a..0x44c].copy_from_slice(&80u16.to_le_bytes());
+        self.bytes[0x44c..0x44e].copy_from_slice(&4096u16.to_le_bytes());
+        self.bytes[0x460..0x462].copy_from_slice(&[7, 6]);
+        self.bytes[0x463..0x465].copy_from_slice(&0x3d4u16.to_le_bytes());
+        self.bytes[0x465] = 0x29;
+        self.bytes[0x484] = 24;
+        self.bytes[0x485..0x487].copy_from_slice(&16u16.to_le_bytes());
+        self.bytes[0x487] = 0x60;
+        self.bytes[0x488] = 0xf9;
+        self.bytes[0x489] = 0x51;
+        self.bytes[0x48a] = 8;
+        self.bytes[0xfe6f5..0xfe6ff].copy_from_slice(&[8, 0, 0xfc, 0, 1, 0, 0, 0, 0, 0]);
         self.bytes[0x748] = 0xFF;
         self.bytes[0x749] = 0xFF;
     }
 
+    /// A single bitmap accounts for XMS blocks and aligned 16 KiB EMS pages.
+    pub(super) fn free_runs(&self, mut visit: impl FnMut(usize, usize)) {
+        let mut start = 0;
+        for i in 0..=EXT_UNITS {
+            if i == EXT_UNITS || self.units[i / 64] & (1u64 << (i % 64)) != 0 {
+                if start < i {
+                    visit(EXT_START + start * KIB, (i - start) * KIB);
+                }
+                start = i + 1;
+            }
+        }
+    }
+    pub(super) fn mark(&mut self, start: usize, len: usize, used: bool) {
+        let unit = (start - EXT_START) / KIB;
+        for i in unit..unit + len / KIB {
+            let bit = 1u64 << (i % 64);
+            if used {
+                self.units[i / 64] |= bit;
+            } else {
+                self.units[i / 64] &= !bit;
+            }
+        }
+    }
+    pub(super) fn allocate_ext(&mut self, len: usize, ems: bool) -> Option<usize> {
+        if len == 0 {
+            return Some(EXT_START);
+        }
+        let mut found = None;
+        self.free_runs(|s, n| {
+            if n >= len {
+                if ems {
+                    let base = (s + n - len) & !(EMS_PAGE - 1);
+                    if base >= s {
+                        found = Some(base);
+                    }
+                } else if found.is_none() {
+                    found = Some(s);
+                }
+            }
+        });
+        let start = found?;
+        self.mark(start, len, true);
+        Some(start)
+    }
+    pub(super) fn free_ems(&self) -> usize {
+        let mut pages = 0;
+        self.free_runs(|s, n| pages += ((s + n) / EMS_PAGE).saturating_sub(s.div_ceil(EMS_PAGE)));
+        pages
+    }
+    fn mapped(&self, linear: usize) -> usize {
+        if (EMS_FRAME..EMS_FRAME + 4 * EMS_PAGE).contains(&linear) {
+            let at = linear - EMS_FRAME;
+            if let Some(base) = self.frame[at / EMS_PAGE] {
+                return base + at % EMS_PAGE;
+            }
+        }
+        linear
+    }
+    pub(super) fn bus_byte(&self, linear: usize) -> u8 {
+        self.bytes[self.mapped(linear)]
+    }
+    pub(super) fn set_bus_byte(&mut self, linear: usize, value: u8) {
+        let at = self.mapped(linear);
+        if (0xb8000..0xb8000 + 4000).contains(&at) && self.bytes[at] != value {
+            self.dirty_rows |= 1 << ((at - 0xb8000) / 160);
+        }
+        self.bytes[at] = value;
+    }
+    pub(super) fn move_physical(&mut self, src: usize, dst: usize, len: usize) -> Option<()> {
+        if src.checked_add(len)? > RAM_BYTES || dst.checked_add(len)? > RAM_BYTES {
+            return None;
+        }
+        if src >= EXT_START && dst >= EXT_START {
+            self.bytes.copy_within(src..src + len, dst);
+        } else if dst > src && dst - src < len {
+            for i in (0..len).rev() {
+                let v = self.bus_byte(src + i);
+                self.set_bus_byte(dst + i, v);
+            }
+        } else {
+            for i in 0..len {
+                let v = self.bus_byte(src + i);
+                self.set_bus_byte(dst + i, v);
+            }
+        }
+        Some(())
+    }
+    pub(super) fn address(&self, seg: u16, off: u16) -> usize {
+        if self.a20 {
+            usize::from(seg) * 16 + usize::from(off)
+        } else {
+            real_linear(seg, off).unwrap() as usize
+        }
+    }
+    pub(super) fn system_port(&mut self, port: u16, write: bool, value: u8) -> Option<u8> {
+        match (port, write) {
+            (0x92, false) => Some(u8::from(self.a20) << 1),
+            (0x92, true) => {
+                self.a20 = value & 2 != 0;
+                Some(0)
+            }
+            (0x64, false) => Some(u8::from(self.kbc_output.is_some())),
+            (0x64, true) => {
+                self.kbc_command = value;
+                if value == 0xd0 {
+                    self.kbc_output = Some(1 | u8::from(self.a20) << 1);
+                }
+                Some(0)
+            }
+            (0x60, false) => Some(self.kbc_output.take().unwrap_or(0)),
+            (0x60, true) if self.kbc_command == 0xd1 => {
+                self.a20 = value & 2 != 0;
+                self.kbc_command = 0;
+                Some(0)
+            }
+            _ => None,
+        }
+    }
     pub fn load(&self, segment: u16, offset: u16) -> Option<u8> {
-        self.bytes
-            .get(real_linear(segment, offset)? as usize)
-            .copied()
+        Some(self.bus_byte(self.address(segment, offset)))
     }
 
     pub fn store(&mut self, segment: u16, offset: u16, value: u8) -> bool {
-        let Some(linear) = real_linear(segment, offset) else {
-            return false;
-        };
-        self.bytes[linear as usize] = value;
+        self.set_bus_byte(self.address(segment, offset), value);
         true
     }
 
+    pub(super) fn text(&self, row: u8, col: u8) -> u16 {
+        let at = 0xb8000 + 160 * usize::from(row.min(24)) + 2 * usize::from(col.min(79));
+        u16::from_le_bytes([self.bytes[at], self.bytes[at + 1]])
+    }
+    pub(super) fn write_text(&mut self, row: u8, col: u8, word: u16) {
+        let idx = 80 * usize::from(row.min(24)) + usize::from(col.min(79));
+        let start = 0xb8000 + 2 * idx;
+        self.bytes[start..start + 2].copy_from_slice(&word.to_le_bytes());
+        self.dirty_rows |= 1 << row.min(24);
+    }
+    pub(super) fn updated_text(&mut self, mut row: impl FnMut(usize, &[u8])) {
+        let mut dirty = core::mem::take(&mut self.dirty_rows);
+        while dirty != 0 {
+            let y = dirty.trailing_zeros() as usize;
+            dirty &= dirty - 1;
+            let start = 0xb8000 + y * 160;
+            row(y, &self.bytes[start..start + 160]);
+        }
+    }
     pub(super) fn paragraphs_mut(&mut self, start: u16, end: u16) -> &mut [u8] {
         &mut self.bytes[usize::from(start) * 16..usize::from(end) * 16]
     }

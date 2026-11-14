@@ -219,6 +219,9 @@ const _: () = assert!(MAXCOM == 0x6C);
 /// write flags and does not touch an INDOS counter, because this module has no such counter.
 pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
     token.seal();
+    dispatch(frame);
+}
+fn dispatch(frame:&mut LogicalFrame){
     let function = frame.function();
     if function.above_max() {
         out_of_range(frame);
@@ -612,4 +615,13 @@ pub fn store_time(hour: u8, minute: u8, second: u8, hundredth: u8) -> u8 {
         Ordering::Relaxed,
     );
     0
+}
+
+
+// Exercise the native service adapter with a typed register image. The QEMU
+// hardware-gate test separately drives the actual CPU interrupt and its flags.
+pub(crate) fn version_call(carry:bool)->(u16,u16,u16,bool){
+    let mut frame=LogicalFrame{status:0x30a5,handle:0x1234,count:0x5678,buffer:0,source:0,destination:0,base:0,data_segment:0,extra_segment:0};
+    dispatch(&mut frame);
+    (frame.status as u16,frame.handle as u16,frame.count as u16,carry)
 }

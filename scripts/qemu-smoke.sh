@@ -15,11 +15,11 @@ doctor() {
 		echo "want rustc 1.102.0-nightly from nightly-2026-11-08" >&2
 		missing=1
 	}
-	if [[ ! -f "$root/target/selftest/i686-unknown-none/release/dos4-rs" ]]; then
+	if [[ ! -f "$root/target/selftest/i686-unknown-uefi/release/dos4-rs.efi" ]]; then
 		echo "missing i686 kernel. Build it before driving." >&2
 		missing=1
 	fi
-	if [[ ! -f "$root/target/selftest/x86_64-unknown-none/release/dos4-rs" ]]; then
+	if [[ ! -f "$root/target/selftest/x86_64-unknown-uefi/release/dos4-rs.efi" ]]; then
 		echo "missing x86_64 kernel. Build it before driving." >&2
 		missing=1
 	fi
@@ -36,15 +36,12 @@ run_one() {
 	local out
 	out="$(mktemp)"
 	set +e
-	timeout 15 "$qemu" \
-		-kernel "$kernel" \
-		-display none \
+	timeout 90 python3 "$root/scripts/qemu.py" --arch "$name" --firmware "${DOS_RS_TEST_FIRMWARE:-uefi}" --kernel "$kernel" --display none -- \
 		-serial stdio \
 		-parallel "file:$printer_log" \
-		-no-reboot \
+		-monitor none -nic none \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		-drive if=floppy,index=0,format=raw,file="$root/disks/msload.img" \
-		-m 64 \
 		>"$out" 2>&1
 	local status=$?
 	set -e
@@ -1552,8 +1549,7 @@ if [[ "${1:-}" == "doctor" ]]; then
 	exit 0
 fi
 
-(cd "$root" && cargo build --release --features kernel-selftest --target-dir target/selftest -Zjson-target-spec --target ./i686-unknown-none.json)
-(cd "$root" && cargo build --release --features kernel-selftest --target-dir target/selftest --target x86_64-unknown-none)
+(cd "$root" && cargo build --locked --release --features kernel-selftest --target-dir target/selftest --target i686-unknown-uefi --target x86_64-unknown-uefi)
 doctor
 (
     test_dir="$(mktemp -d)"
@@ -1563,6 +1559,6 @@ doctor
 )
 printer_log="$(mktemp)"
 trap 'rm -f "$printer_log"' EXIT
-run_one i686 qemu-system-i386 "$root/target/selftest/i686-unknown-none/release/dos4-rs"
-run_one x86_64 qemu-system-x86_64 "$root/target/selftest/x86_64-unknown-none/release/dos4-rs"
+run_one i686 qemu-system-i386 "$root/target/selftest/i686-unknown-uefi/release/dos4-rs.efi"
+run_one x86_64 qemu-system-x86_64 "$root/target/selftest/x86_64-unknown-uefi/release/dos4-rs.efi"
 exit 0
