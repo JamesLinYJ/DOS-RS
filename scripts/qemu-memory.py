@@ -62,6 +62,7 @@ def main():
             if args.mem:
                 markers += [
                     "EMS page frame",
+                    "Free upper memory         98,288 bytes",
                     "Free EMS memory",
                     "XMS version",
                     f"Free XMS memory           {(args.extended_mib * 1024 - 64) * 1024:,} bytes",

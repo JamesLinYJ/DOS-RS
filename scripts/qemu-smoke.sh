@@ -1254,7 +1254,7 @@ run_one() {
 		|| grep -Fqx $'Exit code: 255\r' "$out" \
 		|| ! grep -q "Incorrect number of parms  given to BUILDIDX." "$out" \
 		|| ! grep -q "BuildMsg - PSP at 0b00" "$out" \
-		|| ! grep -q "Allocatable memory size is 526928" "$out" \
+		|| ! grep -q "Allocatable memory size is 526912" "$out" \
 		|| ! grep -Fqx $'Exit code: 1\r' "$out" \
 		|| ! grep -q "Couldn't open  menu creation files." "$out" \
 		|| ! grep -q "At lest one filespec ( for .SKL ) needed." "$out" \

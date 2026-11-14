@@ -84,6 +84,50 @@ mov bx,32
 xcall 12h
 cmp word [es:2],1234h
 jne fail
+; Link the DOS MCB chain, allocate high, and verify it cannot overlap the XMS UMB.
+mov ax,5803h
+mov bx,1
+int 21h
+jc fail
+mov ax,5802h
+int 21h
+cmp al,1
+jne fail
+mov ax,5801h
+mov bx,40h
+int 21h
+jc fail
+mov ah,48h
+mov bx,32
+int 21h
+jc fail
+cmp ax,0c800h
+jb fail
+mov es,ax
+mov word [es:2],5678h
+mov cx,es
+mov es,[upper]
+cmp word [es:2],1234h
+jne fail
+mov ah,49h
+int 21h
+jnc fail
+mov dx,cx
+mov ah,11h
+call far [xms]
+cmp bl,0b2h
+jne fail
+mov es,cx
+mov ah,49h
+int 21h
+jc fail
+mov ax,5801h
+xor bx,bx
+int 21h
+jc fail
+mov ax,5803h
+int 21h
+jc fail
 mov dx,[upper]
 xcall 11h
 mov dx,0ffffh

@@ -1,6 +1,6 @@
 //! Session-local XMS 3.0 manager. Addresses and handles are always guest values.
 use super::{CpuState, GuestRam, Segment, Slot};
-mod umb;
+use crate::guest::arena::{Arena, MemoryError, XMS_OWNER};
 const BLOCKS: usize = 32;
 pub(in crate::guest) const ENTRY: (u16, u16) = (0xf000, 0x0100);
 #[derive(Clone, Copy)]
@@ -11,7 +11,6 @@ struct Block {
 }
 pub(super) struct Xms {
     blocks: [Option<Block>; BLOCKS],
-    umb: umb::Upper,
     hma: bool,
     global: bool,
     local: u16,
@@ -20,7 +19,6 @@ impl Xms {
     pub fn new() -> Self {
         Self {
             blocks: [None; BLOCKS],
-            umb: umb::Upper::new(),
             hma: false,
             global: false,
             local: 0,
@@ -57,7 +55,7 @@ impl Xms {
         }
         Ok(base + offset)
     }
-    pub fn call(&mut self, cpu: &mut CpuState, ram: &mut GuestRam) {
+    pub fn call(&mut self, cpu: &mut CpuState, ram: &mut GuestRam, arena: &mut Arena) {
         let function = cpu.high(Slot::Accumulator);
         let dx = cpu.wide(Slot::Data);
         let result = (|| -> Result<(), u8> {
@@ -211,7 +209,23 @@ impl Xms {
                     });
                 }
                 0x10..=0x12 => {
-                    self.umb.call(cpu, function)?;
+                    let result = match function {
+                        0x10 => arena.alloc(XMS_OWNER, dx, 0x40).map(|segment| {
+                            cpu.set_wide(Slot::Base, segment);
+                        }),
+                        0x11 => arena.free(XMS_OWNER, dx),
+                        _ => arena
+                            .resize(XMS_OWNER, dx, cpu.wide(Slot::Base))
+                            .map(|_| ()),
+                    };
+                    match result {
+                        Err(MemoryError::InvalidBlock) => return Err(0xb2),
+                        Err(MemoryError::NoRoom(room)) => {
+                            cpu.set_wide(Slot::Data, room);
+                            return Err(if room == 0 { 0xb1 } else { 0xb0 });
+                        }
+                        Ok(()) => arena.publish(ram),
+                    }
                     cpu.set_wide(Slot::Accumulator, 1);
                     return Ok(());
                 }

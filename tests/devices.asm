@@ -68,6 +68,13 @@ interrupt:
 %endif
     jmp .done
 .init:
+%ifdef CHAIN
+    mov ax,cs
+    cmp ax,0c800h
+    jb .bad
+    cmp ax,0f000h
+    jae .bad
+%endif
 %ifdef REJECT
     jmp .bad
 %endif

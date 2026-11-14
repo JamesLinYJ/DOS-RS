@@ -123,7 +123,7 @@ fn handle_event(
         }
         Outcome::Interrupt(0x67) if !session.vector_live[0x67] => session.ems.call(cpu, ram),
         Outcome::Xms => {
-            session.xms.call(cpu, ram);
+            session.xms.call(cpu, ram, &mut session.arena);
             if !step::far_return(cpu, ram) {
                 return Some(End::Fault(0xcb));
             }
@@ -728,7 +728,7 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             Action::Continue
         }
         0x58 => {
-            allocation_strategy(cpu, session);
+            allocation_strategy(cpu, ram, session);
             Action::Continue
         }
         0x4E => {
@@ -879,7 +879,7 @@ fn extended_error(cpu: &mut CpuState, session: &Session) {
     cpu.set_carry(false);
 }
 
-fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
+fn allocation_strategy(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     match cpu.low(Slot::Accumulator) {
         0 => {
             cpu.set_wide(Slot::Accumulator, u16::from(session.strategy));
@@ -887,11 +887,20 @@ fn allocation_strategy(cpu: &mut CpuState, session: &mut Session) {
         }
         1 => {
             let requested = cpu.wide(Slot::Base);
-            if requested > 2 {
+            if !matches!(requested, 0..=2 | 0x40..=0x42 | 0x80..=0x82) {
                 fail(cpu, session, 1);
                 return;
             }
             session.strategy = requested as u8;
+            cpu.set_carry(false);
+        }
+        2 => {
+            cpu.set_low(Slot::Accumulator, u8::from(session.arena.upper_linked));
+            cpu.set_carry(false);
+        }
+        3 if cpu.wide(Slot::Base) <= 1 => {
+            session.arena.upper_linked = cpu.wide(Slot::Base) != 0;
+            session.arena.publish(ram);
             cpu.set_carry(false);
         }
         _ => fail(cpu, session, 1),

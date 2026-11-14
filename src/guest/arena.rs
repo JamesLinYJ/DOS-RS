@@ -1,8 +1,14 @@
-//! Conventional-memory ownership. All bounds are paragraph segments, end exclusive.
+//! DOS conventional and upper memory ownership. All bounds are paragraph segments, end exclusive.
 
 use super::memory::{CONVENTIONAL_END, GuestRam};
 
 pub(super) const FIRST_MCB: u16 = 0xa0;
+pub(super) const UMB_ROOT: u16 = CONVENTIONAL_END - 1;
+const LOW: (u16, u16) = (0x0c00, UMB_ROOT);
+// Segment intervals for data. Each has room for its first MCB and the
+// reserved link over the following video ROM / EMS window.
+const UPPER: [(u16, u16); 2] = [(0xc801, 0xcfff), (0xe001, 0xf000)];
+pub(super) const XMS_OWNER: u16 = 0xfffe;
 
 #[derive(Clone, Copy, Default)]
 struct Block {
@@ -21,6 +27,7 @@ pub(super) enum MemoryError {
 pub(super) struct Arena {
     blocks: [Block; 128],
     used: usize,
+    pub upper_linked: bool,
 }
 
 impl Arena {
@@ -28,30 +35,36 @@ impl Arena {
         Self {
             blocks: [Block::default(); 128],
             used: 0,
+            upper_linked: false,
         }
     }
 
     /// Find a contiguous gap using the DOS first, best or last fit strategy.
-    fn gap(&self, floor: u16, size: u16, strategy: u8) -> Result<(u16, u16), MemoryError> {
-        let mut start = floor;
+    fn gap(&self, regions: &[(u16, u16)], size: u16, fit: u8) -> Result<(u16, u16), MemoryError> {
         let mut largest = 0;
         let mut chosen = None;
-        for (next_start, next_end) in self.blocks[..self.used]
-            .iter()
-            .map(|b| (b.start - 1, b.end.saturating_add(1)))
-            .chain(core::iter::once((CONVENTIONAL_END, CONVENTIONAL_END)))
-        {
-            let room = next_start.saturating_sub(start);
-            largest = largest.max(room);
-            if size > 0 && room >= size {
-                match strategy {
-                    0 => return Ok((start, room)),
-                    1 if chosen.is_none_or(|(_, old)| room < old) => chosen = Some((start, room)),
-                    2 => chosen = Some((next_start - size, size)),
-                    _ => {}
+        for &(floor, end) in regions {
+            let mut start = floor;
+            for (next, after) in self.blocks[..self.used]
+                .iter()
+                .filter(|b| b.end >= floor && b.start < end)
+                .map(|b| (b.start - 1, b.end + 1))
+                .chain(core::iter::once((end, end)))
+            {
+                let room = next.saturating_sub(start);
+                largest = largest.max(room);
+                if size > 0 && room >= size {
+                    match fit {
+                        0 => return Ok((start, room)),
+                        1 if chosen.is_none_or(|(_, old)| room < old) => {
+                            chosen = Some((start, room))
+                        }
+                        2 => chosen = Some((next - size, size)),
+                        _ => {}
+                    }
                 }
+                start = start.max(after);
             }
-            start = start.max(next_end);
         }
         chosen.ok_or(MemoryError::NoRoom(largest))
     }
@@ -84,7 +97,7 @@ impl Arena {
             .and_then(|n| n.checked_sub(1))
             .filter(|s| *s > FIRST_MCB)
             .ok_or(MemoryError::NoRoom(0))?;
-        let (base, room) = self.gap(floor, total, 0)?;
+        let (base, room) = self.gap(&[(floor, UMB_ROOT)], total, 0)?;
         let psp = base + env + 1;
         let end = psp + max.min(room - env - 1);
         self.insert(Block {
@@ -100,11 +113,43 @@ impl Arena {
         Ok((psp, end))
     }
 
+    /// Reserve the largest available upper workspace for a DEVICEHIGH INIT call.
+    /// Fall back to conventional memory if the driver cannot fit there.
+    pub fn driver(&mut self, high: bool, minimum: usize) -> Result<(u16, u16), MemoryError> {
+        const DOS: u16 = 8;
+        if minimum > 0x1000 || self.used == self.blocks.len() {
+            return Err(MemoryError::NoRoom(0));
+        }
+        if high
+            && let Err(MemoryError::NoRoom(room)) = self.gap(&UPPER, u16::MAX, 0)
+            && usize::from(room) >= minimum
+            && room != 0
+        {
+            let (start, _) = self.gap(&UPPER, room, 0)?;
+            self.insert(Block {
+                start,
+                end: start + room,
+                owner: DOS,
+            });
+            return Ok((start, room));
+        }
+        self.alloc(DOS, 0x1000, 0).map(|start| (start, 0x1000))
+    }
+
     pub fn alloc(&mut self, owner: u16, size: u16, strategy: u8) -> Result<u16, MemoryError> {
         if self.used == self.blocks.len() {
             return Err(MemoryError::NoRoom(0));
         }
-        let (start, _) = self.gap(0x0C00, size, strategy)?;
+        let fit = strategy & 3;
+        let upper = self.upper_linked || owner == XMS_OWNER;
+        let (start, _) = match (upper, strategy & 0xc0) {
+            (true, 0x40) => self.gap(&UPPER, size, fit),
+            (true, 0x80) => self
+                .gap(&UPPER, size, fit)
+                .or_else(|_| self.gap(&[LOW, UPPER[0], UPPER[1]], size, fit)),
+            (true, _) => self.gap(&[LOW, UPPER[0], UPPER[1]], size, fit),
+            (false, _) => self.gap(&[LOW], size, fit),
+        }?;
         self.insert(Block {
             start,
             end: start + size,
@@ -132,9 +177,13 @@ impl Arena {
 
     pub fn resize(&mut self, owner: u16, start: u16, size: u16) -> Result<u16, MemoryError> {
         let i = self.locate(owner, start)?;
+        let limit = UPPER
+            .iter()
+            .find(|&&(lo, hi)| (lo..hi).contains(&start))
+            .map_or(UMB_ROOT, |&(_, hi)| hi);
         let next = self.blocks[..self.used]
             .get(i + 1)
-            .map_or(CONVENTIONAL_END, |b| b.start - 1);
+            .map_or(limit, |b| limit.min(b.start - 1));
         let room = next - start;
         if size == 0 || size > room || (start == owner && size < 0x10) {
             return Err(MemoryError::NoRoom(room));
@@ -146,23 +195,41 @@ impl Arena {
 
     /// Publish DOS M/Z headers in the paragraphs reserved by the allocator.
     pub fn publish(&self, ram: &mut GuestRam) {
-        let mut next = FIRST_MCB;
-        for block in &self.blocks[..self.used] {
+        self.publish_region(ram, FIRST_MCB, UMB_ROOT, !self.upper_linked);
+        Self::header(ram, UMB_ROOT, UPPER[0].0 - 1, 8, false);
+        self.publish_region(ram, UPPER[0].0 - 1, UPPER[0].1, false);
+        Self::header(ram, UPPER[0].1, UPPER[1].0 - 1, 8, false);
+        self.publish_region(ram, UPPER[1].0 - 1, UPPER[1].1, true);
+    }
+
+    fn publish_region(&self, ram: &mut GuestRam, first: u16, end: u16, last: bool) {
+        let mut next = first;
+        for block in self.blocks[..self.used]
+            .iter()
+            .filter(|b| first < b.start && b.start < end)
+        {
             let header = block.start - 1;
             if next < header {
-                Self::header(ram, next, header, 0);
+                Self::header(ram, next, header, 0, false);
             }
-            Self::header(ram, header, block.end, block.owner);
+            Self::header(
+                ram,
+                header,
+                block.end,
+                block.owner,
+                last && block.end == end,
+            );
             next = block.end;
         }
-        if next < CONVENTIONAL_END {
-            Self::header(ram, next, CONVENTIONAL_END, 0);
+        if next < end {
+            Self::header(ram, next, end, 0, last);
         }
     }
 
-    fn header(ram: &mut GuestRam, at: u16, end: u16, owner: u16) {
+    fn header(ram: &mut GuestRam, at: u16, end: u16, owner: u16, last: bool) {
         let bytes = ram.paragraphs_mut(at, at + 1);
-        bytes[0] = if end == CONVENTIONAL_END { b'Z' } else { b'M' };
+        bytes[0] = if last { b'Z' } else { b'M' };
+        let owner = if owner == XMS_OWNER { 8 } else { owner };
         bytes[1..3].copy_from_slice(&owner.to_le_bytes());
         bytes[3..5].copy_from_slice(&(end - at - 1).to_le_bytes());
     }

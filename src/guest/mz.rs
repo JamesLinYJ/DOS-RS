@@ -55,6 +55,10 @@ impl<'a> Module<'a> {
         })
     }
 
+    pub(super) fn paragraphs(&self) -> usize {
+        self.payload.len().div_ceil(16)
+    }
+
     pub(super) fn copy_to(&self, bytes: &mut [u8], segment: u16) -> Option<usize> {
         bytes
             .get_mut(..self.payload.len())?

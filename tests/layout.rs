@@ -14,7 +14,7 @@ mod process;
 mod state;
 
 use arena::{Arena, MemoryError};
-use memory::CONVENTIONAL_END as END;
+use arena::UMB_ROOT as END;
 use memory::read_word;
 use process::{CommandTail, Program};
 use std::sync::Mutex;
@@ -82,6 +82,23 @@ fn fragmented_arena_honours_all_three_fit_strategies() {
     arena.free(ROOT, first).unwrap();
     assert_eq!(arena.alloc(ROOT, 10, 1).unwrap(), b);
     assert_eq!(arena.alloc(ROOT, 10, 2).unwrap(), END - 10);
+}
+
+#[test]
+fn linked_upper_regions_reserve_the_ems_frame_and_survive_unlink() {
+    let mut arena = Arena::new();
+    let (driver, room) = arena.driver(true, 40).unwrap();
+    assert_eq!((driver, room), (0xe001, 0xfff));
+    arena.upper_linked = true;
+    let xms = arena.alloc(arena::XMS_OWNER, 0x7fe, 0x40).unwrap();
+    assert_eq!(xms, 0xc801);
+    assert!(matches!(arena.alloc(ROOT, 1, 0x40), Err(MemoryError::NoRoom(0))));
+    let fallback = arena.alloc(ROOT, 1, 0x80).unwrap();
+    assert_eq!(fallback, FLOOR);
+    arena.upper_linked = false;
+    assert!(matches!(arena.free(ROOT, xms), Err(MemoryError::InvalidBlock)));
+    arena.free(arena::XMS_OWNER, xms).unwrap();
+    arena.free(8, driver).unwrap();
 }
 
 #[test]

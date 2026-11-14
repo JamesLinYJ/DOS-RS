@@ -154,7 +154,7 @@ pub(super) fn configure(ram: &mut GuestRam, session: &mut Session) {
             .split(u8::is_ascii_whitespace)
             .next()
             .unwrap_or_default();
-        let result = install(filename, spec, ram, session);
+        let result = install(filename, spec, key.eq_ignore_ascii_case(b"DEVICEHIGH"), ram, session);
         crate::puts(if result.is_ok() {
             "Loaded driver "
         } else {
@@ -173,6 +173,7 @@ pub(super) fn configure(ram: &mut GuestRam, session: &mut Session) {
 fn install(
     filename: &[u8],
     command: &[u8],
+    high: bool,
     ram: &mut GuestRam,
     session: &mut Session,
 ) -> Result<(), u16> {
@@ -194,34 +195,35 @@ fn install(
             .alloc(DOS_OWNER, STACK_END / 16, 0)
             .map_err(|_| 8u16)?;
     }
-    // Allow INIT to use the rest of a 64 KiB segment for uninitialized data.
-    let segment = session
-        .arena
-        .alloc(DOS_OWNER, 0x1000, 0)
-        .map_err(|_| 8u16)?;
+    let mut image = super::EXEC_IMAGE.borrow();
+    let length = disk::read_file_at(dir, &name, &mut image[..]).ok_or(2u16)?;
+    let file = &image[..length];
+    let module = if file.starts_with(b"MZ") {
+        Some(crate::guest::mz::Module::parse(file).ok_or(11u16)?)
+    } else {
+        None
+    };
+    let minimum = module.as_ref().map_or(length.div_ceil(16), |m| {
+        m.paragraphs() + usize::from(u16::from_le_bytes([file[10], file[11]]))
+    });
+    let (segment, room) = session.arena.driver(high, minimum).map_err(|_| 8u16)?;
+    let bytes = ram.paragraphs_mut(segment, segment + room);
+    bytes.fill(0);
+    let size = if let Some(module) = module {
+        module.copy_to(bytes, segment).expect("validated module fits workspace")
+    } else {
+        bytes[..length].copy_from_slice(file);
+        length
+    };
+    drop(image);
     let scratch = session.drivers.scratch;
     let mut saved_list = [0u8; 64];
     saved_list.copy_from_slice(ram.paragraphs_mut(scratch + 0x20, scratch + 0x24));
     let result = (|| {
-        let size = {
-            let bytes = ram.paragraphs_mut(segment, segment + 0x1000);
-            bytes.fill(0);
-            let mut image = super::EXEC_IMAGE.borrow();
-            let length = disk::read_file_at(dir, &name, &mut image[..]).ok_or(2u16)?;
-            let file = &image[..length];
-            if file.starts_with(b"MZ") {
-                crate::guest::mz::Module::parse(file)
-                    .and_then(|m| m.copy_to(bytes, segment))
-                    .ok_or(11u16)?
-            } else {
-                bytes.get_mut(..length).ok_or(11u16)?.copy_from_slice(file);
-                length
-            }
-        };
         let mut pending: [Option<Header>; DEVICE_LIMIT] = [None; DEVICE_LIMIT];
         let mut offset = 0u16;
         let mut drive = session.drivers.drive_count;
-        let mut top = u32::from(segment + 0x1000) * 16;
+        let mut top = u32::from(segment + room) * 16;
         let mut needed = 0;
         for index in 0..DEVICE_LIMIT - slot {
             if pending[..index]
@@ -232,7 +234,7 @@ fn install(
                 return Err(11);
             }
             let bytes = ram
-                .paragraphs_mut(segment, segment + 0x1000)
+                .paragraphs_mut(segment, segment + room)
                 .get(usize::from(offset)..size)
                 .and_then(|b| b.get(..18))
                 .ok_or(11u16)?;
@@ -284,7 +286,7 @@ fn install(
         }
         // No headers become visible until the whole image initializes successfully.
         let resident = top.checked_sub(u32::from(segment) * 16).ok_or(11u16)?;
-        if offset != 0xffff || !(needed..=65536).contains(&resident) {
+        if offset != 0xffff || !(needed..=u32::from(room) * 16).contains(&resident) {
             return Err(11);
         }
         session
