@@ -79,7 +79,7 @@ fn restore_stack(cpu: &mut CpuState, ram: &GuestRam, psp: u16) {
 pub(super) fn resume(cpu: &mut CpuState, target: Address) {
     cpu.set_selector(Segment::Code, target.0);
     cpu.set_instruction(target.1);
-    cpu.set_flags(0x202);
+    cpu.set_flags((cpu.flags() & 0x3000) | 0x202);
 }
 
 /// A PSP created with AH=55h has no kernel EXEC frame. Its parent lives inside

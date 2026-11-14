@@ -274,6 +274,8 @@ DOS-RS ran the original simplified Chinese installer on **two independent, newly
 
 After shutting down each QEMU process, `fsck.fat -vn` found 807 files and 30,365 allocated clusters on each volume. A fresh QEMU process for each architecture reopened its own C disk and ran `C:\WINDOWS\WIN.COM /S`. The populated 640×480 Chinese Program Manager and the Calculator result after typing `2 + 3 =` matched pixel-for-pixel across the two architectures. Tests used keyboard input and the no-mouse configuration.
 
+For enhanced mode, each architecture cold booted DOS-RS with four QEMU CPUs and its own writable QCOW2 overlay on a RAM volume. Both overlays used the same read-only installed 64 MiB FAT16 base. From `C:\WINDOWS`, `WIN /3` loaded the original Windows VMM and KRNL386.EXE. In Program Manager, Alt+H followed by A opened the About dialog. Both QEMU framebuffers independently showed version 3.2, **386 增强方式**, 8,564 KB available and 86% free system resources. [i686 BIOS capture](assets/windows32-enhanced-i686.png) · [x86_64 UEFI capture](assets/windows32-enhanced-x86_64.png)
+
 | Installed file | Bytes | SHA-256 on both volumes |
 | --- | ---: | --- |
 | WIN.COM | 46,608 | `b23982ecd051c13df6aca26fec9e7616771619f1809b2c61e78da0893fb07ff7` |

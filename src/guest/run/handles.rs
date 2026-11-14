@@ -136,10 +136,7 @@ impl Handles {
         ok
     }
     pub fn publish_sft(&self, ram: &mut GuestRam) {
-        let table = ram.paragraphs_mut(
-            SFT_SEGMENT,
-            SFT_SEGMENT + (6 + SYSTEM_FILES * SFT_ENTRY).div_ceil(16) as u16,
-        );
+        let mut table = [0; 6 + SYSTEM_FILES * SFT_ENTRY];
         table[..4].fill(0xff);
         table[4..6].copy_from_slice(&(SYSTEM_FILES as u16).to_le_bytes());
         for (entry, desc) in table[6..]
@@ -167,14 +164,18 @@ impl Handles {
             entry[0x15..0x19].copy_from_slice(&(desc.file.pos as u32).to_le_bytes());
             entry[0x20..0x2b].copy_from_slice(&desc.file.name);
         }
+        ram.write_dos(u32::from(SFT_SEGMENT) * 16, &table);
     }
     pub fn publish(&self, ram: &mut GuestRam, psp: u16) {
         self.publish_sft(ram);
-        let page = ram.paragraphs_mut(psp, psp + 0x10);
+        let mut page = [0; 0x38];
         page[0x18..0x18 + HANDLE_SLOTS].copy_from_slice(&self.job.map);
         page[0x32..0x34].copy_from_slice(&self.job.limit.to_le_bytes());
         page[0x34..0x36].copy_from_slice(&0x18u16.to_le_bytes());
         page[0x36..0x38].copy_from_slice(&psp.to_le_bytes());
+        let base = u32::from(psp) * 16;
+        ram.write_dos(base + 0x18, &page[0x18..0x18 + HANDLE_SLOTS]);
+        ram.write_dos(base + 0x32, &page[0x32..]);
     }
     pub fn commit_all(&mut self) -> bool {
         self.descriptions.iter_mut().flatten().all(|desc| {

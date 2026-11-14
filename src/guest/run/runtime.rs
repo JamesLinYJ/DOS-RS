@@ -88,7 +88,7 @@ impl Task {
         }
     }
 
-    fn tick(&mut self, ram: &mut GuestRam, completed: Option<(Outcome, u16)>) {
+    fn tick(&mut self, ram: &mut GuestRam, completed: Option<(Outcome, u32)>) {
         if self.waiting && pc::key(false).is_none() {
             return;
         }
@@ -130,6 +130,9 @@ impl Task {
                             crate::puts(" at ");
                             crate::put_hex16(cpu.selector(super::Segment::Code));
                             crate::putc(b':');
+                            if cpu.eip() > 65535 {
+                                crate::put_hex16((cpu.eip() >> 16) as u16);
+                            }
                             crate::put_hex16(cpu.instruction());
                             crate::puts("  ");
                             for n in 0..6 {
@@ -137,7 +140,7 @@ impl Task {
                                     cpu.load_byte(
                                         ram,
                                         super::Segment::Code,
-                                        cpu.instruction().wrapping_add(n),
+                                        cpu.eip().wrapping_add(n),
                                     )
                                     .unwrap_or(0),
                                 );
@@ -222,7 +225,7 @@ const DONE: u8 = 2;
 struct Slice {
     cpu: CpuState,
     event: Outcome,
-    instruction: u16,
+    instruction: u32,
 }
 static STATE: [AtomicU8; pc::TERMINALS] = [const { AtomicU8::new(IDLE) }; pc::TERMINALS];
 static SLICES: [KernelCell<Option<Slice>>; pc::TERMINALS] =

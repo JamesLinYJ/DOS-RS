@@ -15,30 +15,35 @@ pub(super) fn extended(
 }
 fn execute(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, wide: bool) -> Option<()> {
     let op = fetch(cpu, ram)?;
-    if matches!(op, 0x0b | 0xff) && cpu.machine.protected() {
+    if matches!(op, 0x0b | 0xa6 | 0xa7 | 0xff) {
         cpu.machine.exception.set(Some((6, None)));
         return None;
     }
     if (0x80..=0x8f).contains(&op) {
-        let disp = u16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]);
-        if wide {
-            fetch(cpu, ram)?;
-            fetch(cpu, ram)?;
-        }
+        let disp = if wide {
+            operand32::imm(cpu, ram)? as i32
+        } else {
+            i32::from(i16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]))
+        };
         if condition(cpu.flags(), op & 15) {
-            cpu.set_instruction(cpu.instruction().wrapping_add(disp));
+            cpu.advance_ip(disp);
         }
         return Some(());
     }
     if matches!(op, 0xa0 | 0xa1 | 0xa8 | 0xa9) {
         let s = if op < 0xa8 { Segment::Fs } else { Segment::Gs };
         if op & 1 == 0 {
-            return push_word(cpu, ram, cpu.selector(s)).then_some(());
+            return push_stack(
+                cpu,
+                ram,
+                u32::from(cpu.selector(s)),
+                if wide { 4 } else { 2 },
+            );
         }
-        let sel = pop_word(cpu, ram)?;
+        let sel = pop_stack(cpu, ram, if wide { 4 } else { 2 })? as u16;
         return load_segment(cpu, ram, s, sel).then_some(());
     }
-    let privileged = !cpu.machine.protected() || cpu.selector(Segment::Code) & 3 == 0;
+    let privileged = !cpu.machine.protected() || cpu.machine.cpl == 0;
     if op == 6 {
         if !privileged {
             cpu.machine.exception.set(Some((13, Some(0))));
@@ -50,7 +55,7 @@ fn execute(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, wide: b
     let m = fetch(cpu, ram)?;
     let n = (m >> 3) & 7;
     if !privileged
-        && (matches!(op, 0x20 | 0x22)
+        && (matches!(op, 0x20..=0x23)
             || op == 1 && matches!(n, 2 | 3 | 6)
             || op == 0 && matches!(n, 2 | 3))
     {
@@ -59,18 +64,89 @@ fn execute(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, wide: b
     }
     let reg = Slot::from_index(n);
     let rm = decode(cpu, ram, m, seg)?;
-    let visible = |sel: u16| {
+    let visible = |ram: &mut GuestRam, sel: u16| {
         let d = cpu.machine.descriptor(ram, sel)?;
         let requester = (sel & 3).max(cpu.selector(Segment::Code) & 3) as u8;
         ((d.access & 0x1c) == 0x1c || requester <= (d.access >> 5 & 3)).then_some(d)
     };
     match op {
+        0x21 | 0x23 if m >> 6 == 3 => {
+            let i = usize::from(if n == 4 || n == 5 { n + 2 } else { n });
+            let r = Slot::from_index(m & 7);
+            if op == 0x21 {
+                cpu.set_dword(r, cpu.machine.debug[i]);
+            } else {
+                cpu.machine.debug[i] = cpu.dword(r);
+            }
+        }
+        0xbc | 0xbd => {
+            let val = if wide {
+                operand32::read(cpu, ram, &rm)?
+            } else {
+                u32::from(read_word(cpu, ram, &rm)?)
+            };
+            cpu.set_zero(val == 0);
+            if val != 0 {
+                let n = if op == 0xbc {
+                    val.trailing_zeros()
+                } else {
+                    31 - val.leading_zeros()
+                };
+                if wide {
+                    cpu.set_dword(reg, n)
+                } else {
+                    cpu.set_wide(reg, n as u16)
+                }
+            }
+        }
+        0xaf => {
+            if wide {
+                let (v, ov) =
+                    (cpu.dword(reg) as i32).overflowing_mul(operand32::read(cpu, ram, &rm)? as i32);
+                cpu.set_dword(reg, v as u32);
+                note_multiply_overflow(cpu, ov);
+            } else {
+                let (v, ov) =
+                    (cpu.wide(reg) as i16).overflowing_mul(read_word(cpu, ram, &rm)? as i16);
+                cpu.set_wide(reg, v as u16);
+                note_multiply_overflow(cpu, ov);
+            }
+        }
+        0xb2 | 0xb4 | 0xb5 => {
+            let Operand::Memory { segment, offset } = rm else {
+                return None;
+            };
+            let data = if wide {
+                operand32::read(cpu, ram, &rm)?
+            } else {
+                u32::from(read_word(cpu, ram, &rm)?)
+            };
+            let sel = load_pair(
+                cpu,
+                ram,
+                segment,
+                offset.wrapping_add(if wide { 4 } else { 2 }),
+            )?;
+            let dest = match op {
+                0xb2 => Segment::Stack,
+                0xb4 => Segment::Fs,
+                _ => Segment::Gs,
+            };
+            if !load_segment(cpu, ram, dest, sel) {
+                return None;
+            }
+            if wide {
+                cpu.set_dword(reg, data)
+            } else {
+                cpu.set_wide(reg, data as u16)
+            }
+        }
         0x20 | 0x22 if m >> 6 == 3 => {
             let g = Slot::from_index(m & 7);
             if op == 0x20 {
                 let value = match n {
                     0 => cpu.machine.cr0,
-                    2 => cpu.machine.cr2,
+                    2 => cpu.machine.cr2.get(),
                     3 => cpu.machine.cr3,
                     _ => return None,
                 };
@@ -78,8 +154,12 @@ fn execute(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, wide: b
             } else {
                 let value = cpu.dword(g);
                 match n {
-                    0 if value & (1 << 31) == 0 => cpu.machine.cr0 = value,
-                    2 => cpu.machine.cr2 = value,
+                    0 if value >> 31 == 0 || value & 1 != 0 => cpu.machine.cr0 = value,
+                    0 => {
+                        cpu.machine.exception.set(Some((13, Some(0))));
+                        return None;
+                    }
+                    2 => cpu.machine.cr2.set(value),
                     3 => cpu.machine.cr3 = value,
                     _ => return None,
                 }
@@ -145,7 +225,8 @@ fn execute(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, wide: b
             2 => cpu.machine.ldt = read_word(cpu, ram, &rm)?,
             3 => cpu.machine.tr = read_word(cpu, ram, &rm)?,
             4 | 5 => {
-                let d = visible(read_word(cpu, ram, &rm)?);
+                let sel = read_word(cpu, ram, &rm)?;
+                let d = visible(ram, sel);
                 cpu.set_zero(d.is_some_and(|d| {
                     d.access & 0x90 == 0x90
                         && if n == 5 {
@@ -158,7 +239,8 @@ fn execute(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, wide: b
             _ => return None,
         },
         2 | 3 => {
-            let d = visible(read_word(cpu, ram, &rm)?).filter(|d| {
+            let sel = read_word(cpu, ram, &rm)?;
+            let d = visible(ram, sel).filter(|d| {
                 d.access & 16 != 0
                     || matches!(d.access & 15, 1 | 2 | 3 | 9 | 11)
                     || op == 2 && matches!(d.access & 15, 4 | 5 | 12)

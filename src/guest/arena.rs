@@ -2,7 +2,7 @@
 
 use super::memory::{CONVENTIONAL_END, GuestRam};
 
-pub(super) const FIRST_MCB: u16 = 0x150; // below this are the BDA, DOS tables and resident SFT
+pub(super) const FIRST_MCB: u16 = 0x170; // BIOS data, SFT, swappable DOS data, CDS and drive parameter blocks
 pub(super) const UMB_ROOT: u16 = CONVENTIONAL_END - 1;
 const LOW: (u16, u16) = (0x0c00, UMB_ROOT);
 // Segment intervals for data. Each has room for its first MCB and the
@@ -236,11 +236,12 @@ impl Arena {
     }
 
     fn header(ram: &mut GuestRam, at: u16, end: u16, owner: u16, last: bool) {
-        let bytes = ram.paragraphs_mut(at, at + 1);
+        let mut bytes = [0; 5];
         bytes[0] = if last { b'Z' } else { b'M' };
         let owner = if owner == XMS_OWNER { 8 } else { owner };
         bytes[1..3].copy_from_slice(&owner.to_le_bytes());
         bytes[3..5].copy_from_slice(&(end - at - 1).to_le_bytes());
+        ram.write_dos(u32::from(at) * 16, &bytes);
     }
 
     pub fn release_process(&mut self, owner: u16) {

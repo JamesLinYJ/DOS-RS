@@ -114,23 +114,21 @@ impl Drivers {
         // Installable drivers such as FreeDOS SETVER expect the request and
         // list of lists to share the kernel's data segment across INT 21h.
         if self.scratch == 0 {
-            (0x50, 0x10)
+            (sda::SEGMENT, 0xa0)
         } else {
             (self.scratch, 0x200)
         }
     }
 
     pub(super) fn head(&self) -> [u8; 4] {
-        self.headers
-            .iter()
-            .rev()
-            .flatten()
-            .next()
-            .map_or([0xff; 4], |h| {
+        self.headers.iter().rev().flatten().next().map_or(
+            crate::guest::resident::pointer(crate::guest::resident::CON),
+            |h| {
                 let [lo, hi] = h.segment.to_le_bytes();
                 let [off_lo, off_hi] = h.offset.to_le_bytes();
                 [off_lo, off_hi, lo, hi]
-            })
+            },
+        )
     }
 }
 
@@ -421,6 +419,7 @@ pub(super) fn ioctl(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessio
         0 => {
             let attrs = match device {
                 Device::Resident(h) => h.attributes & 0x400f,
+                Device::ExpandedMemory => 0x4000,
                 Device::Console => 3,
                 Device::Null => 4,
                 _ => 0,
@@ -428,6 +427,10 @@ pub(super) fn ioctl(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessio
             cpu.set_wide(Slot::Data, 0x80 | attrs);
             Ok(())
         }
+        2 if matches!(device, Device::ExpandedMemory) => session
+            .ems
+            .import(cpu, ram)
+            .map(|n| cpu.set_wide(Slot::Accumulator, n)),
         2 | 3 => {
             let result = header
                 .filter(|h| h.attributes & 0x4000 != 0)
@@ -571,4 +574,56 @@ pub(super) fn handle_io(
         Err(code) => fail(cpu, session, code),
     }
     true
+}
+
+pub(super) fn builtin_request(cpu: &CpuState, ram: &mut GuestRam, s: &mut Session, entry: u16) {
+    use crate::guest::resident;
+    if entry == resident::STRATEGY {
+        s.device_request = (cpu.selector(Segment::Extra), cpu.wide(Slot::Base));
+        return;
+    }
+    let (seg, off) = s.device_request;
+    let command = ram.load(seg, off.wrapping_add(2)).unwrap_or(0xff);
+    let ptr = |i| read_word(ram, seg, off.wrapping_add(i)).unwrap_or(0);
+    let (at, buf, len) = (ptr(14), ptr(16), ptr(18));
+    let mut used = 0u16;
+    let status = match (entry, command) {
+        (resident::CON_INTERRUPT, 4 | 8 | 9) => {
+            while used < len {
+                if command == 4 {
+                    let Some(key) = pc::key(true) else { break };
+                    ram.store(buf, at.wrapping_add(used), key as u8);
+                } else if let Some(ch) = ram.load(buf, at.wrapping_add(used)) {
+                    crate::bios::mscon::con_write_bytes(&[ch]);
+                }
+                used += 1;
+            }
+            0x0100u16
+        }
+        (resident::CLOCK_INTERRUPT, 4) => {
+            let days =
+                crate::dos::time::set_date(s.year, s.month, s.day).map_or(0, |d| d.day_count);
+            let [lo, hi] = days.to_le_bytes();
+            let bytes = [lo, hi, s.minute, s.hour, s.hundredths, s.second];
+            used = len.min(6);
+            store_bytes(ram, buf, at, &bytes[..usize::from(used)]);
+            0x100
+        }
+        (resident::CON_INTERRUPT, 5 | 6) => {
+            if let Some(key) = pc::key(false) {
+                if command == 5 {
+                    ram.store(seg, off.wrapping_add(13), key as u8);
+                }
+                0x100
+            } else {
+                0x300
+            }
+        }
+        (_, 7 | 10 | 11 | 13 | 14) => 0x100,
+        _ => 0x8103,
+    };
+    if matches!(command, 4 | 8 | 9) {
+        store_bytes(ram, seg, off.wrapping_add(18), &used.to_le_bytes());
+    }
+    store_bytes(ram, seg, off.wrapping_add(3), &status.to_le_bytes());
 }

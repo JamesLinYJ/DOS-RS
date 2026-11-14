@@ -16,6 +16,7 @@ use super::state::{CpuState, Segment, Slot};
 pub enum Outcome {
     Continue,
     Xms,
+    Resident(u16),
     Ems,
     EmsReturn,
     Interrupt(u8),
@@ -36,7 +37,7 @@ enum Operand {
 }
 
 /// Run ordinary instructions until the next service or the scheduler's budget.
-pub fn slice(cpu: &mut CpuState, ram: &mut GuestRam, budget: u32) -> (Outcome, u16) {
+pub fn slice(cpu: &mut CpuState, ram: &mut GuestRam, budget: u32) -> (Outcome, u32) {
     #[cfg(feature = "pc386")]
     if ram.graphics.as_ref().is_some_and(|g| g.active)
         && let Some(device) = &mut ram.at
@@ -46,24 +47,35 @@ pub fn slice(cpu: &mut CpuState, ram: &mut GuestRam, budget: u32) -> (Outcome, u
             && !cpu.machine.inhibit
             && let Some(vector) = device.interrupt()
         {
-            if super::pc386::interrupt(cpu, ram, vector).is_none() {
-                return (Outcome::Fault(0xcd), cpu.instruction());
+            if super::pc386::interrupt(cpu, ram, vector, false).is_none() {
+                return (Outcome::Fault(0xcd), cpu.eip());
             }
         }
     }
-    let mut at = cpu.instruction();
+    let mut at = cpu.eip();
     for _ in 0..budget {
-        at = cpu.instruction();
+        at = cpu.eip();
         #[cfg(feature = "pc386")]
         let sp = cpu.dword(Slot::Stack);
         let event = step(cpu, ram);
         #[cfg(feature = "pc386")]
+        let event = match event {
+            Outcome::Interrupt(v) if super::pc386::has_vector(cpu, ram, v) => {
+                if super::pc386::interrupt(cpu, ram, v, true).is_some() {
+                    Outcome::Continue
+                } else {
+                    Outcome::Fault(0xcd)
+                }
+            }
+            other => other,
+        };
+        #[cfg(feature = "pc386")]
         let event = if let Some((v, error)) = cpu.machine.exception.take() {
-            cpu.set_instruction(at);
+            cpu.set_eip(at);
             cpu.set_dword(Slot::Stack, sp);
-            if super::pc386::interrupt(cpu, ram, v).is_some()
-                && error.is_none_or(|code| push_word(cpu, ram, code))
-            {
+            if super::pc386::interrupt(cpu, ram, v, false).is_some_and(|w| {
+                error.is_none_or(|code| push_stack(cpu, ram, u32::from(code), w).is_some())
+            }) {
                 Outcome::Continue
             } else {
                 Outcome::Fault(0xcd)
@@ -72,17 +84,6 @@ pub fn slice(cpu: &mut CpuState, ram: &mut GuestRam, budget: u32) -> (Outcome, u
             event
         };
 
-        #[cfg(feature = "pc386")]
-        let event = match event {
-            Outcome::Interrupt(v) if super::pc386::has_vector(cpu, ram, v) => {
-                if super::pc386::interrupt(cpu, ram, v).is_some() {
-                    Outcome::Continue
-                } else {
-                    Outcome::Fault(0xcd)
-                }
-            }
-            other => other,
-        };
         if event != Outcome::Continue {
             return (event, at);
         }
@@ -95,27 +96,34 @@ pub(super) fn firmware(cs: u16, ip: u16) -> Option<u8> {
     (cs == 0xf000 && (0x200..0x400).contains(&ip) && ip & 1 == 0).then(|| ((ip - 0x200) / 2) as u8)
 }
 pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
-    let start = cpu.instruction();
+    let start = cpu.eip();
     #[cfg(feature = "pc386")]
     {
         cpu.machine.inhibit = false;
     }
     #[cfg(feature = "pc386")]
-    let real = !cpu.machine.protected();
+    let real = !cpu.machine.protected() || cpu.machine.vm86;
     #[cfg(not(feature = "pc386"))]
     let real = true;
     if real {
+        use super::resident;
+        if cpu.selector(Segment::Code) == resident::SEGMENT
+            && (u32::from(resident::STRATEGY)..=u32::from(resident::CLOCK_INTERRUPT))
+                .contains(&start)
+        {
+            return Outcome::Resident(start as u16);
+        }
         #[cfg(feature = "pc386")]
-        if let Some(v) = firmware(cpu.selector(Segment::Code), start) {
+        if let Some(v) = firmware(cpu.selector(Segment::Code), start as u16) {
             return Outcome::Firmware(v);
         }
-        if (cpu.selector(Segment::Code), start) == super::run::xms::CONTROL {
+        if (cpu.selector(Segment::Code), start as u16) == super::run::xms::CONTROL {
             return Outcome::Xms;
         }
-        if (cpu.selector(Segment::Code), start) == super::run::ems::ENTRY {
+        if (cpu.selector(Segment::Code), start as u16) == super::run::ems::ENTRY {
             return Outcome::Ems;
         }
-        if (cpu.selector(Segment::Code), start) == super::run::ems::RETURN {
+        if (cpu.selector(Segment::Code), start as u16) == super::run::ems::RETURN {
             return Outcome::EmsReturn;
         }
     }
@@ -123,8 +131,12 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         return Outcome::Fault(0);
     };
     let mut override_segment = None;
-    let mut dword = false;
-    let mut address32 = false;
+    #[cfg(feature = "pc386")]
+    let default32 = cpu.machine.code32();
+    #[cfg(not(feature = "pc386"))]
+    let default32 = false;
+    let mut dword = default32;
+    let mut address32 = default32;
     let mut rep = None;
     loop {
         if matches!(opcode, 0x26 | 0x2E | 0x36 | 0x3E) {
@@ -139,13 +151,13 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         } else if matches!(opcode, 0xf2 | 0xf3) {
             rep = Some(opcode);
         } else if opcode == 0x67 {
-            address32 = true;
+            address32 = !default32;
         } else if opcode == 0x66 {
-            dword = true;
+            dword = !default32;
         } else if opcode != 0xF0 {
             break;
         }
-        if cpu.instruction().wrapping_sub(start) >= 15 {
+        if cpu.eip().wrapping_sub(start) >= 15 {
             return Outcome::Fault(opcode);
         }
         opcode = match fetch(cpu, ram) {
@@ -154,6 +166,124 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         };
     }
     cpu.address32 = address32;
+    #[cfg(feature = "pc386")]
+    {
+        if opcode == 0x63 {
+            if cpu.machine.vm86 || !cpu.machine.protected() {
+                cpu.machine.exception.set(Some((6, None)));
+                return Outcome::Fault(opcode);
+            }
+            let Some(m) = fetch(cpu, ram) else {
+                return Outcome::Fault(opcode);
+            };
+            let Some(rm) = decode(cpu, ram, m, override_segment) else {
+                return Outcome::Fault(opcode);
+            };
+            let Some(mut dst) = read_word(cpu, ram, &rm) else {
+                return Outcome::Fault(opcode);
+            };
+            let rpl = cpu.wide(Slot::from_index(m >> 3)) & 3;
+            let change = dst & 3 < rpl;
+            if change {
+                dst = dst & !3 | rpl;
+                if !write_word(cpu, ram, &rm, dst) {
+                    return Outcome::Fault(opcode);
+                }
+            }
+            cpu.set_zero(change);
+            return Outcome::Continue;
+        }
+        let iopl = (cpu.flags() >> 12 & 3) as u8;
+        if (cpu.machine.vm86 && iopl < 3 && matches!(opcode, 0x9c | 0x9d | 0xcd | 0xcf))
+            || (cpu.machine.protected()
+                && ((matches!(opcode, 0xfa | 0xfb) && cpu.machine.cpl > iopl)
+                    || opcode == 0xf4 && cpu.machine.cpl != 0))
+        {
+            cpu.machine.exception.set(Some((13, Some(0))));
+            return Outcome::Fault(opcode);
+        }
+        if opcode == 0xcf && dword {
+            return if super::pc386::iretd(cpu, ram).is_some() {
+                Outcome::Continue
+            } else {
+                Outcome::Fault(opcode)
+            };
+        }
+    }
+    #[cfg(feature = "pc386")]
+    if (0x6c..=0x6f).contains(&opcode)
+        && (cpu.machine.protected() || rep.is_some() || opcode & 1 != 0)
+    {
+        let write = opcode & 2 != 0;
+        let port = cpu.wide(Slot::Data);
+        let width = if opcode & 1 == 0 {
+            1
+        } else if dword {
+            4
+        } else {
+            2
+        };
+        if !cpu.machine.io_allowed(ram, cpu.flags(), port, width) {
+            cpu.machine.exception.set(Some((13, Some(0))));
+            return Outcome::Fault(opcode);
+        }
+        let count = if address32 {
+            cpu.dword(Slot::Count)
+        } else {
+            u32::from(cpu.wide(Slot::Count))
+        };
+        if rep.is_some() && count == 0 {
+            return Outcome::Continue;
+        }
+        let slot = if write { Slot::Source } else { Slot::Dest };
+        let at = if address32 {
+            cpu.dword(slot)
+        } else {
+            u32::from(cpu.wide(slot))
+        };
+        let segment = if write {
+            override_segment.unwrap_or(Segment::Data)
+        } else {
+            Segment::Extra
+        };
+        let mut addrs = [0; 4];
+        for i in 0..width {
+            let Some(addr) = cpu.linear(ram, segment, at.wrapping_add(u32::from(i)), !write) else {
+                return Outcome::Fault(opcode);
+            };
+            addrs[i as usize] = addr;
+        }
+        for (i, &addr) in addrs[..usize::from(width)].iter().enumerate() {
+            let value = if write { ram.bus_byte(addr) } else { 0xff };
+            let byte = ram
+                .system_port(port.wrapping_add(i as u16), write, value)
+                .unwrap_or(0xff);
+            if !write {
+                ram.set_bus_byte(addr, byte);
+            }
+        }
+        let next = if cpu.direction_down() {
+            at.wrapping_sub(width.into())
+        } else {
+            at.wrapping_add(width.into())
+        };
+        if address32 {
+            cpu.set_dword(slot, next)
+        } else {
+            cpu.set_wide(slot, next as u16)
+        }
+        if rep.is_some() {
+            if address32 {
+                cpu.set_dword(Slot::Count, count - 1)
+            } else {
+                cpu.set_wide(Slot::Count, (count - 1) as u16)
+            }
+            if count > 1 {
+                cpu.set_eip(start);
+            }
+        }
+        return Outcome::Continue;
+    }
     if matches!(opcode,0xa4..=0xa7|0xaa..=0xaf) {
         return string_instruction(cpu, ram, override_segment, opcode, dword, rep, start);
     }
@@ -171,7 +301,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
                 return Outcome::Fault(opcode);
             };
             if cpu.dword(Slot::Count) == 0 {
-                cpu.set_instruction(cpu.instruction().wrapping_add_signed(i16::from(disp as i8)));
+                cpu.advance_ip(i32::from(disp as i8));
             }
             return Outcome::Continue;
         }
@@ -185,7 +315,9 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             Outcome::Fault(opcode)
         };
     }
-    if dword {
+    if dword
+        && !matches!(opcode, 0x00|0x02|0x04|0x08|0x0a|0x0c|0x10|0x12|0x14|0x18|0x1a|0x1c|0x20|0x22|0x24|0x28|0x2a|0x2c|0x30|0x32|0x34|0x38|0x3a|0x3c|0x70..=0x80|0x84|0x86|0x88|0x8a|0x8e|0x9e|0x9f|0xa8|0xb0..=0xb7|0xc0|0xc6|0xcc..=0xce|0xd0|0xd2|0xe0..=0xe7|0xeb..=0xef|0xf4..=0xf6|0xf8..=0xfe)
+    {
         return operand32::step(cpu, ram, override_segment, opcode);
     }
     match opcode {
@@ -630,7 +762,7 @@ fn branch(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8, always: bool) -> O
         return Outcome::Fault(opcode);
     };
     if always || condition(cpu.flags(), opcode & 0x0F) {
-        cpu.set_instruction(cpu.instruction().wrapping_add(byte as i8 as u16));
+        cpu.advance_ip(i32::from(byte as i8));
     }
     Outcome::Continue
 }
@@ -1169,7 +1301,10 @@ fn return_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8, discard: u16) 
     };
     cpu.set_wide(Slot::Stack, cpu.wide(Slot::Stack).wrapping_add(discard));
     #[cfg(feature = "pc386")]
-    if cpu.machine.protected() && (selector & 3) > (cpu.selector(Segment::Code) & 3) {
+    if cpu.machine.protected()
+        && !cpu.machine.vm86
+        && (selector & 3) > (cpu.selector(Segment::Code) & 3)
+    {
         let (Some(sp), Some(ss)) = (pop_word(cpu, ram), pop_word(cpu, ram)) else {
             return Outcome::Fault(opcode);
         };
@@ -1741,7 +1876,7 @@ fn loop_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
         _ => count != 0,
     };
     if branch {
-        cpu.set_instruction(cpu.instruction().wrapping_add(byte as i8 as u16));
+        cpu.advance_ip(i32::from(byte as i8));
     }
     Outcome::Continue
 }
@@ -1751,7 +1886,7 @@ fn jump_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
         return Outcome::Fault(opcode);
     };
     if cpu.wide(Slot::Count) == 0 {
-        cpu.set_instruction(cpu.instruction().wrapping_add(byte as i8 as u16));
+        cpu.advance_ip(i32::from(byte as i8));
     }
     Outcome::Continue
 }
@@ -1956,7 +2091,10 @@ pub(super) fn interrupt_return(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u
         return Outcome::Fault(opcode);
     };
     #[cfg(feature = "pc386")]
-    if cpu.machine.protected() && (selector & 3) > (cpu.selector(Segment::Code) & 3) {
+    if cpu.machine.protected()
+        && !cpu.machine.vm86
+        && (selector & 3) > (cpu.selector(Segment::Code) & 3)
+    {
         let (Some(sp), Some(ss)) = (pop_word(cpu, ram), pop_word(cpu, ram)) else {
             return Outcome::Fault(opcode);
         };
@@ -2259,7 +2397,7 @@ fn translate(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, opcod
     Outcome::Continue
 }
 
-fn port_io(cpu: &mut CpuState, ram: &GuestRam, opcode: u8) -> Outcome {
+fn port_io(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let port = if opcode & 8 == 0 {
         let Some(immediate) = fetch(cpu, ram) else {
             return Outcome::Fault(opcode);
@@ -2268,6 +2406,14 @@ fn port_io(cpu: &mut CpuState, ram: &GuestRam, opcode: u8) -> Outcome {
     } else {
         cpu.wide(Slot::Data)
     };
+    #[cfg(feature = "pc386")]
+    if !cpu
+        .machine
+        .io_allowed(ram, cpu.flags(), port, 1 + (opcode & 1))
+    {
+        cpu.machine.exception.set(Some((13, Some(0))));
+        return Outcome::Fault(opcode);
+    }
     Outcome::Port {
         port,
         write: opcode & 2 != 0,
@@ -2372,7 +2518,7 @@ fn unary_word(
 
 fn load_pair(
     cpu: &CpuState,
-    ram: &GuestRam,
+    ram: &mut GuestRam,
     segment: Segment,
     offset: impl Into<u32>,
 ) -> Option<u16> {
@@ -2389,7 +2535,7 @@ fn string_instruction(
     op: u8,
     wide: bool,
     rep: Option<u8>,
-    start: u16,
+    start: u32,
 ) -> Outcome {
     let width = if op & 1 == 0 {
         1u32
@@ -2420,14 +2566,14 @@ fn string_instruction(
     let mut executed = 0;
     while count != 0 {
         if executed == 64 {
-            cpu.set_instruction(start);
+            cpu.set_eip(start);
             break;
         }
         let si = index(cpu, Slot::Source);
         let di = index(cpu, Slot::Dest);
         let source = seg.unwrap_or(Segment::Data);
         let dest = Segment::Extra;
-        let read = |s: Segment, offset: u32| -> Option<u32> {
+        let mut read = |s: Segment, offset: u32| -> Option<u32> {
             let mut v = 0;
             for i in 0..width {
                 v |= u32::from(cpu.load_byte(ram, s, offset.wrapping_add(i))?) << (8 * i)
@@ -2672,7 +2818,7 @@ fn address(cpu: &CpuState, rm: u8, displacement: u16) -> (Segment, u16) {
     }
 }
 
-fn read_word(cpu: &CpuState, ram: &GuestRam, operand: &Operand) -> Option<u16> {
+fn read_word(cpu: &CpuState, ram: &mut GuestRam, operand: &Operand) -> Option<u16> {
     match *operand {
         Operand::Register(index) => Some(cpu.wide(Slot::from_index(index))),
         Operand::Memory { segment, offset } => {
@@ -2683,7 +2829,7 @@ fn read_word(cpu: &CpuState, ram: &GuestRam, operand: &Operand) -> Option<u16> {
     }
 }
 
-fn read_byte(cpu: &CpuState, ram: &GuestRam, operand: &Operand) -> Option<u8> {
+fn read_byte(cpu: &CpuState, ram: &mut GuestRam, operand: &Operand) -> Option<u8> {
     match *operand {
         Operand::Register(index) => {
             let (slot, high) = byte_half(index);
@@ -2728,21 +2874,41 @@ fn byte_half(index: u8) -> (Slot, bool) {
 }
 
 pub(super) fn push_word(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
-    let pointer = cpu.wide(Slot::Stack).wrapping_sub(2);
-    cpu.set_wide(Slot::Stack, pointer);
-    let segment = Segment::Stack;
-    let bytes = value.to_le_bytes();
-    cpu.store_byte(ram, segment, pointer, bytes[0])
-        && cpu.store_byte(ram, segment, pointer.wrapping_add(1), bytes[1])
+    push_stack(cpu, ram, u32::from(value), 2).is_some()
 }
-
-fn pop_word(cpu: &mut CpuState, ram: &GuestRam) -> Option<u16> {
-    let pointer = cpu.wide(Slot::Stack);
-    let segment = Segment::Stack;
-    let low = cpu.load_byte(ram, segment, pointer)?;
-    let high = cpu.load_byte(ram, segment, pointer.wrapping_add(1))?;
-    cpu.set_wide(Slot::Stack, pointer.wrapping_add(2));
-    Some(u16::from_le_bytes([low, high]))
+pub(super) fn push_stack(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    value: u32,
+    width: u32,
+) -> Option<()> {
+    let saved = cpu.stack_pointer();
+    cpu.set_stack_pointer(saved.wrapping_sub(width));
+    let offset = cpu.stack_pointer();
+    let mut addresses = [0; 4];
+    for (i, at) in addresses[..width as usize].iter_mut().enumerate() {
+        let Some(p) = cpu.linear(ram, Segment::Stack, offset.wrapping_add(i as u32), true) else {
+            cpu.set_stack_pointer(saved);
+            return None;
+        };
+        *at = p;
+    }
+    for (at, byte) in addresses[..width as usize].iter().zip(value.to_le_bytes()) {
+        ram.set_bus_byte(*at, byte);
+    }
+    Some(())
+}
+pub(super) fn pop_stack(cpu: &mut CpuState, ram: &mut GuestRam, width: u32) -> Option<u32> {
+    let at = cpu.stack_pointer();
+    let mut bytes = [0; 4];
+    for (i, b) in bytes[..width as usize].iter_mut().enumerate() {
+        *b = cpu.load_byte(ram, Segment::Stack, at.wrapping_add(i as u32))?;
+    }
+    cpu.set_stack_pointer(at.wrapping_add(width));
+    Some(u32::from_le_bytes(bytes))
+}
+fn pop_word(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<u16> {
+    Some(pop_stack(cpu, ram, 2)? as u16)
 }
 
 fn condition(flags: u16, kind: u8) -> bool {
@@ -2772,13 +2938,13 @@ fn condition(flags: u16, kind: u8) -> bool {
     }
 }
 
-fn fetch(cpu: &mut CpuState, ram: &GuestRam) -> Option<u8> {
-    let byte = cpu.load_byte(ram, Segment::Code, cpu.instruction())?;
-    cpu.set_instruction(cpu.instruction().wrapping_add(1));
+fn fetch(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<u8> {
+    let byte = cpu.load_byte(ram, Segment::Code, cpu.eip())?;
+    cpu.advance_ip(1);
     Some(byte)
 }
 
-fn load_segment(cpu: &mut CpuState, ram: &GuestRam, seg: Segment, selector: u16) -> bool {
+fn load_segment(cpu: &mut CpuState, ram: &mut GuestRam, seg: Segment, selector: u16) -> bool {
     #[cfg(feature = "pc386")]
     if !cpu.machine.load(ram, seg, selector) {
         return false;
@@ -2797,10 +2963,17 @@ fn far_call(cpu: &mut CpuState, ram: &mut GuestRam, sel: u16, ip: u16, opcode: u
     let caller = cpu.selector(Segment::Code);
     let next = cpu.instruction();
     #[cfg(feature = "pc386")]
-    if cpu.machine.protected() {
+    if cpu.machine.protected() && !cpu.machine.vm86 {
         let Some(d) = cpu.machine.descriptor(ram, sel) else {
+            if cpu.machine.exception.get().is_none() {
+                cpu.machine.exception.set(Some((13, Some(sel & !3))));
+            }
             return Outcome::Fault(opcode);
         };
+        if d.access & 0x80 == 0 {
+            cpu.machine.exception.set(Some((11, Some(sel & !3))));
+            return Outcome::Fault(opcode);
+        }
         let cpl = caller & 3;
         let dpl = u16::from(d.access >> 5 & 3);
         if d.access & 16 == 0 {

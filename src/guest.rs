@@ -12,6 +12,7 @@ pub mod disk;
 pub mod memory;
 pub mod mz;
 mod process;
+mod resident;
 pub mod run;
 pub mod state;
 pub mod step;

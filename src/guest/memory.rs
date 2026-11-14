@@ -22,6 +22,8 @@ pub struct GuestRam {
     pub(super) at: Option<super::at::At>,
     #[cfg(feature = "pc386")]
     pub(super) graphics: Option<super::vga::Graphics>,
+    #[cfg(feature = "pc386")]
+    pub(super) dos_cr3: Option<u32>,
     bytes: [u8; RAM_BYTES],
     pub(crate) a20: bool,
     units: [u64; EXT_UNITS.div_ceil(64)],
@@ -38,6 +40,8 @@ static STORAGE: [crate::kernel_cell::KernelCell<GuestRam>; 4] = [const {
         graphics: None,
         #[cfg(feature = "pc386")]
         at: None,
+        #[cfg(feature = "pc386")]
+        dos_cr3: None,
         bytes: [0; RAM_BYTES],
         units: [0; EXT_UNITS.div_ceil(64)],
         frame: [None; 4],
@@ -101,6 +105,14 @@ impl GuestRam {
             self.bytes[slot..slot + 2].copy_from_slice(&offset.to_le_bytes());
             self.bytes[slot + 2..slot + 4].copy_from_slice(&0xf000u16.to_le_bytes());
             self.bytes[0xf0000 + usize::from(offset)] = 0xcf;
+        }
+        #[cfg(feature = "pc386")]
+        {
+            // Guest BIOS IRQ tails run on the guest CPU. In V86 mode the VMM
+            // traps the PIC EOI and IRET, just as it would with a physical BIOS.
+            self.bytes[0xf0400..0xf0402].copy_from_slice(&[0xcd, 0x1c]);
+            self.bytes[0xf0402..0xf0409]
+                .copy_from_slice(&[0x50, 0xb0, 0x20, 0xe6, 0x20, 0x58, 0xcf]);
         }
         #[cfg(not(test))]
         for ch in 0..=255u8 {
@@ -306,11 +318,53 @@ impl GuestRam {
         }
     }
     pub fn load(&self, segment: u16, offset: u16) -> Option<u8> {
+        #[cfg(feature = "pc386")]
+        if let Some(cr3) = self.dos_cr3 {
+            let linear = u32::from(segment) * 16 + u32::from(offset);
+            let (physical, _, _) =
+                super::pc386::Machine::walk(self, cr3, linear, false, true).ok()?;
+            return Some(self.bus_byte(physical));
+        }
         Some(self.bus_byte(self.address(segment, offset)))
     }
 
     pub fn store(&mut self, segment: u16, offset: u16, value: u8) -> bool {
-        self.set_bus_byte(self.address(segment, offset), value);
+        self.write_dos(u32::from(segment) * 16 + u32::from(offset), &[value])
+    }
+
+    pub(super) fn write_dos(&mut self, mut linear: u32, mut bytes: &[u8]) -> bool {
+        while !bytes.is_empty() {
+            let at = if self.a20 {
+                linear
+            } else {
+                linear & !(1 << 20)
+            } as usize;
+            #[cfg(feature = "pc386")]
+            let at = if let Some(cr3) = self.dos_cr3 {
+                let Ok((phys, dir, table)) =
+                    super::pc386::Machine::walk(self, cr3, linear, true, true)
+                else {
+                    return false;
+                };
+                super::pc386::Machine::touch(self, dir, table, true);
+                phys
+            } else {
+                at
+            };
+            let n = (4096 - at % 4096).min(bytes.len());
+            if at + n > RAM_BYTES {
+                return false;
+            }
+            if at < 0xa0000 || at >= 0x100000 {
+                self.bytes[at..at + n].copy_from_slice(&bytes[..n]);
+            } else {
+                for (i, &byte) in bytes[..n].iter().enumerate() {
+                    self.set_bus_byte(at + i, byte);
+                }
+            }
+            linear += n as u32;
+            bytes = &bytes[n..];
+        }
         true
     }
 

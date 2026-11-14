@@ -109,23 +109,31 @@ impl<'a> Mz<'a> {
         })
     }
 
-    pub fn load(&self, ram: &mut GuestRam, psp: u16, end: u16) -> CpuState {
+    pub fn load(&self, ram: &mut GuestRam, psp: u16, end: u16) -> Option<CpuState> {
         // A zero minimum and maximum requests DOS high loading within the PSP's block.
         let load = if self.top_loaded {
             end - (self.minimum - 0x10)
         } else {
             psp + 0x10
         };
-        let bytes = ram.paragraphs_mut(load, end);
-        self.module
-            .copy_to(bytes, load)
-            .expect("validated MZ placement");
+        let base = u32::from(load) * 16;
+        if !ram.write_dos(base, self.module.payload) {
+            return None;
+        }
+        for reloc in self.module.relocations.chunks_exact(4) {
+            let i = relocation_offset(reloc);
+            let segment = load.wrapping_add((i / 16) as u16);
+            let value = super::memory::read_word(ram, segment, (i % 16) as u16)?.wrapping_add(load);
+            if !ram.write_dos(base + i as u32, &value.to_le_bytes()) {
+                return None;
+            }
+        }
         let mut cpu = CpuState::at_com(psp);
         cpu.set_instruction(self.ip);
         cpu.set_selector(Segment::Code, load.wrapping_add(self.cs));
         cpu.set_selector(Segment::Stack, load.wrapping_add(self.ss));
         cpu.set_wide(Slot::Stack, self.sp);
-        cpu
+        Some(cpu)
     }
 }
 

@@ -98,41 +98,66 @@ impl Program<'_> {
             .process(self.preferred_psp, env_size, min, max)
             .map_err(|_| 8u16)?;
         let env = psp - env_size - 1;
-        for i in 0..env_len {
-            let byte = if self.environment == 0 {
-                default_env[i]
-            } else {
-                ram.load(self.environment, i as u16).unwrap_or(0)
-            };
-            ram.store(env, i as u16, byte);
-        }
-        let trailer = &mut ram.paragraphs_mut(env, psp - 1)[env_len..];
-        trailer.fill(0);
-        trailer[..2].copy_from_slice(&1u16.to_le_bytes());
-        let file = 2 + self.directory.len();
-        trailer[2..file].copy_from_slice(self.directory);
-        trailer[file..file + base].copy_from_slice(&self.name[..base]);
-        if ext > 0 {
-            trailer[file + base] = b'.';
-            trailer[file + base + 1..file + base + 1 + ext].copy_from_slice(&self.name[8..8 + ext]);
-        }
-        let block = ram.paragraphs_mut(psp, end);
-        block.fill(0);
-        block[..2].copy_from_slice(&[0xCD, 0x20]);
-        block[2..4].copy_from_slice(&end.to_le_bytes());
-        block[0x16..0x18].copy_from_slice(&self.parent.to_le_bytes());
-        block[0x2C..0x2E].copy_from_slice(&env.to_le_bytes());
-        block[0x80] = self.tail.len as u8;
-        block[0x81..0x81 + self.tail.len].copy_from_slice(&self.tail.bytes[..self.tail.len]);
-        block[0x81 + self.tail.len] = b'\r';
-        let cpu = match mz {
-            Some(mz) => mz.load(ram, psp, end),
-            None => {
-                block[0x100..0x100 + self.image.len()].copy_from_slice(self.image);
-                let mut cpu = CpuState::at_com(psp);
-                cpu.set_wide(Slot::Stack, (block.len().min(0x10000) - 2) as u16);
-                cpu
+        let write_image = || -> Option<CpuState> {
+            for i in 0..env_len {
+                let byte = if self.environment == 0 {
+                    default_env[i]
+                } else {
+                    ram.load(self.environment, i as u16)?
+                };
+                if !ram.store(env, i as u16, byte) {
+                    return None;
+                }
             }
+            // DOS directory prefix (68 bytes), file name (12), trailer and paragraph padding.
+            let mut storage = [0u8; 100];
+            let trailer = storage.get_mut(..usize::from(env_size) * 16 - env_len)?;
+            trailer[..2].copy_from_slice(&1u16.to_le_bytes());
+            let file = 2 + self.directory.len();
+            trailer[2..file].copy_from_slice(self.directory);
+            trailer[file..file + base].copy_from_slice(&self.name[..base]);
+            if ext > 0 {
+                trailer[file + base] = b'.';
+                trailer[file + base + 1..file + base + 1 + ext]
+                    .copy_from_slice(&self.name[8..8 + ext]);
+            }
+            let mut block = [0; 256];
+            if !ram.write_dos(u32::from(env) * 16 + env_len as u32, trailer) {
+                return None;
+            }
+            let base = u32::from(psp) * 16;
+            let size = usize::from(end - psp) * 16;
+            for at in (0..size).step_by(4096) {
+                if !ram.write_dos(base + at as u32, &[0; 4096][..(size - at).min(4096)]) {
+                    return None;
+                }
+            }
+            block[..2].copy_from_slice(&[0xCD, 0x20]);
+            block[2..4].copy_from_slice(&end.to_le_bytes());
+            block[0x16..0x18].copy_from_slice(&self.parent.to_le_bytes());
+            block[0x2C..0x2E].copy_from_slice(&env.to_le_bytes());
+            block[0x80] = self.tail.len as u8;
+            block[0x81..0x81 + self.tail.len].copy_from_slice(&self.tail.bytes[..self.tail.len]);
+            block[0x81 + self.tail.len] = b'\r';
+            if !ram.write_dos(base, &block) {
+                return None;
+            }
+            let cpu = match mz {
+                Some(mz) => mz.load(ram, psp, end)?,
+                None => {
+                    if !ram.write_dos(base + 0x100, self.image) {
+                        return None;
+                    }
+                    let mut cpu = CpuState::at_com(psp);
+                    cpu.set_wide(Slot::Stack, (size.min(0x10000) - 2) as u16);
+                    cpu
+                }
+            };
+            Some(cpu)
+        };
+        let Some(cpu) = write_image() else {
+            arena.release_process(psp);
+            return Err(8);
         };
         arena.publish(ram);
         Ok((psp, cpu))

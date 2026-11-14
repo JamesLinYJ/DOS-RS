@@ -15,6 +15,7 @@ mod fcb;
 mod handles;
 mod locks;
 mod runtime;
+mod sda;
 mod termination;
 pub(super) mod xms;
 use fcb::{
@@ -117,7 +118,26 @@ fn serve_port(cpu: &mut CpuState, ram: &mut GuestRam, port: u16, write: bool, wo
 
 fn handle_event(
     event: Outcome,
-    instruction: u16,
+    instruction: u32,
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    session: &mut Session,
+) -> Option<End> {
+    #[cfg(feature = "pc386")]
+    let previous = core::mem::replace(
+        &mut ram.dos_cr3,
+        (cpu.machine.vm86 && cpu.machine.cr0 & 0x8000_0000 != 0).then_some(cpu.machine.cr3),
+    );
+    let result = dispatch_event(event, instruction, cpu, ram, session);
+    #[cfg(feature = "pc386")]
+    {
+        ram.dos_cr3 = previous;
+    }
+    result
+}
+fn dispatch_event(
+    event: Outcome,
+    instruction: u32,
     cpu: &mut CpuState,
     ram: &mut GuestRam,
     session: &mut Session,
@@ -131,23 +151,21 @@ fn handle_event(
             {
                 return session.scheduled.then_some(End::Waiting);
             }
-            if step::interrupt_return(cpu, ram, 0xcf) != Outcome::Continue {
-                return Some(End::Fault(0xcf));
-            }
             if matches!(v, 0x08 | 0x09) {
-                if let Some(at) = &mut ram.at {
-                    at.eoi();
-                }
                 if v == 8 {
-                    let low = read_word(ram, 0x40, 0x6c).unwrap();
-                    let high = read_word(ram, 0x40, 0x6e).unwrap();
-                    let count = ((u32::from(high) << 16) | u32::from(low)) + 1;
+                    let low = read_word(ram, 0x40, 0x6c).unwrap_or(0);
+                    let high = read_word(ram, 0x40, 0x6e).unwrap_or(0);
+                    let count = ((u32::from(high) << 16) | u32::from(low)).wrapping_add(1);
                     store_bytes(ram, 0x40, 0x6c, &(count % 0x1800b0).to_le_bytes());
                     if count == 0x1800b0 {
                         ram.store(0x40, 0x70, 1);
                     }
                 }
+                cpu.set_instruction(if v == 8 { 0x400 } else { 0x402 });
                 return None;
+            }
+            if step::interrupt_return(cpu, ram, 0xcf) != Outcome::Continue {
+                return Some(End::Fault(0xcf));
             }
             if matches!(v, 0x1c | 0x28 | 0x2a) {
                 return None;
@@ -161,10 +179,16 @@ fn handle_event(
                 return None;
             }
             if v == 0x2f {
-                multiplex(cpu);
+                multiplex(cpu, ram, session);
                 return None;
             }
-            return handle_event(Outcome::Interrupt(v), cpu.instruction(), cpu, ram, session);
+            return handle_event(Outcome::Interrupt(v), cpu.eip(), cpu, ram, session);
+        }
+        Outcome::Resident(entry) => {
+            drivers::builtin_request(cpu, ram, session, entry);
+            if !step::far_return(cpu, ram) {
+                return Some(End::Fault(0xcb));
+            }
         }
         Outcome::Continue => {}
         Outcome::EmsReturn => session.ems.return_call(cpu, ram),
@@ -190,7 +214,7 @@ fn handle_event(
                     crate::bios::mscon::con_write_bytes(&[key as u8]);
                 }
             } else {
-                cpu.set_instruction(instruction);
+                cpu.set_eip(instruction);
                 if session.scheduled {
                     return Some(End::Waiting);
                 }
@@ -205,14 +229,14 @@ fn handle_event(
         Outcome::Interrupt(0x20) => return termination::exit(cpu, ram, session, 0),
         Outcome::Halt => return Some(End::Stopped(0)),
         Outcome::Fault(opcode) => {
-            cpu.set_instruction(instruction);
+            cpu.set_eip(instruction);
             return Some(End::Fault(opcode));
         }
         Outcome::Interrupt(0x16)
             if matches!(cpu.high(Slot::Accumulator), 0 | 0x10)
                 && crate::bios::pc::key(false).is_none() =>
         {
-            cpu.set_instruction(instruction);
+            cpu.set_eip(instruction);
             if session.scheduled {
                 return Some(End::Waiting);
             }
@@ -223,7 +247,7 @@ fn handle_event(
                 // An unclaimed multiplex call chains to the final IRET. Probes
                 // use AL=0 on entry and observe that no TSR claimed it.
                 if vector == 0x2f {
-                    multiplex(cpu);
+                    multiplex(cpu, ram, session);
                     return None;
                 }
                 return Some(End::Other(vector));
@@ -233,8 +257,14 @@ fn handle_event(
     None
 }
 
-fn multiplex(cpu: &mut CpuState) {
+fn multiplex(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     match cpu.wide(Slot::Accumulator) {
+        0x1605 => sda::startup(cpu, ram, session),
+        0x1606 => {
+            session.instancing = false;
+            session.ems.finish_import(ram);
+        }
+        0x1607 if cpu.wide(Slot::Base) == 0x15 => sda::dosmgr(cpu, session),
         0x4300 => cpu.set_low(Slot::Accumulator, 0x80),
         0x4310 => {
             cpu.set_selector(Segment::Extra, xms::ENTRY.0);
@@ -284,6 +314,8 @@ pub(super) struct Session {
     arena: Arena,
     pub(super) child_depth: u8,
     pub(super) drive: u8,
+    device_request: (u16, u16),
+    instancing: bool,
     break_check: u8,
     extended_break: u8,
     current_psp: u16,
@@ -331,6 +363,8 @@ impl Session {
             arena: Arena::new(),
             child_depth: 0,
             drive: 0,
+            device_request: (0, 0),
+            instancing: false,
             break_check: 0,
             extended_break: 0,
             current_psp: 0,
@@ -378,6 +412,9 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
     if !matches!(function, 0x50 | 0x51 | 0x62) && session.current_psp != 0 {
         termination::save_stack(cpu, ram, session.current_psp);
     }
+    if session.instancing {
+        sda::save_call(cpu, ram);
+    }
     let result = dispatch(cpu, ram, session);
     if function == 0x46 {
         locks::discard_closed(session);
@@ -391,6 +428,7 @@ fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Act
     ) {
         session.handles.publish(ram, session.prefix);
     }
+    sda::publish(ram, session);
     result
 }
 fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Action {
@@ -502,11 +540,15 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             Action::Continue
         }
         0x34 => {
-            indos_flag(cpu, ram);
+            sda::indos(cpu);
             Action::Continue
         }
         0x46 => {
             force_duplicate(cpu, session);
+            Action::Continue
+        }
+        0x5d if cpu.low(Slot::Accumulator) == 6 => {
+            sda::address(cpu, ram, session);
             Action::Continue
         }
         0x59 => {
@@ -1345,7 +1387,19 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         return;
     };
     if found.console {
-        cpu.set_wide(Slot::Accumulator, 0);
+        if found.access == 1 {
+            fail(cpu, session, 5);
+            return;
+        }
+        let mut read = 0;
+        while read < requested {
+            let Some(key) = crate::bios::pc::key(true) else {
+                break;
+            };
+            ram.store(segment, offset.wrapping_add(read as u16), key as u8);
+            read += 1;
+        }
+        cpu.set_wide(Slot::Accumulator, read as u16);
         cpu.set_carry(false);
         return;
     }
@@ -1828,6 +1882,23 @@ fn run_child(
         }
         .load(ram, &mut session.arena)?
     };
+    #[cfg(feature = "pc386")]
+    if let Some(parent) = caller.as_deref().filter(|c| c.machine.vm86) {
+        // EXEC switches DOS register sets inside the current V86 task. Keep
+        // the VMM's page directory, IDT, descriptor tables and I/O privilege.
+        cpu.machine = parent.machine.clone();
+        for seg in [
+            Segment::Code,
+            Segment::Stack,
+            Segment::Extra,
+            Segment::Data,
+            Segment::Fs,
+            Segment::Gs,
+        ] {
+            cpu.set_selector(seg, cpu.selector(seg));
+        }
+        cpu.set_flags(cpu.flags() & !0x3000 | parent.flags() & 0x3000);
+    }
     let target = caller
         .as_ref()
         .map(|c| (c.selector(Segment::Code), c.instruction()))
@@ -2860,6 +2931,23 @@ fn list_of_lists(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
     );
     let sector = per_sector.to_le_bytes();
     let mut raw = [0u8; 0x34];
+    crate::guest::resident::publish(ram);
+    raw[8..12].copy_from_slice(&crate::guest::resident::pointer(
+        crate::guest::resident::CLOCK,
+    ));
+    raw[12..16].copy_from_slice(&crate::guest::resident::pointer(
+        crate::guest::resident::CON,
+    ));
+    sda::drives(ram);
+    raw[0..2].copy_from_slice(&sda::DPB.to_le_bytes());
+    raw[2..4].copy_from_slice(&sda::SEGMENT.to_le_bytes());
+    raw[0x16..0x18].copy_from_slice(&sda::CDS.to_le_bytes());
+    raw[0x18..0x1a].copy_from_slice(&sda::SEGMENT.to_le_bytes());
+    // DOS-RS resolves FCBs directly. The resident FCB SFT has zero slots.
+    const FCB_SFT: u16 = 0xe0;
+    store_bytes(ram, sda::SEGMENT, FCB_SFT, &[0xff, 0xff, 0xff, 0xff, 0, 0]);
+    raw[0x1a..0x1c].copy_from_slice(&FCB_SFT.to_le_bytes());
+    raw[0x1c..0x1e].copy_from_slice(&sda::SEGMENT.to_le_bytes());
     session.handles.publish_sft(ram);
     raw[6..8].copy_from_slice(&handles::SFT_SEGMENT.to_le_bytes());
     raw[0x10] = sector[0];
@@ -2930,18 +3018,6 @@ fn drive_parameters(cpu: &mut CpuState, ram: &mut GuestRam) {
     cpu.set_selector(Segment::Data, SEGMENT);
     cpu.set_wide(Slot::Base, 0);
     cpu.set_low(Slot::Accumulator, 0);
-    cpu.set_carry(false);
-}
-
-fn indos_flag(cpu: &mut CpuState, ram: &mut GuestRam) {
-    const SEGMENT: u16 = 0x50;
-    const OFFSET: u16 = 4;
-    if !ram.store(SEGMENT, OFFSET, 0) || !ram.store(SEGMENT, OFFSET.wrapping_add(1), 0) {
-        cpu.set_carry(true);
-        return;
-    }
-    cpu.set_selector(Segment::Extra, SEGMENT);
-    cpu.set_wide(Slot::Base, OFFSET);
     cpu.set_carry(false);
 }
 

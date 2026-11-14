@@ -95,7 +95,7 @@ pub struct CpuState {
     words: [u32; 8],
     selectors: [u16; 6],
     pub(super) address32: bool,
-    instruction: u16,
+    instruction: u32,
     flags: u16,
     /// Offset from the most recent memory operand. A register-form load of an
     /// effective address copies this, matching 8086 silicon.
@@ -162,14 +162,14 @@ impl CpuState {
     pub fn set_selector(&mut self, which: Segment, value: u16) {
         self.selectors[which.index()] = value;
         #[cfg(feature = "pc386")]
-        if !self.machine.protected() {
+        if !self.machine.protected() || self.machine.vm86 {
             self.machine.real_segment(which, value);
         }
     }
 
     pub(super) fn linear(
         &self,
-        ram: &super::memory::GuestRam,
+        ram: &mut super::memory::GuestRam,
         seg: Segment,
         offset: impl Into<u32>,
         write: bool,
@@ -186,11 +186,12 @@ impl CpuState {
     }
     pub(super) fn load_byte(
         &self,
-        ram: &super::memory::GuestRam,
+        ram: &mut super::memory::GuestRam,
         seg: Segment,
         offset: impl Into<u32>,
     ) -> Option<u8> {
-        Some(ram.bus_byte(self.linear(ram, seg, offset, false)?))
+        let address = self.linear(ram, seg, offset, false)?;
+        Some(ram.bus_byte(address))
     }
     pub(super) fn store_byte(
         &self,
@@ -215,13 +216,54 @@ impl CpuState {
     }
 
     pub fn instruction(&self) -> u16 {
-        self.instruction
+        self.instruction as u16
     }
 
     pub fn set_instruction(&mut self, value: u16) {
-        self.instruction = value;
+        self.instruction = u32::from(value);
     }
 
+    pub fn eflags(&self) -> u32 {
+        let flags = u32::from(self.flags());
+        #[cfg(feature = "pc386")]
+        {
+            return flags | u32::from(self.machine.vm86) << 17;
+        }
+        #[cfg(not(feature = "pc386"))]
+        flags
+    }
+    pub fn stack_pointer(&self) -> u32 {
+        #[cfg(feature = "pc386")]
+        if self.machine.stack32() {
+            return self.dword(Slot::Stack);
+        }
+        u32::from(self.wide(Slot::Stack))
+    }
+    pub fn set_stack_pointer(&mut self, v: u32) {
+        #[cfg(feature = "pc386")]
+        if self.machine.stack32() {
+            self.set_dword(Slot::Stack, v);
+            return;
+        }
+        self.set_wide(Slot::Stack, v as u16)
+    }
+    pub fn eip(&self) -> u32 {
+        self.instruction
+    }
+    pub fn set_eip(&mut self, v: u32) {
+        self.instruction = v;
+    }
+    pub fn advance_ip(&mut self, disp: i32) {
+        let mut next = self.eip().wrapping_add_signed(disp);
+        #[cfg(feature = "pc386")]
+        let wide = self.machine.code32();
+        #[cfg(not(feature = "pc386"))]
+        let wide = false;
+        if !wide {
+            next &= 65535
+        }
+        self.set_eip(next);
+    }
     pub fn recent_offset(&self) -> u16 {
         self.recent_offset
     }

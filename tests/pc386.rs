@@ -12,6 +12,8 @@ mod kernel_cell;
 mod memory;
 #[path = "../src/guest/pc386.rs"]
 mod pc386;
+#[path = "../src/guest/resident.rs"]
+mod resident;
 #[path = "../src/guest/state.rs"]
 mod state;
 #[path = "../src/guest/step.rs"]
@@ -41,6 +43,8 @@ use memory::GuestRam;
 use state::{CpuState, Segment, Slot};
 use step::Outcome;
 
+static RAM_ZERO: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn bytes(ram: &mut GuestRam, base: usize, data: &[u8]) {
     for (i, &byte) in data.iter().enumerate() {
         ram.set_bus_byte(base + i, byte);
@@ -49,6 +53,7 @@ fn bytes(ram: &mut GuestRam, base: usize, data: &[u8]) {
 
 #[test]
 fn protected_far_jump_interrupt_and_iret_use_guest_tables() {
+    let _lock = RAM_ZERO.lock().unwrap();
     let mut ram = memory::session_ram(0);
     ram.clear();
     let mut cpu = CpuState::at_com(0);
@@ -79,8 +84,8 @@ fn protected_far_jump_interrupt_and_iret_use_guest_tables() {
     assert_eq!(cpu.wide(Slot::Stack), 0x400);
     assert_eq!(cpu.wide(Slot::Accumulator), 0x1234);
     assert_ne!(cpu.flags() & 0x200, 0);
-    assert!(cpu.machine.load(&ram, Segment::Data, 0));
-    assert!(cpu.load_byte(&ram, Segment::Data, 0u16).is_none());
+    assert!(cpu.machine.load(&mut ram, Segment::Data, 0));
+    assert!(cpu.load_byte(&mut ram, Segment::Data, 0u16).is_none());
     assert_eq!(cpu.machine.exception.get(), Some((13, Some(0))));
 }
 
@@ -192,12 +197,110 @@ fn call_gate_copies_parameters_and_retf_releases_both_stacks() {
     cpu.machine.cr0 = 1;
     cpu.machine.tr = 40;
     for (reg, sel) in [(Segment::Code, 27), (Segment::Stack, 35)] {
-        assert!(cpu.machine.load(&ram, reg, sel));
+        assert!(cpu.machine.load(&mut ram, reg, sel));
         cpu.set_selector(reg, sel);
     }
-    assert_eq!(step::slice(&mut cpu, &mut ram, 12).0, Outcome::Halt);
+    assert_eq!(step::slice(&mut cpu, &mut ram, 5).0, Outcome::Continue);
+    assert_eq!(cpu.eip(), 0x108);
     assert_eq!(cpu.wide(Slot::Accumulator), 0x1234);
     assert_eq!(cpu.wide(Slot::Stack), 0x400);
     assert_eq!(cpu.selector(Segment::Stack), 35);
     assert_eq!(cpu.selector(Segment::Code), 27);
+}
+
+#[test]
+fn v86_dos_buffers_follow_page_tables_and_mark_each_written_frame_dirty() {
+    let _lock = RAM_ZERO.lock().unwrap();
+    let mut ram = memory::session_ram(0);
+    ram.clear();
+    ram.a20 = true;
+    let mut cpu = CpuState::at_com(0);
+    cpu.machine.cr0 = 0x8000_0001;
+    cpu.machine.cr3 = 0x2000;
+    cpu.machine.cpl = 3;
+    cpu.machine.vm86 = true;
+    bytes(&mut ram, 0x2000, &0x3007u32.to_le_bytes());
+    bytes(&mut ram, 0x3010, &0x8007u32.to_le_bytes());
+    bytes(&mut ram, 0x3014, &0x6007u32.to_le_bytes());
+    ram.dos_cr3 = Some(0x2000);
+    assert!(ram.write_dos(0x4fff, &[0x12, 0x34]));
+    assert_eq!(ram.bus_byte(0x8fff), 0x12);
+    assert_eq!(ram.bus_byte(0x6000), 0x34);
+    assert_eq!(ram.bus_byte(0x4fff), 0);
+    assert_eq!(ram.bus_byte(0x2000), 0x27);
+    assert_eq!(ram.bus_byte(0x3010), 0x67);
+    assert_eq!(ram.bus_byte(0x3014), 0x67);
+    assert_eq!(
+        cpu.load_byte(&mut ram, Segment::Data, 0x5000u16),
+        Some(0x34)
+    );
+    assert_eq!(ram.load(0x400, 0xfff), Some(0x12));
+    bytes(&mut ram, 0x3014, &0x6005u32.to_le_bytes());
+    assert!(!cpu.store_byte(&mut ram, Segment::Data, 0x5000u16, 0xee));
+    assert_eq!(cpu.machine.exception.take(), Some((14, Some(7))));
+    assert_eq!(cpu.machine.cr2.get(), 0x5000);
+    assert_eq!(cpu.load_byte(&mut ram, Segment::Data, 0x6abcu16), None);
+    assert_eq!(cpu.machine.exception.take(), Some((14, Some(4))));
+    assert_eq!(cpu.machine.cr2.get(), 0x6abc);
+    ram.dos_cr3 = None;
+}
+
+#[test]
+fn iretd_enters_v86_and_interrupt_gate_round_trips_the_entire_outer_frame() {
+    let _lock = RAM_ZERO.lock().unwrap();
+    let mut ram = memory::session_ram(0);
+    ram.clear();
+    let mut cpu = CpuState::at_com(0);
+    cpu.machine.gdtr = pc386::Table {
+        base: 0x300,
+        limit: 31,
+    };
+    bytes(&mut ram, 0x308, &[0xff, 0xff, 0, 0, 0, 0x9b, 0x40, 0]);
+    bytes(&mut ram, 0x310, &[0xff, 0xff, 0, 0, 0, 0x93, 0x40, 0]);
+    bytes(&mut ram, 0x318, &[0x67, 0, 0, 0x90, 0, 0x8b, 0, 0]);
+    bytes(&mut ram, 0x9004, &[0, 0x80, 0, 0, 16, 0]);
+    cpu.machine.idtr = pc386::Table {
+        base: 0x1000,
+        limit: 0x7ff,
+    };
+    bytes(&mut ram, 0x1000 + 8 * 0x51, &[0, 0x12, 8, 0, 0, 0x8e, 0, 0]);
+    cpu.machine.cr0 = 1;
+    cpu.machine.tr = 24;
+    for (reg, sel) in [(Segment::Stack, 16), (Segment::Code, 8)] {
+        assert!(cpu.machine.load(&mut ram, reg, sel));
+        cpu.set_selector(reg, sel);
+    }
+    cpu.set_dword(Slot::Stack, 0x8000);
+    let frame = [
+        0x4321u32,
+        0x200,
+        0x20202,
+        0xabcd_1234,
+        0x300,
+        0x410,
+        0x420,
+        0x430,
+        0x440,
+    ];
+    for (i, word) in frame.iter().enumerate() {
+        bytes(&mut ram, 0x8000 + i * 4, &word.to_le_bytes());
+    }
+    assert_eq!(pc386::iretd(&mut cpu, &mut ram), Some(()));
+    assert!(cpu.machine.vm86);
+    assert_eq!(cpu.machine.cpl, 3);
+    assert_eq!(cpu.stack_pointer(), 0x1234);
+    assert_eq!(pc386::interrupt(&mut cpu, &mut ram, 0x51, false), Some(4));
+    assert!(!cpu.machine.vm86);
+    assert_eq!(cpu.machine.cpl, 0);
+    assert_eq!(cpu.eip(), 0x1200);
+    for (i, word) in frame.iter().enumerate() {
+        let at = 0x8000 - 9 * 4 + i * 4;
+        assert_eq!(
+            u32::from_le_bytes(core::array::from_fn(|j| ram.bus_byte(at + j))),
+            *word
+        );
+    }
+    assert_eq!(pc386::iretd(&mut cpu, &mut ram), Some(()));
+    assert_eq!(cpu.dword(Slot::Stack), 0xabcd_1234);
+    assert_eq!(cpu.selector(Segment::Gs), 0x440);
 }

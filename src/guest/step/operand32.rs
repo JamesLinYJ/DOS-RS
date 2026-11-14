@@ -1,8 +1,8 @@
 //! 32-bit operands in 16-bit guest code. Address decoding is shared with the word interpreter.
 use super::{
-    CpuState, GuestRam, Operand, Outcome, Segment, Slot, decode, fetch, pop_word, push_word,
+    CpuState, GuestRam, Operand, Outcome, Segment, Slot, decode, fetch, pop_stack, push_stack,
 };
-pub(super) fn imm(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
+pub(super) fn imm(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<u32> {
     Some(u32::from_le_bytes([
         fetch(cpu, ram)?,
         fetch(cpu, ram)?,
@@ -10,7 +10,7 @@ pub(super) fn imm(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
         fetch(cpu, ram)?,
     ]))
 }
-pub(super) fn read(cpu: &CpuState, ram: &GuestRam, op: &Operand) -> Option<u32> {
+pub(super) fn read(cpu: &CpuState, ram: &mut GuestRam, op: &Operand) -> Option<u32> {
     match *op {
         Operand::Register(n) => Some(cpu.dword(Slot::from_index(n))),
         Operand::Memory { segment, offset } => {
@@ -42,11 +42,10 @@ pub(super) fn write(
     Some(())
 }
 fn push(cpu: &mut CpuState, ram: &mut GuestRam, v: u32) -> Option<()> {
-    push_word(cpu, ram, (v >> 16) as u16).then_some(())?;
-    push_word(cpu, ram, v as u16).then_some(())
+    push_stack(cpu, ram, v, 4)
 }
-fn pop(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
-    Some(u32::from(pop_word(cpu, ram)?) | (u32::from(pop_word(cpu, ram)?) << 16))
+fn pop(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<u32> {
+    pop_stack(cpu, ram, 4)
 }
 pub(super) fn alu(cpu: &mut CpuState, kind: u8, a: u32, b: u32) -> u32 {
     let carry = cpu.flags() & 1 != 0;
@@ -203,6 +202,24 @@ pub(super) fn step(
                     _ => return None,
                 }
             }
+            0xc4 | 0xc5 => {
+                let m = fetch(cpu, ram)?;
+                let op = decode(cpu, ram, m, seg)?;
+                let Operand::Memory { segment, offset } = op else {
+                    return None;
+                };
+                let value = read(cpu, ram, &op)?;
+                let selector = super::load_pair(cpu, ram, segment, offset.checked_add(4)?)?;
+                let target = if opcode == 0xc4 {
+                    Segment::Extra
+                } else {
+                    Segment::Data
+                };
+                if !super::load_segment(cpu, ram, target, selector) {
+                    return None;
+                }
+                cpu.set_dword(Slot::from_index(m >> 3), value);
+            }
             0x8d => {
                 let m = fetch(cpu, ram)?;
                 let Operand::Memory { offset, .. } = decode(cpu, ram, m, seg)? else {
@@ -248,6 +265,26 @@ pub(super) fn step(
                         let result = alu(cpu, if n == 1 { 5 } else { 0 }, v, 1);
                         cpu.set_carry(cf);
                         write(cpu, ram, &op, result)?;
+                    }
+                    2 | 4 => {
+                        if n == 2 {
+                            push(cpu, ram, cpu.eip())?;
+                        }
+                        cpu.set_eip(v);
+                    }
+                    3 | 5 => {
+                        let Operand::Memory { segment, offset } = op else {
+                            return None;
+                        };
+                        let sel = super::load_pair(cpu, ram, segment, offset.wrapping_add(4))?;
+                        if n == 3 {
+                            push(cpu, ram, u32::from(cpu.selector(Segment::Code)))?;
+                            push(cpu, ram, cpu.eip())?;
+                        }
+                        if !super::load_segment(cpu, ram, Segment::Code, sel) {
+                            return None;
+                        }
+                        cpu.set_eip(v);
                     }
                     6 => push(cpu, ram, v)?,
                     _ => return None,
@@ -309,6 +346,84 @@ pub(super) fn step(
                     }
                 }
             }
+            0xe8 | 0xe9 => {
+                let disp = imm(cpu, ram)?;
+                let next = cpu.eip();
+                if opcode == 0xe8 {
+                    push(cpu, ram, next)?;
+                }
+                cpu.set_eip(next.wrapping_add(disp));
+            }
+            0x9a | 0xea => {
+                let offset = imm(cpu, ram)?;
+                let sel = u16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]);
+                if opcode == 0x9a {
+                    push(cpu, ram, u32::from(cpu.selector(Segment::Code)))?;
+                    push(cpu, ram, cpu.eip())?;
+                }
+                if !super::load_segment(cpu, ram, Segment::Code, sel) {
+                    return None;
+                }
+                cpu.set_eip(offset);
+            }
+            0xc2 | 0xc3 | 0xca | 0xcb => {
+                let count = if matches!(opcode, 0xc2 | 0xca) {
+                    u32::from(u16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]))
+                } else {
+                    0
+                };
+                let offset = pop(cpu, ram)?;
+                if opcode & 8 != 0 {
+                    let sel = pop(cpu, ram)? as u16;
+                    if !super::load_segment(cpu, ram, Segment::Code, sel) {
+                        return None;
+                    }
+                }
+                cpu.set_stack_pointer(cpu.stack_pointer().wrapping_add(count));
+                cpu.set_eip(offset);
+            }
+            0xc8 => {
+                let alloc = u16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]);
+                let nesting = fetch(cpu, ram)? & 31;
+                let mut bp = cpu.dword(Slot::Frame);
+                push(cpu, ram, bp)?;
+                let frame = cpu.stack_pointer();
+                for _ in 1..nesting {
+                    bp = bp.wrapping_sub(4);
+                    let v = read(
+                        cpu,
+                        ram,
+                        &Operand::Memory {
+                            segment: Segment::Stack,
+                            offset: bp,
+                        },
+                    )?;
+                    push(cpu, ram, v)?;
+                }
+                if nesting != 0 {
+                    push(cpu, ram, frame)?;
+                }
+                cpu.set_dword(Slot::Frame, frame);
+                cpu.set_stack_pointer(cpu.stack_pointer().wrapping_sub(u32::from(alloc)));
+            }
+            0xc9 => {
+                cpu.set_stack_pointer(cpu.dword(Slot::Frame));
+                let frame = pop(cpu, ram)?;
+                cpu.set_dword(Slot::Frame, frame);
+            }
+            0x69 | 0x6b => {
+                let m = fetch(cpu, ram)?;
+                let rm = decode(cpu, ram, m, seg)?;
+                let a = read(cpu, ram, &rm)? as i32;
+                let b = if opcode == 0x69 {
+                    imm(cpu, ram)? as i32
+                } else {
+                    fetch(cpu, ram)? as i8 as i32
+                };
+                let (v, overflow) = a.overflowing_mul(b);
+                super::note_multiply_overflow(cpu, overflow);
+                cpu.set_dword(Slot::from_index(m >> 3), v as u32);
+            }
             0x98 => cpu.set_dword(
                 Slot::Accumulator,
                 cpu.wide(Slot::Accumulator) as i16 as i32 as u32,
@@ -325,7 +440,7 @@ pub(super) fn step(
                 let v = fetch(cpu, ram)? as i8 as i32 as u32;
                 push(cpu, ram, v)?;
             }
-            0x9c => push(cpu, ram, u32::from(cpu.flags()))?,
+            0x9c => push(cpu, ram, cpu.eflags() & !(1 << 17))?,
             0x9d => {
                 let v = pop(cpu, ram)?;
                 cpu.set_flags(v as u16);
