@@ -71,14 +71,12 @@ impl Program<'_> {
                 }
                 let size = (0x102 + self.image.len()).div_ceil(16) as u16;
                 let size = size.max(self.com_paragraphs);
-                (
-                    size,
-                    if cfg!(feature = "pc386") && self.com_paragraphs >= 0x1000 {
-                        u16::MAX
-                    } else {
-                        size
-                    },
-                )
+                // WIN.COM checks PSP:0002 before it can call DOS to resize.
+                // Identify the Windows launcher from its header so a renamed
+                // copy receives the same conventional-memory grant.
+                let windows_launcher = self.image.get(3..5) == Some(b"XW")
+                    && self.image.get(19..27) == Some(b"SMARTAAR");
+                (size, if windows_launcher { u16::MAX } else { size })
             }
         };
 

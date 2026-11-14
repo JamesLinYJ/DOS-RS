@@ -134,8 +134,9 @@ impl Task {
                             crate::puts("  ");
                             for n in 0..6 {
                                 super::put_hex8(
-                                    ram.load(
-                                        cpu.selector(super::Segment::Code),
+                                    cpu.load_byte(
+                                        ram,
+                                        super::Segment::Code,
                                         cpu.instruction().wrapping_add(n),
                                     )
                                     .unwrap_or(0),
@@ -292,7 +293,7 @@ pub fn interactive() -> ! {
                 // Only touch the controller after the worker has returned the session.
                 graphical[id] = ram.graphics.as_ref().is_some_and(|g| g.active);
                 if graphical[id]
-                    && let Some(at) = &ram.at
+                    && let Some(at) = &mut ram.at
                 {
                     for code in scans[id].drain(..) {
                         at.key(code);

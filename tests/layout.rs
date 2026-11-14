@@ -313,3 +313,20 @@ fn zero_allocation_mz_relocates_at_top_of_the_largest_process_block() {
     assert_eq!(read_word(&ram, code, 1), Some(code + 2));
     assert_eq!(cpu.selector(state::Segment::Extra), psp);
 }
+
+#[test]
+fn flat_programs_leave_allocation_room_and_renamed_windows_loader_gets_the_largest_block() {
+    let _guard = RAM_LOCK.lock().unwrap();
+    let ram = &mut *memory::storage();
+    ram.clear();
+    let mut arena = Arena::new();
+    let (psp, _) = program(&[0xc3]).load(ram, &mut arena).unwrap();
+    assert_eq!(read_word(ram, psp, 2), Some(psp + 0x1000));
+    assert!(arena.alloc(psp, 32, 0).is_ok());
+    let mut loader = [0u8; 32];
+    loader[3..5].copy_from_slice(b"XW");
+    loader[19..27].copy_from_slice(b"SMARTAAR");
+    let mut arena = Arena::new();
+    let (psp, _) = program(&loader).load(ram, &mut arena).unwrap();
+    assert_eq!(read_word(ram, psp, 2), Some(END));
+}

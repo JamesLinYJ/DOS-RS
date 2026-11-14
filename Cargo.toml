@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 batch-console = []
 kernel-selftest = []
-pc386 = ["dep:rsemu", "dep:linked_list_allocator"]
+pc386 = ["dep:linked_list_allocator"]
 
 [profile.dev]
 panic = "abort"
@@ -19,5 +19,4 @@ font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] 
 uefi = { version = "0.38", default-features = false }
 x86 = { version = "0.52.0", default-features = false }
 
-rsemu = { version = "=0.0.7", default-features = false, features = ["cpu-x86", "dev-pc-video"], optional = true }
 linked_list_allocator = { version = "0.10.5", optional = true }

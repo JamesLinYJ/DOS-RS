@@ -270,8 +270,14 @@ Run `python3 scripts/qemu-terminals.py` or add `--display cocoa` on macOS.
 
 ## Windows 3.2 Simplified Chinese
 
-The original eleven installation disks supplied the files in `C:\WINSETUP` on a 64 MiB raw FAT16 disk in a macOS RAM volume. The x86_64 UEFI kernel ran `SETUP.EXE` through text setup, the Chinese graphical installer, program group creation and the final confirmation screen. Setup returned to DOS and the QEMU process exited. A fresh x86_64 UEFI process reopened the same C disk and an i686 BIOS process booted a byte-identical copy. Each ran `C:\WINDOWS\WIN.COM /S` from DOS-RS and displayed the populated Chinese Program Manager. The x86_64 guest opened Calculator from the Run dialog and computed 2 + 3 = 5.
+DOS-RS ran the original simplified Chinese installer on **two independent, newly formatted 64 MiB FAT16 disks**, with the eleven installation disks staged in `C:\WINSETUP`. Both disks, the QEMU boot media and firmware variables lived on a macOS RAM volume. The i686 BIOS and x86_64 UEFI kernels each reached graphical setup, created program groups and returned to DOS from the installation-complete screen.
 
-A separate i686 UEFI guest completed Setup on a second blank 64 MiB FAT16 disk. After Setup returned to DOS, that QEMU process exited. A fresh i686 BIOS guest mounted this second disk and opened the populated Chinese Program Manager in standard mode.
+After shutting down each QEMU process, `fsck.fat -vn` found 807 files and 30,365 allocated clusters on each volume. A fresh QEMU process for each architecture reopened its own C disk and ran `C:\WINDOWS\WIN.COM /S`. The populated 640×480 Chinese Program Manager and the Calculator result after typing `2 + 3 =` matched pixel-for-pixel across the two architectures. Tests used keyboard input and the no-mouse configuration.
 
-The FAT checks on both installations found 806 files and 34,899 KiB free. SHA-256 of the installed `WIN.COM` was `b23982ecd051c13df6aca26fec9e7616771619f1809b2c61e78da0893fb07ff7`. The main group file `CMAINGRP.GRP` was 7,260 bytes. The tests used the keyboard and the installer's no-mouse configuration. See the [startup commands and screenshot](../README.md).
+| Installed file | Bytes | SHA-256 on both volumes |
+| --- | ---: | --- |
+| WIN.COM | 46,608 | `b23982ecd051c13df6aca26fec9e7616771619f1809b2c61e78da0893fb07ff7` |
+| CMAINGRP.GRP | 7,260 | `a044d6ae7d4aac4b6e13b021293542b233a56e2ee987dc572528b2cf3ec044eb` |
+| CALC.EXE | 43,536 | `5c77689fd680540b00a2c5cfc60cfc64bacfbc9ffdee6d2e4b7f7ba4982aef1b` |
+
+The Windows launcher checks the size of its initial conventional-memory block in the PSP before requesting more memory. DOS-RS recognizes the launcher's `XW` and `SMARTAAR` header fields and gives it the largest free block. Ordinary flat COM programs retain their initial allocation and can request more with INT 21h. CPU instruction decoding is shared across programs. See the [startup commands and screenshot](../README.md).

@@ -31,6 +31,8 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 
 **启动和并发**　传统 BIOS 从 MBR 启动，UEFI 从系统分区加载。二者进入同一套内核服务。启动 CPU 管理设备，其他 CPU 用独立栈并行执行不同会话的解释器时间片。单 CPU 自动回退到轮转。项目自有引导和内核源码使用 Rust。底层的 MBR 入口、实模式转换、AP 启动和中断门使用固定版本的外部架构代码。[外部组件说明](NOTICE)
 
+**16 位程序怎样执行**　两个内核使用 DOS-RS 自己的 Rust 指令解释器。每个会话有独立的寄存器、内存和设备状态。开启 `--pc386` 后，Windows 的 DOSX 可自行加载段描述符、切入 16 位保护模式，通过中断门和调用门运行 Windows 程序。VGA 位平面绘图和 AT 键盘中断也由 DOS-RS 实现。宿主上的 QEMU 负责启动整台虚拟 PC。[执行器源码](src/guest/step.rs)
+
 **DOS 程序和内存**　支持实模式 COM 和 MZ、嵌套 EXEC、MCB、每进程 JFT、共享文件偏移和驻留 DOS 驱动。每个终端有 640 KiB 常规内存，默认配 8 MiB 扩展内存。启动时可用 `--extended-mib 128` 为每个会话配置 128 MiB，直接构建可用 `DOS_RS_EXT_MIB` 指定 1～128 MiB。128 MiB 配置为高端内存区预留 64 KiB，XMS 和 EMS 共同分配余下的 131,008 KiB。XMS 支持句柄、搬移、锁定、调整大小、HMA 和 A20。DOS 与 XMS 共用 96 KiB 上位内存区（UMB），程序可通过 INT 21h 链接上位内存，CONFIG.SYS 可用 `DEVICEHIGH` 装载驱动。EMS 通过 INT 67h 提供 D000 段的四个 16 KiB 窗口、七组备用映射寄存器、跨页搬移、交换和映射调用。当前虚拟 EMS 设备没有 DMA 寄存器组。FreeDOS MEM 1.12 的 /XMS 与 /EMS 已在双架构、双固件运行。[FreeDOS MEM](https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/html/en/base/mem/20250410.0/index.html)
 
 **显示和设备**　UEFI 用 GOP 帧缓冲绘制彩色文本，BIOS 默认用 VGA 文本模式。开启 `--pc386` 后，传统 BIOS 也可在 QEMU 标准 VGA 上使用 640×480 图形模式。两条路径都支持 DOS 字符属性和终端切换。已验证 PS/2、串口、打印、IDE 扇区读取、FreeDOS SETVER.SYS、DOS 字符及块设备、xHCI 上的 USB 2.0 高速存储，以及 Intel 82540EM 的以太网帧收发。Intel 8265、AX200 和 AX210 目前实现 PCI 探测，固件加载和联网仍待完成。蓝牙已有 USB HCI 控制命令和 LE 扫描路径，待实物验证。
@@ -62,7 +64,7 @@ CD \WINDOWS
 WIN.COM /S
 ```
 
-标准模式已在 x86_64 / UEFI 和 i686 / 传统 BIOS 两种组合下冷启动进入中文程序管理器。640×480、16 色 VGA 和键盘操作已验证；从“文件 → 运行”可启动 `CALC`。386 增强模式与 NTFS 系统卷写入仍待验收。[验收记录](docs/guest-programs.md#windows-32-simplified-chinese)
+标准模式已在 x86_64 / UEFI 和 i686 / 传统 BIOS 两种组合下冷启动进入中文程序管理器。640×480、16 色 VGA 和键盘操作已验证；从“文件 → 运行”可启动 `CALC`。当前解释器使用 16 位代码段，支持部分 32 位操作数和寻址指令。分页、虚拟 8086 模式和 Windows 386 增强模式尚未实现。NTFS 系统卷写入仍待验收。[验收记录](docs/guest-programs.md#windows-32-simplified-chinese)
 
 ![i686 传统 BIOS 冷启动后的中文程序管理器及主群组](docs/assets/windows32-progman.png)
 
@@ -70,6 +72,7 @@ WIN.COM /S
 
 ```sh
 PROOF_DIR=target/proof-uefi scripts/qemu-smoke.sh
+PROOF_DIR=target/proof-pc386 scripts/qemu-smoke.sh --pc386
 DOS_RS_TEST_FIRMWARE=bios PROOF_DIR=target/proof-bios scripts/qemu-smoke.sh
 python3 scripts/qemu-terminals.py
 python3 scripts/qemu-terminals.py --firmware bios --output target/terminal-bios

@@ -135,7 +135,7 @@ fn handle_event(
                 return Some(End::Fault(0xcf));
             }
             if matches!(v, 0x08 | 0x09) {
-                if let Some(at) = &ram.at {
+                if let Some(at) = &mut ram.at {
                     at.eoi();
                 }
                 if v == 8 {
@@ -1828,17 +1828,6 @@ fn run_child(
         }
         .load(ram, &mut session.arena)?
     };
-    #[cfg(feature = "pc386")]
-    if session
-        .parents
-        .iter()
-        .flatten()
-        .any(|p| p.registers.as_ref().is_some_and(|c| c.machine.is_some()))
-        || session.vector_live[0x2f]
-    {
-        let machine = super::pc386::Machine::new(&cpu, ram);
-        cpu.machine = Some(alloc::boxed::Box::new(machine));
-    }
     let target = caller
         .as_ref()
         .map(|c| (c.selector(Segment::Code), c.instruction()))

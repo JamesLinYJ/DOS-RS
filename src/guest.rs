@@ -1,8 +1,7 @@
-//! Guest 8086 machine.
+//! Per-session x86 guest execution for DOS programs and 16-bit protected-mode clients.
 //!
-//! The register file is [`state::CpuState`]. Addresses are linear guest
-//! offsets, never host pointers. `INT` returns to the owner after the
-//! instruction pointer has moved past the instruction.
+//! Instruction fetch, operands and virtual devices use offsets on the guest memory bus.
+//! The scheduler handles DOS services and physical I/O after a slice yields.
 
 #![forbid(unsafe_code)]
 

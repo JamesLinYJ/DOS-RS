@@ -1,8 +1,8 @@
-//! 386 operand-size overrides with a real-mode, 16-bit address and stack size.
+//! 32-bit operands in 16-bit guest code. Address decoding is shared with the word interpreter.
 use super::{
     CpuState, GuestRam, Operand, Outcome, Segment, Slot, decode, fetch, pop_word, push_word,
 };
-fn imm(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
+pub(super) fn imm(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
     Some(u32::from_le_bytes([
         fetch(cpu, ram)?,
         fetch(cpu, ram)?,
@@ -10,38 +10,45 @@ fn imm(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
         fetch(cpu, ram)?,
     ]))
 }
-fn read(cpu: &CpuState, ram: &GuestRam, op: &Operand) -> Option<u32> {
+pub(super) fn read(cpu: &CpuState, ram: &GuestRam, op: &Operand) -> Option<u32> {
     match *op {
         Operand::Register(n) => Some(cpu.dword(Slot::from_index(n))),
         Operand::Memory { segment, offset } => {
             let mut b = [0; 4];
             for (n, v) in b.iter_mut().enumerate() {
-                *v = ram.load(cpu.selector(segment), offset.checked_add(n as u16)?)?;
+                *v = cpu.load_byte(ram, segment, offset.checked_add(n as u32)?)?;
             }
             Some(u32::from_le_bytes(b))
         }
     }
 }
-fn write(cpu: &mut CpuState, ram: &mut GuestRam, op: &Operand, value: u32) -> Option<()> {
+pub(super) fn write(
+    cpu: &mut CpuState,
+    ram: &mut GuestRam,
+    op: &Operand,
+    value: u32,
+) -> Option<()> {
     match *op {
         Operand::Register(n) => cpu.set_dword(Slot::from_index(n), value),
         Operand::Memory { segment, offset } => {
             offset.checked_add(3)?;
             for (n, b) in value.to_le_bytes().iter().enumerate() {
-                ram.store(cpu.selector(segment), offset + n as u16, *b);
+                if !cpu.store_byte(ram, segment, offset + n as u32, *b) {
+                    return None;
+                }
             }
         }
     }
     Some(())
 }
-fn push(cpu: &mut CpuState, ram: &mut GuestRam, v: u32) {
-    push_word(cpu, ram, (v >> 16) as u16);
-    push_word(cpu, ram, v as u16);
+fn push(cpu: &mut CpuState, ram: &mut GuestRam, v: u32) -> Option<()> {
+    push_word(cpu, ram, (v >> 16) as u16).then_some(())?;
+    push_word(cpu, ram, v as u16).then_some(())
 }
 fn pop(cpu: &mut CpuState, ram: &GuestRam) -> Option<u32> {
     Some(u32::from(pop_word(cpu, ram)?) | (u32::from(pop_word(cpu, ram)?) << 16))
 }
-fn alu(cpu: &mut CpuState, kind: u8, a: u32, b: u32) -> u32 {
+pub(super) fn alu(cpu: &mut CpuState, kind: u8, a: u32, b: u32) -> u32 {
     let carry = cpu.flags() & 1 != 0;
     let result = match kind {
         0 => a.wrapping_add(b),
@@ -156,8 +163,110 @@ pub(super) fn step(
                         let result = alu(cpu, 5, 0, v);
                         write(cpu, ram, &op, result)?;
                     }
+                    4 | 5 => {
+                        let a = cpu.dword(Slot::Accumulator);
+                        let signed = (m >> 3) & 7 == 5;
+                        let product = if signed {
+                            (i64::from(a as i32) * i64::from(v as i32)) as u64
+                        } else {
+                            u64::from(a) * u64::from(v)
+                        };
+                        cpu.set_dword(Slot::Accumulator, product as u32);
+                        cpu.set_dword(Slot::Data, (product >> 32) as u32);
+                        super::note_multiply_overflow(
+                            cpu,
+                            if signed {
+                                product as i64 != i64::from(product as i32)
+                            } else {
+                                product >> 32 != 0
+                            },
+                        );
+                    }
+                    6 | 7 => {
+                        let num = (u64::from(cpu.dword(Slot::Data)) << 32)
+                            | u64::from(cpu.dword(Slot::Accumulator));
+                        let result = if (m >> 3) & 7 == 7 {
+                            let a = num as i64;
+                            let b = i64::from(v as i32);
+                            a.checked_div(b)
+                                .and_then(|q| i32::try_from(q).ok())
+                                .map(|q| (q as u32, (a % b) as u32))
+                        } else {
+                            num.checked_div(u64::from(v))
+                                .and_then(|q| u32::try_from(q).ok())
+                                .map(|q| (q, (num % u64::from(v)) as u32))
+                        };
+                        let (q, r) = result?;
+                        cpu.set_dword(Slot::Accumulator, q);
+                        cpu.set_dword(Slot::Data, r);
+                    }
                     _ => return None,
                 }
+            }
+            0x8d => {
+                let m = fetch(cpu, ram)?;
+                let Operand::Memory { offset, .. } = decode(cpu, ram, m, seg)? else {
+                    return None;
+                };
+                cpu.set_dword(Slot::from_index(m >> 3), offset);
+            }
+            0x8c => {
+                let m = fetch(cpu, ram)?;
+                let rm = decode(cpu, ram, m, seg)?;
+                let val = cpu.selector(Segment::from_index(m >> 3)?);
+                match rm {
+                    Operand::Register(i) => cpu.set_dword(Slot::from_index(i), u32::from(val)),
+                    _ => {
+                        if !super::write_word(cpu, ram, &rm, val) {
+                            return None;
+                        }
+                    }
+                }
+            }
+            0x06 | 0x0e | 0x16 | 0x1e => push(
+                cpu,
+                ram,
+                u32::from(cpu.selector(Segment::from_index(opcode >> 3)?)),
+            )?,
+            0x07 | 0x17 | 0x1f => {
+                let val = pop(cpu, ram)? as u16;
+                if !super::load_segment(cpu, ram, Segment::from_index(opcode >> 3)?, val) {
+                    return None;
+                }
+            }
+            0x40..=0x4f | 0xff => {
+                let (n, op) = if opcode == 0xff {
+                    let m = fetch(cpu, ram)?;
+                    ((m >> 3) & 7, decode(cpu, ram, m, seg)?)
+                } else {
+                    ((opcode >> 3) & 1, Operand::Register(opcode & 7))
+                };
+                let v = read(cpu, ram, &op)?;
+                match n {
+                    0 | 1 => {
+                        let cf = cpu.flags() & 1 != 0;
+                        let result = alu(cpu, if n == 1 { 5 } else { 0 }, v, 1);
+                        cpu.set_carry(cf);
+                        write(cpu, ram, &op, result)?;
+                    }
+                    6 => push(cpu, ram, v)?,
+                    _ => return None,
+                }
+            }
+            0x8f => {
+                let m = fetch(cpu, ram)?;
+                if (m >> 3) & 7 != 0 {
+                    return None;
+                }
+                let v = pop(cpu, ram)?;
+                let op = decode(cpu, ram, m, seg)?;
+                write(cpu, ram, &op, v)?;
+            }
+            0x90..=0x97 => {
+                let slot = Slot::from_index(opcode);
+                let a = cpu.dword(Slot::Accumulator);
+                cpu.set_dword(Slot::Accumulator, cpu.dword(slot));
+                cpu.set_dword(slot, a);
             }
             0x87 => {
                 let m = fetch(cpu, ram)?;
@@ -179,20 +288,44 @@ pub(super) fn step(
                 let v = shift(cpu, (m >> 3) & 7, v, n);
                 write(cpu, ram, &op, v)?;
             }
-            0x50..=0x57 => push(cpu, ram, cpu.dword(Slot::from_index(opcode))),
+            0x50..=0x57 => push(cpu, ram, cpu.dword(Slot::from_index(opcode)))?,
             0x58..=0x5f => {
                 let v = pop(cpu, ram)?;
                 cpu.set_dword(Slot::from_index(opcode), v);
             }
+            0x60 => {
+                let sp = cpu.dword(Slot::Stack);
+                for i in 0..8 {
+                    let slot = Slot::from_index(i);
+                    let v = if i == 4 { sp } else { cpu.dword(slot) };
+                    push(cpu, ram, v)?;
+                }
+            }
+            0x61 => {
+                for i in (0..8).rev() {
+                    let v = pop(cpu, ram)?;
+                    if i != 4 {
+                        cpu.set_dword(Slot::from_index(i), v);
+                    }
+                }
+            }
+            0x98 => cpu.set_dword(
+                Slot::Accumulator,
+                cpu.wide(Slot::Accumulator) as i16 as i32 as u32,
+            ),
+            0x99 => cpu.set_dword(
+                Slot::Data,
+                (cpu.dword(Slot::Accumulator) as i32 >> 31) as u32,
+            ),
             0x68 => {
                 let v = imm(cpu, ram)?;
-                push(cpu, ram, v);
+                push(cpu, ram, v)?;
             }
             0x6a => {
                 let v = fetch(cpu, ram)? as i8 as i32 as u32;
-                push(cpu, ram, v);
+                push(cpu, ram, v)?;
             }
-            0x9c => push(cpu, ram, u32::from(cpu.flags())),
+            0x9c => push(cpu, ram, u32::from(cpu.flags()))?,
             0x9d => {
                 let v = pop(cpu, ram)?;
                 cpu.set_flags(v as u16);
@@ -200,18 +333,6 @@ pub(super) fn step(
             0xb8..=0xbf => {
                 let v = imm(cpu, ram)?;
                 cpu.set_dword(Slot::from_index(opcode), v);
-            }
-            0xa1 | 0xa3 => {
-                let offset = u16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]);
-                let op = Operand::Memory {
-                    segment: seg.unwrap_or(Segment::Data),
-                    offset,
-                };
-                if opcode == 0xa1 {
-                    cpu.set_dword(Slot::Accumulator, read(cpu, ram, &op)?);
-                } else {
-                    write(cpu, ram, &op, cpu.dword(Slot::Accumulator))?;
-                }
             }
             0x89 | 0x8b | 0xc7 | 0x81 | 0x83 | 0x85 | 0x01 | 0x03 | 0x09 | 0x0b | 0x11 | 0x13
             | 0x19 | 0x1b | 0x21 | 0x23 | 0x29 | 0x2b | 0x31 | 0x33 | 0x39 | 0x3b => {

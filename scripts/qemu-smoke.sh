@@ -6,6 +6,14 @@ export LC_ALL=C
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 
+features=kernel-selftest
+build_dir="$root/target/selftest"
+if [[ "${1:-}" == "--pc386" ]]; then
+    features+=,pc386
+    build_dir="$root/target/pc386-selftest"
+    shift
+fi
+
 doctor() {
 	local missing=0
 	command -v qemu-system-i386 >/dev/null || { echo "missing qemu-system-i386" >&2; missing=1; }
@@ -15,11 +23,11 @@ doctor() {
 		echo "want rustc 1.102.0-nightly from nightly-2026-11-08" >&2
 		missing=1
 	}
-	if [[ ! -f "$root/target/selftest/i686-unknown-uefi/release/dos4-rs.efi" ]]; then
+	if [[ ! -f "$build_dir/i686-unknown-uefi/release/dos4-rs.efi" ]]; then
 		echo "missing i686 kernel. Build it before driving." >&2
 		missing=1
 	fi
-	if [[ ! -f "$root/target/selftest/x86_64-unknown-uefi/release/dos4-rs.efi" ]]; then
+	if [[ ! -f "$build_dir/x86_64-unknown-uefi/release/dos4-rs.efi" ]]; then
 		echo "missing x86_64 kernel. Build it before driving." >&2
 		missing=1
 	fi
@@ -1549,16 +1557,18 @@ if [[ "${1:-}" == "doctor" ]]; then
 	exit 0
 fi
 
-(cd "$root" && cargo build --locked --release --features kernel-selftest --target-dir target/selftest --target i686-unknown-uefi --target x86_64-unknown-uefi)
+(cd "$root" && cargo build --locked --release --features "$features" --target-dir "$build_dir" --target i686-unknown-uefi --target x86_64-unknown-uefi)
 doctor
 (
     test_dir="$(mktemp -d)"
     trap 'rm -rf "$test_dir"' EXIT
     rustc +nightly-2026-11-08 --edition=2024 --test "$root/tests/layout.rs" -o "$test_dir/layout"
     "$test_dir/layout"
+    rustc +nightly-2026-11-08 --edition=2024 --test --cfg 'feature="pc386"' "$root/tests/pc386.rs" -o "$test_dir/pc386"
+    "$test_dir/pc386"
 )
 printer_log="$(mktemp)"
 trap 'rm -f "$printer_log"' EXIT
-run_one i686 qemu-system-i386 "$root/target/selftest/i686-unknown-uefi/release/dos4-rs.efi"
-run_one x86_64 qemu-system-x86_64 "$root/target/selftest/x86_64-unknown-uefi/release/dos4-rs.efi"
+run_one i686 qemu-system-i386 "$build_dir/i686-unknown-uefi/release/dos4-rs.efi"
+run_one x86_64 qemu-system-x86_64 "$build_dir/x86_64-unknown-uefi/release/dos4-rs.efi"
 exit 0

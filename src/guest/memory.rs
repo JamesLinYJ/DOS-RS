@@ -19,10 +19,6 @@ pub const CONVENTIONAL_END: u16 = 0xA000;
 
 pub struct GuestRam {
     #[cfg(feature = "pc386")]
-    changed: [u64; RAM_BYTES.div_ceil(4096 * 64)],
-    #[cfg(feature = "pc386")]
-    pub(super) machine_memory: Option<alloc::sync::Arc<rsemu::core::space::RamStore>>,
-    #[cfg(feature = "pc386")]
     pub(super) at: Option<super::at::At>,
     #[cfg(feature = "pc386")]
     pub(super) graphics: Option<super::vga::Graphics>,
@@ -38,10 +34,6 @@ pub struct GuestRam {
 
 static STORAGE: [crate::kernel_cell::KernelCell<GuestRam>; 4] = [const {
     crate::kernel_cell::KernelCell::new(GuestRam {
-        #[cfg(feature = "pc386")]
-        changed: [0; RAM_BYTES.div_ceil(4096 * 64)],
-        #[cfg(feature = "pc386")]
-        machine_memory: None,
         #[cfg(feature = "pc386")]
         graphics: None,
         #[cfg(feature = "pc386")]
@@ -72,45 +64,11 @@ pub fn real_linear(segment: u16, offset: u16) -> Option<u32> {
 }
 
 impl GuestRam {
-    #[cfg(feature = "pc386")]
-    fn touch(&mut self, start: usize, end: usize) {
-        for page in start / 4096..end.div_ceil(4096) {
-            self.changed[page / 64] |= 1 << (page % 64);
-        }
-    }
-    #[cfg(feature = "pc386")]
-    pub(super) fn upload(&mut self, mem: &rsemu::core::space::RamStore) {
-        for (group, mask) in self.changed.iter_mut().enumerate() {
-            while *mask != 0 {
-                let n = mask.trailing_zeros() as usize;
-                *mask &= !(1 << n);
-                let at = (group * 64 + n) * 4096;
-                if at < RAM_BYTES {
-                    mem.write_at(at as u64, &self.bytes[at..at + 4096]).unwrap();
-                }
-            }
-        }
-        mem.clear_dirty();
-    }
-    #[cfg(feature = "pc386")]
-    pub(super) fn download(&mut self, mem: &rsemu::core::space::RamStore) {
-        mem.for_each_dirty_page(|page| {
-            let at = page as usize * 4096;
-            if at == 0xb8000 {
-                self.dirty_rows = 0x01ffffff;
-            }
-            mem.read_at(at as u64, &mut self.bytes[at..at + 4096])
-                .unwrap();
-        });
-        mem.clear_dirty();
-    }
     pub fn clear(&mut self) {
         #[cfg(feature = "pc386")]
         {
             self.at = Some(super::at::At::new());
             self.graphics = Some(super::vga::Graphics::new());
-            self.machine_memory = None;
-            self.changed.fill(u64::MAX);
         }
         self.units.fill(0);
         self.frame = [None; 4];
@@ -279,8 +237,6 @@ impl GuestRam {
         if (0xb8000..0xb8000 + 4000).contains(&at) && self.bytes[at] != value {
             self.dirty_rows |= 1 << ((at - 0xb8000) / 160);
         }
-        #[cfg(feature = "pc386")]
-        self.touch(at, at + 1);
         self.bytes[at] = value;
     }
     pub(super) fn move_physical(&mut self, src: usize, dst: usize, len: usize) -> Option<()> {
@@ -288,8 +244,6 @@ impl GuestRam {
             return None;
         }
         if src >= EXT_START && dst >= EXT_START {
-            #[cfg(feature = "pc386")]
-            self.touch(dst, dst + len);
             self.bytes.copy_within(src..src + len, dst);
         } else if dst > src && dst - src < len {
             for i in (0..len).rev() {
@@ -315,6 +269,12 @@ impl GuestRam {
         #[cfg(feature = "pc386")]
         if let Some(g) = &self.graphics
             && let Some(result) = g.port(port, write, value)
+        {
+            return Some(result);
+        }
+        #[cfg(feature = "pc386")]
+        if let Some(at) = &mut self.at
+            && let Some(result) = at.port(port, write, value, &mut self.a20)
         {
             return Some(result);
         }
@@ -361,8 +321,6 @@ impl GuestRam {
     pub(super) fn write_text(&mut self, row: u8, col: u8, word: u16) {
         let idx = 80 * usize::from(row.min(24)) + usize::from(col.min(79));
         let start = 0xb8000 + 2 * idx;
-        #[cfg(feature = "pc386")]
-        self.touch(start, start + 2);
         self.bytes[start..start + 2].copy_from_slice(&word.to_le_bytes());
         self.dirty_rows |= 1 << row.min(24);
     }
@@ -376,8 +334,6 @@ impl GuestRam {
         }
     }
     pub(super) fn paragraphs_mut(&mut self, start: u16, end: u16) -> &mut [u8] {
-        #[cfg(feature = "pc386")]
-        self.touch(usize::from(start) * 16, usize::from(end) * 16);
         &mut self.bytes[usize::from(start) * 16..usize::from(end) * 16]
     }
 }

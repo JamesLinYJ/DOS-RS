@@ -33,7 +33,7 @@ impl Slot {
         }
     }
 
-    fn index(self) -> usize {
+    pub(super) fn index(self) -> usize {
         match self {
             Self::Accumulator => 0,
             Self::Count => 1,
@@ -53,6 +53,10 @@ pub enum Segment {
     Code,
     Stack,
     Data,
+    #[cfg(feature = "pc386")]
+    Fs,
+    #[cfg(feature = "pc386")]
+    Gs,
 }
 
 impl Segment {
@@ -62,16 +66,24 @@ impl Segment {
             1 => Some(Self::Code),
             2 => Some(Self::Stack),
             3 => Some(Self::Data),
+            #[cfg(feature = "pc386")]
+            4 => Some(Self::Fs),
+            #[cfg(feature = "pc386")]
+            5 => Some(Self::Gs),
             _ => None,
         }
     }
 
-    fn index(self) -> usize {
+    pub(super) fn index(self) -> usize {
         match self {
             Self::Extra => 0,
             Self::Code => 1,
             Self::Stack => 2,
             Self::Data => 3,
+            #[cfg(feature = "pc386")]
+            Self::Fs => 4,
+            #[cfg(feature = "pc386")]
+            Self::Gs => 5,
         }
     }
 }
@@ -79,9 +91,10 @@ impl Segment {
 #[derive(Debug)]
 pub struct CpuState {
     #[cfg(feature = "pc386")]
-    pub(super) machine: Option<alloc::boxed::Box<super::pc386::Machine>>,
+    pub(super) machine: super::pc386::Machine,
     words: [u32; 8],
-    selectors: [u16; 4],
+    selectors: [u16; 6],
+    pub(super) address32: bool,
     instruction: u16,
     flags: u16,
     /// Offset from the most recent memory operand. A register-form load of an
@@ -93,9 +106,10 @@ impl CpuState {
     pub fn at_com(segment: u16) -> Self {
         let mut state = Self {
             #[cfg(feature = "pc386")]
-            machine: None,
+            machine: super::pc386::Machine::new(),
             words: [0; 8],
-            selectors: [0; 4],
+            selectors: [0; 6],
+            address32: false,
             instruction: 0x0100,
             flags: 0x0202,
             recent_offset: 0,
@@ -147,8 +161,51 @@ impl CpuState {
 
     pub fn set_selector(&mut self, which: Segment, value: u16) {
         self.selectors[which.index()] = value;
+        #[cfg(feature = "pc386")]
+        if !self.machine.protected() {
+            self.machine.real_segment(which, value);
+        }
     }
 
+    pub(super) fn linear(
+        &self,
+        ram: &super::memory::GuestRam,
+        seg: Segment,
+        offset: impl Into<u32>,
+        write: bool,
+    ) -> Option<usize> {
+        #[cfg(feature = "pc386")]
+        {
+            self.machine.linear(ram, seg, offset.into(), write)
+        }
+        #[cfg(not(feature = "pc386"))]
+        {
+            let _ = write;
+            Some(ram.address(self.selector(seg), offset.into() as u16))
+        }
+    }
+    pub(super) fn load_byte(
+        &self,
+        ram: &super::memory::GuestRam,
+        seg: Segment,
+        offset: impl Into<u32>,
+    ) -> Option<u8> {
+        Some(ram.bus_byte(self.linear(ram, seg, offset, false)?))
+    }
+    pub(super) fn store_byte(
+        &self,
+        ram: &mut super::memory::GuestRam,
+        seg: Segment,
+        offset: impl Into<u32>,
+        value: u8,
+    ) -> bool {
+        if let Some(at) = self.linear(ram, seg, offset, true) {
+            ram.set_bus_byte(at, value);
+            true
+        } else {
+            false
+        }
+    }
     pub fn flags(&self) -> u16 {
         self.flags
     }

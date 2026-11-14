@@ -3,7 +3,11 @@
 //! An interrupt result means the pointer already addresses the next
 //! instruction. The caller performs the service.
 
+#[cfg_attr(test, path = "step/operand32.rs")]
 mod operand32;
+#[cfg(feature = "pc386")]
+#[cfg_attr(test, path = "step/system.rs")]
+mod system;
 use super::alu;
 use super::memory::GuestRam;
 use super::state::{CpuState, Segment, Slot};
@@ -28,29 +32,57 @@ pub enum Outcome {
 
 enum Operand {
     Register(u8),
-    Memory { segment: Segment, offset: u16 },
+    Memory { segment: Segment, offset: u32 },
 }
 
 /// Run ordinary instructions until the next service or the scheduler's budget.
 pub fn slice(cpu: &mut CpuState, ram: &mut GuestRam, budget: u32) -> (Outcome, u16) {
     #[cfg(feature = "pc386")]
-    if let Some(mut machine) = cpu.machine.take() {
-        let result = machine.slice(cpu, ram, budget);
-        cpu.machine = Some(machine);
-        return result;
+    if ram.graphics.as_ref().is_some_and(|g| g.active)
+        && let Some(device) = &mut ram.at
+    {
+        device.advance(budget.min(1024).div_ceil(8));
+        if cpu.flags() & 0x200 != 0
+            && !cpu.machine.inhibit
+            && let Some(vector) = device.interrupt()
+        {
+            if super::pc386::interrupt(cpu, ram, vector).is_none() {
+                return (Outcome::Fault(0xcd), cpu.instruction());
+            }
+        }
     }
     let mut at = cpu.instruction();
     for _ in 0..budget {
         at = cpu.instruction();
+        #[cfg(feature = "pc386")]
+        let sp = cpu.dword(Slot::Stack);
         let event = step(cpu, ram);
         #[cfg(feature = "pc386")]
-        if matches!(event, Outcome::Fault(_)) {
+        let event = if let Some((v, error)) = cpu.machine.exception.take() {
             cpu.set_instruction(at);
-            let mut machine = alloc::boxed::Box::new(super::pc386::Machine::new(cpu, ram));
-            let result = machine.slice(cpu, ram, 1);
-            cpu.machine = Some(machine);
-            return result;
-        }
+            cpu.set_dword(Slot::Stack, sp);
+            if super::pc386::interrupt(cpu, ram, v).is_some()
+                && error.is_none_or(|code| push_word(cpu, ram, code))
+            {
+                Outcome::Continue
+            } else {
+                Outcome::Fault(0xcd)
+            }
+        } else {
+            event
+        };
+
+        #[cfg(feature = "pc386")]
+        let event = match event {
+            Outcome::Interrupt(v) if super::pc386::has_vector(cpu, ram, v) => {
+                if super::pc386::interrupt(cpu, ram, v).is_some() {
+                    Outcome::Continue
+                } else {
+                    Outcome::Fault(0xcd)
+                }
+            }
+            other => other,
+        };
         if event != Outcome::Continue {
             return (event, at);
         }
@@ -65,17 +97,27 @@ pub(super) fn firmware(cs: u16, ip: u16) -> Option<u8> {
 pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     let start = cpu.instruction();
     #[cfg(feature = "pc386")]
-    if let Some(v) = firmware(cpu.selector(Segment::Code), start) {
-        return Outcome::Firmware(v);
+    {
+        cpu.machine.inhibit = false;
     }
-    if (cpu.selector(Segment::Code), start) == super::run::xms::CONTROL {
-        return Outcome::Xms;
-    }
-    if (cpu.selector(Segment::Code), start) == super::run::ems::ENTRY {
-        return Outcome::Ems;
-    }
-    if (cpu.selector(Segment::Code), start) == super::run::ems::RETURN {
-        return Outcome::EmsReturn;
+    #[cfg(feature = "pc386")]
+    let real = !cpu.machine.protected();
+    #[cfg(not(feature = "pc386"))]
+    let real = true;
+    if real {
+        #[cfg(feature = "pc386")]
+        if let Some(v) = firmware(cpu.selector(Segment::Code), start) {
+            return Outcome::Firmware(v);
+        }
+        if (cpu.selector(Segment::Code), start) == super::run::xms::CONTROL {
+            return Outcome::Xms;
+        }
+        if (cpu.selector(Segment::Code), start) == super::run::ems::ENTRY {
+            return Outcome::Ems;
+        }
+        if (cpu.selector(Segment::Code), start) == super::run::ems::RETURN {
+            return Outcome::EmsReturn;
+        }
     }
     let Some(mut opcode) = fetch(cpu, ram) else {
         return Outcome::Fault(0);
@@ -83,6 +125,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     let mut override_segment = None;
     let mut dword = false;
     let mut address32 = false;
+    let mut rep = None;
     loop {
         if matches!(opcode, 0x26 | 0x2E | 0x36 | 0x3E) {
             override_segment = Some(match opcode {
@@ -91,6 +134,10 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
                 0x36 => Segment::Stack,
                 _ => Segment::Data,
             });
+        } else if matches!(opcode, 0x64 | 0x65) && cfg!(feature = "pc386") {
+            override_segment = Segment::from_index(opcode - 0x60);
+        } else if matches!(opcode, 0xf2 | 0xf3) {
+            rep = Some(opcode);
         } else if opcode == 0x67 {
             address32 = true;
         } else if opcode == 0x66 {
@@ -106,6 +153,18 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             None => return Outcome::Fault(0),
         };
     }
+    cpu.address32 = address32;
+    if matches!(opcode,0xa4..=0xa7|0xaa..=0xaf) {
+        return string_instruction(cpu, ram, override_segment, opcode, dword, rep, start);
+    }
+    if rep.is_some() && opcode != 0x90 {
+        return Outcome::Fault(opcode);
+    }
+
+    #[cfg(feature = "pc386")]
+    if opcode == 0x0f {
+        return system::extended(cpu, ram, override_segment, dword);
+    }
     if address32 {
         if opcode == 0xe3 {
             let Some(disp) = fetch(cpu, ram) else {
@@ -116,7 +175,15 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             }
             return Outcome::Continue;
         }
+        #[cfg(not(feature = "pc386"))]
         return Outcome::Fault(opcode);
+    }
+    if (0xa0..=0xa3).contains(&opcode) {
+        return if absolute_move(cpu, ram, override_segment, opcode, dword).is_some() {
+            Outcome::Continue
+        } else {
+            Outcome::Fault(opcode)
+        };
     }
     if dword {
         return operand32::step(cpu, ram, override_segment, opcode);
@@ -194,52 +261,8 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             cpu.set_high(Slot::Accumulator, cpu.flags() as u8);
             Outcome::Continue
         }
-        0xA0 => load_byte_absolute(cpu, ram, override_segment, opcode),
-        0xA1 => load_word_absolute(cpu, ram, override_segment, opcode),
-        0xA2 => store_byte_absolute(cpu, ram, override_segment, opcode),
-        0xA3 => store_word_absolute(cpu, ram, override_segment, opcode),
-        0xA5 => {
-            if copy_string_word(cpu, ram, override_segment) {
-                Outcome::Continue
-            } else {
-                Outcome::Fault(opcode)
-            }
-        }
-        0xA6 => {
-            if compare_string(cpu, ram, override_segment) {
-                Outcome::Continue
-            } else {
-                Outcome::Fault(opcode)
-            }
-        }
-        0xA7 => {
-            if compare_string_word(cpu, ram, override_segment) {
-                Outcome::Continue
-            } else {
-                Outcome::Fault(opcode)
-            }
-        }
         0xA8 => test_byte(cpu, ram, opcode),
         0xA9 => test_word(cpu, ram, opcode),
-        0xA4 => {
-            if copy_string(cpu, ram, override_segment) {
-                Outcome::Continue
-            } else {
-                Outcome::Fault(opcode)
-            }
-        }
-        0xAA => store_string(cpu, ram, opcode),
-        0xAB => store_string_word(cpu, ram, opcode),
-        0xAC => load_string(cpu, ram, override_segment, opcode),
-        0xAD => load_string_word(cpu, ram, override_segment, opcode),
-        0xAE => scan_string(cpu, ram, opcode),
-        0xAF => {
-            if scan_word(cpu, ram) {
-                Outcome::Continue
-            } else {
-                Outcome::Fault(opcode)
-            }
-        }
         0xB0..=0xB7 => move_byte_immediate(cpu, ram, opcode),
         0xB8..=0xBF => move_word_immediate(cpu, ram, opcode),
         0xC0 => shift_byte(cpu, ram, override_segment, opcode),
@@ -251,7 +274,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xC7 => store_word_immediate(cpu, ram, override_segment, opcode),
         0xCF => interrupt_return(cpu, ram, opcode),
         0xCA => return_far_count(cpu, ram, opcode),
-        0xCB => return_far(cpu, ram, opcode),
+        0xCB => return_far(cpu, ram, opcode, 0),
         0xCC => Outcome::Interrupt(3),
         0xC6 => store_byte_immediate(cpu, ram, override_segment, opcode),
         0xC8 => enter(cpu, ram, opcode),
@@ -265,7 +288,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xD4 => adjust_multiply(cpu, ram, opcode),
         0xD5 => adjust_divide(cpu, ram, opcode),
         0xD6 => set_byte_from_carry(cpu),
-        0xD7 => translate(cpu, ram, opcode),
+        0xD7 => translate(cpu, ram, override_segment, opcode),
         0xE4..=0xE7 | 0xEC..=0xEF => port_io(cpu, ram, opcode),
         0xE0..=0xE2 => loop_count(cpu, ram, opcode),
         0xE3 => jump_count(cpu, ram, opcode),
@@ -273,7 +296,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         0xE9 => jump_near(cpu, ram, opcode),
         0xEA => jump_far(cpu, ram, opcode),
         0xEB => branch(cpu, ram, opcode, true),
-        0xF2 | 0xF3 => repeat(cpu, ram, override_segment, opcode, start),
+
         0xF4 => Outcome::Halt,
         0xF7 => unary_word(cpu, ram, override_segment, opcode),
         0xFA => {
@@ -281,6 +304,10 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
             Outcome::Continue
         }
         0xFB => {
+            #[cfg(feature = "pc386")]
+            {
+                cpu.machine.inhibit = true;
+            }
             cpu.set_interrupt(true);
             Outcome::Continue
         }
@@ -406,7 +433,9 @@ fn move_into_segment(
     let Some(which) = Segment::from_index((modrm >> 3) & 7) else {
         return Outcome::Fault(opcode);
     };
-    cpu.set_selector(which, value);
+    if !load_segment(cpu, ram, which, value) {
+        return Outcome::Fault(opcode);
+    }
     Outcome::Continue
 }
 
@@ -502,9 +531,7 @@ fn decrement(cpu: &mut CpuState, opcode: u8) -> Outcome {
     let (result, flags) = alu::sub16(cpu.wide(slot), 1);
     cpu.set_wide(slot, result);
     cpu.apply_result_flags(flags);
-    if carry != 0 {
-        cpu.set_carry(true);
-    }
+    cpu.set_carry(carry != 0);
     Outcome::Continue
 }
 
@@ -514,9 +541,7 @@ fn increment(cpu: &mut CpuState, opcode: u8) -> Outcome {
     let (result, flags) = alu::add16(cpu.wide(slot), 1);
     cpu.set_wide(slot, result);
     cpu.apply_result_flags(flags);
-    if carry != 0 {
-        cpu.set_carry(true);
-    }
+    cpu.set_carry(carry != 0);
     Outcome::Continue
 }
 
@@ -623,14 +648,13 @@ fn call_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let Some(code_high) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
-    let next = cpu.instruction();
-    let caller = cpu.selector(Segment::Code);
-    if !push_word(cpu, ram, caller) || !push_word(cpu, ram, next) {
-        return Outcome::Fault(opcode);
-    }
-    cpu.set_selector(Segment::Code, u16::from_le_bytes([code_low, code_high]));
-    cpu.set_instruction(u16::from_le_bytes([entry_low, entry_high]));
-    Outcome::Continue
+    far_call(
+        cpu,
+        ram,
+        u16::from_le_bytes([code_low, code_high]),
+        u16::from_le_bytes([entry_low, entry_high]),
+        opcode,
+    )
 }
 
 fn jump_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
@@ -647,7 +671,14 @@ fn jump_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
         return Outcome::Fault(opcode);
     };
     cpu.set_instruction(u16::from_le_bytes([entry_low, entry_high]));
-    cpu.set_selector(Segment::Code, u16::from_le_bytes([code_low, code_high]));
+    if !load_segment(
+        cpu,
+        ram,
+        Segment::Code,
+        u16::from_le_bytes([code_low, code_high]),
+    ) {
+        return Outcome::Fault(opcode);
+    }
     Outcome::Continue
 }
 
@@ -675,96 +706,42 @@ fn pop_instruction(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     Outcome::Continue
 }
 
-fn load_byte_absolute(
+fn absolute_move(
     cpu: &mut CpuState,
     ram: &mut GuestRam,
-    override_segment: Option<Segment>,
+    segment: Option<Segment>,
     opcode: u8,
-) -> Outcome {
-    let Some(low) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
-    };
-    let Some(high) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
-    };
-    let which = override_segment.unwrap_or(Segment::Data);
-    let Some(byte) = ram.load(cpu.selector(which), u16::from_le_bytes([low, high])) else {
-        return Outcome::Fault(opcode);
-    };
-    cpu.set_low(Slot::Accumulator, byte);
-    Outcome::Continue
-}
-
-fn load_word_absolute(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-    opcode: u8,
-) -> Outcome {
-    let Some(low) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
-    };
-    let Some(high) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
-    };
-    let which = override_segment.unwrap_or(Segment::Data);
-    let offset = u16::from_le_bytes([low, high]);
-    let Some(first) = ram.load(cpu.selector(which), offset) else {
-        return Outcome::Fault(opcode);
-    };
-    let Some(second) = ram.load(cpu.selector(which), offset.wrapping_add(1)) else {
-        return Outcome::Fault(opcode);
-    };
-    cpu.set_wide(Slot::Accumulator, u16::from_le_bytes([first, second]));
-    Outcome::Continue
-}
-
-fn store_byte_absolute(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-    opcode: u8,
-) -> Outcome {
-    let Some(low) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
-    };
-    let Some(high) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
-    };
-    let which = override_segment.unwrap_or(Segment::Data);
-    if ram.store(
-        cpu.selector(which),
-        u16::from_le_bytes([low, high]),
-        cpu.low(Slot::Accumulator),
-    ) {
-        Outcome::Continue
+    wide: bool,
+) -> Option<()> {
+    let offset = if cpu.address32 {
+        operand32::imm(cpu, ram)?
     } else {
-        Outcome::Fault(opcode)
-    }
-}
-
-fn store_word_absolute(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-    opcode: u8,
-) -> Outcome {
-    let Some(low) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
+        u32::from(u16::from_le_bytes([fetch(cpu, ram)?, fetch(cpu, ram)?]))
     };
-    let Some(high) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
+    let operand = Operand::Memory {
+        segment: segment.unwrap_or(Segment::Data),
+        offset,
     };
-    let which = override_segment.unwrap_or(Segment::Data);
-    let offset = u16::from_le_bytes([low, high]);
-    let bytes = cpu.wide(Slot::Accumulator).to_le_bytes();
-    if ram.store(cpu.selector(which), offset, bytes[0])
-        && ram.store(cpu.selector(which), offset.wrapping_add(1), bytes[1])
-    {
-        Outcome::Continue
-    } else {
-        Outcome::Fault(opcode)
+    let ax = Slot::Accumulator;
+    match opcode {
+        0xa0 => {
+            let byte = read_byte(cpu, ram, &operand)?;
+            cpu.set_low(ax, byte);
+        }
+        0xa2 => write_byte(cpu, ram, &operand, cpu.low(ax)).then_some(())?,
+        0xa1 if wide => {
+            let value = operand32::read(cpu, ram, &operand)?;
+            cpu.set_dword(ax, value);
+        }
+        0xa1 => {
+            let value = read_word(cpu, ram, &operand)?;
+            cpu.set_wide(ax, value);
+        }
+        0xa3 if wide => operand32::write(cpu, ram, &operand, cpu.dword(ax))?,
+        0xa3 => write_word(cpu, ram, &operand, cpu.wide(ax)).then_some(())?,
+        _ => return None,
     }
+    Some(())
 }
 
 fn store_byte_immediate(
@@ -848,7 +825,9 @@ fn shift_byte(
         return Outcome::Fault(opcode);
     }
     if count & 0x1F != 0 {
-        cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
+        if operation >= 4 {
+            cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
+        }
     }
     cpu.set_carry(carry);
     if count & 0x1F == 1 {
@@ -906,11 +885,11 @@ fn bound_check(
         return Outcome::Fault(opcode);
     };
     let value = cpu.wide(Slot::from_index((modrm >> 3) & 7)) as i16;
-    let selector = cpu.selector(segment);
-    let Some(lower) = load_pair(ram, selector, offset) else {
+    let selector = segment;
+    let Some(lower) = load_pair(cpu, ram, selector, offset) else {
         return Outcome::Fault(opcode);
     };
-    let Some(upper) = load_pair(ram, selector, offset.wrapping_add(2)) else {
+    let Some(upper) = load_pair(cpu, ram, selector, offset.wrapping_add(2)) else {
         return Outcome::Fault(opcode);
     };
     if value < lower as i16 || value > upper as i16 {
@@ -1161,7 +1140,9 @@ fn pop_segment(cpu: &mut CpuState, ram: &mut GuestRam, which: Segment, opcode: u
     let Some(value) = pop_word(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
-    cpu.set_selector(which, value);
+    if !load_segment(cpu, ram, which, value) {
+        return Outcome::Fault(opcode);
+    }
     Outcome::Continue
 }
 
@@ -1172,27 +1153,35 @@ fn return_far_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outco
     let Some(high) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
-    if return_far(cpu, ram, opcode) != Outcome::Continue {
-        return Outcome::Fault(opcode);
-    }
-    let extra = u16::from_le_bytes([low, high]);
-    cpu.set_wide(Slot::Stack, cpu.wide(Slot::Stack).wrapping_add(extra));
-    Outcome::Continue
+    return_far(cpu, ram, opcode, u16::from_le_bytes([low, high]))
 }
 
 pub(super) fn far_return(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
-    return_far(cpu, ram, 0xcb) == Outcome::Continue
+    return_far(cpu, ram, 0xcb, 0) == Outcome::Continue
 }
 
-fn return_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+fn return_far(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8, discard: u16) -> Outcome {
     let Some(next) = pop_word(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
     let Some(selector) = pop_word(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
+    cpu.set_wide(Slot::Stack, cpu.wide(Slot::Stack).wrapping_add(discard));
+    #[cfg(feature = "pc386")]
+    if cpu.machine.protected() && (selector & 3) > (cpu.selector(Segment::Code) & 3) {
+        let (Some(sp), Some(ss)) = (pop_word(cpu, ram), pop_word(cpu, ram)) else {
+            return Outcome::Fault(opcode);
+        };
+        if !load_segment(cpu, ram, Segment::Stack, ss) {
+            return Outcome::Fault(opcode);
+        }
+        cpu.set_wide(Slot::Stack, sp.wrapping_add(discard));
+    }
     cpu.set_instruction(next);
-    cpu.set_selector(Segment::Code, selector);
+    if !load_segment(cpu, ram, Segment::Code, selector) {
+        return Outcome::Fault(opcode);
+    }
     Outcome::Continue
 }
 
@@ -1229,7 +1218,9 @@ fn shift_word_once(
     if !write_word(cpu, ram, &operand, result) {
         return Outcome::Fault(opcode);
     }
-    cpu.apply_result_flags(sized_flags(result, 0x8000));
+    if operation >= 4 {
+        cpu.apply_result_flags(sized_flags(result, 0x8000));
+    }
     cpu.set_carry(carried);
     note_shift_overflow(cpu, operation, value, result, 0x8000);
     Outcome::Continue
@@ -1279,7 +1270,9 @@ fn shift_word_immediate(
         return Outcome::Fault(opcode);
     }
     if count & 0x1F != 0 {
-        cpu.apply_result_flags(sized_flags(value, 0x8000));
+        if operation >= 4 {
+            cpu.apply_result_flags(sized_flags(value, 0x8000));
+        }
     }
     cpu.set_carry(carry);
     if count & 0x1F == 1 {
@@ -1314,9 +1307,7 @@ fn adjust_byte(
         return Outcome::Fault(opcode);
     }
     cpu.apply_result_flags(flags);
-    if carry != 0 {
-        cpu.set_carry(true);
-    }
+    cpu.set_carry(carry != 0);
     Outcome::Continue
 }
 
@@ -1348,9 +1339,7 @@ fn adjust_word(
                 return Outcome::Fault(opcode);
             }
             cpu.apply_result_flags(flags);
-            if carry != 0 {
-                cpu.set_carry(true);
-            }
+            cpu.set_carry(carry != 0);
             Outcome::Continue
         }
         2 | 4 => {
@@ -1370,28 +1359,37 @@ fn adjust_word(
             let Operand::Memory { segment, offset } = operand else {
                 return Outcome::Fault(opcode);
             };
-            let which = cpu.selector(segment);
-            let Some(entry_low) = ram.load(which, offset) else {
+            let which = segment;
+            let Some(entry_low) = cpu.load_byte(ram, which, offset) else {
                 return Outcome::Fault(opcode);
             };
-            let Some(entry_high) = ram.load(which, offset.wrapping_add(1)) else {
+            let Some(entry_high) = cpu.load_byte(ram, which, offset.wrapping_add(1)) else {
                 return Outcome::Fault(opcode);
             };
-            let Some(code_low) = ram.load(which, offset.wrapping_add(2)) else {
+            let Some(code_low) = cpu.load_byte(ram, which, offset.wrapping_add(2)) else {
                 return Outcome::Fault(opcode);
             };
-            let Some(code_high) = ram.load(which, offset.wrapping_add(3)) else {
+            let Some(code_high) = cpu.load_byte(ram, which, offset.wrapping_add(3)) else {
                 return Outcome::Fault(opcode);
             };
             if operation == 3 {
-                let next = cpu.instruction();
-                let caller = cpu.selector(Segment::Code);
-                if !push_word(cpu, ram, caller) || !push_word(cpu, ram, next) {
-                    return Outcome::Fault(opcode);
-                }
+                return far_call(
+                    cpu,
+                    ram,
+                    u16::from_le_bytes([code_low, code_high]),
+                    u16::from_le_bytes([entry_low, entry_high]),
+                    opcode,
+                );
             }
             cpu.set_instruction(u16::from_le_bytes([entry_low, entry_high]));
-            cpu.set_selector(Segment::Code, u16::from_le_bytes([code_low, code_high]));
+            if !load_segment(
+                cpu,
+                ram,
+                Segment::Code,
+                u16::from_le_bytes([code_low, code_high]),
+            ) {
+                return Outcome::Fault(opcode);
+            }
             Outcome::Continue
         }
         6 => {
@@ -1406,25 +1404,6 @@ fn adjust_word(
         }
         _ => Outcome::Fault(opcode),
     }
-}
-
-fn store_string_word(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
-    if store_word(cpu, ram) {
-        Outcome::Continue
-    } else {
-        Outcome::Fault(opcode)
-    }
-}
-
-fn store_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
-    let dest = cpu.wide(Slot::Dest);
-    let bytes = cpu.wide(Slot::Accumulator).to_le_bytes();
-    let segment = cpu.selector(Segment::Extra);
-    if !ram.store(segment, dest, bytes[0]) || !ram.store(segment, dest.wrapping_add(1), bytes[1]) {
-        return false;
-    }
-    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
-    true
 }
 
 fn byte_logic(result: u8) -> u16 {
@@ -1503,7 +1482,7 @@ fn load_effective(
         return Outcome::Fault(opcode);
     };
     let value = match operand {
-        Operand::Memory { offset, .. } => offset,
+        Operand::Memory { offset, .. } => offset as u16,
         Operand::Register(_) => cpu.recent_offset(),
     };
     cpu.set_wide(Slot::from_index((modrm >> 3) & 7), value);
@@ -1584,7 +1563,9 @@ fn multiply_byte(
                 return Outcome::Fault(opcode);
             }
             let dividend = cpu.wide(Slot::Accumulator) as i16;
-            let quotient = dividend / i16::from(divisor);
+            let Some(quotient) = dividend.checked_div(i16::from(divisor)) else {
+                return Outcome::Fault(opcode);
+            };
             if quotient < i16::from(i8::MIN) || quotient > i16::from(i8::MAX) {
                 return Outcome::Fault(opcode);
             }
@@ -1673,7 +1654,7 @@ fn enter(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
         while depth < level {
             let next = cpu.wide(Slot::Frame).wrapping_sub(2);
             cpu.set_wide(Slot::Frame, next);
-            let Some(copied) = load_pair(ram, cpu.selector(Segment::Stack), next) else {
+            let Some(copied) = load_pair(cpu, ram, Segment::Stack, next) else {
                 return Outcome::Fault(opcode);
             };
             if !push_word(cpu, ram, copied) {
@@ -1732,7 +1713,9 @@ fn shift_once(
     if !write_byte(cpu, ram, &operand, result) {
         return Outcome::Fault(opcode);
     }
-    cpu.apply_result_flags(sized_flags(u16::from(result), 0x0080));
+    if operation >= 4 {
+        cpu.apply_result_flags(sized_flags(u16::from(result), 0x0080));
+    }
     cpu.set_carry(carried);
     note_shift_overflow(cpu, operation, u16::from(value), u16::from(result), 0x0080);
     Outcome::Continue
@@ -1742,8 +1725,15 @@ fn loop_count(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let Some(byte) = fetch(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
-    let count = cpu.wide(Slot::Count).wrapping_sub(1);
-    cpu.set_wide(Slot::Count, count);
+    let count = if cpu.address32 {
+        let n = cpu.dword(Slot::Count).wrapping_sub(1);
+        cpu.set_dword(Slot::Count, n);
+        n
+    } else {
+        let n = cpu.wide(Slot::Count).wrapping_sub(1);
+        cpu.set_wide(Slot::Count, n);
+        u32::from(n)
+    };
     let zero = cpu.flags() & 0x40 != 0;
     let branch = match opcode {
         0xE0 => count != 0 && !zero,
@@ -1904,24 +1894,26 @@ fn load_far(
     let Operand::Memory { segment, offset } = operand else {
         return Outcome::Fault(opcode);
     };
-    let which = cpu.selector(segment);
-    let Some(low) = ram.load(which, offset) else {
+    let which = segment;
+    let Some(low) = cpu.load_byte(ram, which, offset) else {
         return Outcome::Fault(opcode);
     };
-    let Some(high) = ram.load(which, offset.wrapping_add(1)) else {
+    let Some(high) = cpu.load_byte(ram, which, offset.wrapping_add(1)) else {
         return Outcome::Fault(opcode);
     };
-    let Some(seg_low) = ram.load(which, offset.wrapping_add(2)) else {
+    let Some(seg_low) = cpu.load_byte(ram, which, offset.wrapping_add(2)) else {
         return Outcome::Fault(opcode);
     };
-    let Some(seg_high) = ram.load(which, offset.wrapping_add(3)) else {
+    let Some(seg_high) = cpu.load_byte(ram, which, offset.wrapping_add(3)) else {
         return Outcome::Fault(opcode);
     };
     cpu.set_wide(
         Slot::from_index((modrm >> 3) & 7),
         u16::from_le_bytes([low, high]),
     );
-    cpu.set_selector(target, u16::from_le_bytes([seg_low, seg_high]));
+    if !load_segment(cpu, ram, target, u16::from_le_bytes([seg_low, seg_high])) {
+        return Outcome::Fault(opcode);
+    }
     Outcome::Continue
 }
 
@@ -1963,8 +1955,20 @@ pub(super) fn interrupt_return(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u
     let Some(flags) = pop_word(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
+    #[cfg(feature = "pc386")]
+    if cpu.machine.protected() && (selector & 3) > (cpu.selector(Segment::Code) & 3) {
+        let (Some(sp), Some(ss)) = (pop_word(cpu, ram), pop_word(cpu, ram)) else {
+            return Outcome::Fault(opcode);
+        };
+        if !load_segment(cpu, ram, Segment::Stack, ss) {
+            return Outcome::Fault(opcode);
+        }
+        cpu.set_wide(Slot::Stack, sp);
+    }
     cpu.set_instruction(next);
-    cpu.set_selector(Segment::Code, selector);
+    if !load_segment(cpu, ram, Segment::Code, selector) {
+        return Outcome::Fault(opcode);
+    }
     cpu.set_flags(flags);
     Outcome::Continue
 }
@@ -2029,7 +2033,9 @@ fn shift_by_count(
             return Outcome::Fault(opcode);
         }
         if count != 0 {
-            cpu.apply_result_flags(sized_flags(value, 0x8000));
+            if operation >= 4 {
+                cpu.apply_result_flags(sized_flags(value, 0x8000));
+            }
         }
         (original, value, 0x8000u16)
     } else {
@@ -2075,7 +2081,9 @@ fn shift_by_count(
             return Outcome::Fault(opcode);
         }
         if count != 0 {
-            cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
+            if operation >= 4 {
+                cpu.apply_result_flags(sized_flags(u16::from(value), 0x0080));
+            }
         }
         (original, u16::from(value), 0x0080)
     };
@@ -2158,9 +2166,7 @@ fn note_shift_overflow(cpu: &mut CpuState, operation: u8, original: u16, result:
         5 => original & sign != 0,
         _ => false,
     };
-    if overflow {
-        cpu.set_flags(cpu.flags() | 0x0800);
-    }
+    cpu.set_flags((cpu.flags() & !0x800) | u16::from(overflow) << 11);
 }
 
 fn adjust_ascii_sub(cpu: &mut CpuState) -> Outcome {
@@ -2242,11 +2248,11 @@ fn adjust_multiply(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcom
     Outcome::Continue
 }
 
-fn translate(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
+fn translate(cpu: &mut CpuState, ram: &mut GuestRam, seg: Option<Segment>, opcode: u8) -> Outcome {
     let address = cpu
         .wide(Slot::Base)
         .wrapping_add(u16::from(cpu.low(Slot::Accumulator)));
-    let Some(byte) = ram.load(cpu.selector(Segment::Data), address) else {
+    let Some(byte) = cpu.load_byte(ram, seg.unwrap_or(Segment::Data), address) else {
         return Outcome::Fault(opcode);
     };
     cpu.set_low(Slot::Accumulator, byte);
@@ -2350,7 +2356,9 @@ fn unary_word(
             }
             let dividend = ((u32::from(cpu.wide(Slot::Data)) << 16)
                 | u32::from(cpu.wide(Slot::Accumulator))) as i32;
-            let quotient = dividend / i32::from(divisor);
+            let Some(quotient) = dividend.checked_div(i32::from(divisor)) else {
+                return Outcome::Fault(opcode);
+            };
             if quotient < i32::from(i16::MIN) || quotient > i32::from(i16::MAX) {
                 return Outcome::Fault(opcode);
             }
@@ -2362,272 +2370,136 @@ fn unary_word(
     }
 }
 
-fn source_selector(cpu: &CpuState, override_segment: Option<Segment>) -> u16 {
-    cpu.selector(override_segment.unwrap_or(Segment::Data))
-}
-
-fn copy_string_word(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-) -> bool {
-    let source = cpu.wide(Slot::Source);
-    let dest = cpu.wide(Slot::Dest);
-    let segment = source_selector(cpu, override_segment);
-    let Some(low) = ram.load(segment, source) else {
-        return false;
-    };
-    let Some(high) = ram.load(segment, source.wrapping_add(1)) else {
-        return false;
-    };
-    if !ram.store(cpu.selector(Segment::Extra), dest, low)
-        || !ram.store(cpu.selector(Segment::Extra), dest.wrapping_add(1), high)
-    {
-        return false;
-    }
-    cpu.set_wide(Slot::Source, step_width(cpu, source, 2));
-    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
-    true
-}
-
-fn compare_string(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-) -> bool {
-    let source = cpu.wide(Slot::Source);
-    let dest = cpu.wide(Slot::Dest);
-    let Some(left) = ram.load(source_selector(cpu, override_segment), source) else {
-        return false;
-    };
-    let Some(right) = ram.load(cpu.selector(Segment::Extra), dest) else {
-        return false;
-    };
-    let (_, flags) = alu::sub8(left, right);
-    cpu.apply_result_flags(flags);
-    cpu.set_wide(Slot::Source, step_index(cpu, source));
-    cpu.set_wide(Slot::Dest, step_index(cpu, dest));
-    true
-}
-
-fn compare_string_word(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-) -> bool {
-    let source = cpu.wide(Slot::Source);
-    let dest = cpu.wide(Slot::Dest);
-    let Some(left) = load_pair(ram, source_selector(cpu, override_segment), source) else {
-        return false;
-    };
-    let Some(right) = load_pair(ram, cpu.selector(Segment::Extra), dest) else {
-        return false;
-    };
-    let (_, flags) = alu::sub16(left, right);
-    cpu.apply_result_flags(flags);
-    cpu.set_wide(Slot::Source, step_width(cpu, source, 2));
-    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
-    true
-}
-
-fn load_byte(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
-    let source = cpu.wide(Slot::Source);
-    let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
-        return false;
-    };
-    cpu.set_low(Slot::Accumulator, byte);
-    cpu.set_wide(Slot::Source, step_index(cpu, source));
-    true
-}
-
-fn load_word(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
-    let source = cpu.wide(Slot::Source);
-    let Some(value) = load_pair(ram, source_selector(cpu, override_segment), source) else {
-        return false;
-    };
-    cpu.set_wide(Slot::Accumulator, value);
-    cpu.set_wide(Slot::Source, step_width(cpu, source, 2));
-    true
-}
-
-fn scan_word(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
-    let dest = cpu.wide(Slot::Dest);
-    let Some(value) = load_pair(ram, cpu.selector(Segment::Extra), dest) else {
-        return false;
-    };
-    let (_, flags) = alu::sub16(cpu.wide(Slot::Accumulator), value);
-    cpu.apply_result_flags(flags);
-    cpu.set_wide(Slot::Dest, step_width(cpu, dest, 2));
-    true
-}
-
-fn load_pair(ram: &GuestRam, segment: u16, offset: u16) -> Option<u16> {
-    let low = ram.load(segment, offset)?;
-    let high = ram.load(segment, offset.wrapping_add(1))?;
+fn load_pair(
+    cpu: &CpuState,
+    ram: &GuestRam,
+    segment: Segment,
+    offset: impl Into<u32>,
+) -> Option<u16> {
+    let offset = offset.into();
+    let low = cpu.load_byte(ram, segment, offset)?;
+    let high = cpu.load_byte(ram, segment, offset.wrapping_add(1))?;
     Some(u16::from_le_bytes([low, high]))
 }
 
-fn scan_once(cpu: &mut CpuState, ram: &mut GuestRam) -> bool {
-    let dest = cpu.wide(Slot::Dest);
-    let Some(value) = ram.load(cpu.selector(Segment::Extra), dest) else {
-        return false;
-    };
-    let (_, flags) = alu::sub8(cpu.low(Slot::Accumulator), value);
-    cpu.apply_result_flags(flags);
-    cpu.set_wide(Slot::Dest, step_index(cpu, dest));
-    true
-}
-
-fn load_string_word(
+fn string_instruction(
     cpu: &mut CpuState,
     ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-    opcode: u8,
-) -> Outcome {
-    let source = cpu.wide(Slot::Source);
-    let segment = source_selector(cpu, override_segment);
-    let Some(low) = ram.load(segment, source) else {
-        return Outcome::Fault(opcode);
-    };
-    let Some(high) = ram.load(segment, source.wrapping_add(1)) else {
-        return Outcome::Fault(opcode);
-    };
-    cpu.set_wide(Slot::Accumulator, u16::from_le_bytes([low, high]));
-    cpu.set_wide(Slot::Source, step_width(cpu, source, 2));
-    Outcome::Continue
-}
-
-fn scan_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
-    if scan_once(cpu, ram) {
-        Outcome::Continue
-    } else {
-        Outcome::Fault(opcode)
-    }
-}
-
-fn step_width(cpu: &CpuState, value: u16, width: u16) -> u16 {
-    if cpu.direction_down() {
-        value.wrapping_sub(width)
-    } else {
-        value.wrapping_add(width)
-    }
-}
-
-fn repeat(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-    opcode: u8,
+    seg: Option<Segment>,
+    op: u8,
+    wide: bool,
+    rep: Option<u8>,
     start: u16,
 ) -> Outcome {
-    let Some(mut next) = fetch(cpu, ram) else {
-        return Outcome::Fault(opcode);
+    let width = if op & 1 == 0 {
+        1u32
+    } else if wide {
+        4
+    } else {
+        2
     };
-    let mut source = override_segment;
-    if matches!(next, 0x26 | 0x2E | 0x36 | 0x3E) {
-        source = Some(match next {
-            0x26 => Segment::Extra,
-            0x2E => Segment::Code,
-            0x36 => Segment::Stack,
-            _ => Segment::Data,
-        });
-        next = match fetch(cpu, ram) {
-            Some(byte) => byte,
-            None => return Outcome::Fault(opcode),
-        };
-    }
-    let stop_when_zero = opcode == 0xF2;
-    let compare = matches!(next, 0xA6 | 0xA7 | 0xAE | 0xAF);
-    let mut iterations = 0;
-    while cpu.wide(Slot::Count) != 0 {
-        if iterations == 64 {
+    let index = |c: &CpuState, r| {
+        if c.address32 {
+            c.dword(r)
+        } else {
+            u32::from(c.wide(r))
+        }
+    };
+    let set = |c: &mut CpuState, r, v| {
+        if c.address32 {
+            c.set_dword(r, v)
+        } else {
+            c.set_wide(r, v as u16)
+        }
+    };
+    let mut count = if rep.is_some() {
+        index(cpu, Slot::Count)
+    } else {
+        1
+    };
+    let mut executed = 0;
+    while count != 0 {
+        if executed == 64 {
             cpu.set_instruction(start);
             break;
         }
-        iterations += 1;
-        let ok = match next {
-            0xA4 => copy_string(cpu, ram, source),
-            0xA5 => copy_string_word(cpu, ram, source),
-            0xA6 => compare_string(cpu, ram, source),
-            0xA7 => compare_string_word(cpu, ram, source),
-            0xAC => load_byte(cpu, ram, source),
-            0xAA => {
-                let dest = cpu.wide(Slot::Dest);
-                ram.store(
-                    cpu.selector(Segment::Extra),
-                    dest,
-                    cpu.low(Slot::Accumulator),
-                ) && {
-                    cpu.set_wide(Slot::Dest, step_index(cpu, dest));
-                    true
+        let si = index(cpu, Slot::Source);
+        let di = index(cpu, Slot::Dest);
+        let source = seg.unwrap_or(Segment::Data);
+        let dest = Segment::Extra;
+        let read = |s: Segment, offset: u32| -> Option<u32> {
+            let mut v = 0;
+            for i in 0..width {
+                v |= u32::from(cpu.load_byte(ram, s, offset.wrapping_add(i))?) << (8 * i)
+            }
+            Some(v)
+        };
+        let has_src = matches!(op, 0xa4..=0xa7 | 0xac | 0xad);
+        let mut a = cpu.dword(Slot::Accumulator);
+        if has_src {
+            let Some(v) = read(source, si) else {
+                return Outcome::Fault(op);
+            };
+            a = v;
+        }
+        let cmp = matches!(op, 0xa6 | 0xa7 | 0xae | 0xaf);
+        if cmp {
+            let Some(b) = read(dest, di) else {
+                return Outcome::Fault(op);
+            };
+            match width {
+                1 => {
+                    let (_, flags) = alu::sub8(a as u8, b as u8);
+                    cpu.apply_result_flags(flags);
+                }
+                2 => {
+                    let (_, flags) = alu::sub16(a as u16, b as u16);
+                    cpu.apply_result_flags(flags);
+                }
+                _ => {
+                    operand32::alu(cpu, 7, a, b);
                 }
             }
-            0xAB => store_word(cpu, ram),
-            0xAD => load_word(cpu, ram, source),
-            0xAE => scan_once(cpu, ram),
-            0xAF => scan_word(cpu, ram),
-            _ => return Outcome::Fault(opcode),
-        };
-        if !ok {
-            return Outcome::Fault(opcode);
+        } else if matches!(op, 0xac | 0xad) {
+            match width {
+                1 => cpu.set_low(Slot::Accumulator, a as u8),
+                2 => cpu.set_wide(Slot::Accumulator, a as u16),
+                _ => cpu.set_dword(Slot::Accumulator, a),
+            }
+        } else {
+            for i in 0..width {
+                if !cpu.store_byte(ram, dest, di.wrapping_add(i), (a >> (8 * i)) as u8) {
+                    return Outcome::Fault(op);
+                }
+            }
         }
-        cpu.set_wide(Slot::Count, cpu.wide(Slot::Count).wrapping_sub(1));
-        if compare {
-            let zero = cpu.flags() & 0x40 != 0;
-            if stop_when_zero == zero {
+        let delta = if cpu.direction_down() {
+            width.wrapping_neg()
+        } else {
+            width
+        };
+        if has_src {
+            set(cpu, Slot::Source, si.wrapping_add(delta));
+        }
+        if !matches!(op, 0xac | 0xad) {
+            set(cpu, Slot::Dest, di.wrapping_add(delta));
+        }
+        count -= 1;
+        if let Some(prefix) = rep {
+            set(cpu, Slot::Count, count);
+            if cmp && (cpu.flags() & 0x40 != 0) != (prefix == 0xf3) {
                 break;
             }
         }
+        executed += 1;
     }
-    Outcome::Continue
-}
-
-fn copy_string(cpu: &mut CpuState, ram: &mut GuestRam, override_segment: Option<Segment>) -> bool {
-    let source = cpu.wide(Slot::Source);
-    let dest = cpu.wide(Slot::Dest);
-    let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
-        return false;
-    };
-    if !ram.store(cpu.selector(Segment::Extra), dest, byte) {
-        return false;
-    }
-    cpu.set_wide(Slot::Source, step_index(cpu, source));
-    cpu.set_wide(Slot::Dest, step_index(cpu, dest));
-    true
-}
-
-fn store_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
-    let dest = cpu.wide(Slot::Dest);
-    if !ram.store(
-        cpu.selector(Segment::Extra),
-        dest,
-        cpu.low(Slot::Accumulator),
-    ) {
-        return Outcome::Fault(opcode);
-    }
-    cpu.set_wide(Slot::Dest, step_index(cpu, dest));
-    Outcome::Continue
-}
-
-fn load_string(
-    cpu: &mut CpuState,
-    ram: &mut GuestRam,
-    override_segment: Option<Segment>,
-    opcode: u8,
-) -> Outcome {
-    let source = cpu.wide(Slot::Source);
-    let Some(byte) = ram.load(source_selector(cpu, override_segment), source) else {
-        return Outcome::Fault(opcode);
-    };
-    cpu.set_low(Slot::Accumulator, byte);
-    cpu.set_wide(Slot::Source, step_index(cpu, source));
     Outcome::Continue
 }
 
 fn input_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let dest = cpu.wide(Slot::Dest);
     let sample = if cpu.wide(Slot::Data) == 0 { b'Z' } else { 0 };
-    if !ram.store(cpu.selector(Segment::Extra), dest, sample) {
+    if !cpu.store_byte(ram, Segment::Extra, dest, sample) {
         return Outcome::Fault(opcode);
     }
     cpu.set_wide(Slot::Dest, step_index(cpu, dest));
@@ -2636,7 +2508,7 @@ fn input_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
 
 fn output_string(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u8) -> Outcome {
     let source = cpu.wide(Slot::Source);
-    if ram.load(cpu.selector(Segment::Data), source).is_none() {
+    if cpu.load_byte(ram, Segment::Data, source).is_none() {
         return Outcome::Fault(opcode);
     }
     cpu.set_wide(Slot::Source, step_index(cpu, source));
@@ -2690,6 +2562,42 @@ fn decode(
     if mode == 3 {
         return Some(Operand::Register(rm));
     }
+    if cpu.address32 {
+        let mut base = rm;
+        let mut index = 0;
+        if rm == 4 {
+            let sib = fetch(cpu, ram)?;
+            base = sib & 7;
+            let i = (sib >> 3) & 7;
+            if i != 4 {
+                index = cpu
+                    .dword(Slot::from_index(i))
+                    .wrapping_shl(u32::from(sib >> 6));
+            }
+        }
+        let none = mode == 0 && base == 5;
+        let displacement = if none || mode == 2 {
+            operand32::imm(cpu, ram)?
+        } else if mode == 1 {
+            fetch(cpu, ram)? as i8 as i32 as u32
+        } else {
+            0
+        };
+        let offset = index.wrapping_add(displacement).wrapping_add(if none {
+            0
+        } else {
+            cpu.dword(Slot::from_index(base))
+        });
+        let segment = if !none && matches!(base, 4 | 5) {
+            Segment::Stack
+        } else {
+            Segment::Data
+        };
+        return Some(Operand::Memory {
+            segment: override_segment.unwrap_or(segment),
+            offset,
+        });
+    }
     let (segment, offset) = if mode == 0 && rm == 6 {
         let low = fetch(cpu, ram)?;
         let high = fetch(cpu, ram)?;
@@ -2715,7 +2623,7 @@ fn decode(
     };
     Some(Operand::Memory {
         segment: override_segment.unwrap_or(segment),
-        offset,
+        offset: offset.into(),
     })
 }
 
@@ -2768,8 +2676,8 @@ fn read_word(cpu: &CpuState, ram: &GuestRam, operand: &Operand) -> Option<u16> {
     match *operand {
         Operand::Register(index) => Some(cpu.wide(Slot::from_index(index))),
         Operand::Memory { segment, offset } => {
-            let low = ram.load(cpu.selector(segment), offset)?;
-            let high = ram.load(cpu.selector(segment), offset.wrapping_add(1))?;
+            let low = cpu.load_byte(ram, segment, offset)?;
+            let high = cpu.load_byte(ram, segment, offset.wrapping_add(1))?;
             Some(u16::from_le_bytes([low, high]))
         }
     }
@@ -2781,7 +2689,7 @@ fn read_byte(cpu: &CpuState, ram: &GuestRam, operand: &Operand) -> Option<u8> {
             let (slot, high) = byte_half(index);
             Some(if high { cpu.high(slot) } else { cpu.low(slot) })
         }
-        Operand::Memory { segment, offset } => ram.load(cpu.selector(segment), offset),
+        Operand::Memory { segment, offset } => cpu.load_byte(ram, segment, offset),
     }
 }
 
@@ -2793,8 +2701,8 @@ fn write_word(cpu: &mut CpuState, ram: &mut GuestRam, operand: &Operand, value: 
         }
         Operand::Memory { segment, offset } => {
             let bytes = value.to_le_bytes();
-            ram.store(cpu.selector(segment), offset, bytes[0])
-                && ram.store(cpu.selector(segment), offset.wrapping_add(1), bytes[1])
+            cpu.store_byte(ram, segment, offset, bytes[0])
+                && cpu.store_byte(ram, segment, offset.wrapping_add(1), bytes[1])
         }
     }
 }
@@ -2810,7 +2718,7 @@ fn write_byte(cpu: &mut CpuState, ram: &mut GuestRam, operand: &Operand, value: 
             }
             true
         }
-        Operand::Memory { segment, offset } => ram.store(cpu.selector(segment), offset, value),
+        Operand::Memory { segment, offset } => cpu.store_byte(ram, segment, offset, value),
     }
 }
 
@@ -2819,19 +2727,20 @@ fn byte_half(index: u8) -> (Slot, bool) {
     (Slot::from_index(index & 3), high)
 }
 
-fn push_word(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
+pub(super) fn push_word(cpu: &mut CpuState, ram: &mut GuestRam, value: u16) -> bool {
     let pointer = cpu.wide(Slot::Stack).wrapping_sub(2);
     cpu.set_wide(Slot::Stack, pointer);
-    let segment = cpu.selector(Segment::Stack);
+    let segment = Segment::Stack;
     let bytes = value.to_le_bytes();
-    ram.store(segment, pointer, bytes[0]) && ram.store(segment, pointer.wrapping_add(1), bytes[1])
+    cpu.store_byte(ram, segment, pointer, bytes[0])
+        && cpu.store_byte(ram, segment, pointer.wrapping_add(1), bytes[1])
 }
 
 fn pop_word(cpu: &mut CpuState, ram: &GuestRam) -> Option<u16> {
     let pointer = cpu.wide(Slot::Stack);
-    let segment = cpu.selector(Segment::Stack);
-    let low = ram.load(segment, pointer)?;
-    let high = ram.load(segment, pointer.wrapping_add(1))?;
+    let segment = Segment::Stack;
+    let low = cpu.load_byte(ram, segment, pointer)?;
+    let high = cpu.load_byte(ram, segment, pointer.wrapping_add(1))?;
     cpu.set_wide(Slot::Stack, pointer.wrapping_add(2));
     Some(u16::from_le_bytes([low, high]))
 }
@@ -2864,7 +2773,78 @@ fn condition(flags: u16, kind: u8) -> bool {
 }
 
 fn fetch(cpu: &mut CpuState, ram: &GuestRam) -> Option<u8> {
-    let byte = ram.load(cpu.selector(Segment::Code), cpu.instruction())?;
+    let byte = cpu.load_byte(ram, Segment::Code, cpu.instruction())?;
     cpu.set_instruction(cpu.instruction().wrapping_add(1));
     Some(byte)
+}
+
+fn load_segment(cpu: &mut CpuState, ram: &GuestRam, seg: Segment, selector: u16) -> bool {
+    #[cfg(feature = "pc386")]
+    if !cpu.machine.load(ram, seg, selector) {
+        return false;
+    }
+    #[cfg(not(feature = "pc386"))]
+    let _ = ram;
+    cpu.set_selector(seg, selector);
+    true
+}
+
+fn far_call(cpu: &mut CpuState, ram: &mut GuestRam, sel: u16, ip: u16, opcode: u8) -> Outcome {
+    #[cfg(not(feature = "pc386"))]
+    let target = sel;
+    #[cfg(feature = "pc386")]
+    let (mut target, mut ip) = (sel, ip);
+    let caller = cpu.selector(Segment::Code);
+    let next = cpu.instruction();
+    #[cfg(feature = "pc386")]
+    if cpu.machine.protected() {
+        let Some(d) = cpu.machine.descriptor(ram, sel) else {
+            return Outcome::Fault(opcode);
+        };
+        let cpl = caller & 3;
+        let dpl = u16::from(d.access >> 5 & 3);
+        if d.access & 16 == 0 {
+            if (sel & 3).max(cpl) > dpl {
+                cpu.machine.exception.set(Some((13, Some(sel & !3))));
+                return Outcome::Fault(opcode);
+            }
+            let Some((cs, entry, args)) = cpu.machine.call_gate(ram, sel) else {
+                return Outcome::Fault(opcode);
+            };
+            let Some(code) = cpu.machine.descriptor(ram, cs) else {
+                return Outcome::Fault(opcode);
+            };
+            let level = u16::from((code.access >> 5) & 3);
+            if code.access & 0x98 != 0x98 || level > cpl {
+                cpu.machine.exception.set(Some((13, Some(cs & !3))));
+                return Outcome::Fault(opcode);
+            }
+            let level = if code.access & 4 != 0 { cpl } else { level };
+            if level < cpl && !super::pc386::switch_stack(cpu, ram, level, args) {
+                return Outcome::Fault(opcode);
+            }
+            target = cs & !3 | level;
+            ip = entry;
+        } else {
+            if d.access & 8 == 0
+                || if d.access & 4 != 0 {
+                    dpl > cpl
+                } else {
+                    dpl != cpl || sel & 3 > cpl
+                }
+            {
+                cpu.machine.exception.set(Some((13, Some(sel & !3))));
+                return Outcome::Fault(opcode);
+            }
+            target = sel & !3 | cpl;
+        }
+    }
+    if !push_word(cpu, ram, caller)
+        || !push_word(cpu, ram, next)
+        || !load_segment(cpu, ram, Segment::Code, target)
+    {
+        return Outcome::Fault(opcode);
+    }
+    cpu.set_instruction(ip);
+    Outcome::Continue
 }

@@ -1,134 +1,203 @@
-//! Per-session VGA graphics registers, plane latches and scanout.
-use alloc::sync::Arc;
-use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
-use rsemu::core::Device;
-use rsemu::core::space::{AddressSpace, MemAttrs, MemOps, MemResult, Region};
-use rsemu::core::value::Width;
-use rsemu::dev::pc::video::Video;
-use rsemu::host::display::{Scanout, Surface};
+//! IBM VGA mode 12h. Each aperture byte addresses eight pixels in four planes.
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cell::{Cell, RefCell};
 
+struct Registers {
+    seq: [u8; 8],
+    gc: [u8; 16],
+    attr: [u8; 32],
+    crtc: [u8; 32],
+    seq_index: u8,
+    gc_index: u8,
+    attr_index: u8,
+    crtc_index: u8,
+    attr_data: bool,
+    misc: u8,
+    dac_mask: u8,
+    dac_write: u16,
+    dac_read: u16,
+    dac_state: u8,
+    dac: [[u8; 3]; 256],
+    clock: u32,
+}
 pub(super) struct Graphics {
-    adapter: Arc<Video>,
-    ports: Arc<Registers>,
-    memory: AddressSpace,
-    surface: Surface,
+    regs: RefCell<Registers>,
+    planes: RefCell<Vec<[u8; 4]>>,
+    latch: Cell<[u8; 4]>,
+    pixels: Vec<u8>,
+    dirty: Cell<bool>,
     pub active: bool,
     refresh: u16,
 }
-
-const PORTS: [(u16, &str); 5] = [
-    (0x3c0, "vga"),
-    (0x3b4, "crtc-mono"),
-    (0x3d4, "crtc-colour"),
-    (0x3d8, "mode"),
-    (0x3da, "status"),
-];
-
-#[derive(Debug)]
-struct Registers {
-    adapter: Arc<Video>,
-    bus: AddressSpace,
-    changed: AtomicBool,
-}
-impl MemOps for Registers {
-    fn read(&self, offset: u64, dst: &mut [u8], attrs: MemAttrs) -> MemResult {
-        for (i, b) in dst.iter_mut().enumerate() {
-            let port = 0x3b0 + offset + i as u64;
-            if port == 0x3da && !attrs.debug {
-                self.adapter
-                    .advance_to(self.adapter.ticks().wrapping_add(97));
-            }
-            *b = self.bus.read(port, Width::U8, attrs).unwrap_or(255) as u8;
-        }
-        Ok(())
-    }
-    fn write(&self, offset: u64, src: &[u8], attrs: MemAttrs) -> MemResult {
-        for (i, b) in src.iter().enumerate() {
-            let _ = self
-                .bus
-                .write(0x3b0 + offset + i as u64, Width::U8, (*b).into(), attrs);
-        }
-        self.changed.store(true, Relaxed);
-        Ok(())
-    }
-}
-
 impl Graphics {
     pub fn new() -> Self {
-        let adapter = Arc::new(Video::vga(256 << 10, 0));
-        let io = AddressSpace::new("guest VGA ports", 16);
-        let memory = AddressSpace::new("guest VGA aperture", 32);
-        for (base, name) in PORTS {
-            io.topology()
-                .map(adapter.region(name).unwrap(), base.into())
-                .unwrap();
-        }
-        memory
-            .topology()
-            .map(adapter.region("window").unwrap(), 0xa0000)
-            .unwrap();
-        let ports = Arc::new(Registers {
-            adapter: adapter.clone(),
-            bus: io,
-            changed: AtomicBool::new(true),
-        });
         Self {
-            adapter,
-            ports,
-            memory,
-            surface: Surface::empty(),
+            regs: RefCell::new(Registers {
+                seq: [0; 8],
+                gc: [0; 16],
+                attr: [0; 32],
+                crtc: [0; 32],
+                seq_index: 0,
+                gc_index: 0,
+                attr_index: 0,
+                crtc_index: 0,
+                attr_data: false,
+                misc: 0x67,
+                dac_mask: 255,
+                dac_write: 0,
+                dac_read: 0,
+                dac_state: 0,
+                dac: [[0; 3]; 256],
+                clock: 0,
+            }),
+            planes: RefCell::new(vec![[0; 4]; 65536]),
+            latch: Cell::new([0; 4]),
+            pixels: Vec::new(),
+            dirty: Cell::new(true),
             active: false,
             refresh: 0,
         }
     }
-
-    pub fn attach(&self, memory: &AddressSpace, io: &AddressSpace) {
-        // B800:0000 remains the shared text-page backing used by the BIOS and terminals.
-        let aperture = Region::alias(
-            "VGA planes",
-            self.adapter.region("window").unwrap(),
-            0,
-            65536,
-        )
-        .unwrap();
-        memory
-            .topology()
-            .map_with_priority(aperture, 0xa0000, 1)
-            .unwrap();
-        io.topology()
-            .map_with_priority(Region::io("VGA ports", 0x30, self.ports.clone()), 0x3b0, 1)
-            .unwrap();
+    pub fn write(&self, p: u16, v: u8) {
+        self.port(p, true, v);
     }
-
-    pub fn write(&self, port: u16, byte: u8) {
-        self.ports
-            .write(u64::from(port - 0x3b0), &[byte], MemAttrs::DEFAULT)
-            .unwrap();
-    }
-    pub fn port(&self, port: u16, write: bool, byte: u8) -> Option<u8> {
-        if !matches!(port,0x3b4..=0x3b5|0x3c0..=0x3cf|0x3d4..=0x3d5|0x3d8..=0x3da) {
-            return None;
+    pub fn port(&self, p: u16, write: bool, v: u8) -> Option<u8> {
+        let mut r = self.regs.borrow_mut();
+        if !write {
+            return Some(match p {
+                0x3c0 => r.attr_index,
+                0x3c1 => r.attr[usize::from(r.attr_index & 31)],
+                0x3c2 => 0x10,
+                0x3cc => r.misc,
+                0x3c4 => r.seq_index,
+                0x3c5 => r.seq[usize::from(r.seq_index & 7)],
+                0x3c6 => r.dac_mask,
+                0x3c7 => r.dac_state,
+                0x3c8 => (r.dac_write / 3) as u8,
+                0x3c9 => {
+                    let i = usize::from(r.dac_read);
+                    r.dac_read = (r.dac_read + 1) % 768;
+                    r.dac[i / 3][i % 3]
+                }
+                0x3ce => r.gc_index,
+                0x3cf => r.gc[usize::from(r.gc_index & 15)],
+                0x3d4 | 0x3b4 => r.crtc_index,
+                0x3d5 | 0x3b5 => r.crtc[usize::from(r.crtc_index & 31)],
+                0x3da | 0x3ba => {
+                    r.attr_data = false;
+                    r.clock = r.clock.wrapping_add(9);
+                    if self.active {
+                        let y = r.clock / 100 % 525;
+                        u8::from(y >= 480 || r.clock % 100 >= 80)
+                            | u8::from((490..492).contains(&y)) << 3
+                    } else {
+                        super::memory::text_status(r.clock)
+                    }
+                }
+                _ => return None,
+            });
         }
-        if write {
-            self.write(port, byte);
-            Some(0)
-        } else {
-            let mut out = [0];
-            self.ports
-                .read(u64::from(port - 0x3b0), &mut out, MemAttrs::DEFAULT)
-                .unwrap();
-            Some(out[0])
+        match p {
+            0x3c0 => {
+                if r.attr_data {
+                    let i = usize::from(r.attr_index & 31);
+                    r.attr[i] = v;
+                } else {
+                    r.attr_index = v;
+                }
+                r.attr_data = !r.attr_data;
+            }
+            0x3c2 => r.misc = v,
+            0x3c4 => r.seq_index = v,
+            0x3c5 => {
+                let i = usize::from(r.seq_index & 7);
+                r.seq[i] = v;
+            }
+            0x3c6 => r.dac_mask = v,
+            0x3c7 => {
+                r.dac_read = u16::from(v) * 3;
+                r.dac_state = 3;
+            }
+            0x3c8 => {
+                r.dac_write = u16::from(v) * 3;
+                r.dac_state = 0;
+            }
+            0x3c9 => {
+                let i = usize::from(r.dac_write);
+                r.dac[i / 3][i % 3] = v & 63;
+                r.dac_write = (r.dac_write + 1) % 768;
+            }
+            0x3ce => r.gc_index = v,
+            0x3cf => {
+                let i = usize::from(r.gc_index & 15);
+                r.gc[i] = v;
+            }
+            0x3d4 | 0x3b4 => r.crtc_index = v,
+            0x3d5 | 0x3b5 => {
+                let i = usize::from(r.crtc_index & 31);
+                r.crtc[i] = v;
+            }
+            _ => return None,
         }
+        self.dirty.set(true);
+        Some(0)
     }
     pub fn byte(&self, addr: usize) -> u8 {
-        self.memory
-            .read(addr as u64, Width::U8, MemAttrs::DEFAULT)
-            .unwrap_or(255) as u8
+        let planes = self.planes.borrow()[addr & 0xffff];
+        self.latch.set(planes);
+        let r = self.regs.borrow();
+        if r.gc[5] & 8 == 0 {
+            return planes[usize::from(r.gc[4] & 3)];
+        }
+        let mut matching = 255;
+        for (i, b) in planes.into_iter().enumerate() {
+            if r.gc[7] & (1 << i) != 0 {
+                matching &= if r.gc[2] & (1 << i) != 0 { b } else { !b };
+            }
+        }
+        matching
     }
-    pub fn store(&self, addr: usize, value: u8) {
-        let _ = self
-            .memory
-            .write(addr as u64, Width::U8, value.into(), MemAttrs::DEFAULT);
+    pub fn store(&self, addr: usize, v: u8) {
+        let r = self.regs.borrow();
+        let mode = r.gc[5] & 3;
+        let rotated = v.rotate_right(u32::from(r.gc[3] & 7));
+        let mask = if mode == 3 {
+            rotated & r.gc[8]
+        } else {
+            r.gc[8]
+        };
+        let latch = self.latch.get();
+        let mut planes = self.planes.borrow_mut();
+        let dest = &mut planes[addr & 0xffff];
+        for i in 0..4 {
+            let bit = 1 << i;
+            if r.seq[2] & bit == 0 {
+                continue;
+            }
+            let fill = |enabled: bool| if enabled { 255 } else { 0 };
+            let source = match mode {
+                2 => fill(v & bit != 0),
+                3 => fill(r.gc[0] & bit != 0),
+                _ if r.gc[1] & bit != 0 => fill(r.gc[0] & bit != 0),
+                _ => rotated,
+            };
+            let alu = match (r.gc[3] >> 3) & 3 {
+                1 => source & latch[i],
+                2 => source | latch[i],
+                3 => source ^ latch[i],
+                _ => source,
+            };
+            let value = if mode == 1 {
+                latch[i]
+            } else {
+                (alu & mask) | (latch[i] & !mask)
+            };
+            if dest[i] != value {
+                dest[i] = value;
+                self.dirty.set(true);
+            }
+        }
     }
     pub fn attribute(&self, index: u8, value: u8) {
         let _ = self.port(0x3da, false, 0);
@@ -179,7 +248,7 @@ impl Graphics {
             }
         }
         if clear {
-            self.adapter.vram().fill(0, 256 << 10, 0).unwrap();
+            self.planes.get_mut().fill([0; 4]);
         }
         self.active = true;
         self.refresh = 0;
@@ -188,31 +257,41 @@ impl Graphics {
         if !self.active {
             return;
         }
-        // Coalesce instruction slices; a terminal switch redraws immediately.
-        self.refresh = self.refresh.wrapping_sub(1);
-        if !force && self.refresh != u16::MAX {
+        if !force && self.refresh > 0 {
+            self.refresh -= 1;
             return;
         }
         self.refresh = 128;
-        let changed = self.ports.changed.swap(false, Relaxed);
-        if !force
-            && !changed
-            && !self.surface.is_empty()
-            && self.adapter.vram().dirty_page_count() == 0
-        {
+        if !self.dirty.replace(false) && !force {
             return;
         }
-        self.adapter.vram().clear_dirty();
-        let out = self.adapter.scanout();
-        let info = out.info();
-        if !(1..=1024).contains(&info.width) || !(1..=768).contains(&info.height) {
-            return;
+        let r = self.regs.get_mut();
+        let planes = self.planes.get_mut();
+        let palette: [[_; 4]; 16] = core::array::from_fn(|i| {
+            let entry = r.attr[i & usize::from(r.attr[0x12] & 15)];
+            let high = if r.attr[16] & 128 != 0 {
+                (r.attr[20] & 3) << 4
+            } else {
+                entry & 0x30
+            };
+            let idx = ((entry & 15) | high | ((r.attr[20] & 12) << 4)) & r.dac_mask;
+            let [red, green, blue] = r.dac[usize::from(idx)].map(|x| (x << 2) | (x >> 4));
+            [red, green, blue, 255]
+        });
+        self.pixels.resize(640 * 480 * 4, 0);
+        let start = usize::from(u16::from_be_bytes([r.crtc[12], r.crtc[13]]));
+        let stride = usize::from(r.crtc[19]) * 2;
+        for (y, row) in self.pixels.chunks_exact_mut(640 * 4).enumerate() {
+            for (x, group) in row.chunks_exact_mut(32).enumerate() {
+                let p = planes[(start + y * stride + x) & 65535];
+                for (bit, pixel) in group.chunks_exact_mut(4).enumerate() {
+                    let idx = p.iter().enumerate().fold(0, |idx, (i, b)| {
+                        idx | usize::from((b >> (7 - bit)) & 1) << i
+                    });
+                    pixel.copy_from_slice(&palette[idx]);
+                }
+            }
         }
-        out.capture(&mut self.surface);
-        crate::bios::screen::graphics(
-            self.surface.width() as usize,
-            self.surface.height() as usize,
-            self.surface.pixels(),
-        );
+        crate::bios::screen::graphics(640, 480, &self.pixels);
     }
 }
