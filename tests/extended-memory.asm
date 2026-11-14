@@ -21,6 +21,31 @@ mov ax,4310h
 int 2fh
 mov [xms],bx
 mov [xms+2],es
+; Install a client in the XMS control chain, as WSWAP does in standard mode.
+cmp byte [es:bx],0ebh
+jne fail
+mov al,[es:bx+1]
+cbw
+add ax,bx
+add ax,2
+mov [xms_next],ax
+mov [xms_next+2],es
+push word [es:bx+4]
+push word [es:bx+2]
+push word [es:bx]
+mov byte [es:bx],0eah
+mov word [es:bx+1],xms_filter
+mov [es:bx+3],cs
+xor ah,ah
+call far [xms]
+cmp ax,0300h
+jne fail
+cmp byte [xms_seen],1
+jne fail
+les bx,[xms]
+pop word [es:bx]
+pop word [es:bx+2]
+pop word [es:bx+4]
 mov ah,88h
 call far [xms]
 mov [initial],edx
@@ -399,3 +424,9 @@ db 1
 dw 0,16,1
 db 0
 dw 0,copy,0
+
+xms_filter:
+    inc byte [cs:xms_seen]
+    jmp far [cs:xms_next]
+xms_next dd 0
+xms_seen db 0

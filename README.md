@@ -42,7 +42,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 ```sh
 RAM_DIR=/Volumes/DOSRS-RAM
 C_IMG="$RAM_DIR/dos-c.img"
-qemu-img create -f raw "$C_IMG" 32M
+qemu-img create -f raw "$C_IMG" 64M
 mformat -i "$C_IMG" -v DOSRS_C ::
 mmd -i "$C_IMG" ::WINSETUP
 # 将原版简体中文 Windows 3.2 安装盘的文件放入本地 winsetup 目录后执行

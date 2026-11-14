@@ -15,6 +15,7 @@ mod fcb;
 mod handles;
 mod locks;
 mod runtime;
+mod termination;
 pub(super) mod xms;
 use fcb::{
     fcb_block_read, fcb_block_write, fcb_close, fcb_create, fcb_delete, fcb_find, fcb_open,
@@ -151,6 +152,14 @@ fn handle_event(
             if matches!(v, 0x1c | 0x28 | 0x2a) {
                 return None;
             }
+            // A DOS extender can call the old mouse interrupt vector directly.
+            if v == 0x33 {
+                if matches!(cpu.wide(Slot::Accumulator), 0 | 0x21) {
+                    cpu.set_wide(Slot::Accumulator, 0);
+                    cpu.set_wide(Slot::Base, 0);
+                }
+                return None;
+            }
             if v == 0x2f {
                 multiplex(cpu);
                 return None;
@@ -189,11 +198,12 @@ fn handle_event(
         }
         Outcome::Interrupt(0x21) => match service(cpu, ram, session) {
             Action::Continue => {}
-            Action::Exit(code) => return Some(End::Stopped(code)),
+            Action::Exit(code) => return termination::exit(cpu, ram, session, code),
         },
         Outcome::Interrupt(v @ (0x25 | 0x26)) => drivers::absolute(cpu, ram, session, v == 0x26),
         Outcome::Interrupt(0x03) => {}
-        Outcome::Interrupt(0x20) | Outcome::Halt => return Some(End::Stopped(0)),
+        Outcome::Interrupt(0x20) => return termination::exit(cpu, ram, session, 0),
+        Outcome::Halt => return Some(End::Stopped(0)),
         Outcome::Fault(opcode) => {
             cpu.set_instruction(instruction);
             return Some(End::Fault(opcode));
@@ -365,6 +375,9 @@ fn direct_console(cpu: &mut CpuState) {
 
 fn service(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Action {
     let function = cpu.high(Slot::Accumulator);
+    if !matches!(function, 0x50 | 0x51 | 0x62) && session.current_psp != 0 {
+        termination::save_stack(cpu, ram, session.current_psp);
+    }
     let result = dispatch(cpu, ram, session);
     if function == 0x46 {
         locks::discard_closed(session);
@@ -595,19 +608,12 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             Action::Continue
         }
         0x25 => {
-            let id = usize::from(cpu.low(Slot::Accumulator));
-            session.vector_segment[id] = cpu.selector(Segment::Data);
-            session.vector_offset[id] = cpu.wide(Slot::Data);
-            session.vector_live[id] = true;
-            let at = (id * 4) as u16;
-            for (i, b) in session.vector_offset[id]
-                .to_le_bytes()
-                .into_iter()
-                .chain(session.vector_segment[id].to_le_bytes())
-                .enumerate()
-            {
-                ram.store(0, at + i as u16, b);
-            }
+            termination::vector(
+                session,
+                ram,
+                cpu.low(Slot::Accumulator),
+                (cpu.selector(Segment::Data), cpu.wide(Slot::Data)),
+            );
             cpu.set_carry(false);
             Action::Continue
         }
@@ -660,16 +666,11 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
         }
         0x35 => {
             let id = usize::from(cpu.low(Slot::Accumulator));
-            if session.vector_live[id] {
-                cpu.set_selector(Segment::Extra, session.vector_segment[id]);
-                cpu.set_wide(Slot::Base, session.vector_offset[id]);
-            } else {
-                cpu.set_selector(
-                    Segment::Extra,
-                    read_word(ram, 0, id as u16 * 4 + 2).unwrap(),
-                );
-                cpu.set_wide(Slot::Base, read_word(ram, 0, id as u16 * 4).unwrap());
-            }
+            cpu.set_selector(
+                Segment::Extra,
+                read_word(ram, 0, id as u16 * 4 + 2).unwrap(),
+            );
+            cpu.set_wide(Slot::Base, read_word(ram, 0, id as u16 * 4).unwrap());
             cpu.set_carry(false);
             Action::Continue
         }
@@ -1232,6 +1233,7 @@ fn create_psp(cpu: &mut CpuState, ram: &mut GuestRam, session: &Session) {
         && ram.store(dest, 0x16, parent[0])
         && ram.store(dest, 0x17, parent[1])
     {
+        termination::save_vectors(ram, dest);
         cpu.set_carry(false);
     } else {
         cpu.set_carry(true);
@@ -1737,14 +1739,14 @@ fn launch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         preferred_psp: LAUNCH_SEGMENT,
         com_paragraphs: 0x1000,
         environment: if given == 0 {
-            read_word(ram, session.prefix, 0x2C).unwrap_or(0)
+            read_word(ram, session.current_psp, 0x2C).unwrap_or(0)
         } else {
             given
         },
-        parent: session.prefix,
+        parent: session.current_psp,
         tail: CommandTail::from_exec(ram, block_segment, block_offset),
     };
-    match run_child(dir, program, ram, session) {
+    match run_child(dir, program, ram, session, Some(cpu)) {
         Ok(code) => {
             session.last_code = u16::from(code);
             cpu.set_wide(Slot::Accumulator, 0);
@@ -1778,11 +1780,11 @@ pub(super) fn spawn_at(
         image: &[],
         preferred_psp: SHELL_CHILD,
         com_paragraphs: 0x1000,
-        environment: read_word(ram, session.prefix, 0x2C).unwrap_or(0),
-        parent: session.prefix,
+        environment: read_word(ram, session.current_psp, 0x2C).unwrap_or(0),
+        parent: session.current_psp,
         tail: CommandTail::arguments(args),
     };
-    match run_child(dir, program, ram, session) {
+    match run_child(dir, program, ram, session, None) {
         Err(2) => None,
         result => Some(result.unwrap_or(0xff)),
     }
@@ -1793,6 +1795,7 @@ fn run_child(
     program: Program<'_>,
     ram: &mut GuestRam,
     session: &mut Session,
+    caller: Option<&mut CpuState>,
 ) -> Result<u8, u16> {
     // Limit nested EXEC consistently for the interactive and batch entry points.
     if session.child_depth == 8 {
@@ -1836,6 +1839,12 @@ fn run_child(
         let machine = super::pc386::Machine::new(&cpu, ram);
         cpu.machine = Some(alloc::boxed::Box::new(machine));
     }
+    let target = caller
+        .as_ref()
+        .map(|c| (c.selector(Segment::Code), c.instruction()))
+        .unwrap_or((0, 0));
+    termination::vector(session, ram, 0x22, target);
+    termination::save_vectors(ram, psp);
     set_psp_version(ram, psp, version);
     let depth = session.child_depth as usize;
     session.parents[depth] = Some(Parent {
@@ -1884,7 +1893,7 @@ fn run_child(
         }
         crate::puts("\n");
     }
-    finish_child(session, ram);
+    finish_child(session, ram, caller, matches!(end, End::Stopped(_)));
     match end {
         End::Stopped(code) => Ok(code),
         _ => Err(1),
@@ -1899,11 +1908,22 @@ struct Parent {
     job: handles::Job,
 }
 
-fn finish_child(session: &mut Session, ram: &mut GuestRam) -> Option<CpuState> {
+fn finish_child(
+    session: &mut Session,
+    ram: &mut GuestRam,
+    caller: Option<&mut CpuState>,
+    terminated: bool,
+) -> Option<CpuState> {
     session.child_depth -= 1;
-    let parent = session.parents[session.child_depth as usize]
+    let mut parent = session.parents[session.child_depth as usize]
         .take()
         .expect("paired child exit");
+    if terminated
+        && let Some(target) = termination::continuation(ram, session.prefix)
+        && let Some(cpu) = parent.registers.as_mut().or(caller)
+    {
+        termination::resume(cpu, target);
+    }
     if !session.handles.leave(parent.job) {
         crate::puts("Cannot commit child file.\n");
     }

@@ -158,7 +158,8 @@ mov dx, filename
 mov bx, params
 mov ax, 4b00h
 int 21h
-jc bad_exec
+jmp bad_exec
+child_return:
 mov ah, 4dh
 int 21h
 cmp ax, 37
@@ -272,6 +273,10 @@ int 21h
 .outer:
 cmp al, 7
 jne .bad
+; Override INT 22h in this child PSP; the parent must resume at child_return.
+mov word [0ah],child_return
+mov ax,[16h]
+mov [0ch],ax
 mov ax, 4c25h
 int 21h
 .name: db 'ARCHKID.COM',0

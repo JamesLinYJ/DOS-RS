@@ -146,7 +146,7 @@ impl Machine {
                     event = Outcome::Firmware(v);
                     break;
                 }
-                if pc == super::run::xms::ENTRY {
+                if pc == super::run::xms::CONTROL {
                     event = Outcome::Xms;
                     break;
                 }

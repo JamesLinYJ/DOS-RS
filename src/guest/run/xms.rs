@@ -3,6 +3,7 @@ use super::{CpuState, GuestRam, Segment, Slot};
 use crate::guest::arena::{Arena, MemoryError, XMS_OWNER};
 const BLOCKS: usize = 32;
 pub(in crate::guest) const ENTRY: (u16, u16) = (0xf000, 0x0100);
+pub(in crate::guest) const CONTROL: (u16, u16) = (ENTRY.0, ENTRY.1 + 5);
 #[derive(Clone, Copy)]
 struct Block {
     start: usize,

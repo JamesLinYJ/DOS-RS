@@ -68,7 +68,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
     if let Some(v) = firmware(cpu.selector(Segment::Code), start) {
         return Outcome::Firmware(v);
     }
-    if (cpu.selector(Segment::Code), start) == super::run::xms::ENTRY {
+    if (cpu.selector(Segment::Code), start) == super::run::xms::CONTROL {
         return Outcome::Xms;
     }
     if (cpu.selector(Segment::Code), start) == super::run::ems::ENTRY {

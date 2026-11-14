@@ -158,7 +158,12 @@ impl Task {
                     self.cpu = if self.session.child_depth == 0 {
                         None
                     } else {
-                        finish_child(&mut self.session, ram)
+                        finish_child(
+                            &mut self.session,
+                            ram,
+                            None,
+                            matches!(result, End::Stopped(_)),
+                        )
                     };
                     self.prompt = false;
                 }
@@ -166,6 +171,12 @@ impl Task {
             return;
         }
         if !self.prompt {
+            #[cfg(feature = "pc386")]
+            if ram.graphics.as_ref().is_some_and(|g| g.active) {
+                let mut regs = CpuState::at_com(SHELL_SEGMENT);
+                regs.set_wide(super::Slot::Accumulator, 3);
+                super::serve_bios(&mut regs, ram, 0x10);
+            }
             let mut path = [0; 64];
             let length = disk::current_path(&mut path);
             let attr = pc::prompt_color();

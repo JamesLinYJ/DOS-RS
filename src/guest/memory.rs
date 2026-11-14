@@ -128,12 +128,15 @@ impl GuestRam {
         for pair in self.bytes[0xb8000..0xb8000 + 4000].chunks_exact_mut(2) {
             pair.copy_from_slice(&[32, 7]);
         }
+        // XMS 3.0 publishes a writable five-byte jump slot. Memory managers
+        // can chain a far jump here and call the original control entry.
+        self.bytes[0xf0100..0xf0105].copy_from_slice(&[0xeb, 3, 0x90, 0x90, 0x90]);
         self.bytes[0x67 * 4..0x67 * 4 + 4].copy_from_slice(&[0, 0, 0, 0xf1]);
         self.bytes[0xf1000 + 10..0xf1000 + 18].copy_from_slice(b"EMMXXXX0");
         #[cfg(feature = "pc386")]
         for vector in [
             0x08u8, 0x09, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x1a, 0x1c, 0x20, 0x21,
-            0x25, 0x26, 0x28, 0x2a, 0x2e, 0x2f,
+            0x25, 0x26, 0x28, 0x2a, 0x2e, 0x2f, 0x33,
         ] {
             let slot = usize::from(vector) * 4;
             let offset = 0x200 + u16::from(vector) * 2;
