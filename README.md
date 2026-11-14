@@ -1,89 +1,52 @@
 # DOS-RS
 
-![DOS-RS booting its i686 kernel and running DOS guest programs](docs/assets/boot.svg)
+DOS-RS 在 i686 和 x86_64 上启动自己的 Rust 内核。按 **Alt+F1 ～ Alt+F4** 切换四个 DOS 终端。在一个终端等待键盘时，另一个终端仍可运行编译器，两者能通过 A 盘交换文件。
 
-DOS-RS runs 16-bit DOS programs on two bare-metal Rust kernels. Both targets boot an interactive DOS shell and run COM and MZ executables against a shared writable FAT12 volume. The bundled workload assembles, compiles and links DOS programs, then executes the files it produced.
+![QEMU 中的 x86_64 终端运行 COLOR 1E 和 VER](docs/assets/terminal.png)
 
-[Quick start](#quick-start) · [What runs](#what-runs) · [Contributor guide](AGENTS.md)
+## 在 QEMU 里启动
 
-<details>
-<summary>中文简介</summary>
-
-DOS-RS 用 Rust 实现了部分 MS-DOS 4.0 服务。i686 和 x86_64 两个内核共用 16 位解释器。启动后，预设批处理会运行 MASM、LINK 和 Microsoft C 编译工具，并执行生成的 DOS 程序。下方命令可以构建两个内核、运行 QEMU 验证并保存串口记录。
-
-</details>
-
-## Quick start
-
-From the repository root, use a shell with **rustup**, **Bash**, **QEMU** (`qemu-system-i386` and `qemu-system-x86_64`) and **`timeout`** on the path. Rustup reads the pinned nightly and components from [rust-toolchain.toml](rust-toolchain.toml).
-
-```bash
-cargo build -Zjson-target-spec --target ./i686-unknown-none.json --release
-cargo build --target x86_64-unknown-none --release
-PROOF_DIR=target/proof scripts/qemu-smoke.sh
-```
-
-The last command runs the host tests, boots each kernel and checks its serial output. A passing run prints `GUEST ARCH OK` for each target and returns **0**. The raw QEMU status is **33**, the success value from the debug-exit device. Open `target/proof/i686.txt` or `target/proof/x86_64.txt` to read a boot transcript.
-
-On macOS, start the graphical kernel from the same build:
-
-```bash
-qemu-system-x86_64 -kernel target/x86_64-unknown-none/release/dos4-rs \
-  -display cocoa -vga std -serial stdio -monitor none -nic none -m 64
-```
-
-Press **Alt+F1** through **Alt+F4** to switch virtual terminals (Option on a Mac keyboard). Each terminal loads its own DOS environment, runs `AUTOEXEC.BAT` and accepts commands. Background programs continue running while the foreground terminal takes input. File changes on the embedded A: drive are shared until reboot. Use `--features batch-console` for a bounded batch that exits to QEMU. The smoke script builds the separate `kernel-selftest` profile.
-
-With NASM, mtools and Python installed, `python3 scripts/qemu-terminals.py` boots both targets, drives all four terminals through the emulated PS/2 keyboard and captures the final VGA screens.
-
-## DOS drivers and PC hardware
-
-Place a flat or MZ device image on the guest FAT volume and add its path to `CONFIG.SYS`. Drivers initialize before the shell runs `AUTOEXEC.BAT`. For example, to try FreeDOS SETVER on a copy of the bundled volume:
+需要 Python 3、Rustup、NASM、mtools、QEMU，以及仓库指定的 Rust nightly。UEFI 启动还需要对应架构的 OVMF 固件。macOS 可用 Homebrew 安装 qemu、mtools、nasm 和 coreutils。
 
 ```sh
-mkdir -p target
-cp disks/guest12.img target/with-drivers.img
-mcopy -o -i target/with-drivers.img /path/to/SETVER.SYS ::SETVER.SYS
-printf 'DEVICE=A:\\SETVER.SYS\r\n' > target/CONFIG.SYS
-mcopy -o -i target/with-drivers.img target/CONFIG.SYS ::CONFIG.SYS
-DOS_RS_GUEST_IMAGE="$PWD/target/with-drivers.img" cargo build --release --features batch-console \
-  --target x86_64-unknown-none --target-dir target/console
-qemu-system-x86_64 -kernel target/console/x86_64-unknown-none/release/dos4-rs \
-  -display cocoa -vga std -serial stdio -monitor none -nic none -m 64
+python3 scripts/prepare-cpu.py
+python3 scripts/qemu.py --arch x86_64 --firmware uefi
+python3 scripts/qemu.py --arch i686 --firmware bios
 ```
 
-The loader follows linked device headers, calls strategy and interrupt with DOS request packets, and retains the paragraphs returned by INIT. `DEVICEHIGH` uses conventional memory. Registered character devices support named handle reads, writes, and basic IOCTL. Block units start at absolute drive 2 and support 16-bit-sector INT 25h/26h requests. The FAT file API currently mounts the embedded boot volume. Drivers needing XMS/EMS, DMA, hardware IRQs or other PC controllers require more kernel support.
+两条启动命令都打开 QEMU 图形窗口，默认使用四颗虚拟 CPU。两个架构均支持两种固件。Mac 键盘用 Option 代替 Alt。如需换用自己的 FAT 启动卷，将含有 DOS-RS 驻留 COMMAND.COM 的镜像通过 `--image /path/to/dos.img` 传入。每个终端先加载 CONFIG.SYS 中的设备，再执行 AUTOEXEC.BAT。
 
-| Built-in device | Available through |
+## 在提示符下试试
+
+| 命令 | 可以看到什么 |
 | --- | --- |
-| VGA 80×25 text output | Kernel console and INT 10h teletype |
-| PS/2 keyboard | INT 16h read and peek, DOS console input |
-| 16550-compatible COM1 and COM2 | Device handles, INT 14h and UART ports |
-| LPT1 parallel printer | `PRN` and `LPT1`, INT 17h and parallel ports |
-| Primary IDE master | Read-only 512-byte ATA PIO through INT 13h extensions 41h and 42h on drive 80h |
+| `COLOR 1E`、`VER` | 黄字蓝底的版本信息。本终端保留配色，`COLOR` 恢复默认。 |
+| `HW` | 每颗在线 CPU 的 APIC ID、客体时间片计数和 PCI 设备。 |
+| `USB`、`USB READ 7` | 连接速度、设备 ID 和 USB 大容量存储第 7 个扇区的前 32 字节。 |
+| `NET`、`NET ARP 10.0.2.15 10.0.2.2` | 在挂有 e1000 的 QEMU 用户网络中，读出网卡地址并实际收发 ARP 帧。 |
+| `WIFI`、`BT` | Intel 无线适配器探测信息、标准 USB 蓝牙控制器状态或缺少设备的原因。 |
 
-With Python 3, NASM and mtools installed, run the dedicated device suite. It builds temporary guest media, boots both kernels, rejects failed INITs, reads and writes a resident character and block device, checks a sector from a separate IDE disk, injects a PS/2 key and captures independent serial and printer output.
+## 兼容范围
+
+**启动和并发**　传统 BIOS 从 MBR 启动，UEFI 从系统分区加载。二者进入同一套内核服务。启动 CPU 管理设备，其他 CPU 用独立栈并行执行不同会话的解释器时间片。单 CPU 自动回退到轮转。项目自有引导和内核源码使用 Rust。底层的 MBR 入口、实模式转换、AP 启动和中断门使用固定版本的外部架构代码。[外部组件说明](NOTICE)
+
+**DOS 程序和内存**　支持实模式 COM 和 MZ、嵌套 EXEC、MCB、每进程 JFT、共享文件偏移和驻留 DOS 驱动。每个终端有 640 KiB 常规内存和 8 MiB 扩展内存。高端内存区预留 64 KiB，XMS 和 EMS 共同分配剩下的 8,128 KiB。XMS 支持句柄、搬移、锁定、调整大小、HMA、A20 和 UMB。EMS 通过 INT 67h 提供 D000 段的四个 16 KiB 窗口、保存和恢复映射、跨页搬移、交换和映射调用。FreeDOS MEM 1.12 的 /XMS 与 /EMS 已在双架构、双固件运行。[FreeDOS MEM](https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/html/en/base/mem/20250410.0/index.html)
+
+**显示和设备**　UEFI 用 GOP 帧缓冲绘制彩色文本，BIOS 用 VGA 文本模式。两条路径都支持 DOS 字符属性和终端切换。已验证 PS/2、串口、打印、IDE 扇区读取、FreeDOS SETVER.SYS、DOS 字符及块设备、xHCI 上的 USB 2.0 高速存储，以及 Intel 82540EM 的以太网帧收发。Intel 8265、AX200 和 AX210 目前实现 PCI 探测，固件加载和联网仍待完成。蓝牙已有 USB HCI 控制命令和 LE 扫描路径，待实物验证。
+
+**Windows 与磁盘**　Windows 3.2 简体中文版原版 SETUP.EXE 已在 DOS-RS 中通过扩展内存检查，显示安装目录选择。当前默认 A 盘写入保留到重启，安装程序要求至少 13,500,000 字节的目标盘空间。完整安装、冷启动进入中文程序管理器、NTFS 系统卷和离线管理写入仍待验收。
+
+## 运行回归
 
 ```sh
-python3 scripts/qemu-devices.py
-# Also exercise the real driver and inspect its installed version-table pointer.
+PROOF_DIR=target/proof-uefi scripts/qemu-smoke.sh
+DOS_RS_TEST_FIRMWARE=bios PROOF_DIR=target/proof-bios scripts/qemu-smoke.sh
+python3 scripts/qemu-terminals.py
+python3 scripts/qemu-terminals.py --firmware bios --output target/terminal-bios
 python3 scripts/qemu-devices.py --setver /path/to/SETVER.SYS
+python3 scripts/qemu-hardware.py
+python3 scripts/qemu-memory.py --mem /path/to/MEM.EXE
+python3 scripts/qemu-native-gate.py
 ```
 
-## What runs
-
-| Workload | What to look for in the serial output |
-| --- | --- |
-| COM and MZ loading | `GUEST HELLO COM` and `HELLO EXE` come from two different executable formats. |
-| DOS ownership | Per-process PSP handle tables share open descriptions on DUP and EXEC. Programs can walk the MCB chain from the list of lists. |
-| Child processes | `FILE Z EXEC 7` shows a parent reading a file, launching a child and receiving its exit code. |
-| DOS development tools | `MASM OK` comes from the assembled and linked program. `L1 OK` comes from the large-model C program. |
-| Runtime regression | `GUEST ARCH OK` covers the version registers, a self-modifying instruction and nested EXEC. |
-
-The program notes list the commands, input files and expected results for individual tools. [Guest program notes](docs/guest-programs.md)
-
-## Source and provenance
-
-The translation checklist maps the Rust modules to files in Microsoft’s published MS-DOS 4.0 source tree. [Translation checklist](checklist/v4.0.tsv)
-
-DOS-RS is MIT-licensed. The upstream revision and Microsoft copyright attribution are recorded in the repository. [License](LICENSE) · [Notice](NOTICE)
+省略外部二进制参数即可运行仓库自带的测试。内核自测与交互启动独立。MASM、LINK、Microsoft C 等工作负载的输入和输出见[程序记录](docs/guest-programs.md)。修改模块和新增驱动的入口见[开发指南](AGENTS.md)。

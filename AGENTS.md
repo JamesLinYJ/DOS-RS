@@ -1,43 +1,26 @@
 # Working on DOS-RS
 
-Start with the execution path you are changing. Native INT 21h calls enter through the CPU gate. Interpreted programs reach DOS through the guest run loop. Both kernel targets use the same guest implementation.
+Start from the boundary that owns the state you need to change. Both architectures use the same guest, scheduler, filesystem and device services.
 
-## Where to make changes
+| Owner | Code | Contract |
+| --- | --- | --- |
+| Boot | [UEFI entry](src/boot.rs), [BIOS loader](boot/bios/src/bin/loader.rs), [legacy handoff](src/boot/legacy.rs) | Validate memory ranges, stage the kernel, finish firmware calls and publish topology. The PE used by UEFI also exports the BIOS entry. |
+| CPU and bus | [Architecture](src/arch.rs), [platform](src/platform.rs), [PCI](src/platform/pci.rs) | Own descriptors, AP initialization, hardware ports, PCI resource claiming, MMIO and DMA lifetimes. Keep physical access here or in the display backend. |
+| Native drivers | [PCI registry](src/drivers.rs), [USB enumeration](src/drivers/usb.rs) | Register a PCI match and attach function. Implement USB class protocols against UsbIo. Keep xHCI descriptors, endpoint recovery and rings in the controller implementation. |
+| Execution | [Scheduler](src/guest/run/runtime.rs), [interpreter](src/guest/step.rs) | Only the assigned thread executes its slice. Return to the boot CPU for events, system calls and I/O. A waiting or faulted guest leaves other terminals runnable. |
+| Guest memory | [Address space](src/guest/memory.rs), [XMS](src/guest/run/xms.rs), [EMS](src/guest/run/ems.rs) | Keep A20, handle state and page frames per session. XMS and EMS charge a single allocator. Validate maps before publishing them. Every access through an EMS alias must see the same bytes. |
+| Processes | [Loader](src/guest/process.rs), [DOS services](src/guest/run.rs), [handles](src/guest/run/handles.rs) | Publish MCBs and each PSP's JFT. DUP and inheritance share the open description and seek position. Release the child's references on return. |
+| Storage | [Boot volume](src/guest/disk.rs), [DOS drivers](src/guest/run/drivers.rs) | Open, EXEC and the guest BIOS see consistent media. Preserve the previous file on allocation failure. Keep sector devices separate from DOS path handling. |
+| Display | [Terminals](src/bios/pc.rs), [renderer](src/bios/screen.rs), [guest BIOS](src/guest/run/bios.rs) | A terminal owns its cells, attribute, cursor and key queue. Render the foreground terminal. Preserve DOS-supplied character attributes. |
 
-| If the change concerns… | Start here |
-| --- | --- |
-| CPU entry, interrupt frames, PIC or IDT | [Architecture layer](src/arch.rs) and [native INT 21h dispatch](src/int21.rs) |
-| Instruction decoding, flags or segment arithmetic | [Instruction step](src/guest/step.rs), [CPU state](src/guest/state.rs) and [guest RAM](src/guest/memory.rs) |
-| PSP layout, COM/MZ loading, memory ownership or EXEC | [Process loader](src/guest/process.rs), [MZ parser](src/guest/mz.rs), [paragraph arena](src/guest/arena.rs) and [run loop](src/guest/run.rs) |
-| File operations, guest BIOS sector reads or shell commands | [Mounted FAT volume](src/guest/disk.rs) and [guest command executor](src/guest/command.rs) |
-| An upstream routine or a boot demonstration | [BIOS](src/bios.rs), [DOS](src/dos.rs), [commands](src/cmd.rs) and [boot workloads](src/smoke.rs) |
+## Checking a change
 
-## Contracts that cross modules
+Run `python3 scripts/prepare-cpu.py` before the first build. It verifies the upstream sources against the pinned manifests. The project-owned boot, kernel, scheduler and drivers are Rust. Keep compiler-generated instructions and pinned architecture-library sources distinct from project-owned files. Guest test programs can use NASM.
 
-- **Registers.** Native handlers write DOS results into the low register words. For AH=30h, both adapters use the version words in `src/dos/getset.rs` and preserve incoming carry. Exercise CF clear and set when changing this path.
-- **Memory.** Instruction fetch and data access share guest RAM, including segment aliases. The arena tracks paragraph ownership. Root programs, shell launches and EXEC use the same loader. A failed load must leave parent memory and available blocks intact.
-- **Processes.** Publish the per-process JFT in the PSP and the arena as an MCB chain. DUP and EXEC share an open description and seek position. A process closing an inherited handle releases only its reference.
-- **Disk.** Guest file services, executable lookup and BIOS sector reads see the mounted volume. A file created and closed by a DOS program must be visible to its next EXEC. Failed replacement on a full volume must preserve the old file.
+- Use [qemu.py](scripts/qemu.py) to boot the interactive kernel. Test BIOS and UEFI with each supported architecture. Use [qemu-native-gate.py](scripts/qemu-native-gate.py) to test the actual native INT 21h gate with both carry inputs.
+- Use [qemu-smoke.sh](scripts/qemu-smoke.sh) for host layout checks and DOS program regressions. Each emulator must exit with status 33 and print `GUEST ARCH OK`. Record output with `PROOF_DIR`.
+- Use [qemu-terminals.py](scripts/qemu-terminals.py) for background execution, multiple real CPU workers, keyboard blocking, fault isolation, private EMS frames, shared files and color screenshots. Set `--firmware bios` for the legacy path.
+- Use [qemu-memory.py](scripts/qemu-memory.py) for XMS/EMS operations and add `--mem /path/to/MEM.EXE` for the FreeDOS client. Use [qemu-devices.py](scripts/qemu-devices.py) for DOS drivers and PC peripherals. Use [qemu-hardware.py](scripts/qemu-hardware.py) for high-speed USB sector reads and Ethernet RX/TX.
+- Windows 3.2 acceptance requires an installation on a writable DOS-RS volume, a cold boot and a working Chinese Program Manager. Capture the actual screen. Keep original Microsoft installation media and personal disk images outside the repository.
 
-## Run the checks
-
-For a quick iteration on the allocator, loader or FAT, run the host tests directly from the repository root.
-
-```bash
-mkdir -p target
-rustc --edition=2024 --test tests/layout.rs -o target/layout-tests
-target/layout-tests
-```
-
-For a runtime change, build both release kernels and run the [Quick start](README.md#quick-start). The smoke script also runs the host tests. After the builds, `scripts/qemu-smoke.sh doctor` checks the toolchain, both emulators, `timeout` and the kernel paths. Use the named failure and the serial output to find the first workload that diverged. Successful runs can save transcripts under `target/proof/` with `PROOF_DIR`.
-
-The default kernel boots the virtual-terminal scheduler. Keep guest state per session, and return to the scheduler for terminal input or nested EXEC. Run `python3 scripts/qemu-terminals.py` for scheduler or input changes.
-
-For device or port changes, also run `python3 scripts/qemu-devices.py`. The guest driver loader and interpreter forbid unsafe Rust. Keep physical I/O in the architecture and BIOS modules.
-
-## Fixtures and translation records
-
-- [architecture.asm](tests/architecture.asm) is the source for the COM embedded by the regression runner. After editing it, run `nasm -f bin tests/architecture.asm -o tests/architecture.com`, rebuild the kernels and run the smoke suite.
-- [msload.img](disks/msload.img) exercises the native boot routines. [guest12.img](disks/guest12.img) seeds the guest FAT12 volume. Both are build inputs.
-- For a translation, update the affected upstream row in the [checklist](checklist/v4.0.tsv). The [generator](scripts/gen-checklist.py) initializes rows as untranslated. Merge path changes into the reviewed inventory to preserve existing classifications.
-- Record a new guest workload with its input and observable result in the [program notes](docs/guest-programs.md). Add its matching check to the [smoke harness](scripts/qemu-smoke.sh).
+The existing [translation inventory](checklist/v4.0.tsv) records upstream provenance. New DOS workloads belong in the [program notes](docs/guest-programs.md) with their inputs and observable results.
