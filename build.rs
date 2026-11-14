@@ -19,14 +19,45 @@ fn main() {
     )
     .unwrap();
     println!("cargo:rerun-if-env-changed=DOS_RS_GUEST_IMAGE");
-    let image = std::env::var_os("DOS_RS_GUEST_IMAGE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::Path::new(&dir).join("disks/guest12.img"));
+    let root = std::path::Path::new(&dir);
+    let seed = root.join("disks/guest12.img");
+    let image = match std::env::var_os("DOS_RS_GUEST_IMAGE") {
+        Some(image) => std::path::PathBuf::from(image),
+        None if std::env::var_os("CARGO_FEATURE_KERNEL_SELFTEST").is_some() => {
+            let fixture = root.join("tests/fixtures/AUTOEXEC.BAT");
+            println!("cargo:rerun-if-changed={}", seed.display());
+            println!("cargo:rerun-if-changed={}", fixture.display());
+            let image = out.join("selftest.img");
+            std::fs::copy(seed, &image).unwrap();
+            let batch = out.join("AUTOEXEC.BAT");
+            let lines = std::fs::read_to_string(fixture).unwrap();
+            std::fs::write(
+                &batch,
+                lines
+                    .lines()
+                    .map(|s| format!("{s}\r\n"))
+                    .collect::<String>(),
+            )
+            .unwrap();
+            let status = std::process::Command::new("mcopy")
+                .args(["-o", "-i"])
+                .arg(&image)
+                .arg(batch)
+                .arg("::AUTOEXEC.BAT")
+                .status()
+                .expect("install mtools for the self-test image");
+            assert!(status.success(), "could not install the self-test batch");
+            image
+        }
+        None => seed,
+    };
     let image = image
         .canonicalize()
         .expect("cannot open DOS_RS_GUEST_IMAGE");
     println!("cargo:rustc-env=DOS_RS_GUEST_IMAGE={}", image.display());
-    println!("cargo:rerun-if-changed={}", image.display());
+    if !image.starts_with(&out) {
+        println!("cargo:rerun-if-changed={}", image.display());
+    }
 }
 
 fn build_cpu_library(root: &std::path::Path) {

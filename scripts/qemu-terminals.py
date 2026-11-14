@@ -31,9 +31,6 @@ def prepare(out):
             check=True,
         )
         subprocess.run(["mcopy", "-o", "-i", image, program, "::"], check=True)
-    batch = out / "AUTOEXEC.BAT"
-    batch.write_bytes(b"ECHO Ready\r\n")
-    subprocess.run(["mcopy", "-o", "-i", image, batch, "::"], check=True)
     return image
 
 
@@ -83,6 +80,7 @@ def check(out, image, arch, display, cpus, firmware):
 
     try:
         wait(f"CPUs online: {cpus} / {cpus}")
+        wait("Type MEM for memory or HW for hardware.")
         wait("A:\\> ")
         enter("spin.com")
         wait("BACKGROUND RUNNING")

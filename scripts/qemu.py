@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a removable UEFI boot disk and start the DOS-RS kernel on QEMU."""
+"""Build and boot DOS-RS in QEMU using BIOS or UEFI."""
 
 import argparse
 import os
