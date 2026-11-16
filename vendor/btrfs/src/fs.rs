@@ -1,0 +1,3054 @@
+//! Mounted filesystem handle.
+//!
+//! Ties the superblock, chunk map, B-tree reader and item parsers into
+//! the operations a consumer wants: open a device, resolve a path, list
+//! a directory, read a file.
+//!
+//! # Getting to the data
+//!
+//! Btrfs does not name the fs tree in its superblock, so mounting is a
+//! four-step bootstrap and every step must succeed before the next is
+//! even addressable:
+//!
+//! 1. Parse the superblock at 64 KiB.
+//! 2. Build a chunk map from the `sys_chunk_array` embedded in it —
+//!    enough to reach the chunk tree and nothing else.
+//! 3. Walk the chunk tree through that partial map, folding every chunk
+//!    item in to complete it.
+//! 4. Read the root tree, find the `ROOT_ITEM` for the fs tree, and take
+//!    the tree's root address from it.
+//!
+//! # What is deliberately refused
+//!
+//! Returning plausible-but-wrong file contents is the one failure a
+//! caller cannot detect, so these are errors rather than best efforts:
+//!
+//! Compressed extents are NOT in that list. All three btrfs codecs —
+//! zlib, LZO and zstd — are decoded, in [`crate::compression`]. This
+//! module used to say decompression was unimplemented, which was true
+//! when it was written and has not been for some time.
+//!
+//! - **Encoded extents** — encrypted or otherwise transformed.
+//! - **An unsupported dirty log.** Read-write recovery currently accepts
+//!   only metadata for existing empty regular files in tree 5.
+//!
+//! Holes read as zeros, which is what they are.
+
+use alloc::{vec::Vec, string::String, string::ToString, boxed::Box};
+use crate::btree::{Tree, TreeGeometry};
+use crate::chunk::{ChunkMap, DiskKey};
+use crate::compression::{self, Compression};
+use crate::dir::{self, DirEntry, DIR_INDEX_KEY, XATTR_ITEM_KEY};
+use crate::error::{Error, Result};
+use crate::inode::{Inode, FIRST_FREE_OBJECTID, INODE_ITEM_KEY};
+use crate::superblock::{le64, Superblock};
+use crate::xattr::{self, XattrEntry};
+use crate::device::{BlockDevice, BlockRead};
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+
+/// `BTRFS_FS_TREE_OBJECTID` — the subvolume holding the default
+/// filesystem namespace. The one copy is `chunk::objectid`.
+pub use crate::chunk::objectid::FS_TREE as FS_TREE_OBJECTID;
+
+/// One item of the root tree: `(objectid, key_type, offset, data)`.
+///
+/// Named because the tuple is what the root tree actually holds — a key
+/// in three parts and an opaque body whose meaning depends on the type —
+/// and a struct here would invent a shape the format does not have.
+pub type RootTreeItem = (u64, u8, u64, Vec<u8>);
+
+/// `BTRFS_ROOT_ITEM_KEY`.
+pub const ROOT_ITEM_KEY: u8 = 132;
+
+/// `BTRFS_EXTENT_DATA_KEY` — a file's data, inline or by reference.
+pub const EXTENT_DATA_KEY: u8 = 108;
+
+/// Byte offsets within `struct btrfs_root_item`.
+///
+/// The item opens with an embedded `btrfs_inode_item` of 160 bytes,
+/// followed by `generation` and `root_dirid` before the root address.
+///
+/// THE one copy. There were three — here, in `subvol`, and in
+/// `transaction` — and only one of them carried the note below about
+/// offset 160, which is the field a writer gets wrong.
+pub mod root_item {
+    /// `u64`. The transaction this tree was last written in.
+    ///
+    /// AT 160, after the embedded `btrfs_inode_item`. Offset 16 is
+    /// inside that inode and holds something else entirely — a
+    /// `ROOT_ITEM` whose generation was written there leaves the real
+    /// field stale, and the kernel refuses the tree it names with
+    /// "parent transid verify failed". Which is exactly what `btrfs
+    /// check` said before this was measured.
+    pub const GENERATION: usize = 160;
+    /// `u64`. The inode number of the tree's top directory, 256 in every
+    /// tree the kernel makes.
+    pub const ROOT_DIRID: usize = 168;
+    /// `u64`. The tree's root block.
+    ///
+    /// Measured against a real filesystem, not counted from the struct:
+    /// the `ROOT_ITEM` for the extent tree holds the address the
+    /// superblock's own walk reaches. A wrong value here yields an
+    /// address whose tree block fails its own identity check rather
+    /// than producing plausible garbage.
+    pub const BYTENR: usize = 176;
+    /// `u64`. The generation this subvolume was last snapshotted at, or
+    /// zero if it never was.
+    pub const LAST_SNAPSHOT: usize = 200;
+    /// `u64`. Bit 0 is `BTRFS_ROOT_SUBVOL_RDONLY`.
+    pub const FLAGS: usize = 208;
+    /// The height of the tree this item names.
+    pub const LEVEL: usize = 238;
+    /// `u64`. A second copy of [`GENERATION`], right after `level`.
+    ///
+    /// The kernel compares the two when it reads a root, and when they
+    /// differ it takes the item for one written by a kernel that predates
+    /// the extended fields and RESETS them — the subvolume's UUIDs and
+    /// times — logging "mismatching generation and generation_v2". Every
+    /// writer of [`GENERATION`] writes this too, as `btrfs_update_root`
+    /// does. Found by `tests/crash_consistency.rs` (#195), which is the
+    /// first test here to read the kernel's log after mounting a commit of
+    /// this crate.
+    pub const GENERATION_V2: usize = 239;
+    /// The smallest item any of these fields can be read out of.
+    pub const MIN_SIZE: usize = FLAGS + 8;
+}
+
+/// The root block address the root tree records for `objectid`.
+///
+/// This existed three times — `block_group::tree_root`,
+/// `write::extent_tree_root`, and inline in `fs::open_pool` for the FS
+/// tree — and **the three did not agree**, in two ways that no test
+/// distinguishes because a real `ROOT_ITEM` is 439 bytes and none of
+/// the disagreements can trigger on one:
+///
+/// * two required `data.len() > root_item::LEVEL` (238) and one
+///   required `data.len() > root_item::BYTENR + 8` (184), so a
+///   truncated item of 185..=238 bytes was accepted by one and rejected
+///   by the others;
+/// * two stopped at the first matching `ROOT_ITEM` and one kept
+///   scanning and took the **last**, so a root tree holding two items
+///   for the same objectid would have been read differently depending
+///   on which caller asked.
+///
+/// This settles both. The bound is `BYTENR + 8` — the bytes actually
+/// read — because a bound of `LEVEL` refuses items this function could
+/// answer from. And it takes the **first** match and stops, which is
+/// what a tree with one `ROOT_ITEM` per objectid means; if there are
+/// two, the tree is already malformed and reading further does not make
+/// the answer better.
+///
+/// `tree` walks the root tree, so callers differ only in which read
+/// closure they built it from — which is the only thing that ever
+/// genuinely differed between the three copies.
+///
+/// # `Ok(None)` means absent, not "an error occurred and was discarded"
+///
+/// A tree with no `ROOT_ITEM` for `objectid` and a walk that failed
+/// partway through it are different facts, and this signature is what
+/// keeps a caller from being able to conflate them. `Ok(None)` is only
+/// reached by a walk that completed and found nothing; a read failure,
+/// a checksum mismatch or a corrupt block encountered while walking
+/// comes back through `for_each`'s `?` as `Err`, never as `None`. A
+/// caller for whom absence is not legitimate should not call `.ok()` on
+/// this — see [`required_root_item_target`], which turns `Ok(None)`
+/// into the same named error this function used to return directly, and
+/// exists so that turning "absent" into an error and turning "any
+/// failure" into an error are not the same line of code.
+///
+/// # Errors
+///
+/// Propagates a genuine failure walking the root tree. Never returns an
+/// error to report that `objectid` is simply not present — see above.
+/// The sector-aligned window that covers `[logical, logical+len)`,
+/// as `(first, span)`.
+///
+/// Pulled out of [`Filesystem::read_data_verified`] so the arithmetic
+/// can be tested directly rather than only through a fully mounted
+/// filesystem, which is what let this go unwitnessed the first time.
+///
+/// `None` on any overflow, which the caller turns into
+/// [`Error::UnmappedLogical`]. `logical` is an extent address read off
+/// disk, so a corrupted or hostile image can put any of these within
+/// reach:
+///
+/// - `logical + len`, guarded by `checked_add`;
+/// - the round-up to a sector boundary, `div_ceil(sector) * sector` --
+///   `div_ceil` cannot overflow, division only shrinks, but the
+///   multiplication that rounds back up can, for an `end` within one
+///   sector of `u64::MAX`. This is the guard that matters: `checked_mul`
+///   catches every case, and dropping it is not covered by the
+///   subtraction below despite first appearances.
+/// - `last - first`, guarded by `checked_sub` -- and, given the
+///   multiplication above already succeeded (so `last` is the true,
+///   un-wrapped ceiling), THIS CANNOT ACTUALLY UNDERFLOW: ceiling and
+///   floor give `first <= logical <= end <= last` unconditionally, so
+///   `last >= first` always holds once `checked_mul` returned `Some`.
+///   It stays as a second line of defence in case that invariant is
+///   ever disturbed by a future edit to the lines above it, not because
+///   it is load-bearing today.
+///
+/// Provable, and worth being precise about because the obvious intuition
+/// is the opposite one and it is wrong: `checked_sub` does NOT generally
+/// stand in for `checked_mul`. Picking `logical` near `u64::MAX` makes
+/// `first` huge, and a wrapped `last` (small, having overflowed past
+/// zero) then IS caught as an apparent underflow -- which looks like the
+/// subtraction is doing the real work. But `logical = 0` with an
+/// enormous `len` reaches the identical multiplication overflow while
+/// `first` stays `0`, and a wrapped `last` of `0` gives
+/// `checked_sub(0, 0) = Some(0)`: a small, entirely plausible span,
+/// silently wrong rather than refused. Both shapes are regression-tested
+/// below.
+///
+/// A wrapped `span` that got past both guards would reach `vec![0u8;
+/// span as usize]` as something near `u64::MAX` bytes -- an allocation
+/// that either aborts the process or, on a 32-bit `usize`, truncates and
+/// wraps again into an undersized buffer a later write overruns. See
+/// rust-fs-btrfs#114.
+fn sector_aligned_span(logical: u64, len: u64, sector: u64) -> Option<(u64, u64)> {
+    let first = logical - logical % sector;
+    let end = logical.checked_add(len)?;
+    let last = end.div_ceil(sector).checked_mul(sector)?;
+    let span = last.checked_sub(first)?;
+    Some((first, span))
+}
+
+/// The two named trees a mount reads from the root tree: the fs tree,
+/// which must exist, and the checksum tree, which legitimately may not.
+///
+/// One call rather than two `root_item_target` calls at the mount site,
+/// so this decision is made once and named rather than reproduced
+/// inline where it is easy to weaken by editing one arm and not the
+/// other.
+///
+/// # `Ok((_, None))` means absent, not "an error occurred and was
+/// discarded"
+///
+/// The checksum tree's `Ok(None)` is reached only when the walk for it
+/// completed and genuinely found no `ROOT_ITEM` -- every filesystem the
+/// kernel makes lacks one exactly this way, pre-checksumming or with the
+/// feature never enabled. Any OTHER failure looking for it -- an I/O
+/// error, a corrupt block, anything `for_each` can fail on while walking
+/// further into the root tree than the fs-tree lookup needed to go --
+/// comes back as `Err` and is propagated by `?`, never folded into this
+/// `None`.
+///
+/// It used to be `root_item_target(...).ok()` at the call site, which
+/// discarded an `Err` exactly as it discarded a legitimate absence: a
+/// corrupt or unreadable root tree was indistinguishable from "no
+/// checksum tree," and every subsequent read for the rest of the mount
+/// went unverified with nothing logged. See rust-fs-btrfs#114, and
+/// `fs_and_csum_tree_roots_tests` for the regression -- a fixture where
+/// the fs-tree lookup succeeds without ever reaching the block that
+/// fails, so the failure can only be observed if the csum-tree lookup's
+/// own error is not swallowed.
+///
+/// # Errors
+///
+/// [`Error::BadSuperblock`] if the fs tree itself is absent. Any error
+/// encountered walking for either tree.
+fn fs_and_csum_tree_roots(tree: &crate::btree::Tree, root_tree: u64) -> Result<(u64, Option<u64>)> {
+    Ok((
+        required_root_item_target(tree, root_tree, FS_TREE_OBJECTID)?,
+        root_item_target(tree, root_tree, crate::csum::CSUM_TREE_OBJECTID)?,
+    ))
+}
+
+pub(crate) fn root_item_target(
+    tree: &crate::btree::Tree,
+    root_tree: u64,
+    objectid: u64,
+) -> Result<Option<u64>> {
+    let mut root = None;
+    tree.for_each(root_tree, &mut |key: &DiskKey, data: &[u8]| {
+        if key.objectid == objectid
+            && key.key_type == ROOT_ITEM_KEY
+            && data.len() >= root_item::BYTENR + 8
+        {
+            root = Some(le64(data, root_item::BYTENR));
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+    Ok(root)
+}
+
+/// [`root_item_target`], refusing an absent tree.
+///
+/// For a tree every caller of this function needs to exist — the fs
+/// tree, or any tree reached through [`crate::block_group`]'s public
+/// lookup, which documents absence as an error — `Ok(None)` is itself
+/// the failure, and a bare `?` on `root_item_target` would let it
+/// through disguised as success. This is the one place that distinction
+/// is made, so every "tree must exist" caller reports the same message.
+pub(crate) fn required_root_item_target(
+    tree: &crate::btree::Tree,
+    root_tree: u64,
+    objectid: u64,
+) -> Result<u64> {
+    root_item_target(tree, root_tree, objectid)?.ok_or_else(|| {
+        Error::BadSuperblock(format!(
+            "the root tree holds no ROOT_ITEM for tree {objectid}"
+        ))
+    })
+}
+
+/// Byte offsets within `struct btrfs_file_extent_item`.
+///
+/// The full field list is kept even where a read-only driver does not
+/// consult every one, because the offsets that follow are only checkable
+/// against the format documentation when the fields between them are
+/// named too.
+#[allow(dead_code)]
+pub(crate) mod file_extent {
+    /// Generation of the transaction that created it.
+    pub const GENERATION: usize = 0;
+    /// Decoded size of the extent's data.
+    pub const RAM_BYTES: usize = 8;
+    /// Compression algorithm, 0 for none.
+    pub const COMPRESSION: usize = 16;
+    /// Encryption, 0 for none.
+    pub const ENCRYPTION: usize = 17;
+    /// Other encoding, 0 for none.
+    pub const OTHER_ENCODING: usize = 18;
+    /// 0 = inline, 1 = regular, 2 = prealloc.
+    pub const TYPE: usize = 20;
+    /// Inline data begins here.
+    pub const INLINE_DATA: usize = 21;
+    /// Physical address of the extent, or 0 for a hole.
+    pub const DISK_BYTENR: usize = 21;
+    /// Bytes occupied on disk.
+    pub const DISK_NUM_BYTES: usize = 29;
+    /// Offset into the extent at which this reference starts.
+    pub const OFFSET: usize = 37;
+    /// Logical length of this reference.
+    pub const NUM_BYTES: usize = 45;
+    /// Size of the non-inline header.
+    pub const REGULAR_SIZE: usize = 53;
+}
+
+/// Extent storage kinds.
+const EXTENT_INLINE: u8 = 0;
+pub(crate) const EXTENT_REGULAR: u8 = 1;
+pub(crate) const EXTENT_PREALLOC: u8 = 2;
+
+/// One resolved piece of a file's contents.
+enum Piece<'a> {
+    /// Data stored inside the item itself, already decoded.
+    Inline(alloc::borrow::Cow<'a, [u8]>),
+    /// Data on disk: logical address, and the length to read.
+    Regular { logical: u64, len: u64 },
+    /// A compressed run on disk that must be decoded whole, then sliced.
+    ///
+    /// The compressed unit is the entire extent, so unlike [`Piece::Regular`]
+    /// the reference's `offset` cannot be folded into the address — it
+    /// indexes the *decoded* bytes, and seeking by it on disk would land
+    /// in the middle of a compressed stream. See [`crate::compression`].
+    Compressed {
+        /// Start of the compressed run.
+        logical: u64,
+        /// Its length on disk.
+        disk_len: u64,
+        /// What the whole run decodes to.
+        ram_len: u64,
+        /// Where this reference starts within the decoded bytes.
+        offset: u64,
+        /// How much of the decoded bytes this reference covers.
+        len: u64,
+        algo: Compression,
+    },
+    /// A hole: nothing on disk behind this range.
+    ///
+    /// Carries no length: the output buffer is zeroed before any extent
+    /// is copied into it, so a region with nothing to copy is already
+    /// correct. Naming the case explicitly rather than falling through
+    /// keeps the reason visible at the match site.
+    Hole,
+    /// An unwritten preallocated extent: blocks reserved at `logical` for
+    /// `len` bytes of the file, reading as zeros.
+    ///
+    /// Not a hole. The space is this file's and the extent tree has an
+    /// item for it, so the write planner has to see it -- it was dropped
+    /// with the holes, and a write to a `fallocate`d range was refused as
+    /// a hole and `can_write_in_place` answered yes (#74).
+    Preallocated { logical: u64, len: u64 },
+}
+
+/// One extent of a file, located both in the file and on the volume.
+pub(crate) struct FileExtent {
+    /// Offset within the file where this extent begins.
+    pub start: u64,
+    /// How much of the file it covers.
+    pub len: u64,
+    /// Where its bytes are, when they can be written in place at all.
+    pub logical: Option<u64>,
+    /// Start of the whole extent run, which is what the extent tree
+    /// keys its reference count by.
+    pub extent_start: u64,
+    /// Whether the bytes on disk are compressed.
+    pub compressed: bool,
+    /// Where this reference starts within the extent's bytes — decoded
+    /// bytes, for a compressed one: the item's `offset`.
+    pub ref_offset: u64,
+    /// Whether its bytes are inline in the item rather than in an extent.
+    pub inline: bool,
+}
+
+/// One piece of a write: the device, the physical offset on it, and
+/// the `[from, from + length)` of the caller's buffer that goes there.
+pub(crate) type WriteSpan = (Arc<dyn BlockDevice>, u64, usize, usize);
+
+/// The devices a subvolume handle writes through, and the subvolume
+/// (#517). See [`Filesystem::subvolume_writes`].
+#[derive(Clone)]
+pub(crate) struct SubvolumeWrites {
+    /// The subvolume's id: the objectid its `ROOT_ITEM` is filed under.
+    pub(crate) id: u64,
+    pub(crate) writable: Arc<dyn BlockDevice>,
+    pub(crate) writable_pool: BTreeMap<u64, Arc<dyn BlockDevice>>,
+}
+
+/// A mounted Btrfs filesystem.
+pub struct Filesystem {
+    pub(crate) device: Arc<dyn BlockRead>,
+    /// The devices of a pool, by the id chunk stripes reference.
+    ///
+    /// Empty for a single-device filesystem, where [`Self::device`] is
+    /// everything and a mapping's `devid` cannot be anything else. When
+    /// a filesystem spans several devices this holds all of them,
+    /// including the one in [`Self::device`], because a stripe names
+    /// the disk it is on and reading it from any other returns whatever
+    /// happens to be at that offset.
+    pub(crate) devices: BTreeMap<u64, Arc<dyn BlockRead>>,
+    /// The same device again, present only when the volume was opened
+    /// for writing. Kept separately so that "can this mount write" is a
+    /// property of the type: the write path cannot compile without
+    /// going through this field.
+    pub(crate) writable: Option<Arc<dyn BlockDevice>>,
+    /// Every device of a pool opened for writing, by devid, the one in
+    /// [`Self::writable`] included.
+    ///
+    /// Empty unless [`Filesystem::mount_pool_rw`] opened the mount. A
+    /// write follows the `devid` each chunk stripe names to the device in
+    /// here, which is the whole difference between writing a pool and
+    /// writing the same offsets of one of its disks.
+    pub(crate) writable_pool: BTreeMap<u64, Arc<dyn BlockDevice>>,
+    /// The seed devices of a sprouted filesystem opened for writing, by
+    /// devid (#624).
+    ///
+    /// Read through [`Self::devices`] like any member and never written:
+    /// they are not in [`Self::writable_pool`], so a commit writes them no
+    /// superblock and a stripe on one is refused. Kept so that a remount
+    /// after a commit opens the same pair.
+    pub(crate) seed_pool: BTreeMap<u64, Arc<dyn BlockDevice>>,
+    /// The fsids a sprouted filesystem's seed devices stamp their tree
+    /// blocks with (#679). Its blocks from before it sprouted are on the
+    /// seeds and carry the seed's fsid, not the sprout's, and every pool
+    /// read accepts them. Empty for any other filesystem.
+    pub(crate) seed_fsids: Vec<[u8; 16]>,
+    pub(crate) sb: Superblock,
+    pub(crate) map: ChunkMap,
+    pub(crate) fs_tree_root: u64,
+    /// A subvolume handle's write capability, held aside (#517).
+    ///
+    /// `None` for a mount, which writes through `writable`. A handle from
+    /// [`Filesystem::open_subvolume`] on a writable mount keeps `writable`
+    /// empty, so every write that only knows the top level still refuses
+    /// it as read-only, and holds the devices here for the operations
+    /// that commit against the subvolume's own tree.
+    pub(crate) subvolume_writes: Option<SubvolumeWrites>,
+    /// The csum tree's root, when the filesystem has one.
+    ///
+    /// `None` only for a filesystem whose root tree holds no ROOT_ITEM
+    /// for it, which the kernel does not produce; the read path then
+    /// verifies nothing, which is what it did everywhere before.
+    csum_tree_root: Option<u64>,
+    /// Tree blocks this mount has read, by logical address.
+    ///
+    /// The fs tree was loaded whole at mount, every item into a map, so
+    /// that a `stat` would not re-read the interior nodes above it. That
+    /// made opening a volume cost what the volume held: 2573 device reads
+    /// and 417 ms for 20,000 files before a single question (#67). Items
+    /// are now found by descending the tree when asked, and the nodes a
+    /// descent reads are kept here, so the interior nodes every path
+    /// passes through are read, and verified, once. Bounded, least recently
+    /// used out.
+    nodes: core::cell::RefCell<NodeCache>,
+    /// The compression this mount writes with, as the kernel's
+    /// `compress=` mount option sets it (#265): see
+    /// [`Filesystem::set_compression`]. [`Compression::None`] unless set.
+    ///
+    /// [`Compression::None`]: crate::compression::Compression::None
+    compression: crate::compression::Compression,
+    /// Ranges no new tree block may be placed in, as `(start, length)`:
+    /// the blocks of a log tree being replayed, and the data it names that
+    /// the extent tree does not record yet (#266). Neither is in the
+    /// extent tree, so both read as free, and a block written over either
+    /// before the commit lands would leave a crash with a log that no
+    /// longer reads. The kernel pins them for the same reason.
+    pub(crate) pinned: Vec<(u64, u64)>,
+    /// The start of the block group a relocation is emptying, which no
+    /// new tree block may be placed in (#574): a copy-on-write that put a
+    /// block back into it would undo the move it is part of.
+    pub(crate) emptying: Option<u64>,
+    /// The device a relocation is moving chunks off (#702). No new chunk
+    /// stripe is placed on it, and the tree block allocator takes a group
+    /// on it only when no other has room: a block put back on it has to be
+    /// moved again before the device can leave. Unlike [`Self::emptying`]
+    /// it survives [`Self::remount_rw`], because one relocation is several
+    /// committed transactions.
+    pub(crate) leaving: Option<u64>,
+}
+
+/// Tree blocks a mount keeps: 1024, 16 MiB at the default 16 KiB node.
+pub const NODE_CACHE_BLOCKS: usize = 8;
+
+/// A least-recently-used set of verified tree blocks by logical address.
+pub(crate) struct NodeCache {
+    capacity: usize,
+    blocks: alloc::collections::BTreeMap<u64, (crate::btree::TreeBlock, u64)>,
+    tick: u64,
+}
+
+impl NodeCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            blocks: alloc::collections::BTreeMap::new(),
+            tick: 0,
+        }
+    }
+
+    fn get(&mut self, logical: u64) -> Option<crate::btree::TreeBlock> {
+        self.tick += 1;
+        let tick = self.tick;
+        self.blocks.get_mut(&logical).map(|(block, used)| {
+            *used = tick;
+            block.clone()
+        })
+    }
+
+    fn put(&mut self, logical: u64, block: &crate::btree::TreeBlock) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.blocks.len() >= self.capacity && !self.blocks.contains_key(&logical) {
+            if let Some(&victim) = self
+                .blocks
+                .iter()
+                .min_by_key(|(_, (_, used))| *used)
+                .map(|(k, _)| k)
+            {
+                self.blocks.remove(&victim);
+            }
+        }
+        self.tick += 1;
+        self.blocks.insert(logical, (block.clone(), self.tick));
+    }
+
+    fn clear(&mut self) {
+        self.blocks.clear();
+    }
+}
+
+/// The longest a symbolic link's target can be.
+///
+/// `PATH_MAX`. A link's target is a path and the operating system will
+/// not take a longer one, while the inode's declared size is a raw
+/// `le64`.
+pub const MAX_SYMLINK_TARGET: u64 = 4096;
+
+/// The largest file [`Filesystem::read_file`] materialises: 1 GiB.
+///
+/// A ceiling, because a fallible reservation is not a bound where memory
+/// is overcommitted. `try_reserve_exact` can succeed for a range no
+/// process could fill, and zeroing it then commits every page, so a
+/// corrupt `inode.size` below the volume's size still ended in the OOM
+/// killer rather than an error (Greptile on #150). Anything larger is
+/// read in pieces with [`Filesystem::read_at`], which the C ABI already
+/// does for every read.
+pub const MAX_WHOLE_FILE_READ: u64 = 1 << 30;
+
+/// An extent that does not hold the bytes it claims to cover.
+fn short_extent(ino: u64, kind: &str) -> Error {
+    Error::BadSuperblock(format!(
+        "inode {ino}: a {kind} extent is shorter than the range it covers"
+    ))
+}
+
+/// How many blocks a mount caches by default: **none**.
+///
+/// Not an oversight, and not a placeholder. Measured — see
+/// `docs/read-path-cost.md` — a block cache buys this driver nothing
+/// and costs it something:
+///
+/// - Tree blocks are held whole, by logical address, in the mount's node
+///   cache (`NODE_CACHE_BLOCKS`), so the repeat metadata reads a sector
+///   cache would serve are already served above it.
+/// - Metadata is read a node at a time, and a node is `nodesize` —
+///   typically four sectors. Caching by sector turns one call into
+///   four, so on the `rich` fixture the cached mount asked the device
+///   for 14 reads where the uncached one asked for 4.
+///
+/// [`Filesystem::mount_with_cache`] still exists so the measurement can
+/// take both passes, and so the decision can be re-taken against a
+/// number.
+pub const DEFAULT_CACHE_BLOCKS: usize = 0;
+
+impl Filesystem {
+    /// Open `device` as a Btrfs filesystem.
+    pub fn mount(device: Arc<dyn BlockRead>) -> Result<Self> {
+        Self::open(device, None)
+    }
+
+    /// Open `device` for reading, caching `blocks` metadata blocks.
+    ///
+    /// # Why the cache is built here and not by the caller
+    ///
+    /// It is sized in blocks, and the block size is the filesystem's.
+    /// A caller wanting to wrap the device itself would have to parse a
+    /// superblock first to know what to wrap it with — which is what
+    /// this does, once, before wrapping.
+    ///
+    /// # What it is for
+    ///
+    /// Every lookup descends from the root of the filesystem tree, so
+    /// the nodes near that root are read again for each path, and the
+    /// chunk map is consulted for every logical address translated.
+    /// None of those bytes change during a mount.
+    ///
+    /// `blocks` of zero disables it, which is what the measurement in
+    /// `tests/read_path_cost.rs` uses to take its baseline.
+
+
+    /// Open `device` for reading **and writing**.
+    ///
+    /// Writing is opt-in rather than inferred from the device being
+    /// writable: a driver able to write should not do so merely because
+    /// nothing stopped it.
+    ///
+    /// A log holding only metadata for existing empty regular files in
+    /// tree 5 is replayed before this returns. Other logged records are
+    /// refused: writing over changes that still need replay would lose
+    /// the state an application was told its fsync made durable.
+    ///
+    /// A volume whose chosen superblock is not the primary copy -- the
+    /// primary is damaged, or older than a mirror -- is refused: something
+    /// happened to it, and committing on top of that is not a decision to
+    /// make without the user. It still mounts read-only (#90). The check
+    /// is made on the superblock the mount then uses, in `open_pool`.
+    ///
+    /// A volume with a `compat_ro` feature this driver does not maintain
+    /// is refused here, and can still be mounted read-only; see
+    /// [`crate::superblock::refuse_unmaintained_compat_ro`] (#72).
+    pub fn mount_rw(device: Arc<dyn BlockDevice>) -> Result<Self> {
+        if !device.is_writable() {
+            return Err(Error::ReadOnly);
+        }
+        let fs = match Self::open(device.clone(), Some(device.clone())) {
+            Err(Error::DirtyLog) => return Self::mount_replaying_inode_log(device),
+            other => other?,
+        };
+        fs.refuse_unwritable()?;
+        Ok(fs)
+    }
+
+    /// Open the committed trees for a narrowly supported log recovery.
+    /// The primary-copy check uses the same selection as this handle.
+    fn mount_replaying_inode_log(device: Arc<dyn BlockDevice>) -> Result<Self> {
+        let (mut sb, copy) = crate::superblock::read_superblock(&*device)?;
+        if copy != 0 {
+            return Err(Error::UnsupportedFeature(format!(
+                "the primary superblock is damaged or older than copy {copy}; the volume can be \
+                 mounted read-only from that copy, and should be checked before it is written"
+            )));
+        }
+        let log_root = sb.log_root;
+        let log_root_level = sb.log_root_level;
+        sb.log_root = 0;
+        let mut fs = Self::open_known(device.clone(), sb, copy)?;
+        fs.sb.log_root = log_root;
+        fs.sb.log_root_level = log_root_level;
+        fs.refuse_unwritable()?;
+        fs.writable = Some(device);
+        fs.replay_inode_only_log()?;
+        Ok(fs)
+    }
+
+    /// What every read-write mount refuses, a pool's as one device's.
+    fn refuse_unwritable(&self) -> Result<()> {
+        // Emulated zones on regular devices have ordinary read mappings,
+        // but writes must obey zone append and reset rules (#454).
+        if self.sb.incompat_flags & crate::superblock::incompat::ZONED != 0 {
+            return Err(Error::UnsupportedFeature(
+                "this volume uses zoned mode, which can be read but not written: writes \
+                 require sequential zone allocation and zone reset support"
+                    .into(),
+            ));
+        }
+        // Simple quotas are read and not maintained: an extent this driver
+        // allocated would carry no owner reference and charge no quota
+        // group, and the kernel's accounting would then be wrong (#270).
+        // Checked before the compat_ro features, because a btrfs-progs that
+        // knows simple quotas also turns on the block group tree by default,
+        // and the reason a user can act on is the quotas.
+        if self.sb.incompat_flags & crate::superblock::incompat::SIMPLE_QUOTA != 0 {
+            return Err(Error::UnsupportedFeature(
+                "this volume uses simple quotas, which can be read but not written: a \
+                 write would allocate extents without their owner references"
+                    .into(),
+            ));
+        }
+        // Quota groups are not maintained either. The kernel updates each
+        // group's referenced and exclusive counts in the transaction that
+        // moves an extent; this driver does not, so a write would leave
+        // them wrong and `btrfs check` would report the volume damaged
+        // (#270). Their tree is present while quotas are enabled.
+        if self.tree_root(crate::subvol::QUOTA_TREE_OBJECTID).is_ok() {
+            return Err(Error::UnsupportedFeature(
+                "this volume has quotas enabled, which can be read but not written: a write \
+                 would leave the quota groups' counts wrong"
+                    .into(),
+            ));
+        }
+        crate::superblock::refuse_unmaintained_compat_ro(self.sb.compat_ro_flags)?;
+        // A SEED DEVICE IS READ-ONLY BY CONSTRUCTION (#76). Another
+        // filesystem is layered on it, and writes belong to that sprout;
+        // writing the seed changes blocks the sprout depends on being
+        // immutable. It still mounts read-only.
+        if self.sb.is_seeding() {
+            return Err(Error::UnsupportedFeature(
+                "this device is a seed for another filesystem, which can be read but not \
+                 written; write to the filesystem sprouted from it"
+                    .into(),
+            ));
+        }
+        // RAID5/6 is written: every write into a parity chunk is a
+        // read-modify-write of its full stripes, P and Q recomputed
+        // (#299); see `write_parity`.
+        Ok(())
+    }
+
+    /// Open every device of a pool for reading **and writing**.
+    ///
+    /// [`Filesystem::mount_pool`] with the write capability, and
+    /// [`Filesystem::mount_rw`]'s refusals. A write lands on the device
+    /// each chunk stripe names, every copy of a mirrored chunk on its own
+    /// disk, and a commit writes every device's superblocks, each keeping
+    /// its own `dev_item` (#298). A single device is accepted, and is
+    /// [`Filesystem::mount_rw`]. A seed given with the filesystem sprouted
+    /// from it is read and never written (#624): it need not be writable,
+    /// gets no superblock from a commit, and a stripe on it is refused.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ReadOnly`] when a device cannot be written;
+    /// [`Error::UnsupportedFeature`] for an incomplete set, devices of
+    /// different filesystems or two claiming one devid, as
+    /// [`Filesystem::mount_pool`] refuses them; for devices that are all
+    /// seeds; and for a member whose
+    /// newest superblock is not its primary copy or is not of the same
+    /// generation as the rest. Such a member missed a commit the others
+    /// saw, and writing on top of it is a decision for `btrfs check`.
+    pub fn mount_pool_rw(devices: Vec<Arc<dyn BlockDevice>>) -> Result<Self> {
+        if devices.is_empty() {
+            return Err(Error::UnsupportedFeature(
+                "a pool needs at least one device".to_string(),
+            ));
+        }
+        let several = devices.len() > 1;
+        let mut by_id: BTreeMap<u64, Arc<dyn BlockDevice>> = BTreeMap::new();
+        let mut seeds: BTreeMap<u64, Arc<dyn BlockDevice>> = BTreeMap::new();
+        let mut seed_items = Vec::new();
+        let mut seed_fsids: Vec<[u8; 16]> = Vec::new();
+        let mut first: Option<(crate::superblock::Superblock, usize)> = None;
+        for dev in devices {
+            let (sb, copy) = crate::superblock::read_superblock(&*dev)?;
+            let id = sb.dev_item.devid;
+            // A SEED AND ITS SPROUT ARE ONE FILESYSTEM (#561), written
+            // through the sprout (#624). The seed's superblock keeps the
+            // seed's own fsid and the generation it was frozen at, so it
+            // is set aside before either is compared, held for reading
+            // only, and checked against the sprout's chunk tree once that
+            // is read, as `mount_pool` checks it. A seed alone is
+            // `mount_rw`'s, and refused there.
+            if several && sb.is_seeding() {
+                seed_items.push(sb.dev_item.clone());
+                if !seed_fsids.contains(&sb.node_uuid()) {
+                    seed_fsids.push(sb.node_uuid());
+                }
+                if seeds.insert(id, dev).is_some() {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "two devices both claim to be device {id}"
+                    )));
+                }
+                continue;
+            }
+            if !dev.is_writable() {
+                return Err(Error::ReadOnly);
+            }
+            if let Some((seen, _)) = &first {
+                if seen.fsid != sb.fsid {
+                    return Err(Error::UnsupportedFeature(
+                        "these devices belong to different filesystems".to_string(),
+                    ));
+                }
+                if seen.generation != sb.generation {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "device {id} is at generation {} and the pool at {}: it missed a \
+                         commit, and the pool can be mounted read-only and should be checked \
+                         before it is written",
+                        sb.generation, seen.generation
+                    )));
+                }
+            }
+            if copy != 0 {
+                return Err(Error::UnsupportedFeature(format!(
+                    "device {id}'s primary superblock is damaged or older than copy {copy}; \
+                     the pool can be mounted read-only, and should be checked before it is \
+                     written"
+                )));
+            }
+            first.get_or_insert((sb, copy));
+            if by_id.insert(id, dev).is_some() {
+                return Err(Error::UnsupportedFeature(format!(
+                    "two devices both claim to be device {id}"
+                )));
+            }
+        }
+        let Some((lowest, primary)) = by_id.iter().next().map(|(id, d)| (*id, Arc::clone(d)))
+        else {
+            return Err(Error::UnsupportedFeature(
+                "these devices are all seeds, which can be read but not written; write to \
+                 the filesystem sprouted from them"
+                    .into(),
+            ));
+        };
+        if by_id.len() == 1 && seeds.is_empty() {
+            return Self::mount_rw(primary);
+        }
+        let mut readers: BTreeMap<u64, Arc<dyn BlockRead>> = by_id
+            .iter()
+            .map(|(id, d)| (*id, Arc::clone(d) as Arc<dyn BlockRead>))
+            .collect();
+        for (id, seed) in &seeds {
+            if readers
+                .insert(*id, Arc::clone(seed) as Arc<dyn BlockRead>)
+                .is_some()
+            {
+                return Err(Error::UnsupportedFeature(format!(
+                    "two devices both claim to be device {id}"
+                )));
+            }
+        }
+        let mut fs = Self::open_pool(Arc::clone(&readers[&lowest]), readers, Some(primary), None)?;
+        fs.verify_seed_members(&seed_items)?;
+        fs.refuse_unwritable()?;
+        fs.writable_pool = by_id;
+        fs.seed_pool = seeds;
+        fs.seed_fsids = seed_fsids;
+        Ok(fs)
+    }
+
+    /// The same devices opened again, for the generation a commit just
+    /// wrote: the trees this mount holds are the previous one's. What the
+    /// mount was set to do, its compression, carries over.
+    pub(crate) fn remount_rw(&self) -> Result<Self> {
+        let mut fs = if !self.writable_pool.is_empty() {
+            Self::mount_pool_rw(
+                self.writable_pool
+                    .values()
+                    .chain(self.seed_pool.values())
+                    .cloned()
+                    .collect(),
+            )?
+        } else {
+            let device = self.writable.as_ref().ok_or(Error::ReadOnly)?;
+            Self::mount_rw(Arc::clone(device))?
+        };
+        fs.compression = self.compression;
+        fs.leaving = self.leaving;
+        Ok(fs)
+    }
+
+    /// Whether this mount can write.
+    pub fn is_writable(&self) -> bool {
+        self.writable.is_some()
+    }
+
+    /// Compress what this mount writes with `algo`, as the kernel's
+    /// `compress=<algo>` mount option does (#265); [`Compression::None`],
+    /// the default, is a mount without it.
+    ///
+    /// A file's own choice comes first: the compression property, when it
+    /// names an algorithm or declines compression, and then the
+    /// `NOCOMPRESS` flag. A file marked `COMPRESS` (`chattr +c`) on a
+    /// mount that names no algorithm is written as zlib, the kernel's
+    /// default. A copy is stored compressed only when that saves a sector,
+    /// and the first LZO or zstd extent sets that algorithm's
+    /// incompatible feature flag in the same commit.
+    ///
+    /// [`Compression::None`]: crate::compression::Compression::None
+    pub fn set_compression(&mut self, algo: crate::compression::Compression) {
+        self.compression = algo;
+    }
+
+    /// The compression this mount writes with: see
+    /// [`Filesystem::set_compression`].
+    pub fn compression(&self) -> crate::compression::Compression {
+        self.compression
+    }
+
+    /// Where a mapped range lands on the device, once it is known to be
+    /// on it.
+    ///
+    /// A chunk's `btrfs_stripe.offset` is a raw `u64` off the disk, and
+    /// `Chunk::validate_geometry` checks it for sector alignment and
+    /// nothing else -- not against `dev_item.total_bytes`, not against
+    /// the device. So every tree block and every data byte this crate
+    /// writes could land at an offset the image chose. Against a
+    /// file-backed image that is not an error at all: `write_at` on a
+    /// file extends it, so a chunk at `stripe.offset = 2^60` grows a
+    /// mounted image toward an exabyte. On a `CallbackDevice` the
+    /// offset goes straight to the host.
+    ///
+    /// `commit::superblock_copy_fits` applies exactly this rule to the
+    /// superblock copies; nothing else did.
+    fn writable_span(device: &Arc<dyn BlockDevice>, physical: u64, len: usize) -> Result<()> {
+        let end = physical.checked_add(len as u64).ok_or_else(|| {
+            Error::BadSuperblock(format!(
+                "a chunk maps a write to {physical}, which ends past the address space"
+            ))
+        })?;
+        let device_bytes = device.size_bytes();
+        if end > device_bytes {
+            return Err(Error::BadSuperblock(format!(
+                "a chunk maps a write to [{physical}, {end}) on a device of {device_bytes} bytes"
+            )));
+        }
+        Ok(())
+    }
+
+    /// The device a stripe on `devid` is written to.
+    ///
+    /// On one device that is the device, whatever the stripe says, as on
+    /// the read path. On a pool it is the member with that devid, and a
+    /// stripe naming one that was not given is refused rather than
+    /// written to the offset it names on some other disk.
+    fn write_device(&self, devid: u64) -> Result<&Arc<dyn BlockDevice>> {
+        if self.writable_pool.is_empty() {
+            return self.writable.as_ref().ok_or(Error::ReadOnly);
+        }
+        self.writable_pool.get(&devid).ok_or_else(|| {
+            Error::UnsupportedFeature(format!(
+                "a chunk stripe names device {devid}, which is not in this pool"
+            ))
+        })
+    }
+
+    /// Every device this mount writes, each once.
+    pub(crate) fn write_devices(&self) -> Vec<Arc<dyn BlockDevice>> {
+        if self.writable_pool.is_empty() {
+            return self.writable.iter().cloned().collect();
+        }
+        self.writable_pool.values().cloned().collect()
+    }
+
+    /// Flush every device this mount writes.
+    pub(crate) fn flush_writable(&self) -> Result<()> {
+        for device in self.write_devices() {
+            device.flush()?;
+        }
+        Ok(())
+    }
+
+    /// Every [`WriteSpan`] a write of `len` bytes at
+    /// `logical` lands on: each mirror, on the device its stripe names,
+    /// split at chunk-stripe boundaries, each span checked against its
+    /// device before anything is written.
+    pub(crate) fn mirror_spans(&self, logical: u64, len: usize) -> Result<Vec<WriteSpan>> {
+        let mut spans = Vec::new();
+        for mirror in 0..self.map.mirrors_at(logical)? {
+            let mut done = 0usize;
+            while done < len {
+                let m = self.map.map_mirror(logical + done as u64, mirror)?;
+                let n = (m.len as usize).min(len - done);
+                if n == 0 {
+                    return Err(Error::UnmappedLogical(logical + done as u64));
+                }
+                let device = self.write_device(m.devid)?;
+                Self::writable_span(device, m.physical, n)?;
+                spans.push((Arc::clone(device), m.physical, done, n));
+                done += n;
+            }
+        }
+        Ok(spans)
+    }
+
+    /// Write to EVERY copy of a logical range, following the chunk map
+    /// exactly as the read path does -- a write that ignored a chunk
+    /// boundary would run past the end of one device and into another.
+    ///
+    /// The first copy alone is right for reading and wrong for writing.
+    /// On a `DUP` or `RAID1` chunk it leaves the other copy holding what
+    /// was there before, and the two then disagree with no record of
+    /// which is current -- a later read may return either. The data path
+    /// did exactly that until #71; it is why there is no single-copy
+    /// write any more.
+    ///
+    /// The commit trace confirms this is what the kernel does: both
+    /// mirrors of every tree block go out BEFORE the barrier, so a torn
+    /// write to one leaves the other and the barrier still orders both
+    /// against the superblock.
+    ///
+    /// # Errors
+    ///
+    /// Every span is resolved and checked against the device first, so
+    /// an unmapped address or a stripe past the end writes nothing. A
+    /// device write failure after that propagates, and a partial result
+    /// is possible and not cleaned up: some mirrors may hold the new
+    /// contents and some the old, which is the same state a power loss
+    /// produces and is what the commit ordering exists to survive.
+    pub(crate) fn write_logical_all_mirrors(&self, logical: u64, buf: &[u8]) -> Result<()> {
+        if let Some(chunk) = self
+            .map
+            .chunk_for(logical)
+            .filter(|c| c.parity_count().is_some())
+        {
+            return self.write_parity(chunk, logical, buf);
+        }
+        for (device, physical, from, n) in self.mirror_spans(logical, buf.len())? {
+            device.write_at(physical, &buf[from..from + n])?;
+        }
+        Ok(())
+    }
+
+    /// A write into a RAID5/6 chunk: a read-modify-write of every full
+    /// stripe it touches (#299).
+    ///
+    /// P, and on RAID6 Q, are computed from every data element of their
+    /// full stripe, so writing a data element alone would leave parity
+    /// that rebuilds the wrong bytes the day a device is lost -- and
+    /// nothing reads parity while the data verifies, so nothing would
+    /// notice until then. For each full stripe the range covers, every
+    /// data element is read from the device its stripe names, the new
+    /// bytes are applied, P and Q are recomputed with
+    /// [`crate::raid56::parity`], and the changed data elements, P and Q
+    /// are written. Partial full stripes are the normal case: a tree
+    /// block is one node, and a file's extent rarely starts on a stripe.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnmappedLogical`] for a range running past the chunk, and
+    /// what [`Filesystem::write_logical_all_mirrors`] returns otherwise.
+    /// Every element of a full stripe is read and checked against its
+    /// device before any of it is written; a device failure part way is
+    /// the RAID5/6 write hole, the same state the kernel's own
+    /// read-modify-write leaves on a power cut.
+    fn write_parity(&self, chunk: &crate::chunk::Chunk, logical: u64, buf: &[u8]) -> Result<()> {
+        let parity = chunk.parity_count().expect("a parity chunk");
+        let data_elements = u64::from(chunk.num_stripes) - parity as u64;
+        let full = data_elements * chunk.stripe_len;
+        let end = logical
+            .checked_add(buf.len() as u64)
+            .ok_or(Error::UnmappedLogical(logical))?;
+        if end > chunk.logical_end() {
+            return Err(Error::UnmappedLogical(chunk.logical_end()));
+        }
+        let mut at = logical;
+        while at < end {
+            let start = chunk.logical + (at - chunk.logical) / full * full;
+            let upto = (start + full).min(end);
+            let plan = chunk.parity_read(start)?;
+            let len = plan.len as usize;
+
+            // Every data element as it is, from the device its stripe names.
+            let mut data = Vec::with_capacity(plan.data.len());
+            for &(devid, physical) in &plan.data {
+                let device = self.write_device(devid)?;
+                Self::writable_span(device, physical, len)?;
+                let mut element = vec![0u8; len];
+                device.read_at(physical, &mut element)?;
+                data.push(element);
+            }
+
+            // The new bytes, element by element.
+            let mut touched = alloc::collections::BTreeSet::new();
+            let mut x = at;
+            while x < upto {
+                let offset = x - start;
+                let index = (offset / chunk.stripe_len) as usize;
+                let within = (offset % chunk.stripe_len) as usize;
+                let n = ((len - within) as u64).min(upto - x) as usize;
+                let from = (x - logical) as usize;
+                data[index][within..within + n].copy_from_slice(&buf[from..from + n]);
+                touched.insert(index);
+                x += n as u64;
+            }
+
+            let refs: Vec<&[u8]> = data.iter().map(Vec::as_slice).collect();
+            let (p, q) = crate::raid56::parity(&refs, plan.q.is_some());
+            let mut writes: Vec<((u64, u64), &[u8])> = touched
+                .iter()
+                .map(|&i| (plan.data[i], data[i].as_slice()))
+                .collect();
+            writes.push((plan.p, &p));
+            if let (Some(at_q), Some(q)) = (plan.q, q.as_deref()) {
+                writes.push((at_q, q));
+            }
+            for &((devid, physical), _) in &writes {
+                Self::writable_span(self.write_device(devid)?, physical, len)?;
+            }
+            for ((devid, physical), bytes) in writes {
+                self.write_device(devid)?.write_at(physical, bytes)?;
+            }
+            at = upto;
+        }
+        Ok(())
+    }
+
+    fn open(device: Arc<dyn BlockRead>, writable: Option<Arc<dyn BlockDevice>>) -> Result<Self> {
+        Self::open_pool(device, BTreeMap::new(), writable, None)
+    }
+
+    /// A read-only open on a superblock already read and selected.
+    pub(crate) fn open_known(
+        device: Arc<dyn BlockRead>,
+        sb: crate::superblock::Superblock,
+        copy: usize,
+    ) -> Result<Self> {
+        Self::open_pool(device, BTreeMap::new(), None, Some((sb, copy)))
+    }
+
+    /// Open a filesystem that spans several devices.
+    ///
+    /// Every device of the pool must be given. A chunk stripe names the
+    /// disk it lives on, so a missing device is not a partial view —
+    /// reads of anything on it return whatever lies at that offset on
+    /// whichever disk was consulted instead, which parses and then fails
+    /// a checksum against a block it was never meant to be. On a
+    /// mirrored pool it may not even fail.
+    ///
+    /// The devices are identified by the `devid` in each one's own
+    /// superblock, not by the order they are passed in.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] when the set is incomplete, when
+    /// two of them are not the same filesystem, or when two claim the
+    /// same device id.
+    pub fn mount_pool(devices: Vec<Arc<dyn BlockRead>>) -> Result<Self> {
+        Self::mount_pool_with(devices, false)
+    }
+
+    /// [`Filesystem::mount_pool`] with members missing, as the kernel's
+    /// `-o degraded` mounts one.
+    ///
+    /// Every element on a missing device is lost, and is read the other
+    /// way its chunk offers: another copy of a mirrored chunk, or a
+    /// rebuild from the rest of a RAID5/6 full stripe and its parity
+    /// (#300). Which members are missing is read from the chunk stripes
+    /// that name a devid no given device carries.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] when some chunk cannot be read
+    /// without the missing members: a single, RAID0 or DUP chunk with a
+    /// stripe on one, a mirrored chunk with every copy on them, more than
+    /// one missing member of a RAID5 chunk or two of a RAID6 chunk. That
+    /// is checked once the chunk map is read, before any file is; the
+    /// mount does not hand out a filesystem that fails on the first read
+    /// that lands on a lost element. Otherwise as [`Filesystem::mount_pool`].
+    pub fn mount_pool_degraded(devices: Vec<Arc<dyn BlockRead>>) -> Result<Self> {
+        Self::mount_pool_with(devices, true)
+    }
+
+    fn mount_pool_with(devices: Vec<Arc<dyn BlockRead>>, degraded: bool) -> Result<Self> {
+        if devices.is_empty() {
+            return Err(Error::UnsupportedFeature(
+                "a pool needs at least one device".to_string(),
+            ));
+        }
+
+        // Each device's own superblock says which device it is and which
+        // filesystem it belongs to.
+        //
+        // A SEED IS ANOTHER FILESYSTEM, AND STILL A MEMBER (#270). A
+        // filesystem sprouted from a seed (`btrfstune -S 1`, then `btrfs
+        // device add`) keeps the seed's chunks on the seed device, whose
+        // own superblock names the seed's fsid, not the sprout's. Such a
+        // device is set aside here, and accepted once the sprout's chunk
+        // tree is read and holds a DEV_ITEM for it with that fsid and
+        // device uuid; see `verify_seed_members`.
+        let mut by_id: BTreeMap<u64, Arc<dyn BlockRead>> = BTreeMap::new();
+        let mut seeds: Vec<(u64, crate::superblock::DevItem, Arc<dyn BlockRead>)> = Vec::new();
+        let mut seed_fsids: Vec<[u8; 16]> = Vec::new();
+        let mut fsid: Option<[u8; 16]> = None;
+        for dev in devices {
+            let (sb, _) = crate::superblock::read_superblock(&*dev)?;
+            if sb.is_seeding() {
+                if !seed_fsids.contains(&sb.node_uuid()) {
+                    seed_fsids.push(sb.node_uuid());
+                }
+                seeds.push((sb.dev_item.devid, sb.dev_item.clone(), dev));
+                continue;
+            }
+
+            match fsid {
+                None => fsid = Some(sb.fsid),
+                Some(seen) if seen != sb.fsid => {
+                    return Err(Error::UnsupportedFeature(
+                        "these devices belong to different filesystems".to_string(),
+                    ))
+                }
+                Some(_) => {}
+            }
+
+            let id = sb.dev_item.devid;
+            if by_id.insert(id, dev).is_some() {
+                return Err(Error::UnsupportedFeature(format!(
+                    "two devices both claim to be device {id}"
+                )));
+            }
+        }
+
+        // Read the filesystem through whichever device holds the
+        // superblock's own copy; the rest are reached by devid. With a
+        // sprout that is a sprout device: the seed's superblock describes
+        // the seed as it was, not the filesystem grown from it.
+        let first = match by_id.values().next() {
+            Some(first) => first.clone(),
+            // Seeds alone: a seed filesystem by itself, which is one
+            // filesystem like any other.
+            None => {
+                for (id, _, dev) in seeds {
+                    let (sb, _) = crate::superblock::read_superblock(&*dev)?;
+                    match fsid {
+                        None => fsid = Some(sb.fsid),
+                        Some(seen) if seen != sb.fsid => {
+                            return Err(Error::UnsupportedFeature(
+                                "these devices belong to different filesystems".to_string(),
+                            ))
+                        }
+                        Some(_) => {}
+                    }
+                    if by_id.insert(id, dev).is_some() {
+                        return Err(Error::UnsupportedFeature(format!(
+                            "two devices both claim to be device {id}"
+                        )));
+                    }
+                }
+                let first = by_id
+                    .values()
+                    .next()
+                    .expect("at least one device, checked above")
+                    .clone();
+                return Self::open_pool_with(first, by_id, None, None, degraded);
+            }
+        };
+        let mut seed_items = Vec::new();
+        for (id, item, dev) in seeds {
+            if by_id.insert(id, dev).is_some() {
+                return Err(Error::UnsupportedFeature(format!(
+                    "two devices both claim to be device {id}"
+                )));
+            }
+            seed_items.push(item);
+        }
+        let mut fs = Self::open_pool_with(first, by_id, None, None, degraded)?;
+        fs.verify_seed_members(&seed_items)?;
+        fs.seed_fsids = seed_fsids;
+        Ok(fs)
+    }
+
+    /// Refuse a seed device the filesystem was not sprouted from.
+    ///
+    /// The sprout's chunk tree holds a `DEV_ITEM` for every device it
+    /// spans, its seeds' included, and a seed's records the seed's fsid
+    /// and device uuid. A seed device given with a sprout must match its
+    /// devid's item in both, or it is some other seed that happens to
+    /// carry the same devid, and its chunks would be read from the wrong
+    /// disk.
+    fn verify_seed_members(&self, seeds: &[crate::superblock::DevItem]) -> Result<()> {
+        if seeds.is_empty() {
+            return Ok(());
+        }
+        let mut items: BTreeMap<u64, crate::superblock::DevItem> = BTreeMap::new();
+        let mut bad = None;
+        self.for_each_item_in(self.sb.chunk_root, &mut |key: &DiskKey, data: &[u8]| {
+            if key.objectid == crate::chunk::objectid::DEV_ITEMS
+                && key.key_type == crate::chunk::key_type::DEV_ITEM
+            {
+                match crate::superblock::DevItem::parse(data) {
+                    Ok(item) => {
+                        items.insert(key.offset, item);
+                    }
+                    Err(e) => bad = Some(e),
+                }
+            }
+        })?;
+        if let Some(e) = bad {
+            return Err(e);
+        }
+        for seed in seeds {
+            let Some(item) = items.get(&seed.devid) else {
+                return Err(Error::UnsupportedFeature(format!(
+                    "a seed device claims to be device {}, which this filesystem does not \
+                     have",
+                    seed.devid
+                )));
+            };
+            if item.fsid != seed.fsid || item.uuid != seed.uuid {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the seed device given as device {} is not the one this filesystem was \
+                     sprouted from: its fsid or device uuid differs from the filesystem's \
+                     record of it",
+                    seed.devid
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// `known` is a superblock selection already read from `device`'s
+    /// underlying disk, which a read-only mount may reuse rather than read
+    /// again.
+    fn open_pool(
+        device: Arc<dyn BlockRead>,
+        devices: BTreeMap<u64, Arc<dyn BlockRead>>,
+        writable: Option<Arc<dyn BlockDevice>>,
+        known: Option<(crate::superblock::Superblock, usize)>,
+    ) -> Result<Self> {
+        Self::open_pool_with(device, devices, writable, known, false)
+    }
+
+    /// [`Filesystem::open_pool`], and with `degraded` a pool given fewer
+    /// devices than it spans, provided every chunk can be read without
+    /// the rest; see [`Filesystem::mount_pool_degraded`].
+    fn open_pool_with(
+        device: Arc<dyn BlockRead>,
+        devices: BTreeMap<u64, Arc<dyn BlockRead>>,
+        writable: Option<Arc<dyn BlockDevice>>,
+        known: Option<(crate::superblock::Superblock, usize)>,
+        degraded: bool,
+    ) -> Result<Self> {
+        let (sb, copy) = match known {
+            Some(selection) if writable.is_none() => selection,
+            _ => crate::superblock::read_superblock(&*device)?,
+        };
+        // ON THE SELECTION THIS MOUNT USES. Checked on a separate read
+        // beforehand, a mirror that failed to read then and read now was
+        // mounted writable from the mirror (Greptile on #146).
+        if writable.is_some() && copy != 0 {
+            return Err(Error::UnsupportedFeature(format!(
+                "the primary superblock is damaged or older than copy {copy}; the volume can be \
+                 mounted read-only from that copy, and should be checked before it is written"
+            )));
+        }
+
+        // One device open, and the filesystem says it has more.
+        //
+        // A chunk stripe names the device it lives on, and with only one
+        // device there is nothing to do about a stripe naming another —
+        // except refuse. Reading it from the device at hand returns
+        // whatever is at that offset on THIS disk: it parses, it fails
+        // its checksum against a block it was never meant to be, and on
+        // a RAID1 filesystem where the mirror happens to hold the same
+        // data it does not even fail. Silently reading one disk of a
+        // pool as though it were the whole pool is worse than not
+        // opening it.
+        // DEGRADED, FEWER IS A CHOICE. A pool missing members is still
+        // refused unless the caller asked for it, and then only once the
+        // chunk map shows every chunk survives without them (below).
+        let short_by_choice =
+            degraded && !devices.is_empty() && (devices.len() as u64) < sb.num_devices;
+        if sb.num_devices > 1 && devices.len() as u64 != sb.num_devices && !short_by_choice {
+            return Err(Error::UnsupportedFeature(format!(
+                "this filesystem spans {} devices and {} {} given; reading one of them \
+                 alone would return the wrong data rather than fail. Open it with \
+                 `mount_pool`, giving every device.",
+                sb.num_devices,
+                devices.len(),
+                if devices.len() == 1 { "was" } else { "were" }
+            )));
+        }
+
+        if sb.has_dirty_log() {
+            return Err(Error::DirtyLog);
+        }
+        // A METADATA-ONLY DUMP HAS NO DATA (#76). `btrfs-image` keeps
+        // every tree and none of the extents they point at, so listing and
+        // stat would work and every read would return whatever occupies
+        // those addresses -- a confident wrong answer. The kernel refuses
+        // to mount one, and so does this.
+        if sb.is_metadump() {
+            return Err(Error::UnsupportedFeature(
+                "this image is a metadata-only dump (btrfs-image): its data extents are \
+                 absent, so no file in it can be read"
+                    .into(),
+            ));
+        }
+
+        // Step 2: the bootstrap map, enough to reach the chunk tree.
+        let boot = ChunkMap::bootstrap(&sb)?;
+        if short_by_choice {
+            Self::refuse_unreadable_without_missing(&boot, &devices)?;
+        }
+
+        // Step 3: walk the chunk tree through it and fold in every chunk.
+        let mut map = boot.clone();
+        {
+            // POOL-AWARE ON THE PRIMARY READ TOO. This was
+            // `read_logical`, which reads `device` -- the lowest devid
+            // -- at whatever physical offset the mapping names, ignoring
+            // the devid it names. The mirror read below was fixed for
+            // exactly that and the primary was left behind, so the two
+            // halves of one fallback disagreed about which disk a copy
+            // is on.
+            let read = |logical: u64, buf: &mut [u8]| -> Result<()> {
+                Self::read_logical_pool(&device, &devices, &boot, logical, buf)
+            };
+            let mirrors = |logical: u64| -> Result<usize> { boot.read_attempts_at(logical) };
+            // POOL-AWARE, BECAUSE A RAID1 COPY IS ON ANOTHER DISK. The
+            // single-device form reads every mirror from `device` at the
+            // mapping's physical offset, ignoring the devid the mapping
+            // names -- so on a two-device pool the fallback read the
+            // right offset on the wrong disk and the retry failed the
+            // same checksum. Measured: copy 0 of the pool's root damaged
+            // on devid 1, copy 1 intact on devid 2, and the mount still
+            // returned ChecksumMismatch at copy 0's offset.
+            let read_mirror = |logical: u64, mirror: usize, buf: &mut [u8]| -> Result<()> {
+                Self::read_logical_pool_mirror(&device, &devices, &boot, mirror, logical, buf)
+            };
+            let tree = Tree::from_superblock(&sb, &read).with_redundancy(&mirrors, &read_mirror);
+            let mut found = Vec::new();
+            // Only chunk items, and a chunk item that does not parse or
+            // does not fit the sector size fails the mount by name rather
+            // than leaving a hole in the map (#85).
+            tree.for_each(sb.chunk_root, &mut |key: &DiskKey, data: &[u8]| {
+                if let Some(chunk) = crate::chunk::chunk_from_item(key, data, sb.sectorsize)? {
+                    found.push(chunk);
+                }
+                Ok(true)
+            })?;
+            // The sys_chunk_array in the superblock is a copy of entries
+            // that also live in the chunk tree, so folding the tree in
+            // re-encounters them. An identical chunk is not a conflict —
+            // skip it. A chunk that covers the same address with
+            // DIFFERENT contents is a real inconsistency and must not be
+            // silently discarded, so it still propagates.
+            for chunk in found {
+                match map.chunk_for(chunk.logical) {
+                    Some(existing) if *existing == chunk => continue,
+                    _ => map.insert(chunk)?,
+                }
+            }
+        }
+
+        if short_by_choice {
+            Self::refuse_unreadable_without_missing(&map, &devices)?;
+        }
+
+        // Step 4: the root tree names the fs tree, and the csum tree.
+        // See `fs_and_csum_tree_roots` for why this is not `.ok()`.
+        let (fs_tree_root, csum_tree_root) = {
+            // Pool-aware on both halves; see the bootstrap walk above.
+            let read = |logical: u64, buf: &mut [u8]| -> Result<()> {
+                Self::read_logical_pool(&device, &devices, &map, logical, buf)
+            };
+            let mirrors = |logical: u64| -> Result<usize> { map.read_attempts_at(logical) };
+            let read_mirror = |logical: u64, mirror: usize, buf: &mut [u8]| -> Result<()> {
+                Self::read_logical_pool_mirror(&device, &devices, &map, mirror, logical, buf)
+            };
+            let tree = Tree::from_superblock(&sb, &read).with_redundancy(&mirrors, &read_mirror);
+            fs_and_csum_tree_roots(&tree, sb.root)?
+        };
+
+        let fs = Filesystem {
+            device,
+            devices,
+            writable,
+            writable_pool: BTreeMap::new(),
+            seed_pool: BTreeMap::new(),
+            seed_fsids: Vec::new(),
+            sb,
+            map,
+            fs_tree_root,
+            subvolume_writes: None,
+            csum_tree_root,
+            nodes: core::cell::RefCell::new(NodeCache::new(NODE_CACHE_BLOCKS)),
+            compression: crate::compression::Compression::None,
+            pinned: Vec::new(),
+            emptying: None,
+            leaving: None,
+        };
+        Ok(fs)
+    }
+
+    /// Read a logical range from whichever device of a pool holds it.
+    ///
+    /// `devices` is empty for a single-device filesystem, and then this
+    /// is [`Self::read_logical`]. Otherwise every mapping is answered by
+    /// the device its `devid` names — which is the whole difference
+    /// between reading a pool and reading one disk of it.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] when a mapping names a device that
+    /// was not given. That is not recoverable by trying another: the
+    /// bytes are somewhere this filesystem cannot see.
+    /// A tree walker over this filesystem's pool.
+    ///
+    /// The four lines this replaces — both forms are run side by side,
+    /// over a real image, by `needs_host::both_pool_reader_forms_walk_the_same_root_tree`
+    /// below; `self` is private here, so a doctest cannot build either —
+    ///
+    /// ```text
+    /// let read = |logical: u64, buf: &mut [u8]| -> Result<()> {
+    ///     Self::read_logical_pool(&self.device, &self.devices, &self.map, logical, buf)
+    /// };
+    /// let tree = Tree::from_superblock(&self.sb, &read);
+    /// ```
+    ///
+    /// appeared eleven times, character-identical in ten of them. The
+    /// borrow checker is why they were never factored: the closure
+    /// borrows three fields and the `Tree` borrows the closure, so a
+    /// `fn tree(&self) -> Tree<'_>` cannot return both. Returning the
+    /// *reader* instead, and taking the `Tree` from it, splits the two
+    /// borrows across two statements, which is all that was needed.
+    ///
+    /// Callers write:
+    ///
+    /// ```text
+    /// let reader = self.pool_reader();
+    /// let tree = reader.tree();
+    /// ```
+    pub(crate) fn pool_reader(&self) -> PoolReader<'_> {
+        PoolReader {
+            geom: crate::btree::TreeGeometry::from_superblock(&self.sb),
+            seeds: &self.seed_fsids,
+            read: Box::new(move |logical, buf| {
+                Self::read_logical_pool(&self.device, &self.devices, &self.map, logical, buf)
+            }),
+            mirrors: Box::new(move |logical| self.map.read_attempts_at(logical)),
+            read_mirror: Box::new(move |logical, mirror, buf| {
+                Self::read_logical_pool_mirror(
+                    &self.device,
+                    &self.devices,
+                    &self.map,
+                    mirror,
+                    logical,
+                    buf,
+                )
+            }),
+        }
+    }
+
+    /// Refuse a degraded pool some chunk of which cannot be read without
+    /// the devices that were not given.
+    ///
+    /// A chunk survives losing the devices its redundancy covers: any one
+    /// copy of a RAID1, RAID1C3 or RAID1C4 chunk; one copy of every
+    /// sub-stripe pair of a RAID10 chunk; one member of a RAID5 chunk and
+    /// two of a RAID6 chunk, rebuilt from parity. A single, RAID0 or DUP
+    /// chunk with a stripe on a missing device has lost bytes nothing
+    /// else holds.
+    fn refuse_unreadable_without_missing(
+        map: &ChunkMap,
+        devices: &BTreeMap<u64, Arc<dyn BlockRead>>,
+    ) -> Result<()> {
+        use crate::chunk::ChunkProfile;
+        let present = |devid: &u64| devices.contains_key(devid);
+        for chunk in map.chunks() {
+            let missing: alloc::collections::BTreeSet<u64> = chunk
+                .stripes
+                .iter()
+                .map(|s| s.devid)
+                .filter(|d| !present(d))
+                .collect();
+            if missing.is_empty() {
+                continue;
+            }
+            let profile = chunk.profile()?;
+            let survives = match profile {
+                ChunkProfile::Single | ChunkProfile::Raid0 | ChunkProfile::Dup => false,
+                ChunkProfile::Raid1 | ChunkProfile::Raid1c3 | ChunkProfile::Raid1c4 => {
+                    chunk.stripes.iter().any(|s| present(&s.devid))
+                }
+                ChunkProfile::Raid10 => chunk
+                    .stripes
+                    .chunks(usize::from(chunk.sub_stripes.max(1)))
+                    .all(|group| group.iter().any(|s| present(&s.devid))),
+                ChunkProfile::Raid5 => missing.len() <= 1,
+                ChunkProfile::Raid6 => missing.len() <= 2,
+            };
+            if !survives {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the {} chunk at {} has stripes on device(s) {:?}, which were not given, \
+                     and cannot be read without them; a degraded mount reads only what the \
+                     remaining devices still hold whole",
+                    profile.name(),
+                    chunk.logical,
+                    missing
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn read_logical_pool(
+        device: &Arc<dyn BlockRead>,
+        devices: &BTreeMap<u64, Arc<dyn BlockRead>>,
+        map: &ChunkMap,
+        logical: u64,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        Self::read_logical_pool_mirror(device, devices, map, 0, logical, buf)
+    }
+
+    /// [`Filesystem::read_logical_pool`], from copy `mirror`.
+    ///
+    /// On a RAID1 pool the second copy is on a different device, which
+    /// is the case this exists for: the mapping names its own device,
+    /// so following the mirror follows the disk with it.
+    pub(crate) fn read_logical_pool_mirror(
+        device: &Arc<dyn BlockRead>,
+        devices: &BTreeMap<u64, Arc<dyn BlockRead>>,
+        map: &ChunkMap,
+        mirror: usize,
+        logical: u64,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        if devices.is_empty() {
+            return Self::read_logical_on_mirror(device, map, u64::MAX, mirror, logical, buf);
+        }
+        let device_for = |devid: u64, at: u64| {
+            devices.get(&devid).ok_or_else(|| {
+                Error::UnsupportedFeature(format!(
+                    "the range at {at} lives on device {devid}, which was not given"
+                ))
+            })
+        };
+        let mut done = 0usize;
+        while done < buf.len() {
+            let at = logical + done as u64;
+            if let Some(chunk) = Self::rebuilt_from_parity(map, mirror, at) {
+                done += Self::read_rebuilt(
+                    chunk,
+                    mirror,
+                    at,
+                    &mut buf[done..],
+                    &|devid, physical, out| Ok(device_for(devid, at)?.read_at(physical, out)?),
+                )?;
+                continue;
+            }
+            let m = map.map_mirror(logical + done as u64, mirror)?;
+            let n = (m.len as usize).min(buf.len() - done);
+            if n == 0 {
+                return Err(Error::UnmappedLogical(logical + done as u64));
+            }
+            let Some(dev) = devices.get(&m.devid) else {
+                // A LOST ELEMENT, ON A DEGRADED MOUNT (#300). The first
+                // way of reading these bytes names a device that was not
+                // given, so they are read every other way the chunk
+                // offers, in turn: another copy, or a parity rebuild.
+                // Each of those that also needs a missing device fails
+                // and the next is tried. Only the first attempt does
+                // this; the others are what it falls back on.
+                if mirror == 0 {
+                    let attempts = map.read_attempts_at(at)?;
+                    let span = &mut buf[done..done + n];
+                    if (1..attempts).any(|attempt| {
+                        Self::read_logical_pool_mirror(device, devices, map, attempt, at, span)
+                            .is_ok()
+                    }) {
+                        done += n;
+                        continue;
+                    }
+                }
+                return Err(Error::UnsupportedFeature(format!(
+                    "the range at {at} lives on device {}, which was not given",
+                    m.devid
+                )));
+            };
+            dev.read_at(m.physical, &mut buf[done..done + n])?;
+            done += n;
+        }
+        Ok(())
+    }
+
+    /// Read a logical range, refusing anything that lives on a device
+    /// other than `devid`.
+    ///
+    /// A [`Mapping`] names the device its physical offset is on, and
+    /// with one device open there is nothing to do about a mapping that
+    /// names another — except say so. Reading it from the device at hand
+    /// returns whatever happens to be at that offset, which parses,
+    /// checksums against the wrong block, and is silently the wrong
+    /// data.
+    ///
+    /// `u64::MAX` means "do not check", used where the caller has
+    /// already established there is only one device.
+    ///
+    /// # THE TWO CONVENIENCE WRAPPERS OVER THIS ARE GONE
+    ///
+    /// `read_logical` and `read_logical_on` used to wrap this with
+    /// `devid = u64::MAX` and `mirror = 0`, and three sites in the
+    /// mount path picked them for a POOL -- reading the right offset on
+    /// the lowest devid whatever devid the mapping named. Changing the
+    /// three call sites would have left the wrappers there for the
+    /// fourth, so they are deleted instead: on a pool the only
+    /// spellings available now are the `_pool` pair, which resolve the
+    /// devid. Anything that genuinely has one device passes that
+    /// device's own devid here and gets an error rather than the wrong
+    /// bytes.
+    ///
+    /// From copy `mirror`.
+    ///
+    /// Mirror 0 is the copy every other read path uses. The rest are
+    /// the copies DUP and RAID1 keep, and the reason the read path can
+    /// survive one damaged block: see [`crate::btree::Tree::read_block`],
+    /// which is where a failed verification turns into a second attempt.
+    pub(crate) fn read_logical_on_mirror(
+        device: &Arc<dyn BlockRead>,
+        map: &ChunkMap,
+        devid: u64,
+        mirror: usize,
+        logical: u64,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        let mut done = 0usize;
+        while done < buf.len() {
+            let at = logical + done as u64;
+            if let Some(chunk) = Self::rebuilt_from_parity(map, mirror, at) {
+                done += Self::read_rebuilt(
+                    chunk,
+                    mirror,
+                    at,
+                    &mut buf[done..],
+                    &|on, physical, out| {
+                        if devid != u64::MAX && on != devid {
+                            return Err(Error::UnsupportedFeature(format!(
+                                "rebuilding the range at {at} needs device {on}, and this \
+                             filesystem was opened with device {devid} alone"
+                            )));
+                        }
+                        Ok(device.read_at(physical, out)?)
+                    },
+                )?;
+                continue;
+            }
+            let m = map.map_mirror(logical + done as u64, mirror)?;
+            if devid != u64::MAX && m.devid != devid {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the range at {} lives on device {} and this filesystem was opened \
+                     with device {devid} alone; reading it from the wrong device would \
+                     return the wrong data rather than fail",
+                    logical + done as u64,
+                    m.devid
+                )));
+            }
+            // A read may span two chunks, so never take more than the
+            // mapping says is contiguous.
+            let n = (m.len as usize).min(buf.len() - done);
+            if n == 0 {
+                return Err(Error::UnmappedLogical(logical + done as u64));
+            }
+            device.read_at(m.physical, &mut buf[done..done + n])?;
+            done += n;
+        }
+        Ok(())
+    }
+
+    /// The chunk holding `at`, when read attempt `attempt` of it is a
+    /// rebuild from RAID5/6 parity rather than a mapping.
+    fn rebuilt_from_parity(
+        map: &ChunkMap,
+        attempt: usize,
+        at: u64,
+    ) -> Option<&crate::chunk::Chunk> {
+        if attempt == 0 {
+            return None;
+        }
+        map.chunk_for(at).filter(|c| c.parity_count().is_some())
+    }
+
+    /// Fill the start of `buf` with the bytes at `logical`, rebuilt from
+    /// the rest of their RAID5/6 full stripe by read attempt `attempt`
+    /// (#268), and say how many bytes that was: up to the end of the
+    /// data element, which is as far as one set of parity reaches.
+    ///
+    /// `read(devid, physical, out)` reads one element's bytes. Every one
+    /// the method needs is read in full; none is trusted to be the
+    /// damaged one, which is the caller's checksum's job on the result.
+    fn read_rebuilt(
+        chunk: &crate::chunk::Chunk,
+        attempt: usize,
+        logical: u64,
+        buf: &mut [u8],
+        read: ElementRead<'_>,
+    ) -> Result<usize> {
+        use crate::raid56::{rebuild, Rebuild};
+        let plan = chunk.parity_read(logical)?;
+        let n = (plan.len as usize).min(buf.len());
+        if n == 0 {
+            return Err(Error::UnmappedLogical(logical));
+        }
+        let method = Rebuild::for_attempt(attempt, plan.want, plan.data.len(), plan.q.is_some())
+            .ok_or_else(|| {
+                Error::BadChunkItem(format!(
+                    "read attempt {attempt} of a chunk offering {}",
+                    chunk.read_attempts()
+                ))
+            })?;
+        let fetch = |(devid, physical): (u64, u64)| -> Result<Vec<u8>> {
+            let mut out = vec![0u8; n];
+            read(devid, physical, &mut out)?;
+            Ok(out)
+        };
+        let unread = |i: usize| i == plan.want || method == Rebuild::PQ { other: i };
+        let data = plan
+            .data
+            .iter()
+            .enumerate()
+            .map(|(i, &at)| {
+                if unread(i) {
+                    Ok(None)
+                } else {
+                    fetch(at).map(Some)
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let p = match method {
+            Rebuild::P | Rebuild::PQ { .. } => Some(fetch(plan.p)?),
+            Rebuild::Q => None,
+        };
+        let q = match (method, plan.q) {
+            (Rebuild::Q | Rebuild::PQ { .. }, Some(q)) => Some(fetch(q)?),
+            _ => None,
+        };
+        let out = rebuild(method, plan.want, &data, p.as_deref(), q.as_deref())?;
+        buf[..n].copy_from_slice(&out);
+        Ok(n)
+    }
+
+    /// The bytes at `physical` on device `devid`, as they lie: one element
+    /// of a RAID5/6 full stripe, for scrub's parity check (#301).
+    pub(crate) fn read_element(&self, devid: u64, physical: u64, buf: &mut [u8]) -> Result<()> {
+        if self.devices.is_empty() {
+            self.device.read_at(physical, buf)?;
+            return Ok(());
+        }
+        let dev = self
+            .devices
+            .get(&devid)
+            .ok_or_else(|| Error::UnsupportedFeature(format!("device {devid} was not given")))?;
+        dev.read_at(physical, buf)?;
+        Ok(())
+    }
+
+    /// Copy `mirror` of the logical range, read as it lies: no checksum,
+    /// no fallback. For scrub, which judges each copy itself.
+    pub(crate) fn read_mirror_unverified(
+        &self,
+        logical: u64,
+        mirror: usize,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        Self::read_logical_pool_mirror(&self.device, &self.devices, &self.map, mirror, logical, buf)
+    }
+
+    /// Write `buf` over copy `mirror` of the logical range and no other
+    /// copy, as it lies: no checksum stamped, no transaction. For scrub
+    /// repair, which writes a copy that already verified over one that
+    /// did not, so the logical contents do not change (#302).
+    ///
+    /// Each span goes to the device its stripe names, so on a pool a copy
+    /// is repaired on its own member (#350). On a RAID5/6 chunk copy 0 is
+    /// the data element, and writing back the bytes its parity rebuilt
+    /// leaves that parity true. Every span is resolved and checked
+    /// against its device before the first byte is written.
+    pub(crate) fn write_mirror_in_place(
+        &self,
+        logical: u64,
+        mirror: usize,
+        buf: &[u8],
+    ) -> Result<()> {
+        let mut spans = Vec::new();
+        let mut done = 0usize;
+        while done < buf.len() {
+            let m = self.map.map_mirror(logical + done as u64, mirror)?;
+            let n = (m.len as usize).min(buf.len() - done);
+            if n == 0 {
+                return Err(Error::UnmappedLogical(logical + done as u64));
+            }
+            let device = self.write_device(m.devid)?;
+            Self::writable_span(device, m.physical, n)?;
+            spans.push((Arc::clone(device), m.physical, done, n));
+            done += n;
+        }
+        for (device, physical, from, n) in spans {
+            device.write_at(physical, &buf[from..from + n])?;
+        }
+        Ok(())
+    }
+
+    /// Write `buf` at `physical` on device `devid`, as it lies: one
+    /// RAID5/6 parity element, or part of one, computed again from its
+    /// data by scrub repair (#350). The span is checked against the
+    /// device before anything is written.
+    pub(crate) fn write_element(&self, devid: u64, physical: u64, buf: &[u8]) -> Result<()> {
+        let device = self.write_device(devid)?;
+        Self::writable_span(device, physical, buf.len())?;
+        device.write_at(physical, buf)?;
+        Ok(())
+    }
+
+    /// Every data checksum the csum tree holds for `[start, start + len)`,
+    /// by sector address; empty on a volume with no csum tree.
+    pub(crate) fn data_digests(&self, start: u64, len: u64) -> Result<crate::csum::SectorDigests> {
+        let Some(csum_root) = self.csum_tree_root else {
+            return Ok(crate::csum::SectorDigests::new());
+        };
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+        crate::csum::digests_for_range(
+            &tree,
+            csum_root,
+            self.sb.csum_type.digest_len(),
+            u64::from(self.sb.sectorsize),
+            start,
+            len,
+        )
+    }
+
+    /// A handle over the same device, reading a different tree.
+    ///
+    /// Used by [`Filesystem::open_subvolume`]. The device, superblock
+    /// and chunk map are shared — they describe the volume rather than
+    /// any one tree — and only the root and the items loaded from it
+    /// differ.
+    ///
+    /// The write capability is deliberately not carried across; see the
+    /// note on `open_subvolume`.
+    pub(crate) fn reroot(&self, fs_tree_root: u64) -> Result<Self> {
+        let fs = Filesystem {
+            device: self.device.clone(),
+            devices: self.devices.clone(),
+            writable: None,
+            writable_pool: BTreeMap::new(),
+            seed_pool: self.seed_pool.clone(),
+            seed_fsids: self.seed_fsids.clone(),
+            sb: self.sb.clone(),
+            map: self.map.clone(),
+            fs_tree_root,
+            subvolume_writes: None,
+            // A subvolume is another tree on the same volume, so its
+            // data is checksummed by the same csum tree.
+            csum_tree_root: self.csum_tree_root,
+            nodes: core::cell::RefCell::new(NodeCache::new(NODE_CACHE_BLOCKS)),
+            compression: self.compression,
+            pinned: Vec::new(),
+            emptying: None,
+            leaving: None,
+        };
+        Ok(fs)
+    }
+
+    /// Run `f` over this mount's fs tree, its blocks read through the node
+    /// cache. The pool, mirror fallback and verification are as every other
+    /// tree walk here has them.
+    fn with_fs_tree<R>(&self, f: impl FnOnce(&Tree, u64) -> Result<R>) -> Result<R> {
+        let read = |logical: u64, buf: &mut [u8]| -> Result<()> {
+            Self::read_logical_pool(&self.device, &self.devices, &self.map, logical, buf)
+        };
+        let mirrors = |logical: u64| -> Result<usize> { self.map.read_attempts_at(logical) };
+        let read_mirror = |logical: u64, mirror: usize, buf: &mut [u8]| -> Result<()> {
+            Self::read_logical_pool_mirror(
+                &self.device,
+                &self.devices,
+                &self.map,
+                mirror,
+                logical,
+                buf,
+            )
+        };
+        let get = |logical: u64| self.nodes.borrow_mut().get(logical);
+        let put = |logical: u64, block: &crate::btree::TreeBlock| {
+            self.nodes
+                .borrow_mut()
+                .put(logical, block)
+        };
+        let tree = Tree::new(TreeGeometry::from_superblock(&self.sb), &read)
+            .with_redundancy(&mirrors, &read_mirror)
+            .with_cache(&get, &put)
+            .with_seed_fsids(&self.seed_fsids);
+        f(&tree, self.fs_tree_root)
+    }
+
+    /// The fs tree item filed under exactly `key`.
+    fn item(&self, key: (u64, u8, u64)) -> Result<Option<Vec<u8>>> {
+        let key = DiskKey {
+            objectid: key.0,
+            key_type: key.1,
+            offset: key.2,
+        };
+        self.with_fs_tree(|tree, root| Ok(tree.search(root, &key)?.map(|item| item.data)))
+    }
+
+    /// Every fs tree item under `objectid` and `key_type`, in key order.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn item_run(
+        &self,
+        objectid: u64,
+        key_type: u8,
+    ) -> Result<Vec<((u64, u8, u64), Vec<u8>)>> {
+        self.with_fs_tree(|tree, root| {
+            Ok(tree
+                .find_all(root, objectid, key_type)?
+                .into_iter()
+                .map(|item| {
+                    (
+                        (item.key.objectid, item.key.key_type, item.key.offset),
+                        item.data,
+                    )
+                })
+                .collect())
+        })
+    }
+
+    /// Forget every cached tree block. A commit writes blocks at addresses
+    /// the tree may since have freed and reused.
+    pub(crate) fn forget_tree_blocks(&self) {
+        self.nodes.borrow_mut().clear();
+    }
+
+    /// The parsed superblock.
+    /// Read one tree block by its logical address.
+    ///
+    /// A writer needs to look at a specific block rather than iterate
+    /// items: to find what is above a leaf, to check what is at an
+    /// address before placing something there.
+    ///
+    /// # Errors
+    ///
+    /// Propagates the read, and the block's own verification — an
+    /// address holding something that is not a tree block of this
+    /// filesystem is an error rather than an empty result.
+    pub fn read_tree_block(&self, logical: u64) -> Result<crate::btree::TreeBlock> {
+        let reader = self.pool_reader();
+        reader.tree().read_block(logical)
+    }
+
+    /// The chunk map — how logical addresses become physical ones.
+    ///
+    /// Exposed because a WRITER has to reason about placement in a way a
+    /// reader does not: how many copies an address has, and where each
+    /// one lands.
+    pub fn chunk_map(&self) -> &ChunkMap {
+        &self.map
+    }
+
+    pub fn superblock(&self) -> &Superblock {
+        &self.sb
+    }
+
+    /// Every item in the root tree.
+    ///
+    /// The root tree is the index of trees: one `ROOT_ITEM` per
+    /// subvolume saying where its tree lives, and reference items
+    /// naming them. This hands the raw items back so a caller can see
+    /// what is actually there rather than only what is understood.
+    ///
+    /// # Errors
+    ///
+    /// As the B-tree walk.
+    pub fn root_tree_items(&self) -> Result<Vec<RootTreeItem>> {
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+        let mut out = Vec::new();
+        tree.for_each(self.sb.root, &mut |key: &DiskKey, data: &[u8]| {
+            out.push((key.objectid, key.key_type, key.offset, data.to_vec()));
+            Ok(true)
+        })?;
+        Ok(out)
+    }
+
+    /// Read one inode by objectid.
+    pub fn read_inode(&self, ino: u64) -> Result<Inode> {
+        let data = self
+            .item((ino, INODE_ITEM_KEY, 0))?
+            .ok_or(Error::NotFound)?;
+        Inode::parse(&data, ino)
+    }
+
+    /// The root directory's inode.
+    pub fn root_inode(&self) -> Result<Inode> {
+        self.read_inode(FIRST_FREE_OBJECTID)
+    }
+
+    /// List a directory's entries.
+    ///
+    /// Uses `DIR_INDEX` rather than `DIR_ITEM`: the index is ordered and
+    /// holds exactly one entry per key, while `DIR_ITEM` is hashed and
+    /// packs colliding names into a single value. Both describe the same
+    /// set; the index is simply the one meant for iteration.
+    ///
+    /// `.` and `..` are never returned, matching the sibling XFS driver
+    /// so a caller does not have to special-case per filesystem.
+    pub fn read_dir(&self, ino: u64) -> Result<Vec<DirEntry>> {
+        let inode = self.read_inode(ino)?;
+        if !inode.is_dir() {
+            return Err(Error::NotADirectory);
+        }
+        let mut out = Vec::new();
+        for ((objectid, key_type, _), data) in &self.item_run(ino, DIR_INDEX_KEY)? {
+            if *objectid != ino || *key_type != DIR_INDEX_KEY {
+                break;
+            }
+            for e in dir::parse_dir_items(data)? {
+                if e.name != b"." && e.name != b".." {
+                    out.push(e);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Look up one name within a directory.
+    ///
+    /// # Why this is not `read_dir().find(..)`
+    ///
+    /// A name is filed under `(dir, DIR_ITEM, name_hash(name))`, so the
+    /// item holding it is fetched by key, and the scan that remains is over
+    /// the records packed into that one item -- names whose hashes collide.
+    /// Listing the directory to find one name made every path component cost
+    /// the size of its directory: a lookup in a 20,000-entry directory
+    /// materialised all 20,000 entries (#64).
+    pub fn lookup(&self, dir_ino: u64, name: &[u8]) -> Result<Inode> {
+        let hit = self.lookup_entry(dir_ino, name)?;
+
+        // A subvolume is a directory entry whose location names a tree
+        // rather than an inode, so there is nothing in THIS tree to
+        // return. Saying so is the point: reading the entry's objectid
+        // as an inode number finds an unrelated inode of the same
+        // number, or nothing, and `NotFound` for a name that is plainly
+        // there sends the reader looking in the wrong place entirely.
+        if !hit.is_inode() {
+            return Err(Error::UnsupportedFeature(format!(
+                "{:?} names subvolume {} rather than an inode in this tree — resolve \
+                 the path with `resolve_path`, which crosses into it",
+                String::from_utf8_lossy(name),
+                hit.ino
+            )));
+        }
+        self.read_inode(hit.ino)
+    }
+
+    /// The directory entry `name` in `dir_ino`, whether it names an inode
+    /// or a subvolume.
+    pub(crate) fn lookup_entry(&self, dir_ino: u64, name: &[u8]) -> Result<DirEntry> {
+        if !self.read_inode(dir_ino)?.is_dir() {
+            return Err(Error::NotADirectory);
+        }
+        // Not stored as entries, and `read_dir` never returned them.
+        if name == b"." || name == b".." {
+            return Err(Error::NotFound);
+        }
+        let data = self
+            .item((dir_ino, dir::DIR_ITEM_KEY, dir::name_hash(name)))?
+            .ok_or(Error::NotFound)?;
+        dir::parse_dir_items(&data)?
+            .into_iter()
+            .find(|e| e.name == name)
+            .ok_or(Error::NotFound)
+    }
+
+    /// Every extended attribute on an inode, in the order the tree
+    /// holds them.
+    ///
+    /// That order is by name hash, not alphabetical and not the order
+    /// the attributes were set — Btrfs files an attribute under
+    /// `(ino, 24, name_hash(name))`, so the sequence is whatever the
+    /// hash function produced. A caller wanting a stable presentation
+    /// order should sort; this reports what is there.
+    ///
+    /// Several names can share one key, and then their records are
+    /// packed into a single item. Every record in every item is
+    /// returned, which is the whole reason this is not a lookup.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if the inode does not exist, or
+    /// [`Error::BadSuperblock`] if an item is malformed.
+    pub fn list_xattrs(&self, ino: u64) -> Result<Vec<XattrEntry>> {
+        // Confirms the inode exists, so an attribute list for a number
+        // that names nothing is a refusal rather than an empty list —
+        // which a caller could not tell from a file with no attributes.
+        self.read_inode(ino)?;
+        let mut out = Vec::new();
+        for ((objectid, key_type, _), data) in &self.item_run(ino, XATTR_ITEM_KEY)? {
+            if *objectid != ino || *key_type != XATTR_ITEM_KEY {
+                break;
+            }
+            out.extend(xattr::parse_xattr_items(data)?);
+        }
+        Ok(out)
+    }
+
+    /// One extended attribute's value, by fully-qualified name
+    /// (`user.colour`, not `colour`).
+    ///
+    /// `Ok(None)` means the attribute is not set. That is distinct from
+    /// `Ok(Some(vec![]))`, which means it is set to a zero-length value
+    /// — a real thing to store, and something a caller may act on.
+    ///
+    /// # Why this is not `list_xattrs().find(..)`
+    ///
+    /// The name's hash *is* the key, so the item holding it can be
+    /// fetched directly instead of walking every attribute on the
+    /// inode. The scan that remains is over the handful of records
+    /// inside that one item, which is where a colliding name would be.
+    ///
+    /// # Errors
+    ///
+    /// As [`list_xattrs`](Self::list_xattrs).
+    pub fn get_xattr(&self, ino: u64, name: &[u8]) -> Result<Option<Vec<u8>>> {
+        self.read_inode(ino)?;
+        let Some(data) = self.item((ino, XATTR_ITEM_KEY, dir::name_hash(name)))? else {
+            return Ok(None);
+        };
+        Ok(xattr::parse_xattr_items(&data)?
+            .into_iter()
+            .find(|e| e.name == name)
+            .map(|e| e.value))
+    }
+
+    /// Resolve an absolute path to its inode in this tree.
+    ///
+    /// A path into a subvolume is refused at the boundary, because the
+    /// inode would mean nothing without its tree; [`resolve_path`]
+    /// crosses it and returns both.
+    ///
+    /// Symbolic links are not followed, so link loops remain the
+    /// caller's policy rather than a surprise from this function.
+    ///
+    /// [`resolve_path`]: Filesystem::resolve_path
+    pub fn lookup_path(&self, path: &str) -> Result<Inode> {
+        self.lookup_path_bytes(path.as_bytes())
+    }
+
+    /// Resolve a `/`-separated path given as bytes.
+    ///
+    /// THIS IS THE REAL ONE, and the `&str` wrapper above is the
+    /// convenience. Btrfs directory entry names are raw bytes and the
+    /// format has no field that could say what encoding they are in, so
+    /// a name is not text until somebody decides what to read it as,
+    /// and this crate never decides. Components are compared byte for
+    /// byte against the on-disk entry, so a name handed out by a listing
+    /// always resolves when handed back (#214).
+    ///
+    /// `..` is the directory the walk came from, and `..` at the top is
+    /// the top (#271). Symbolic links are never followed, so the walk is
+    /// only ever in a directory it entered by name, and that directory's
+    /// parent is the one it entered from: no `INODE_REF` needs reading.
+    pub fn lookup_path_bytes(&self, path: &[u8]) -> Result<Inode> {
+        let mut walked = vec![self.root_inode()?];
+        for component in path
+            .split(|&b| b == b'/')
+            .filter(|c| !c.is_empty() && *c != b".")
+        {
+            let here = walked.last().expect("the top is never popped");
+            if !here.is_dir() {
+                return Err(Error::NotADirectory);
+            }
+            if component == b".." {
+                if walked.len() > 1 {
+                    walked.pop();
+                }
+                continue;
+            }
+            let next = self.lookup(here.ino, component)?;
+            walked.push(next);
+        }
+        Ok(walked.pop().expect("the top is never popped"))
+    }
+
+    /// Refuse a reference whose window leaves the extent the extent tree
+    /// records for it (#188).
+    ///
+    /// `offset` and `len` are the reference's window within the extent that
+    /// starts at `disk_bytenr`. The extent tree's item for that address
+    /// carries the extent's length in its key, which is the one bound that
+    /// does not come from the item being checked.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::BadSuperblock`] when the window leaves the extent, and
+    /// whatever the extent-tree lookup returns — including an extent with
+    /// no item at all, which is a reference to something nothing records.
+    fn refuse_window_outside_extent(
+        &self,
+        ino: u64,
+        disk_bytenr: u64,
+        offset: u64,
+        len: u64,
+    ) -> Result<()> {
+        // A reference with no address behind it: a hole or inline data,
+        // which the caller has already dealt with.
+        if disk_bytenr == 0 {
+            return Ok(());
+        }
+        let (_, extent_len, _) = self.extent_item(disk_bytenr)?;
+        let start = disk_bytenr.checked_add(offset).ok_or_else(|| {
+            Error::BadSuperblock(format!(
+                "inode {ino}: an extent item at {disk_bytenr} has an offset of {offset}, \
+                 which is past the end of the address space"
+            ))
+        })?;
+        if !crate::write::window_inside_extent(start, len, disk_bytenr, extent_len) {
+            return Err(Error::BadSuperblock(format!(
+                "inode {ino}: an extent item covers [{start}, +{len}), which is outside the \
+                 extent at {disk_bytenr} that the extent tree records as {extent_len} bytes"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Decode one `EXTENT_DATA` item into the piece of file it describes.
+    fn decode_extent<'a>(&self, data: &'a [u8], ino: u64) -> Result<Piece<'a>> {
+        if data.len() < file_extent::TYPE + 1 {
+            return Err(Error::BadSuperblock(format!(
+                "inode {ino}: extent item is {} bytes, too short to hold a type",
+                data.len()
+            )));
+        }
+        let _generation = le64(data, file_extent::GENERATION);
+        let ram_bytes = le64(data, file_extent::RAM_BYTES);
+        let compression = data[file_extent::COMPRESSION];
+        let encryption = data[file_extent::ENCRYPTION];
+        let other = u16::from_le_bytes(
+            data[file_extent::OTHER_ENCODING..file_extent::OTHER_ENCODING + 2]
+                .try_into()
+                .expect("2 bytes"),
+        );
+        let kind = data[file_extent::TYPE];
+
+        let algo = Compression::from_byte(compression)
+            .map_err(|e| Error::UnsupportedFeature(format!("inode {ino}: {e}")))?;
+        if encryption != 0 || other != 0 {
+            return Err(Error::UnsupportedFeature(format!(
+                "inode {ino}: extent is encoded (encryption {encryption}, other {other})"
+            )));
+        }
+
+        match kind {
+            EXTENT_INLINE => {
+                let end = data.len();
+                let start = file_extent::INLINE_DATA.min(end);
+                let raw = &data[start..end];
+                // An inline extent may be compressed too, and there is no
+                // offset to apply: the item holds the whole thing.
+                Ok(Piece::Inline(if algo.is_compressed() {
+                    // An inline extent is the whole of a small file, so it
+                    // is the file's last extent by definition (#189).
+                    alloc::borrow::Cow::Owned(compression::decompress(
+                        algo,
+                        raw,
+                        ram_bytes as usize,
+                        self.sb.sectorsize as usize,
+                        compression::ShortDecode::Pad,
+                    )?)
+                } else {
+                    alloc::borrow::Cow::Borrowed(raw)
+                }))
+            }
+            EXTENT_REGULAR | EXTENT_PREALLOC => {
+                if data.len() < file_extent::REGULAR_SIZE {
+                    return Err(Error::BadSuperblock(format!(
+                        "inode {ino}: non-inline extent item is {} bytes, need {}",
+                        data.len(),
+                        file_extent::REGULAR_SIZE
+                    )));
+                }
+                let disk_bytenr = le64(data, file_extent::DISK_BYTENR);
+                let offset = le64(data, file_extent::OFFSET);
+                let num_bytes = le64(data, file_extent::NUM_BYTES);
+
+                // EVERY LENGTH AND ADDRESS IS WHOLE SECTORS, which is what
+                // the kernel's tree checker (`check_extent_data_item`)
+                // requires of all five fields, holes included. It narrows
+                // the values a crafted item can use; it is not a bound on
+                // where the window points (#89).
+                let sector = u64::from(self.sb.sectorsize.max(1));
+                for (field, value) in [
+                    ("ram_bytes", ram_bytes),
+                    ("disk_bytenr", disk_bytenr),
+                    ("disk_num_bytes", le64(data, file_extent::DISK_NUM_BYTES)),
+                    ("offset", offset),
+                    ("num_bytes", num_bytes),
+                ] {
+                    if value % sector != 0 {
+                        return Err(Error::BadSuperblock(format!(
+                            "inode {ino}: extent item {field} {value} is not a multiple of \
+                             the {sector}-byte sector"
+                        )));
+                    }
+                }
+
+                // disk_bytenr == 0 is a hole. A preallocated extent has
+                // blocks reserved but never written, and returning them
+                // would disclose whatever previously occupied the space.
+                if disk_bytenr == 0 {
+                    return Ok(Piece::Hole);
+                }
+                if kind == EXTENT_PREALLOC {
+                    return Ok(Piece::Preallocated {
+                        logical: disk_bytenr,
+                        len: num_bytes,
+                    });
+                }
+                // THE ITEM'S WINDOW IS INSIDE THE EXTENT IT NAMES.
+                //
+                // `offset` says where in the extent this item's data
+                // starts and `num_bytes` how much of it the item
+                // covers, so together they cannot exceed the extent's
+                // own length. This crate's rule, not the kernel tree
+                // checker's, and a weak one: `ram_bytes` comes from the
+                // same item, so a crafted item passes it by raising
+                // `ram_bytes` too (#89). It still refuses the plain
+                // inconsistency. The bound that holds is the extent
+                // tree's own record of the extent's length, from another
+                // tree entirely; the write path checks against that
+                // before writing (`plan_nodatacow_write`), because a
+                // window moved outside its extent there writes over a
+                // tree block or another file. A read through such an
+                // item returns bytes from outside the extent.
+                //
+                // BEFORE THE COMPRESSED BRANCH, NOT AFTER IT (#73). The
+                // rule is a property of the item, not of how its bytes
+                // are stored, and for a compressed extent `offset` is an
+                // index into the DECODED buffer that never meets the chunk
+                // map: unchecked, one le64 overflowed that index into a
+                // panic in any build with overflow checks on.
+                let window_end = offset
+                    .checked_add(num_bytes)
+                    .filter(|end| *end <= ram_bytes);
+                if window_end.is_none() {
+                    return Err(Error::BadSuperblock(format!(
+                        "inode {ino}: an extent item covers [{offset}, +{num_bytes}) of an \
+                         extent that is {ram_bytes} bytes long"
+                    )));
+                }
+                if algo.is_compressed() {
+                    // `disk_len` is the buffer the compressed bytes are
+                    // read into, and it is a raw le64. Btrfs never
+                    // writes a compressed extent larger than the unit it
+                    // compresses in -- see `compression::MAX_COMPRESSED`.
+                    let disk_len = le64(data, file_extent::DISK_NUM_BYTES);
+                    if disk_len > compression::MAX_COMPRESSED {
+                        return Err(Error::BadSuperblock(format!(
+                            "inode {ino}: compressed extent occupies {disk_len} bytes on \
+                             disk, more than the {} a compressed extent can",
+                            compression::MAX_COMPRESSED
+                        )));
+                    }
+                    // The compressed run is read whole from `disk_bytenr`,
+                    // so that is the range which has to be inside the
+                    // extent; `offset` indexes the decoded bytes and is
+                    // bounded by `ram_bytes` above (#188).
+                    self.refuse_window_outside_extent(ino, disk_bytenr, 0, disk_len)?;
+                    return Ok(Piece::Compressed {
+                        logical: disk_bytenr,
+                        disk_len,
+                        ram_len: ram_bytes,
+                        offset,
+                        len: num_bytes,
+                        algo,
+                    });
+                }
+                // THE WINDOW IS INSIDE THE EXTENT THE EXTENT TREE RECORDS
+                // (#188). The check above bounds it by `ram_bytes`, which
+                // is a field of this same item, so an item that raises both
+                // passes — and a read then answered with whatever occupies
+                // the addresses past the extent: another file's data, or a
+                // tree block, with no error to tell a caller. The write
+                // path has checked against the extent tree since #156; the
+                // length there is the extent's own record, from a tree this
+                // item cannot forge.
+                self.refuse_window_outside_extent(ino, disk_bytenr, offset, num_bytes)?;
+                Ok(Piece::Regular {
+                    // Both halves are raw le64s. In release, where this
+                    // crate ships with overflow-checks off, the sum
+                    // wrapped to a small logical address that then
+                    // mapped into an unrelated chunk -- a silent
+                    // mistranslation, which is the failure this driver
+                    // exists to avoid.
+                    logical: disk_bytenr.checked_add(offset).ok_or_else(|| {
+                        Error::BadSuperblock(format!(
+                            "inode {ino}: extent at {disk_bytenr} plus offset {offset} \
+                             leaves the address space"
+                        ))
+                    })?,
+                    len: num_bytes,
+                })
+            }
+            other => Err(Error::BadSuperblock(format!(
+                "inode {ino}: extent type {other} is not a defined value (ram_bytes {ram_bytes})"
+            ))),
+        }
+    }
+
+    /// One extent of a file, as the write planner needs to see it.
+    ///
+    /// The read path consumes `Piece` and copies immediately; a writer
+    /// has to decide whether a range may be written at all before
+    /// touching any of it, which needs the pieces as a list with their
+    /// file offsets attached.
+    pub(crate) fn file_extents(&self, ino: u64) -> Result<Vec<FileExtent>> {
+        let mut out = Vec::new();
+        for ((objectid, key_type, offset), data) in &self.item_run(ino, EXTENT_DATA_KEY)? {
+            if *objectid != ino || *key_type != EXTENT_DATA_KEY {
+                break;
+            }
+            let start = *offset;
+            match self.decode_extent(data, ino)? {
+                // Inline data lives in the item, so there is no block to
+                // overwrite, and a preallocated extent's blocks read as
+                // zeros until the item is changed to say otherwise. Both
+                // are reported with no logical address, and the planner
+                // refuses them by name. A hole has nothing behind it and
+                // is not reported.
+                Piece::Inline(bytes) => out.push(FileExtent {
+                    start,
+                    len: bytes.len() as u64,
+                    logical: None,
+                    extent_start: 0,
+                    compressed: false,
+                    ref_offset: 0,
+                    inline: true,
+                }),
+                Piece::Preallocated { logical, len } => out.push(FileExtent {
+                    start,
+                    len,
+                    logical: None,
+                    extent_start: logical,
+                    compressed: false,
+                    ref_offset: 0,
+                    inline: false,
+                }),
+                Piece::Hole => {}
+                Piece::Regular { logical, len } => out.push(FileExtent {
+                    start,
+                    len,
+                    logical: Some(logical),
+                    // `logical` already has the reference's offset folded
+                    // in; the extent item is keyed by the run's start.
+                    extent_start: le64(data, file_extent::DISK_BYTENR),
+                    compressed: false,
+                    ref_offset: logical - le64(data, file_extent::DISK_BYTENR),
+                    inline: false,
+                }),
+                Piece::Compressed { len, offset, .. } => out.push(FileExtent {
+                    start,
+                    len,
+                    logical: None,
+                    extent_start: le64(data, file_extent::DISK_BYTENR),
+                    compressed: true,
+                    ref_offset: offset,
+                    inline: false,
+                }),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Read a whole file.
+    ///
+    /// Materialises the file in memory, so it is bounded by the size of
+    /// the filesystem and by [`MAX_WHOLE_FILE_READ`], and the allocation
+    /// is fallible: a size no allocator can satisfy is an error rather
+    /// than an abort. Reading part of a larger file is what
+    /// [`Filesystem::read_at`] is for.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] for a file too large to read whole:
+    /// the request is valid and this call cannot serve it, which is not
+    /// a device failure ([`Error::Io`]) and not proof of corruption.
+    pub fn read_file(&self, ino: u64) -> Result<Vec<u8>> {
+        let inode = self.read_inode(ino)?;
+        if !inode.is_regular_file() && !inode.is_symlink() {
+            return Err(Error::NotAFile);
+        }
+        if inode.size > self.sb.total_bytes {
+            return Err(Error::BadSuperblock(format!(
+                "inode {ino} says it is {} bytes, more than the {} the filesystem holds",
+                inode.size, self.sb.total_bytes
+            )));
+        }
+        // BOUNDED, AND THEN FALLIBLY. `inode.size` is a raw `le64`, and
+        // `total_bytes` bounds it only as tightly as the volume is small:
+        // an 8 TB volume admits an 8 TB `Vec`. An allocation that cannot
+        // be satisfied aborts the process, which `capi::guard` cannot turn
+        // into an errno (#80). A sparse file can truly be that large, so
+        // the extents cannot bound it either. What can be refused is the
+        // read: past `MAX_WHOLE_FILE_READ` by a fixed ceiling, because an
+        // overcommitting allocator grants reservations it cannot back,
+        // and below it by the reservation, for one that does not.
+        //
+        // `UnsupportedFeature`, not `Io`: nothing failed on the device,
+        // and a caller matching variants must not read this as one.
+        let too_large = || {
+            Error::UnsupportedFeature(format!(
+                "inode {ino} is {} bytes, more than a whole-file read will hold in memory; \
+                 read it in pieces with read_at",
+                inode.size
+            ))
+        };
+        if inode.size > MAX_WHOLE_FILE_READ {
+            return Err(too_large());
+        }
+        let len = usize::try_from(inode.size).map_err(|_| too_large())?;
+        let mut out = Vec::new();
+        out.try_reserve_exact(len).map_err(|_| too_large())?;
+        out.resize(len, 0);
+        self.read_range(&inode, 0, &mut out)?;
+        Ok(out)
+    }
+
+    /// Read data at a logical address and check it against the csum
+    /// tree before handing it back.
+    ///
+    /// Data checksums cover whole sectors, so a read that starts or
+    /// ends mid-sector cannot be verified as it stands: there is
+    /// nothing to compare a fragment against. The read is widened to
+    /// sector boundaries, every sector the tree names is checked, and
+    /// the caller's slice is filled from the middle of the result. The
+    /// widening costs at most two extra sectors per extent and is what
+    /// makes the check cover the bytes actually returned rather than
+    /// only the aligned ones.
+    ///
+    /// A sector the tree does not name is passed through unchecked. See
+    /// [`crate::csum`] for why absence is not a failure.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ChecksumMismatch`] naming the logical address of the
+    /// first sector whose digest does not match — the address, not the
+    /// file offset, because that is what a caller comparing against
+    /// `btrfs inspect-internal` or the kernel's own message will see.
+    pub(crate) fn read_data_verified(
+        &self,
+        logical: u64,
+        dst: &mut [u8],
+        verify: bool,
+    ) -> Result<()> {
+        if !verify || dst.is_empty() {
+            return Self::read_logical_pool(&self.device, &self.devices, &self.map, logical, dst);
+        }
+        let Some(csum_root) = self.csum_tree_root else {
+            return Self::read_logical_pool(&self.device, &self.devices, &self.map, logical, dst);
+        };
+        let sector = u64::from(self.sb.sectorsize);
+        if sector == 0 {
+            return Self::read_logical_pool(&self.device, &self.devices, &self.map, logical, dst);
+        }
+
+        let (first, span) = sector_aligned_span(logical, dst.len() as u64, sector)
+            .ok_or(Error::UnmappedLogical(logical))?;
+
+        let mut whole = vec![0u8; span as usize];
+        Self::read_logical_pool(&self.device, &self.devices, &self.map, first, &mut whole)?;
+
+        let digests = {
+            let reader = self.pool_reader();
+            let tree = reader.tree();
+            crate::csum::digests_for_range(
+                &tree,
+                csum_root,
+                self.sb.csum_type.digest_len(),
+                sector,
+                first,
+                span,
+            )?
+        };
+
+        for (i, chunk) in whole.chunks_exact_mut(sector as usize).enumerate() {
+            let at = first + i as u64 * sector;
+            let Some(expected) = digests.get(&at) else {
+                continue;
+            };
+            if self.sb.csum_type.verify(chunk, expected) {
+                continue;
+            }
+            // The first copy is bad: every other way of reading this
+            // sector, in turn, until one verifies -- the second copy of a
+            // DUP or RAID1 chunk, a rebuild from RAID5/6 parity (#268).
+            // A sector none of them can produce is refused, never returned.
+            let mut repaired = false;
+            for attempt in 1..self.map.read_attempts_at(at)? {
+                let mut other = vec![0u8; sector as usize];
+                let read = Self::read_logical_pool_mirror(
+                    &self.device,
+                    &self.devices,
+                    &self.map,
+                    attempt,
+                    at,
+                    &mut other,
+                );
+                if read.is_ok() && self.sb.csum_type.verify(&other, expected) {
+                    chunk.copy_from_slice(&other);
+                    repaired = true;
+                    break;
+                }
+            }
+            if !repaired {
+                return Err(Error::ChecksumMismatch {
+                    what: "a data extent",
+                    offset: at,
+                });
+            }
+        }
+
+        let skip = (logical - first) as usize;
+        dst.copy_from_slice(&whole[skip..skip + dst.len()]);
+        Ok(())
+    }
+
+    /// A verity file's descriptor, or `None` for a file without verity
+    /// (#270). See [`crate::verity`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] for an inode that does not exist;
+    /// [`Error::BadSuperblock`] for a verity file whose descriptor is
+    /// missing, short or contradicts the file; and
+    /// [`Error::UnsupportedFeature`] for an encrypted descriptor, or one
+    /// using a version, hash or block size fs-verity does not define.
+    pub fn verity(&self, ino: u64) -> Result<Option<crate::verity::Verity>> {
+        let inode = self.read_inode(ino)?;
+        self.verity_of(&inode)
+    }
+
+    /// A verity file's Merkle tree, every byte of it as stored: what
+    /// `fsverity dump_metadata merkle_tree` prints. Empty for a file of
+    /// one block or none, and for a file without verity.
+    pub fn verity_merkle_tree(&self, ino: u64) -> Result<Vec<u8>> {
+        let Some(v) = self.verity(ino)? else {
+            return Ok(Vec::new());
+        };
+        let len = usize::try_from(v.tree_size()).map_err(|_| {
+            Error::UnsupportedFeature(format!("inode {ino}'s Merkle tree is too large to hold"))
+        })?;
+        self.verity_tree_bytes(ino, 0, len)
+    }
+
+    fn verity_of(&self, inode: &Inode) -> Result<Option<crate::verity::Verity>> {
+        use crate::verity::{self, DESCRIPTOR_ITEM_SIZE, VERITY_DESC_ITEM_KEY};
+        if inode.flags & verity::INODE_RO_VERITY == 0 {
+            return Ok(None);
+        }
+        let ino = inode.ino;
+        let mut items = self
+            .item_run(ino, VERITY_DESC_ITEM_KEY)?
+            .into_iter()
+            .take_while(|((o, t, _), _)| *o == ino && *t == VERITY_DESC_ITEM_KEY)
+            .map(|((_, _, offset), data)| (offset, data));
+        let head = match items.next() {
+            Some((0, head)) if head.len() >= DESCRIPTOR_ITEM_SIZE => head,
+            _ => {
+                return Err(Error::BadSuperblock(format!(
+                    "inode {ino} is an fs-verity file with no descriptor item"
+                )))
+            }
+        };
+        if head[24] != 0 {
+            return Err(Error::UnsupportedFeature(format!(
+                "inode {ino}'s fs-verity descriptor is encrypted ({})",
+                head[24]
+            )));
+        }
+        // The kernel's own ceiling on a descriptor and its signature.
+        const MAX_DESCRIPTOR: u64 = 16384;
+        let size = le64(&head, 0);
+        if size > MAX_DESCRIPTOR {
+            return Err(Error::BadSuperblock(format!(
+                "inode {ino}'s fs-verity descriptor claims {size} bytes"
+            )));
+        }
+        let blob = verity::assemble(items, 1, size as usize, "the fs-verity descriptor")?;
+        verity::Verity::parse(blob, inode.size).map(Some)
+    }
+
+    /// `len` bytes of a verity file's stored Merkle tree from `offset`,
+    /// reading only the items that hold them.
+    fn verity_tree_bytes(&self, ino: u64, offset: u64, len: usize) -> Result<Vec<u8>> {
+        use crate::verity::{self, VERITY_MERKLE_ITEM_KEY};
+        // An item holding byte `offset` begins less than a leaf before it,
+        // since no item is larger than a leaf.
+        let start = DiskKey {
+            objectid: ino,
+            key_type: VERITY_MERKLE_ITEM_KEY,
+            offset: offset.saturating_sub(u64::from(self.sb.nodesize)),
+        };
+        let end = offset.saturating_add(len as u64);
+        let mut items = Vec::new();
+        self.with_fs_tree(|tree, root| {
+            tree.for_each_from(root, &start, &mut |k, data| {
+                if k.objectid != ino || k.key_type != VERITY_MERKLE_ITEM_KEY || k.offset >= end {
+                    return Ok(false);
+                }
+                items.push((k.offset, data.to_vec()));
+                Ok(true)
+            })
+        })?;
+        verity::assemble(items, offset, len, "the fs-verity Merkle tree")
+    }
+
+    /// Fill `buf` with the file's bytes from `from` onwards, and for a
+    /// verity file check every block they come from against its Merkle
+    /// tree first, as the kernel does: a block that does not verify is
+    /// refused, never returned (#270).
+    fn read_range(&self, inode: &Inode, from: u64, buf: &mut [u8]) -> Result<()> {
+        let Some(v) = self.verity_of(inode)? else {
+            return self.read_extents(inode, from, buf);
+        };
+        buf.fill(0);
+        let end = from.saturating_add(buf.len() as u64).min(inode.size);
+        if from >= end {
+            return Ok(());
+        }
+        // Whole blocks, the last one ending where the file does.
+        let bs = v.block_size();
+        let first = from / bs;
+        let (wide_from, wide_end) = (
+            first * bs,
+            end.div_ceil(bs).saturating_mul(bs).min(inode.size),
+        );
+        let mut tree = |offset: u64, len: usize| self.verity_tree_bytes(inode.ino, offset, len);
+        let want = (end - from) as usize;
+        if (wide_from, wide_end) == (from, end) {
+            self.read_extents(inode, from, &mut buf[..want])?;
+            return v.verify(first, &buf[..want], &mut tree);
+        }
+        let mut whole = vec![0u8; (wide_end - wide_from) as usize];
+        self.read_extents(inode, wide_from, &mut whole)?;
+        v.verify(first, &whole, &mut tree)?;
+        let skip = (from - wide_from) as usize;
+        buf[..want].copy_from_slice(&whole[skip..skip + want]);
+        Ok(())
+    }
+
+    /// Fill `buf` with the file's bytes from `from` onwards.
+    ///
+    /// `buf` is zeroed first, so a hole and a preallocated extent need
+    /// no special case: they are the absence of a copy.
+    ///
+    /// Only the extents that overlap the window are read. `read_at`
+    /// used to call `read_file` and slice the result, which meant
+    /// serving a 4 KiB read of a large file by materialising the whole
+    /// of it -- and `inode.size` is a raw `le64`, so "the whole of it"
+    /// was whatever the image claimed.
+    fn read_extents(&self, inode: &Inode, from: u64, buf: &mut [u8]) -> Result<()> {
+        buf.fill(0);
+        if buf.is_empty() {
+            return Ok(());
+        }
+        let ino = inode.ino;
+        // A file the filesystem never checksummed has nothing to check
+        // against. Asked per file rather than per sector because it is
+        // the answer for every sector of this file, and because a
+        // `NODATASUM` file would otherwise pay a csum-tree descent per
+        // extent to be told each time that there is nothing there.
+        let verify =
+            inode.flags & (crate::write::INODE_NODATASUM | crate::write::INODE_NODATACOW) == 0;
+        let want_end = from.saturating_add(buf.len() as u64).min(inode.size);
+
+        for ((objectid, key_type, offset), data) in &self.item_run(ino, EXTENT_DATA_KEY)? {
+            if *objectid != ino || *key_type != EXTENT_DATA_KEY {
+                break;
+            }
+            let at = *offset;
+            if at >= want_end {
+                break;
+            }
+            let piece = self.decode_extent(data, ino)?;
+            let extent_len = match &piece {
+                Piece::Inline(bytes) => bytes.len() as u64,
+                Piece::Hole | Piece::Preallocated { .. } => continue,
+                Piece::Regular { len, .. } | Piece::Compressed { len, .. } => *len,
+            };
+            // Where this extent and the window overlap, in file offsets.
+            let start = at.max(from);
+            let end = at.saturating_add(extent_len).min(want_end);
+            if end <= start {
+                continue;
+            }
+            let take = (end - start) as usize;
+            let skip = (start - at) as usize;
+            let dst = &mut buf[(start - from) as usize..(end - from) as usize];
+
+            match piece {
+                Piece::Inline(bytes) => {
+                    let src = bytes
+                        .get(skip..skip + take)
+                        .ok_or_else(|| short_extent(ino, "inline"))?;
+                    dst.copy_from_slice(src);
+                }
+                Piece::Hole | Piece::Preallocated { .. } => unreachable!("handled above"),
+                Piece::Regular { logical, .. } => {
+                    let at_logical = logical
+                        .checked_add(skip as u64)
+                        .ok_or_else(|| short_extent(ino, "regular"))?;
+                    self.read_data_verified(at_logical, dst, verify)?;
+                }
+                Piece::Compressed {
+                    logical,
+                    disk_len,
+                    ram_len,
+                    offset: within,
+                    algo,
+                    ..
+                } => {
+                    let mut packed = vec![0u8; disk_len as usize];
+                    // A compressed extent's checksums cover the bytes
+                    // as they are on disk, not the decoded ones, so
+                    // this is the read to verify — and it is the whole
+                    // extent, so it is sector-aligned already.
+                    self.read_data_verified(logical, &mut packed, verify)?;
+                    // A DECODE MAY ONLY COME UP SHORT ON THE LAST EXTENT
+                    // (#189), where the tail of the final sector holds
+                    // nothing. Anywhere else the stream is truncated, and
+                    // padding it would answer with zeros a caller cannot
+                    // tell from data.
+                    let short = if at.saturating_add(ram_len) >= inode.size {
+                        compression::ShortDecode::Pad
+                    } else {
+                        compression::ShortDecode::Refuse
+                    };
+                    let decoded = compression::decompress(
+                        algo,
+                        &packed,
+                        ram_len as usize,
+                        self.sb.sectorsize as usize,
+                        short,
+                    )?;
+                    // `within` indexes the decoded bytes, which is the
+                    // whole reason this is not a Regular read.
+                    let src = usize::try_from(within)
+                        .ok()
+                        .and_then(|w| w.checked_add(skip))
+                        .and_then(|at| Some(at..at.checked_add(take)?))
+                        .and_then(|range| decoded.get(range))
+                        .ok_or_else(|| short_extent(ino, "compressed"))?;
+                    dst.copy_from_slice(src);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Read part of a file.
+    ///
+    /// Returns the number of bytes read, short only at end of file.
+    pub fn read_at(&self, ino: u64, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        let inode = self.read_inode(ino)?;
+        // Kept from when this went through `read_file`: reading a
+        // directory is EISDIR, not a short read of nothing.
+        if !inode.is_regular_file() && !inode.is_symlink() {
+            return Err(Error::NotAFile);
+        }
+        if offset >= inode.size {
+            return Ok(0);
+        }
+        let n = buf.len().min((inode.size - offset) as usize);
+        self.read_range(&inode, offset, &mut buf[..n])?;
+        Ok(n)
+    }
+
+    /// Resolve a symbolic link's target.
+    pub fn read_link(&self, ino: u64) -> Result<Vec<u8>> {
+        let inode = self.read_inode(ino)?;
+        if !inode.is_symlink() {
+            return Err(Error::NotAFile);
+        }
+        // A link's target is a path, and no path is longer than
+        // PATH_MAX. Without this the inode's raw `size` reached
+        // `read_file`'s allocation from `fs_btrfs_readlink`.
+        if inode.size > MAX_SYMLINK_TARGET {
+            return Err(Error::BadSuperblock(format!(
+                "inode {ino}: symlink target of {} bytes is longer than any path",
+                inode.size
+            )));
+        }
+        self.read_file(ino)
+    }
+
+    /// List a directory by path, crossing into subvolumes on the way.
+    pub fn list_path(&self, path: &str) -> Result<Vec<DirEntry>> {
+        self.list_path_bytes(path.as_bytes())
+    }
+
+    /// [`list_path`] with the path given as bytes (#214).
+    ///
+    /// [`list_path`]: Self::list_path
+    pub fn list_path_bytes(&self, path: &[u8]) -> Result<Vec<DirEntry>> {
+        let target = self.resolve_path_bytes(path)?;
+        if target.inode.ino == crate::subvol::EMPTY_SUBVOL_DIR_OBJECTID {
+            return Ok(Vec::new());
+        }
+        target.fs(self).read_dir(target.inode.ino)
+    }
+
+    /// Read a whole file by path, crossing into subvolumes on the way.
+    pub fn read_path(&self, path: &str) -> Result<Vec<u8>> {
+        let target = self.resolve_path(path)?;
+        target.fs(self).read_file(target.inode.ino)
+    }
+}
+
+/// Reads one RAID5/6 element: `(devid, physical, out)`.
+type ElementRead<'a> = &'a dyn Fn(u64, u64, &mut [u8]) -> Result<()>;
+
+/// A tree walker bound to one filesystem's pool.
+///
+/// Holds the read closure so a [`crate::btree::Tree`] can borrow it —
+/// see [`Filesystem::pool_reader`] for why the two cannot be one value.
+pub(crate) struct PoolReader<'a> {
+    geom: crate::btree::TreeGeometry,
+    /// The pool's seed fsids; see [`Filesystem::seed_fsids`].
+    seeds: &'a [[u8; 16]],
+    read: OwnedReadBlock<'a>,
+    mirrors: OwnedMirrorCount<'a>,
+    read_mirror: OwnedReadMirror<'a>,
+}
+
+/// An owned block reader, the counterpart to
+/// [`crate::btree::ReadBlock`]'s borrowed one.
+///
+/// The `Tree` borrows a reader; something has to own it, and that
+/// something is [`PoolReader`].
+type OwnedReadBlock<'a> = Box<dyn Fn(u64, &mut [u8]) -> Result<()> + 'a>;
+
+/// The owned counterparts to [`crate::btree::MirrorCount`] and
+/// [`crate::btree::ReadMirror`], for the same reason.
+type OwnedMirrorCount<'a> = Box<dyn Fn(u64) -> Result<usize> + 'a>;
+type OwnedReadMirror<'a> = Box<dyn Fn(u64, usize, &mut [u8]) -> Result<()> + 'a>;
+
+impl PoolReader<'_> {
+    /// A walker over any tree in this pool. The root address is a
+    /// per-call argument, so one reader serves every tree.
+    /// NOT WITNESSED. Removing the `with_redundancy` here alone leaves
+    /// tests/dup_mirror_fallback.rs green: that suite damages tree roots
+    /// the MOUNT reads, and this reader serves the trees a mount has
+    /// already finished with. A test for it wants a damaged block inside
+    /// a subvolume or csum tree, reached through a read after the mount
+    /// rather than during it.
+    pub(crate) fn tree(&self) -> crate::btree::Tree<'_> {
+        crate::btree::Tree::new(self.geom, &*self.read)
+            .with_redundancy(&*self.mirrors, &*self.read_mirror)
+            .with_seed_fsids(self.seeds)
+    }
+}

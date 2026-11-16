@@ -1,0 +1,15 @@
+[package]
+name = "dosrs-btrfs"
+version = "0.11.0"
+edition = "2021"
+license = "MIT"
+publish = false
+[dependencies]
+dosrs-block = { path = "../../storage/block" }
+twox-hash = { version = "2", default-features = false, features = ["xxhash64"] }
+sha2 = { version = "0.10", default-features = false }
+blake2b_simd = { version = "1", default-features = false }
+miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
+lzo1x = { package = "dosrs-lzo1x", path = "lzo1x" }
+ruzstd = { version = "0.9.0", default-features = false, features = ["hash"] }
+spin = { version = "0.10", default-features = false, features = ["mutex","spin_mutex"] }

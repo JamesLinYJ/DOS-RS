@@ -1,0 +1,8 @@
+[package]
+name = "dosrs-lzo1x"
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+publish = false
+[lib]
+name = "lzo1x"

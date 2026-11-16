@@ -1,0 +1,4678 @@
+//! Which blocks a change makes the filesystem rewrite.
+//!
+//! Copy-on-write means nothing is modified where it lies. Changing one
+//! byte of one leaf means a new leaf somewhere else, a new node above it
+//! pointing there, and so on to the root — then the root tree, which
+//! names that tree's root and has therefore changed too. This works out
+//! that set.
+//!
+//! # Why it is not just "walk up to the root"
+//!
+//! Because the walk does not stop at the root. `docs/cow-transaction.md`
+//! measured a real transaction: a filesystem where a mount cycle changed
+//! NOTHING still rewrote four blocks — the root tree, the extent tree,
+//! the free-space tree and the dev tree — and swapped four
+//! `METADATA_ITEM`s, four in and four out.
+//!
+//! That is the recursion, visible. Rewriting a block means allocating
+//! one, allocating means recording it in the extent tree, and the extent
+//! tree lives in blocks that must themselves be allocated. It terminates
+//! because a copy-on-write rewrite is an allocation AND a release, so the
+//! extent tree ends up recording its own new blocks rather than growing
+//! without bound.
+//!
+//! # What this computes, and what it does not
+//!
+//! It computes the closure: given blocks whose contents changed, every
+//! block that must be rewritten as a consequence, and a new address for
+//! each. That is the part the measurement pinned down.
+//!
+//! It does not EDIT the extent tree. Adding and removing the
+//! `METADATA_ITEM`s that record the plan means inserting into and
+//! deleting from a leaf, with splits and merges when one fills or
+//! empties, and none of that is implemented. So a plan says what a
+//! transaction would cost and where everything would go; it does not yet
+//! produce the item changes that make it true.
+//!
+//! That boundary is deliberate. The plan is checkable against what the
+//! kernel actually did — see `tests/transaction_plan.rs` — and being
+//! checkable before it is complete is worth more than being complete and
+//! unverified.
+
+use alloc::{vec::Vec, string::ToString};
+use crate::chunk::objectid;
+use crate::error::{Error, Result};
+use crate::fs::Filesystem;
+use alloc::collections::{BTreeMap, BTreeSet};
+
+
+/// One block moving from where it is to where it will be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rewrite {
+    /// Where it is now. Released once the transaction commits.
+    pub old: u64,
+    /// Where the new copy goes.
+    pub new: u64,
+    /// The tree it belongs to.
+    pub owner: u64,
+    /// Its height above the leaves.
+    pub level: u8,
+}
+
+/// A leaf the change fills past one block, and the blocks its split takes
+/// (#342, #615). The first part goes where its [`Rewrite`] puts it and
+/// each additional part takes a new block and a pointer in the parent.
+/// A root grows a level: a new root node points at every part. Parts
+/// more than one node holds take a level of nodes between them and the
+/// new root, as many levels as it takes (#649).
+///
+/// A node the split leaves below it fill past its key pointers splits
+/// the same way (#514). When it is the root, its tree grows a level
+/// above it (#513); otherwise its parent gains a key pointer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Split {
+    /// The block that splits, by its address before the change: a leaf
+    /// or a node.
+    pub leaf: u64,
+    /// Its height above the leaves: zero for a leaf.
+    pub level: u8,
+    /// Where each additional part goes, in key order: blocks the change
+    /// allocates and releases nothing for.
+    pub new: Vec<u64>,
+    /// The tree it is in.
+    pub owner: u64,
+    /// When the block was its tree's root: where the new root node goes,
+    /// [`Split::grown`] levels up.
+    pub root: Option<u64>,
+    /// When the block was its tree's root and its parts overflow one
+    /// node: the nodes between them and the new root, one list per level
+    /// from the lowest up (#649). Empty when the new root holds every part.
+    pub upper: Vec<Vec<u64>>,
+}
+
+impl Split {
+    /// How many levels the split block's tree grows: none below a parent,
+    /// one for the new root and one for each level between them.
+    pub fn grown(&self) -> u8 {
+        if self.root.is_none() {
+            return 0;
+        }
+        u8::try_from(self.upper.len() + 1).unwrap_or(u8::MAX)
+    }
+
+    /// Every block the split adds: each additional part, each node of
+    /// the levels between them and the new root, and the new root.
+    pub fn added(&self) -> impl Iterator<Item = u64> + '_ {
+        self.new
+            .iter()
+            .copied()
+            .chain(self.upper.iter().flatten().copied())
+            .chain(self.root)
+    }
+}
+
+/// How many nodes each level between a split root's parts and its new
+/// root takes, from the lowest up (#649): each level divides the one
+/// below over as few nodes as hold it, until one node holds them all.
+fn upper_counts(parts: usize, capacity: usize) -> Vec<usize> {
+    let mut counts = Vec::new();
+    let mut n = parts;
+    while n > capacity {
+        n = n.div_ceil(capacity);
+        counts.push(n);
+    }
+    counts
+}
+
+/// A tree the change makes, and where its one leaf goes (#267): a new
+/// subvolume's tree, whose root leaf holds its top directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Created {
+    /// Where the tree's root leaf goes: a block the change allocates and
+    /// releases nothing for.
+    pub new: u64,
+    /// The tree it roots.
+    pub owner: u64,
+}
+
+/// What a transaction will do.
+#[derive(Debug, Clone, Default)]
+pub struct Plan {
+    /// Every block that must be written, in no particular order — the
+    /// commit sequencer writes them all before its barrier, so the order
+    /// among them carries no meaning.
+    pub rewrites: Vec<Rewrite>,
+    /// Every leaf the change fills past one block (#342), and the blocks
+    /// it takes to split. Each allocates without releasing anything.
+    pub splits: Vec<Split>,
+    /// Every tree the change makes (#267). Each allocates its root leaf
+    /// without releasing anything.
+    pub created: Vec<Created>,
+    /// The old address of each rewrite another tree still points at once
+    /// this one has moved on: a block a snapshot shares (#262). The copy
+    /// is this tree's own; the old block stays where it is for the other
+    /// tree, one reference fewer, and is not released.
+    pub kept: BTreeSet<u64>,
+    /// Every leaf or node the change empties that is not its tree's
+    /// root (#546, #548): it leaves its tree. Its pointer leaves the parent
+    /// node, and its block is released and given no new home, unless another
+    /// tree keeps it (#734).
+    pub removed: Vec<Rewrite>,
+    /// Old addresses of root nodes whose children all leave (#548).
+    /// Their rewrites keep the old level for releasing the old record,
+    /// but the new block and its record are an empty leaf at level zero.
+    pub collapsed: BTreeSet<u64>,
+}
+
+impl Plan {
+    /// The addresses this frees: the old block of every rewrite and every
+    /// removal, but those another tree keeps (#734).
+    pub fn released(&self) -> Vec<u64> {
+        self.rewrites
+            .iter()
+            .chain(&self.removed)
+            .map(|r| r.old)
+            .filter(|old| !self.kept.contains(old))
+            .collect()
+    }
+
+    /// The addresses this takes: every rewrite's new home, and every block
+    /// a split adds.
+    pub fn allocated(&self) -> Vec<u64> {
+        let mut out: Vec<u64> = self.rewrites.iter().map(|r| r.new).collect();
+        for s in &self.splits {
+            out.extend(s.added());
+        }
+        out.extend(self.created.iter().map(|c| c.new));
+        out
+    }
+
+    /// Which trees the transaction touches, in objectid order.
+    pub fn trees(&self) -> BTreeSet<u64> {
+        let mut out: BTreeSet<u64> = self.rewrites.iter().map(|r| r.owner).collect();
+        out.extend(self.splits.iter().map(|s| s.owner));
+        out.extend(self.created.iter().map(|c| c.owner));
+        out.extend(self.removed.iter().map(|r| r.owner));
+        out
+    }
+
+    /// The split of the leaf that was at `leaf`, if it splits.
+    pub(crate) fn split_of(&self, leaf: u64) -> Option<&Split> {
+        self.splits.iter().find(|s| s.leaf == leaf)
+    }
+
+    /// How much `bytes_used` moves.
+    ///
+    /// Zero for a plan that rewrites blocks without adding or removing
+    /// any — one release for every allocation — and a node's worth more
+    /// for each block a split adds (#342), a new tree takes (#267), and each
+    /// old block another tree keeps (#262).
+    pub fn usage_delta(&self, nodesize: u64) -> i128 {
+        (self.allocated().len() as i128 - self.released().len() as i128) * nodesize as i128
+    }
+}
+
+/// One file extent a write replaces with a newly allocated copy (#61).
+///
+/// The copy holds exactly the bytes the file's item covers, so the new
+/// item references the whole of it — offset zero, `num_bytes` equal to
+/// the extent's length — whatever window of the old extent the old item
+/// referenced. The old extent is released whole when the write's items
+/// were its only references, once however many of them named it;
+/// otherwise (`old_shared`) it loses this item's reference and stays for
+/// the rest: a reflink's (#261), or a snapshot's (#443).
+///
+/// A copy stored compressed is split into extents of one compression
+/// unit each (#357): the first takes the item's place, covering less of
+/// the file than the item did ([`DataMove::len`] is less than
+/// [`DataMove::item_len`]), and each of the rest is a [`DataAdd`].
+///
+/// A defragment (#305) moves the first item of a run of several into one
+/// copy of all of them: the item then covers more than it did
+/// ([`DataMove::item_len`] is less than [`DataMove::len`]), and the items
+/// after it are deleted by the change's edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DataMove {
+    /// The extent the item referenced.
+    pub old: u64,
+    /// Its length, as the extent tree's `EXTENT_ITEM` key records it.
+    pub old_len: u64,
+    /// The offset in the old extent's `EXTENT_DATA_REF`: the file offset
+    /// at which the extent's first byte would sit, which is the item's
+    /// key offset less its offset into the extent.
+    pub old_ref_offset: u64,
+    /// Where the copy goes.
+    pub new: u64,
+    /// The copy's length as the file sees it: the item's `num_bytes` and
+    /// `ram_bytes`.
+    pub len: u64,
+    /// The item's `num_bytes` before the move, which the item must still
+    /// hold: `len`, unless the copy was split into several extents and
+    /// this is the first (#357), or a defragment joins several items
+    /// into one larger copy (#305).
+    pub item_len: u64,
+    /// The copy's length on disk: `len` for a copy stored as it is, the
+    /// compressed length rounded up to a sector for one compressed
+    /// (#265). The extent's record, its free space and its block group's
+    /// `used` count this.
+    pub disk_len: u64,
+    /// The copy's compression type, as the item's `compression` byte
+    /// records it: 0 for none, 1 zlib, 2 LZO, 3 zstd.
+    pub compression: u8,
+    /// The key offset of the file's `EXTENT_DATA` item.
+    pub file_offset: u64,
+    /// Whether the old extent has references the write does not replace
+    /// — a reflink's, or another item of this file outside the range
+    /// (#261). Then its record loses this item's inline
+    /// `EXTENT_DATA_REF`, as an entry of [`DataWrite::unrefs`] does, and
+    /// its bytes, checksums, free space and block group's `used` stay.
+    pub old_shared: bool,
+}
+
+/// A data extent a write allocates with no item to repoint (#357): a unit
+/// of a copy split into several, after the first. Its `EXTENT_DATA` item,
+/// which references the whole of it from offset zero, is inserted by the
+/// change's [`DataWrite::edits`]; this is its extent tree record, its free
+/// space and its block group's `used`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DataAdd {
+    /// Where the extent goes.
+    pub new: u64,
+    /// Its length on disk, as [`DataMove::disk_len`].
+    pub disk_len: u64,
+    /// The key offset of the file's `EXTENT_DATA` item referencing it.
+    pub file_offset: u64,
+}
+
+/// A data extent a transaction releases without a copy taking its place
+/// (#262): a truncate's extents past the new end. Like a [`DataMove`]'s
+/// old extent, it is released whole, which is right only because its one
+/// reference is the file item the change deletes; the caller refuses
+/// anything else first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DataRelease {
+    /// The extent being released.
+    pub old: u64,
+    /// Its length, as the extent tree's `EXTENT_ITEM` key records it.
+    pub old_len: u64,
+    /// The offset in its `EXTENT_DATA_REF`, as [`DataMove::old_ref_offset`].
+    pub old_ref_offset: u64,
+}
+
+/// A data extent a clone shares (#269): a file item the change puts
+/// names it, so its record gains that item's inline `EXTENT_DATA_REF` --
+/// counted up, or added where the kernel puts it -- and one on its total.
+/// Its bytes, its checksums, its free space and its block group's `used`
+/// stay as they are, since nothing is allocated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DataShare {
+    /// The extent shared.
+    pub bytenr: u64,
+    /// Its length, as the extent tree's `EXTENT_ITEM` key records it.
+    pub len: u64,
+    /// The file offset at which the extent's first byte would sit for the
+    /// new item: its key offset less its offset into the extent.
+    pub ref_offset: u64,
+}
+
+/// The file-data half of a transaction: one file whose extents move.
+///
+/// Empty for a transaction that only relocates tree blocks, which is
+/// what [`Filesystem::plan_transaction_closed`] and
+/// [`Filesystem::render_plan`] produce.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DataWrite {
+    /// The tree holding the file.
+    pub root: u64,
+    /// The file.
+    pub ino: u64,
+    /// Each extent replaced.
+    pub moves: Vec<DataMove>,
+    /// Each extent allocated with no item to repoint (#357).
+    pub adds: Vec<DataAdd>,
+    /// The modification time stamped on the inode, as seconds and
+    /// nanoseconds since the epoch.
+    pub time: (u64, u32),
+    /// A subvolume whose `ROOT_ITEM` flags change, and the flags it gets:
+    /// `(objectid, flags)`. The item keeps its size, so the root tree leaf
+    /// holding it is rewritten in place.
+    pub root_flags: Option<(u64, u64)>,
+    /// The subvolume the root tree's `default` entry is pointed at. The
+    /// entry keeps its size, so its leaf is rewritten in place.
+    pub default_subvol: Option<u64>,
+    /// Items of tree `root` put or removed outright: a namespace change
+    /// (#262) is the inode, reference and directory items it adds,
+    /// replaces or deletes, and nothing else. Each lands in the leaf a
+    /// descent for its key reaches, which the caller marks dirty.
+    pub edits: Vec<ItemEdit>,
+    /// Items of the checksum tree put or removed (#261): a checksummed
+    /// file's copies gain `EXTENT_CSUM` items and the extents they
+    /// replace lose theirs. Each lands in the leaf a descent for its key
+    /// reaches in the checksum tree, which the caller marks dirty.
+    pub csum_edits: Vec<ItemEdit>,
+    /// Extents of the file released outright, their file items deleted
+    /// by `edits`.
+    pub releases: Vec<DataRelease>,
+    /// Extents a reflink shares, of which the file drops one reference
+    /// (#262): the file item deleted by `edits` loses its inline
+    /// `EXTENT_DATA_REF` from the extent's record, which stays for the
+    /// other references -- and so do the extent's bytes, its checksums,
+    /// its free space and its block group's `used`.
+    pub unrefs: Vec<DataRelease>,
+    /// Extents a clone shares, each gaining one reference from inode
+    /// `ino` of tree `root` (#269): one per file item `edits` puts that
+    /// names one.
+    pub shares: Vec<DataShare>,
+    /// Items of other trees put or removed, each with the tree it is in
+    /// (#267): a new subvolume's `ROOT_ITEM` and references in the root
+    /// tree, and its entry in the UUID tree. Each lands in the leaf a
+    /// descent for its key reaches in that tree, which the caller marks
+    /// dirty.
+    pub tree_edits: Vec<(u64, ItemEdit)>,
+    /// Trees the change makes, one leaf each (#267). The plan gives each
+    /// leaf a block, and the tree's `ROOT_ITEM` -- which `tree_edits` must
+    /// put -- is pointed at it.
+    pub new_trees: Vec<NewTree>,
+    /// Data extent records replaced outright, whoever's references they
+    /// carry (#266): a log replay changes the references of extents named
+    /// by many files at once. Each is checked against the record as it
+    /// stands before it is replaced.
+    pub records: Vec<RecordEdit>,
+    /// Tree blocks gaining a reference from a tree the change makes (#700):
+    /// the children of a snapshot's copied root.
+    pub block_refs: Vec<TreeBlockRef>,
+}
+
+/// A tree block gaining a keyed reference (#700), as each child of a copied
+/// root does from `btrfs_inc_ref`. Its bytes and its pointers stay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TreeBlockRef {
+    /// The block.
+    pub bytenr: u64,
+    /// Its level, the offset of its record's key.
+    pub level: u8,
+    /// The tree referring to it.
+    pub tree: u64,
+    /// Whether the reference is an item of its own, which the change's
+    /// [`DataWrite::tree_edits`] put: the record only counts it. Otherwise
+    /// it goes inline in the record.
+    pub keyed: bool,
+}
+
+/// One data extent's `EXTENT_ITEM`, as a change finds it and as it leaves
+/// it (#266).
+///
+/// A record that appears is an allocation: the extent's free space is
+/// taken and its block group's `used` and the superblock's `bytes_used`
+/// count it. One that disappears is a release, and gives them back; its
+/// checksums are the caller's to remove. One that only changes keeps its
+/// space, and is a change of references.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordEdit {
+    /// The extent's address.
+    pub bytenr: u64,
+    /// Its length on disk, the record key's offset.
+    pub len: u64,
+    /// The record's body now, or `None` when there is no record.
+    pub before: Option<Vec<u8>>,
+    /// The body it is left with, or `None` to release the extent.
+    pub after: Option<Vec<u8>>,
+}
+
+impl RecordEdit {
+    /// Whether the change records an extent nothing recorded.
+    pub(crate) fn allocates(&self) -> bool {
+        self.before.is_none() && self.after.is_some()
+    }
+
+    /// Whether the change removes the extent's record.
+    pub(crate) fn releases(&self) -> bool {
+        self.before.is_some() && self.after.is_none()
+    }
+}
+
+/// A tree a [`DataWrite`] makes (#267): its objectid, and its one new block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NewTree {
+    /// The tree's objectid, which its `ROOT_ITEM` is filed under.
+    pub objectid: u64,
+    /// What its root block holds.
+    pub root: NewRoot,
+}
+
+/// What the root block of a [`NewTree`] holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NewRoot {
+    /// A leaf holding these items, in key order.
+    Leaf(Vec<crate::leaf_edit::OwnedItem>),
+    /// A node at `level`, one or more, holding these pointers (#700): a
+    /// copy of another tree's root, whose children are shared with it.
+    Node {
+        /// Its height above the leaves.
+        level: u8,
+        /// Its children, as the source's root holds them.
+        ptrs: Vec<crate::btree::KeyPtr>,
+    },
+}
+
+impl NewRoot {
+    /// The block's height above the leaves.
+    pub(crate) fn level(&self) -> u8 {
+        match self {
+            NewRoot::Leaf(_) => 0,
+            NewRoot::Node { level, .. } => *level,
+        }
+    }
+}
+
+/// One change to an item of the tree a [`DataWrite`] names (#262).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ItemEdit {
+    /// Insert the item, or replace the one already under its key.
+    Put(crate::leaf_edit::OwnedItem),
+    /// Remove the item under this key, which must be there.
+    Delete(crate::chunk::DiskKey),
+}
+
+impl ItemEdit {
+    /// The key the edit is filed under.
+    pub(crate) fn key(&self) -> crate::chunk::DiskKey {
+        match self {
+            ItemEdit::Put(item) => item.key,
+            ItemEdit::Delete(key) => *key,
+        }
+    }
+}
+
+/// Apply the edits aimed at one leaf to its items.
+///
+/// A put replaces an item under the same key or inserts a new one in key
+/// order; a delete removes one that must be there. The result may no
+/// longer fit in one block: the renderer splits it then, as the plan
+/// arranged (#342).
+///
+/// A leaf that is its tree's root may be left with no items: that is the
+/// shape of every tree `mkfs.btrfs` makes empty, the checksum tree of a
+/// filesystem holding no data among them. Any other leaf left empty must
+/// leave its tree, which the planner arranges (#546) from a dry render,
+/// where `may_empty` is set; a leaf it did not arrange that for is
+/// refused.
+fn apply_item_edits(
+    leaf: u64,
+    may_empty: bool,
+    mut items: Vec<crate::leaf_edit::OwnedItem>,
+    edits: &[&ItemEdit],
+) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+    use crate::leaf_edit::{delete, insert_unbounded};
+    for edit in edits {
+        match edit {
+            ItemEdit::Put(item) => {
+                if items.iter().any(|i| i.key == item.key) {
+                    items = delete(&items, &item.key)?;
+                }
+                items = insert_unbounded(&items, item.clone())?;
+            }
+            ItemEdit::Delete(key) => items = delete(&items, key)?,
+        }
+    }
+    if items.is_empty() && !may_empty {
+        return Err(Error::UnsupportedFeature(format!(
+            "the change empties the tree leaf at {leaf}, and the plan does not remove it \
+             from its tree"
+        )));
+    }
+    Ok(items)
+}
+
+impl DataWrite {
+    /// Every address whose extent-tree record changes.
+    fn addresses(&self) -> Vec<u64> {
+        self.moves
+            .iter()
+            .flat_map(|m| [m.old, m.new])
+            .chain(self.adds.iter().map(|a| a.new))
+            .chain(self.releases.iter().map(|r| r.old))
+            .chain(self.unrefs.iter().map(|r| r.old))
+            .chain(self.records.iter().map(|r| r.bytenr))
+            .collect()
+    }
+
+    /// Every data extent the write allocates, by address, length on disk
+    /// and the key offset of the file item referencing it: each move's
+    /// copy, and each extent added (#357).
+    pub(crate) fn allocations(&self) -> impl Iterator<Item = (u64, u64, u64)> + '_ {
+        self.moves
+            .iter()
+            .map(|m| (m.new, m.disk_len, m.file_offset))
+            .chain(self.adds.iter().map(|a| (a.new, a.disk_len, a.file_offset)))
+    }
+
+    /// The level of the root block of the tree `owner` the change makes.
+    /// Zero for one it does not make, which nothing asks about.
+    fn new_tree_level(&self, owner: u64) -> u8 {
+        self.new_trees
+            .iter()
+            .find(|t| t.objectid == owner)
+            .map_or(0, |t| t.root.level())
+    }
+
+    /// Every data extent a [`RecordEdit`] allocates, by address and length.
+    fn recorded_allocations(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
+        self.records
+            .iter()
+            .filter(|r| r.allocates())
+            .map(|r| (r.bytenr, r.len))
+    }
+
+    /// Every data extent a [`RecordEdit`] releases, by address and length.
+    fn recorded_releases(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
+        self.records
+            .iter()
+            .filter(|r| r.releases())
+            .map(|r| (r.bytenr, r.len))
+    }
+
+    /// How far its [`RecordEdit`]s move `bytes_used`: what they allocate
+    /// less what they release.
+    pub(crate) fn records_usage_delta(&self) -> i128 {
+        let allocated: i128 = self
+            .recorded_allocations()
+            .map(|(_, len)| i128::from(len))
+            .sum();
+        let released: i128 = self
+            .recorded_releases()
+            .map(|(_, len)| i128::from(len))
+            .sum();
+        allocated - released
+    }
+
+    /// Every data extent released, once each, by address and length, with
+    /// the reference offset of each of the write's items that named it:
+    /// each move's old extent that nothing else shares, and each outright
+    /// release.
+    ///
+    /// Two items of one file can name one extent — a write into the middle
+    /// of an extent leaves an item on either side of the new one — and a
+    /// write replacing both releases the extent once, not twice (#261).
+    fn released_extents(&self) -> Vec<(u64, u64, Vec<u64>)> {
+        let mut out: Vec<(u64, u64, Vec<u64>)> = Vec::new();
+        let each = self
+            .moves
+            .iter()
+            .filter(|m| !m.old_shared)
+            .map(|m| (m.old, m.old_len, m.old_ref_offset))
+            .chain(
+                self.releases
+                    .iter()
+                    .map(|r| (r.old, r.old_len, r.old_ref_offset)),
+            );
+        for (old, old_len, ref_offset) in each {
+            match out.iter_mut().find(|(at, _, _)| *at == old) {
+                Some((_, _, offsets)) => offsets.push(ref_offset),
+                None => out.push((old, old_len, vec![ref_offset])),
+            }
+        }
+        out
+    }
+
+    /// Every reference of a shared extent the write drops, by address,
+    /// length and reference offset: each move's old extent another
+    /// reference still holds (#261), and each of [`DataWrite::unrefs`].
+    fn dropped_references(&self) -> impl Iterator<Item = (u64, u64, u64)> + '_ {
+        self.moves
+            .iter()
+            .filter(|m| m.old_shared)
+            .map(|m| (m.old, m.old_len, m.old_ref_offset))
+            .chain(
+                self.unrefs
+                    .iter()
+                    .map(|r| (r.old, r.old_len, r.old_ref_offset)),
+            )
+    }
+}
+
+/// What a tree walk hands to its visitor: a block's address, its bytes,
+/// its level, and the node that points at it — `None` for a root.
+/// What [`Filesystem::for_each_tree_block`] hands a visitor: the
+/// block's address, the **parsed** block, and the address of the node
+/// pointing at it (`None` for a root).
+///
+/// It used to pass `&[u8]`. The walk parses every block anyway, so
+/// handing over the bytes meant each of the three visitors re-parsed
+/// the leaf by hand — `25` as a bare literal in four places, the item
+/// key at `+0..17`, the data offset at `+17..21` — all of which
+/// `btree::Item` and `TreeBlock::item_data` already own, in the module
+/// this file already imports from.
+type BlockVisitor<'a> = &'a mut dyn FnMut(u64, &crate::btree::TreeBlock, Option<u64>);
+
+/// A block's place in the tree it belongs to.
+#[derive(Debug, Clone, Copy)]
+struct Placement {
+    parent: Option<u64>,
+    owner: u64,
+    level: u8,
+}
+
+impl Filesystem {
+    /// Work out every block that must be rewritten if `dirty` change.
+    ///
+    /// The result includes `dirty` itself, every ancestor of each up to
+    /// its tree's root, and the root tree's own path — because when a
+    /// tree's root moves, the `ROOT_ITEM` naming it has changed, and the
+    /// leaf holding that item is itself a block that must be rewritten.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] if a block in `dirty` is not part
+    /// of any tree this can reach, which means it is not a tree block or
+    /// is not live — planning around it would allocate for something
+    /// nothing points at.
+    ///
+    /// Propagates an allocation failure when there is nowhere to put the
+    /// new copies.
+    pub fn plan_transaction(&self, dirty: &[u64]) -> Result<Plan> {
+        self.plan_transaction_gaining(dirty, &BTreeSet::new())
+    }
+
+    /// [`Filesystem::plan_transaction`], where the blocks `gaining` gain a
+    /// reference from another tree in the same transaction (#700), so any
+    /// of them this tree copies is one the other tree still reads.
+    fn plan_transaction_gaining(&self, dirty: &[u64], gaining: &BTreeSet<u64>) -> Result<Plan> {
+        let places = self.placements()?;
+
+        // The closure: everything dirty, plus every ancestor, plus the
+        // root tree's path to whichever ROOT_ITEM leaf named a root that
+        // moved.
+        let mut touched: BTreeSet<u64> = BTreeSet::new();
+        let mut queue: Vec<u64> = dirty.to_vec();
+
+        while let Some(at) = queue.pop() {
+            if !touched.insert(at) {
+                continue;
+            }
+            let Some(place) = places.get(&at) else {
+                // A handle another one has committed past reads blocks that
+                // commit freed or moved: that is the handle's staleness,
+                // reported as such, not an unreachable block (#599).
+                self.refuse_stale()?;
+                return Err(Error::UnsupportedFeature(format!(
+                    "the block at {at} is not reachable from any tree, so there is nothing \
+                     above it to rewrite"
+                )));
+            };
+
+            match place.parent {
+                // Not a root: its parent points at it and must change.
+                Some(parent) => queue.push(parent),
+                // A tree's root. If it is not the ROOT TREE's own root,
+                // the root tree holds a ROOT_ITEM naming it, and that
+                // leaf has changed.
+                None if place.owner != objectid::ROOT_TREE => {
+                    if let Some(leaf) = self.root_item_leaf(place.owner)? {
+                        queue.push(leaf);
+                    }
+                }
+                None => {}
+            }
+        }
+
+        // A new home for each, all distinct and none of them somewhere
+        // already in use.
+        let mut plan = Plan::default();
+        let mut taken: BTreeSet<u64> = BTreeSet::new();
+        for old in touched {
+            let place = places[&old];
+            let new = self.next_free_block_for(place.owner, &taken)?;
+            taken.insert(new);
+            plan.rewrites.push(Rewrite {
+                old,
+                new,
+                owner: place.owner,
+                level: place.level,
+            });
+        }
+        plan.kept = self.shared_rewrites(&plan.rewrites, &places, gaining)?;
+        Ok(plan)
+    }
+
+    /// The rewrites whose old block another tree still points at once
+    /// this one has moved on (#262).
+    ///
+    /// In a subvolume's tree, that is each block whose extent record counts
+    /// more than one reference -- a snapshot of a tree taller than a leaf
+    /// shares every block below the root -- and every block below one in
+    /// the plan. Copying a shared node gives each of its children a
+    /// reference naming the old node, so a child the walk down copies next
+    /// is shared by then, though its record counted one reference before:
+    /// the kernel's `update_ref_for_cow` meets them in that order. A block
+    /// in `gaining` is shared as well, whatever its record counted: a
+    /// snapshot taken in this transaction gives it a second reference
+    /// (#700). Whichever tree's header the block carries: a handle on a
+    /// snapshot copies blocks its source owns (#734), and the child of one
+    /// of those is shared as well, by the keyed reference the copy gives it.
+    /// Other trees are never shared; a block of one counting more than one
+    /// reference is refused where its record is edited.
+    fn shared_rewrites(
+        &self,
+        rewrites: &[Rewrite],
+        places: &BTreeMap<u64, Placement>,
+        gaining: &BTreeSet<u64>,
+    ) -> Result<BTreeSet<u64>> {
+        let mut order: Vec<&Rewrite> = rewrites
+            .iter()
+            .filter(|r| crate::subvol::is_subvolume_id(r.owner))
+            .collect();
+        order.sort_by_key(|r| core::cmp::Reverse(r.level));
+        let mut kept = BTreeSet::new();
+        for r in order {
+            let below_kept = places
+                .get(&r.old)
+                .and_then(|p| p.parent)
+                .is_some_and(|parent| kept.contains(&parent));
+            if below_kept
+                || gaining.contains(&r.old)
+                || self.tree_block_refs(r.old, r.level)?.is_some_and(|n| n > 1)
+            {
+                kept.insert(r.old);
+            }
+        }
+        Ok(kept)
+    }
+
+    /// How many references the extent tree counts for the tree block at
+    /// `bytenr`, or `None` when it holds no record for it: that is the
+    /// record edit's to report, when it comes to change it.
+    fn tree_block_refs(&self, bytenr: u64, level: u8) -> Result<Option<u64>> {
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let record = self.pool_reader().tree().search(
+            root,
+            &DiskKey {
+                objectid: bytenr,
+                key_type: key_type::METADATA_ITEM,
+                offset: u64::from(level),
+            },
+        )?;
+        Ok(record.and_then(|r| {
+            r.data
+                .get(..8)
+                .map(|b| u64::from_le_bytes(b.try_into().expect("8 bytes")))
+        }))
+    }
+
+    /// Whether the extent tree files any reference of the extent or tree
+    /// block at `bytenr` as an item of its own rather than inline in its
+    /// record: an item keyed `(bytenr, TREE_BLOCK_REF..=SHARED_DATA_REF,
+    /// _)`, which sorts straight after the record, in its leaf or the next.
+    pub(crate) fn has_keyed_backrefs(&self, bytenr: u64) -> Result<bool> {
+        use crate::backref::{SHARED_DATA_REF, TREE_BLOCK_REF};
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let start = DiskKey {
+            objectid: bytenr,
+            key_type: TREE_BLOCK_REF,
+            offset: 0,
+        };
+        let mut found = false;
+        self.pool_reader()
+            .tree()
+            .for_each_from(root, &start, &mut |k: &DiskKey, _: &[u8]| {
+                found = k.objectid == bytenr
+                    && (TREE_BLOCK_REF..=SHARED_DATA_REF).contains(&k.key_type);
+                Ok(false)
+            })?;
+        Ok(found)
+    }
+
+    /// Whether the leaf a descent for `key` reaches in tree `tree` is one
+    /// another tree reaches too: a block on the way down counts more than
+    /// one reference (#262). A snapshot of a tree taller than a leaf
+    /// shares its blocks so, and the data their items point at still
+    /// counts one reference: the items are shared, not the extents. Taking
+    /// such an item out of this tree copies the leaf, and the copy gives
+    /// each extent a reference naming the old leaf, so the item's own
+    /// reference is dropped rather than the extent released.
+    pub(crate) fn leaf_shared(&self, tree: u64, key: &DiskKey) -> Result<bool> {
+        let root = self.edit_root(tree)?;
+        let path = self.pool_reader().tree().descend_path(root, key)?;
+        for block in &path {
+            if self
+                .tree_block_refs(block.header.bytenr, block.header.level)?
+                .is_some_and(|n| n > 1)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Somewhere to put a block that is not already spoken for.
+    ///
+    /// [`Filesystem::find_metadata_block`] does not record what it hands
+    /// out, so asking twice gives the same answer twice. Until a
+    /// transaction records its allocations, the addresses it has already
+    /// chosen are held here.
+    ///
+    /// The chunk tree's blocks live in a SYSTEM block group, because the
+    /// superblock's own chunk array has to be able to reach them, and
+    /// every other tree's in a METADATA one (#264), so `owner` decides
+    /// which groups are asked. A group a relocation is emptying is never
+    /// asked (#574), and one on a device chunks are being moved off is
+    /// asked last (#702).
+    fn next_free_block_for(&self, owner: u64, taken: &BTreeSet<u64>) -> Result<u64> {
+        let nodesize = self.sb.nodesize as u64;
+        let system = owner == objectid::CHUNK_TREE;
+        let mut groups: Vec<_> = self
+            .block_groups()?
+            .into_iter()
+            .filter(|g| self.block_group_is_writable(g))
+            .filter(|g| {
+                if self.emptying == Some(g.start) {
+                    false
+                } else if system {
+                    g.flags & crate::chunk::block_group::SYSTEM != 0
+                } else {
+                    g.holds_metadata()
+                }
+            })
+            .collect();
+        groups.sort_by_key(|g| self.on_leaving_device(g));
+
+        for runs in self.free_extents_by_group(&groups)? {
+            for run in runs {
+                let mut at = run.start.next_multiple_of(nodesize);
+                while at + nodesize <= run.end() {
+                    if !taken.contains(&at)
+                        && !self.is_pinned(at, nodesize)
+                        && !self.on_superblock_copy(at, nodesize)?
+                    {
+                        return Ok(at);
+                    }
+                    at += nodesize;
+                }
+            }
+        }
+        Err(Error::UnsupportedFeature(format!(
+            "no metadata block group has room for another {nodesize}-byte block; \
+             allocating a new block group is not implemented"
+        )))
+    }
+
+    /// Whether `[at, at + len)` overlaps a range this mount has pinned.
+    fn is_pinned(&self, at: u64, len: u64) -> bool {
+        self.pinned
+            .iter()
+            .any(|&(start, n)| at < start.saturating_add(n) && start < at.saturating_add(len))
+    }
+
+    /// The root block a `ROOT_ITEM` names, or `None` if its body does
+    /// not reach that far.
+    ///
+    /// `None` is a *refusal to guess*, not a "no root": the item claims
+    /// a body that the block does not contain, which means the leaf is
+    /// malformed. The caller skips it, and the tree it would have named
+    /// goes undiscovered — which surfaces later as "not reachable from
+    /// any tree" rather than as a parse error. That indirection is
+    /// pre-existing; what is new is that the bounds decision is made in
+    /// one place, by `TreeBlock::item_data`, instead of by an inline
+    /// `if off + BYTENR + 8 <= block.len()` the reader has to
+    /// reconstruct.
+    fn root_item_bytenr(block: &crate::btree::TreeBlock, item: &crate::btree::Item) -> Option<u64> {
+        let data = block.item_data(item)?;
+        let field = data.get(root_item::BYTENR..root_item::BYTENR + 8)?;
+        Some(u64::from_le_bytes(field.try_into().ok()?))
+    }
+
+    /// The root tree leaf holding the `ROOT_ITEM` for `objectid`.
+    pub(crate) fn root_item_leaf(&self, objectid: u64) -> Result<Option<u64>> {
+        let mut found = None;
+        self.for_each_tree_block(self.sb.root, &mut |at, block, _| {
+            if found.is_some() {
+                return;
+            }
+            let Some(items) = block.body.items() else {
+                return;
+            };
+            if items
+                .iter()
+                .any(|it| it.key.objectid == objectid && it.key.key_type == ROOT_ITEM_KEY)
+            {
+                found = Some(at);
+            }
+        })?;
+        Ok(found)
+    }
+
+    /// Where every reachable block sits: its parent, tree and level.
+    ///
+    /// The tree is the one the walk reached the block from: the objectid
+    /// of the `ROOT_ITEM` naming its root, not the owner in the block's
+    /// header. The two differ for a block a balance relocated, whose
+    /// header can name the relocation tree that wrote it while the block
+    /// now sits in a subvolume's tree. A copy-on-write move makes the
+    /// copy that tree's own block, as the kernel's does (#287).
+    ///
+    /// A block a snapshot shares is reached from each tree that shares it
+    /// (#262). The tree this handle writes keeps it, so that a plan walks
+    /// that tree's own path up to its own root (#734); among the others the
+    /// lower objectid does, whichever the walk reaches first.
+    fn placements(&self) -> Result<BTreeMap<u64, Placement>> {
+        let written = self.written_tree();
+        let rank = |tree: u64| (tree != written, tree);
+        let mut out: BTreeMap<u64, Placement> = BTreeMap::new();
+        // The chunk tree too: no ROOT_ITEM names it, the superblock does,
+        // and a resize edits its device item (#264).
+        let mut roots = vec![
+            (self.sb.root, objectid::ROOT_TREE),
+            (self.sb.chunk_root, objectid::CHUNK_TREE),
+        ];
+
+        while let Some((root, tree)) = roots.pop() {
+            if root == 0 {
+                continue;
+            }
+            let mut found_roots = Vec::new();
+            self.for_each_tree_block(root, &mut |at, block, parent| {
+                let owner = tree;
+                let level = block.header.level;
+                let place = Placement {
+                    parent,
+                    owner,
+                    level,
+                };
+                match out.get(&at) {
+                    Some(had) if rank(had.owner) <= rank(owner) => {}
+                    _ => {
+                        out.insert(at, place);
+                    }
+                }
+
+                if owner != objectid::ROOT_TREE {
+                    return;
+                }
+                // A root tree leaf: each ROOT_ITEM names another tree.
+                let Some(items) = block.body.items() else {
+                    return;
+                };
+                for item in items {
+                    if item.key.key_type != ROOT_ITEM_KEY {
+                        continue;
+                    }
+                    let Some(b) = Self::root_item_bytenr(block, item) else {
+                        continue;
+                    };
+                    if b != 0 && !out.contains_key(&b) {
+                        found_roots.push((b, item.key.objectid));
+                    }
+                }
+            })?;
+            roots.extend(found_roots);
+        }
+        Ok(out)
+    }
+
+    /// Walk a tree, handing each block to `visit` with its parent.
+    ///
+    /// `visit` receives the block's address, the parsed block, and the
+    /// address of the node that points at it — `None` for a root. The
+    /// walk has already parsed it to find the child pointers, so
+    /// handing over the parse costs nothing and saves every visitor
+    /// from redoing it by hand.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a read failure. A block that will not read is skipped
+    /// rather than fatal: a tree this driver cannot fully walk is still
+    /// one whose reachable part is worth knowing.
+    fn for_each_tree_block(&self, root: u64, visit: BlockVisitor) -> Result<()> {
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+
+        let mut stack = vec![(root, None)];
+        let mut seen = BTreeSet::new();
+        while let Some((at, parent)) = stack.pop() {
+            if at == 0 || !seen.insert(at) {
+                continue;
+            }
+            let Ok(block) = tree.read_block(at) else {
+                continue;
+            };
+            visit(at, &block, parent);
+            if let Some(ptrs) = block.body.key_ptrs() {
+                for p in ptrs {
+                    stack.push((p.blockptr, Some(at)));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Filesystem {
+    /// Every tree block reachable from the superblock whose address lies
+    /// in `range`, in address order: what a relocation emptying a
+    /// metadata group must copy out of it (#578).
+    pub(crate) fn tree_blocks_in(&self, range: core::ops::Range<u64>) -> Result<Vec<u64>> {
+        Ok(self
+            .placements()?
+            .into_keys()
+            .filter(|at| range.contains(at))
+            .collect())
+    }
+}
+
+use crate::fs::{root_item, ROOT_ITEM_KEY};
+
+impl Filesystem {
+    /// Turn a plan into the blocks it says to write.
+    ///
+    /// Every block keeps its contents and changes its address. What that
+    /// means depends on what the block is:
+    ///
+    /// - a **leaf** keeps its items exactly, and is re-stamped with its
+    ///   new address and the new generation;
+    /// - a **node** keeps its keys, but every child that also moved is
+    ///   pointed at its new address — a node still naming the old one is
+    ///   a tree that reads the version before the change;
+    /// - a **root tree leaf** additionally has its `ROOT_ITEM`s
+    ///   rewritten, because those name the roots of other trees, and a
+    ///   tree whose root moved has a stale `ROOT_ITEM` otherwise.
+    ///
+    /// The result goes straight to [`Filesystem::commit`].
+    ///
+    /// # What it also does
+    ///
+    /// Two of the blocks it renders have their CONTENTS changed as well
+    /// as their address, because they are the record of the move:
+    ///
+    /// - an **extent tree** leaf loses the `METADATA_ITEM` naming each
+    ///   block's old address and gains one naming the new;
+    /// - a **free-space tree** leaf has the affected block groups' free
+    ///   runs recomputed, since that tree is the complement of the
+    ///   extent tree;
+    /// - a **block group tree** leaf (or an extent tree leaf without
+    ///   that feature) holding a `BLOCK_GROUP_ITEM` has that
+    ///   group's `used` moved by what the plan allocates in it less what
+    ///   it releases there. The two ends of a move are often in different
+    ///   groups, so `bytes_used` can add up while every group's count is
+    ///   wrong (#223).
+    ///
+    /// This section previously said the opposite — that a relocation
+    /// moves what is already there and records nothing — which was true
+    /// when it was written and stopped being true seventy lines below,
+    /// where `apply_records` was added. Left uncorrected it pointed a
+    /// reader at exactly the bug the code exists to prevent.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a read failure, and [`Error::UnsupportedFeature`] if a
+    /// block cannot be re-encoded at its new size — which cannot happen
+    /// for a straight relocation and is reported rather than assumed
+    /// away — or if the plan touches a block group whose free-space
+    /// records span more than one leaf (#177).
+    pub fn render_plan(
+        &self,
+        plan: &Plan,
+        generation: u64,
+    ) -> Result<Vec<crate::commit::PlacedBlock>> {
+        self.render_plan_with(plan, &DataWrite::default(), generation)
+    }
+
+    /// [`Filesystem::render_plan`] for a transaction that also moves a
+    /// file's data extents.
+    ///
+    /// Besides what a relocation renders, the leaves holding the file's
+    /// `EXTENT_DATA` items are pointed at the new extents and its inode
+    /// item is stamped with the transaction; the extent tree drops each
+    /// old data extent's record and gains one for each new; the
+    /// free-space tree and the block groups' `used` count the data
+    /// extents as well as the tree blocks.
+    ///
+    /// # Errors
+    ///
+    /// As [`Filesystem::render_plan`], and [`Error::UnsupportedFeature`]
+    /// when an item the write changes is not in any leaf the plan
+    /// rewrites, or is not the shape the planner saw.
+    pub(crate) fn render_plan_with(
+        &self,
+        plan: &Plan,
+        data: &DataWrite,
+        generation: u64,
+    ) -> Result<Vec<crate::commit::PlacedBlock>> {
+        Ok(self.render(plan, data, generation, false)?.blocks)
+    }
+
+    /// The items each leaf `plan` rewrites holds once the change is
+    /// applied, by the leaf's address before it, however many bytes they
+    /// come to. What the planner asks to find the leaves that split
+    /// (#342); nothing is built.
+    fn leaf_contents(
+        &self,
+        plan: &Plan,
+        data: &DataWrite,
+        generation: u64,
+    ) -> Result<BTreeMap<u64, Vec<crate::leaf_edit::OwnedItem>>> {
+        Ok(self.render(plan, data, generation, true)?.leaves)
+    }
+
+    /// [`Filesystem::render_plan_with`], or with `dry` set, only each
+    /// rewritten leaf's items, with no block built and nothing checked.
+    /// The nodes a split root grows above its parts (#513, #649): each
+    /// level divides the pointers below it evenly over its nodes, as a
+    /// node split does, until the new root holds them all. `parts` is
+    /// every part's first key and address, in key order.
+    fn build_upper(
+        &self,
+        id: crate::tree_write::BlockIdentity,
+        split: &Split,
+        parts: Vec<(crate::chunk::DiskKey, u64)>,
+        generation: u64,
+        out: &mut Vec<crate::commit::PlacedBlock>,
+    ) -> Result<()> {
+        use crate::btree::KeyPtr;
+        use crate::commit::PlacedBlock;
+        use crate::tree_write::{build_node, BlockIdentity};
+
+        let Some(root) = split.root else {
+            return Ok(());
+        };
+        let capacity = crate::tree_write::key_ptr_capacity(&self.sb);
+        let counts: Vec<usize> = split.upper.iter().map(Vec::len).collect();
+        if counts != upper_counts(parts.len(), capacity) {
+            return Err(Error::UnsupportedFeature(
+                "the split root's levels differ from its plan".into(),
+            ));
+        }
+        let ptr = |&(key, blockptr): &(crate::chunk::DiskKey, u64)| KeyPtr {
+            key,
+            blockptr,
+            generation,
+        };
+        let mut level = id.level;
+        let mut below = parts;
+        for nodes in &split.upper {
+            level += 1;
+            let count = nodes.len();
+            let mut next = Vec::with_capacity(count);
+            for (i, &at) in nodes.iter().enumerate() {
+                let part = &below[i * below.len() / count..(i + 1) * below.len() / count];
+                let ptrs: Vec<_> = part.iter().map(ptr).collect();
+                out.push(PlacedBlock {
+                    logical: at,
+                    bytes: build_node(
+                        &self.sb,
+                        BlockIdentity {
+                            bytenr: at,
+                            level,
+                            ..id
+                        },
+                        &ptrs,
+                    )?,
+                });
+                next.push((part[0].0, at));
+            }
+            below = next;
+        }
+        let ptrs: Vec<_> = below.iter().map(ptr).collect();
+        out.push(PlacedBlock {
+            logical: root,
+            bytes: build_node(
+                &self.sb,
+                BlockIdentity {
+                    bytenr: root,
+                    level: level + 1,
+                    ..id
+                },
+                &ptrs,
+            )?,
+        });
+        Ok(())
+    }
+
+    fn render(
+        &self,
+        plan: &Plan,
+        data: &DataWrite,
+        generation: u64,
+        dry: bool,
+    ) -> Result<Rendered> {
+        use crate::btree::KeyPtr;
+        use crate::commit::PlacedBlock;
+        use crate::leaf_edit::OwnedItem;
+        use crate::tree_write::{build_leaf, build_node, chunk_tree_uuid_of, BlockIdentity};
+
+        // Where each moved block is going.
+        // Before any block is rendered, so the answer does not depend on
+        // which leaf the loop below happens to reach first.
+        if plan.trees().contains(&objectid::FREE_SPACE_TREE) {
+            self.refuse_free_space_straddle(plan, data)?;
+        }
+
+        let moved: BTreeMap<u64, u64> = plan.rewrites.iter().map(|r| (r.old, r.new)).collect();
+        // What each moved block's record says about its references, and
+        // which of its children's records name it by address (#287).
+        let backrefs = self.backrefs(plan, data)?;
+        // Which extent tree leaf holds each tree block record gaining a
+        // reference, found once rather than once per leaf rendered (#700).
+        let block_refs = self.block_refs_by_leaf(data)?;
+
+        // The leaf each item edit lands in: the one a descent for its key
+        // reaches, as the caller found when it marked them dirty.
+        let edit_leaves: Vec<u64> = if data.edits.is_empty() {
+            Vec::new()
+        } else {
+            let root = self.edit_root(data.root)?;
+            let reader = self.pool_reader();
+            let tree = reader.tree();
+            data.edits
+                .iter()
+                .map(|e| Ok(tree.descend(root, &e.key())?.header.bytenr))
+                .collect::<Result<_>>()?
+        };
+        // And each checksum edit's leaf, in the checksum tree.
+        let csum_edit_leaves: Vec<u64> = if data.csum_edits.is_empty() {
+            Vec::new()
+        } else {
+            let root = self.tree_root(crate::csum::CSUM_TREE_OBJECTID)?;
+            let reader = self.pool_reader();
+            let tree = reader.tree();
+            data.csum_edits
+                .iter()
+                .map(|e| Ok(tree.descend(root, &e.key())?.header.bytenr))
+                .collect::<Result<_>>()?
+        };
+        // And each other tree's edit's leaf, in its own tree (#267).
+        let tree_edit_leaves: Vec<u64> = {
+            let reader = self.pool_reader();
+            let tree = reader.tree();
+            data.tree_edits
+                .iter()
+                .map(|(t, e)| Ok(tree.descend(self.edit_root(*t)?, &e.key())?.header.bytenr))
+                .collect::<Result<_>>()?
+        };
+        // The blocks the change empties (#546, #548): not rendered, and their
+        // edits, which the planner saw empty them, applied by removing them.
+        let removed: BTreeSet<u64> = plan.removed.iter().map(|r| r.old).collect();
+        let mut edits_applied = edit_leaves
+            .iter()
+            .chain(&csum_edit_leaves)
+            .chain(&tree_edit_leaves)
+            .filter(|leaf| removed.contains(leaf))
+            .count();
+        // Each rendered block's first key, by its old address. An edit can
+        // change a leaf's first key, and the node above must then carry
+        // the new one, so blocks are rendered from the leaves up.
+        let mut first_keys: BTreeMap<u64, crate::chunk::DiskKey> = BTreeMap::new();
+        let mut rewrites: Vec<&Rewrite> = plan.rewrites.iter().collect();
+        rewrites.sort_by_key(|r| r.level);
+
+        // How far each block group's `used` moves, and which of them
+        // have had it written so far (#223).
+        let deltas = self.block_group_deltas(plan, data)?;
+        let mut used_written: BTreeSet<u64> = BTreeSet::new();
+        // How much of the file write has been applied, so a part that
+        // landed in no rewritten leaf is an error rather than a loss.
+        let mut applied = DataApplied::default();
+
+        let mut out = Vec::with_capacity(plan.rewrites.len());
+        // Each split block's additional parts, by its old address: their
+        // first keys and new addresses, for the node above (#342, #615).
+        let mut halves: BTreeMap<u64, Vec<(crate::chunk::DiskKey, u64)>> = BTreeMap::new();
+        // In a dry run, each leaf's items.
+        let mut leaves: BTreeMap<u64, Vec<OwnedItem>> = BTreeMap::new();
+        for rewrite in rewrites {
+            if dry && rewrite.level > 0 {
+                continue;
+            }
+            let block = self.read_tree_block(rewrite.old)?;
+            let raw = block.bytes().to_vec();
+            let id = BlockIdentity {
+                bytenr: rewrite.new,
+                owner: rewrite.owner,
+                generation,
+                level: rewrite.level,
+                flags: crate::tree_write::flags_for_new_block(),
+                chunk_tree_uuid: chunk_tree_uuid_of(&raw),
+            };
+
+            let bytes = match block.body.key_ptrs() {
+                Some(ptrs) => {
+                    // A node: follow every child that moved, and point at
+                    // every additional part of a child that split (#615).
+                    let mut updated: Vec<KeyPtr> = Vec::with_capacity(ptrs.len() + 1);
+                    let mut gained = 0usize;
+                    for p in ptrs {
+                        let child = p.blockptr;
+                        // A leaf or node the change empties leaves its tree.
+                        if removed.contains(&child) {
+                            continue;
+                        }
+                        let mut p = *p;
+                        if let Some(&key) = first_keys.get(&child) {
+                            p.key = key;
+                        }
+                        if let Some(&to) = moved.get(&child) {
+                            p.blockptr = to;
+                            p.generation = generation;
+                        }
+                        updated.push(p);
+                        if let Some(parts) = halves.get(&child) {
+                            for &(key, at) in parts {
+                                updated.push(KeyPtr {
+                                    key,
+                                    blockptr: at,
+                                    generation,
+                                });
+                            }
+                            gained += parts.len();
+                        }
+                    }
+                    if plan.collapsed.contains(&rewrite.old) {
+                        if !updated.is_empty() {
+                            return Err(Error::UnsupportedFeature(format!(
+                                "the plan collapses root {}, but it still has children",
+                                rewrite.old
+                            )));
+                        }
+                        out.push(PlacedBlock {
+                            logical: rewrite.new,
+                            bytes: build_leaf(&self.sb, BlockIdentity { level: 0, ..id }, &[])?,
+                        });
+                        continue;
+                    }
+                    let capacity = crate::tree_write::key_ptr_capacity(&self.sb);
+                    match plan.split_of(rewrite.old) {
+                        // Every part gets a parent pointer; a split root
+                        // grows a new root over all parts (#513, #615).
+                        Some(split) if updated.len() > capacity && updated.len() >= 2 => {
+                            let count = updated.len().div_ceil(capacity);
+                            if count != split.new.len() + 1 {
+                                return Err(Error::UnsupportedFeature(
+                                    "the node split's block count differs from its plan".into(),
+                                ));
+                            }
+                            let parts: Vec<_> = (0..count)
+                                .map(|i| {
+                                    &updated
+                                        [i * updated.len() / count..(i + 1) * updated.len() / count]
+                                })
+                                .collect();
+                            first_keys.insert(rewrite.old, parts[0][0].key);
+                            let extra: Vec<_> = parts[1..]
+                                .iter()
+                                .zip(&split.new)
+                                .map(|(part, &at)| (part[0].key, at))
+                                .collect();
+                            halves.insert(rewrite.old, extra.clone());
+                            for (part, &at) in parts[1..].iter().zip(&split.new) {
+                                out.push(PlacedBlock {
+                                    logical: at,
+                                    bytes: build_node(
+                                        &self.sb,
+                                        BlockIdentity { bytenr: at, ..id },
+                                        part,
+                                    )?,
+                                });
+                            }
+                            let all = core::iter::once((parts[0][0].key, rewrite.new)).chain(extra);
+                            self.build_upper(id, split, all.collect(), generation, &mut out)?;
+                            out.push(PlacedBlock {
+                                logical: rewrite.new,
+                                bytes: build_node(&self.sb, id, parts[0])?,
+                            });
+                            continue;
+                        }
+                        Some(_) => {
+                            return Err(Error::UnsupportedFeature(format!(
+                                "the plan splits the node at {}, whose key pointers still fit \
+                                 in one block",
+                                rewrite.old
+                            )))
+                        }
+                        None => {}
+                    }
+                    if let Some(first) = updated.first() {
+                        first_keys.insert(rewrite.old, first.key);
+                    }
+                    build_node(&self.sb, id, &updated).map_err(|e| {
+                        if gained > 0 {
+                            Error::UnsupportedFeature(format!(
+                                "the node at {} has no room for the key pointer a split leaf \
+                                 below it adds, and splitting a node is not implemented: {e}",
+                                rewrite.old
+                            ))
+                        } else {
+                            e
+                        }
+                    })?
+                }
+                None => {
+                    let items = block.body.items().unwrap_or(&[]);
+                    let mut owned: Vec<OwnedItem> = items
+                        .iter()
+                        .filter_map(|item| {
+                            block.item_data(item).map(|data| OwnedItem {
+                                key: item.key,
+                                data: data.to_vec(),
+                            })
+                        })
+                        .collect();
+
+                    // An extent tree leaf carries the record of what is
+                    // allocated, so a relocation changes its CONTENTS as
+                    // well as its address: every block the plan moves
+                    // loses the item naming where it was and gains one
+                    // naming where it went. Without this the tree is
+                    // correct and the extent tree describes a filesystem
+                    // that no longer exists.
+                    if rewrite.owner == objectid::EXTENT_TREE {
+                        owned = self.apply_records(
+                            rewrite.old,
+                            owned,
+                            data,
+                            Moves {
+                                plan,
+                                backrefs: &backrefs,
+                                block_refs: &block_refs,
+                            },
+                            generation,
+                            &mut applied,
+                        )?;
+                    }
+
+                    // Group accounting lives in tree 11 on volumes with
+                    // BLOCK_GROUP_TREE, and in the extent tree otherwise.
+                    if rewrite.owner == self.block_group_tree_id() {
+                        apply_block_group_used(&mut owned, &deltas, &mut used_written)?;
+                    }
+
+                    // The free-space tree is the complement of the
+                    // extent tree, so a transaction changes both. A leaf
+                    // left saying where things used to be is what `btrfs
+                    // check` calls "cache appears valid but isn't".
+                    if rewrite.owner == objectid::FREE_SPACE_TREE {
+                        owned = self.apply_free_space(owned, plan, data)?;
+                    }
+
+                    // The file's own items: its extents now live elsewhere.
+                    if !data.moves.is_empty() && rewrite.owner == data.root {
+                        apply_file_write(&mut owned, data, generation, &mut applied)?;
+                    }
+
+                    // Items put or removed outright, in the leaf each lands in.
+                    if rewrite.owner == data.root {
+                        let here: Vec<&ItemEdit> = data
+                            .edits
+                            .iter()
+                            .zip(&edit_leaves)
+                            .filter(|(_, &leaf)| leaf == rewrite.old)
+                            .map(|(e, _)| e)
+                            .collect();
+                        if !here.is_empty() {
+                            let may_empty = dry || self.is_tree_root(rewrite.owner, rewrite.old)?;
+                            owned = apply_item_edits(rewrite.old, may_empty, owned, &here)?;
+                            edits_applied += here.len();
+                        }
+                    }
+
+                    // Checksum items put or removed, likewise.
+                    if rewrite.owner == crate::csum::CSUM_TREE_OBJECTID {
+                        let here: Vec<&ItemEdit> = data
+                            .csum_edits
+                            .iter()
+                            .zip(&csum_edit_leaves)
+                            .filter(|(_, &leaf)| leaf == rewrite.old)
+                            .map(|(e, _)| e)
+                            .collect();
+                        if !here.is_empty() {
+                            let may_empty = dry || self.is_tree_root(rewrite.owner, rewrite.old)?;
+                            owned = apply_item_edits(rewrite.old, may_empty, owned, &here)?;
+                            edits_applied += here.len();
+                        }
+                    }
+
+                    // Other trees' items put or removed, likewise (#267).
+                    let here: Vec<&ItemEdit> = data
+                        .tree_edits
+                        .iter()
+                        .zip(&tree_edit_leaves)
+                        .filter(|((t, _), &leaf)| *t == rewrite.owner && leaf == rewrite.old)
+                        .map(|((_, e), _)| e)
+                        .collect();
+                    if !here.is_empty() {
+                        let may_empty = dry || self.is_tree_root(rewrite.owner, rewrite.old)?;
+                        owned = apply_item_edits(rewrite.old, may_empty, owned, &here)?;
+                        edits_applied += here.len();
+                    }
+
+                    // A root tree leaf names other trees' roots.
+                    if rewrite.owner == objectid::ROOT_TREE {
+                        // A tree the change makes is rooted where the plan
+                        // put its leaf (#267).
+                        for created in &plan.created {
+                            for item in &mut owned {
+                                if item.key.objectid != created.owner
+                                    || item.key.key_type != ROOT_ITEM_KEY
+                                    || item.data.len() < root_item::GENERATION_V2 + 8
+                                {
+                                    continue;
+                                }
+                                item.data[root_item::BYTENR..root_item::BYTENR + 8]
+                                    .copy_from_slice(&created.new.to_le_bytes());
+                                item.data[root_item::LEVEL] = data.new_tree_level(created.owner);
+                                for at in [root_item::GENERATION, root_item::GENERATION_V2] {
+                                    item.data[at..at + 8]
+                                        .copy_from_slice(&generation.to_le_bytes());
+                                }
+                                applied.created += 1;
+                            }
+                        }
+                        if let Some(id) = data.default_subvol {
+                            applied.default_subvol += point_default_at(&mut owned, id)?;
+                        }
+                        if let Some((id, flags)) = data.root_flags {
+                            for item in &mut owned {
+                                if item.key.objectid == id
+                                    && item.key.key_type == ROOT_ITEM_KEY
+                                    && item.data.len() >= root_item::MIN_SIZE
+                                {
+                                    item.data[root_item::FLAGS..root_item::FLAGS + 8]
+                                        .copy_from_slice(&flags.to_le_bytes());
+                                    applied.root_flags += 1;
+                                }
+                            }
+                        }
+                        for item in &mut owned {
+                            if item.key.key_type != ROOT_ITEM_KEY
+                                || item.data.len() < root_item::LEVEL + 1
+                            {
+                                continue;
+                            }
+                            let at = u64::from_le_bytes(
+                                item.data[root_item::BYTENR..root_item::BYTENR + 8]
+                                    .try_into()
+                                    .expect("8 bytes"),
+                            );
+                            // A tree whose root split has a new root node,
+                            // one level up or more (#342, #649).
+                            let split = plan.split_of(at).filter(|s| s.root.is_some());
+                            let grown = split.and_then(|s| s.root);
+                            if let Some(split) = split {
+                                item.data[root_item::LEVEL] = split.level + split.grown();
+                            }
+                            if plan.collapsed.contains(&at) {
+                                item.data[root_item::LEVEL] = 0;
+                            }
+                            if let Some(to) = grown.or_else(|| moved.get(&at).copied()) {
+                                item.data[root_item::BYTENR..root_item::BYTENR + 8]
+                                    .copy_from_slice(&to.to_le_bytes());
+                                item.data[root_item::GENERATION..root_item::GENERATION + 8]
+                                    .copy_from_slice(&generation.to_le_bytes());
+                                // An item long enough to carry the second
+                                // copy must carry the same value, or the
+                                // kernel discards the root's newer fields.
+                                if let Some(v2) = item
+                                    .data
+                                    .get_mut(root_item::GENERATION_V2..root_item::GENERATION_V2 + 8)
+                                {
+                                    v2.copy_from_slice(&generation.to_le_bytes());
+                                }
+                            }
+                        }
+                    }
+
+                    if dry {
+                        leaves.insert(rewrite.old, owned);
+                        continue;
+                    }
+                    let split = plan.split_of(rewrite.old);
+                    let fits = crate::leaf_edit::fit(self.sb.nodesize, &owned);
+                    match (fits, split) {
+                        (true, None) => {
+                            if let Some(first) = owned.first() {
+                                first_keys.insert(rewrite.old, first.key);
+                            }
+                            let borrowed: Vec<_> = owned.iter().map(|i| i.as_leaf_item()).collect();
+                            build_leaf(&self.sb, id, &borrowed)?
+                        }
+                        (false, None) => {
+                            return Err(Error::UnsupportedFeature(format!(
+                                "the leaf at {} no longer fits in one block, and the plan has \
+                                 no split for it",
+                                rewrite.old
+                            )))
+                        }
+                        (true, Some(_)) => {
+                            return Err(Error::UnsupportedFeature(format!(
+                                "the plan splits the leaf at {}, whose items still fit in one \
+                                 block",
+                                rewrite.old
+                            )))
+                        }
+                        // The rewrite takes the first part; every other
+                        // part takes one allocated block (#342, #615).
+                        (false, Some(split)) => {
+                            let parts = crate::leaf_edit::split_to_fit(self.sb.nodesize, &owned)?;
+                            if parts.len() != split.new.len() + 1 {
+                                return Err(Error::UnsupportedFeature(
+                                    "the leaf split's block count differs from its plan".into(),
+                                ));
+                            }
+                            first_keys.insert(rewrite.old, parts[0][0].key);
+                            let extra: Vec<_> = parts[1..]
+                                .iter()
+                                .zip(&split.new)
+                                .map(|(part, &at)| (part[0].key, at))
+                                .collect();
+                            halves.insert(rewrite.old, extra.clone());
+                            for (part, &at) in parts[1..].iter().zip(&split.new) {
+                                let borrowed: Vec<_> =
+                                    part.iter().map(|i| i.as_leaf_item()).collect();
+                                out.push(PlacedBlock {
+                                    logical: at,
+                                    bytes: build_leaf(
+                                        &self.sb,
+                                        BlockIdentity { bytenr: at, ..id },
+                                        &borrowed,
+                                    )?,
+                                });
+                            }
+                            let all = core::iter::once((parts[0][0].key, rewrite.new)).chain(extra);
+                            self.build_upper(id, split, all.collect(), generation, &mut out)?;
+                            let borrowed: Vec<_> =
+                                parts[0].iter().map(|i| i.as_leaf_item()).collect();
+                            build_leaf(&self.sb, id, &borrowed)?
+                        }
+                    }
+                }
+            };
+
+            out.push(PlacedBlock {
+                logical: rewrite.new,
+                bytes,
+            });
+        }
+
+        if dry {
+            return Ok(Rendered {
+                blocks: Vec::new(),
+                leaves,
+            });
+        }
+
+        // An extent tree leaf the change empties is not rendered, but the
+        // records it held are released all the same, so they count (#724).
+        // The planner saw these edits empty it; anything left means they no
+        // longer do, and removing the leaf would lose those items.
+        for rewrite in &plan.removed {
+            if rewrite.owner != objectid::EXTENT_TREE || rewrite.level != 0 {
+                continue;
+            }
+            let block = self.read_tree_block(rewrite.old)?;
+            let owned: Vec<OwnedItem> = block
+                .body
+                .items()
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|item| {
+                    block.item_data(item).map(|data| OwnedItem {
+                        key: item.key,
+                        data: data.to_vec(),
+                    })
+                })
+                .collect();
+            let left = self.apply_records(
+                rewrite.old,
+                owned,
+                data,
+                Moves {
+                    plan,
+                    backrefs: &backrefs,
+                    block_refs: &block_refs,
+                },
+                generation,
+                &mut applied,
+            )?;
+            if !left.is_empty() {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the plan removes the extent tree leaf at {}, which still holds {} items",
+                    rewrite.old,
+                    left.len()
+                )));
+            }
+        }
+
+        // Each tree the change makes: one block, at the address the plan
+        // gave it, holding everything the change put in it (#267), or the
+        // pointers of the root it copies (#700).
+        if plan.created.len() != data.new_trees.len() {
+            return Err(Error::UnsupportedFeature(format!(
+                "the change makes {} trees, and the plan placed {}",
+                data.new_trees.len(),
+                plan.created.len()
+            )));
+        }
+        if !plan.created.is_empty() {
+            let uuid = chunk_tree_uuid_of(self.read_tree_block(self.sb.root)?.bytes());
+            for (created, tree) in plan.created.iter().zip(&data.new_trees) {
+                if created.owner != tree.objectid {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the plan placed tree {} where the change makes tree {}",
+                        created.owner, tree.objectid
+                    )));
+                }
+                let id = BlockIdentity {
+                    bytenr: created.new,
+                    owner: created.owner,
+                    generation,
+                    level: tree.root.level(),
+                    flags: crate::tree_write::flags_for_new_block(),
+                    chunk_tree_uuid: uuid,
+                };
+                let bytes = match &tree.root {
+                    NewRoot::Leaf(items) => {
+                        let borrowed: Vec<_> = items.iter().map(|i| i.as_leaf_item()).collect();
+                        build_leaf(&self.sb, id, &borrowed)?
+                    }
+                    NewRoot::Node { ptrs, .. } => build_node(&self.sb, id, ptrs)?,
+                };
+                out.push(PlacedBlock {
+                    logical: created.new,
+                    bytes,
+                });
+            }
+        }
+        // NOR IS A NEW TREE whose ROOT_ITEM the plan did not point at it:
+        // its leaf would be written and recorded, and nothing would read it.
+        if applied.created != plan.created.len() {
+            return Err(Error::UnsupportedFeature(format!(
+                "the change makes {} trees, and the plan pointed {} root items at them",
+                plan.created.len(),
+                applied.created
+            )));
+        }
+
+        // NOT A SKIP. A group whose `used` moves but whose item was in no
+        // leaf the plan rewrites keeps the old count, and `btrfs check`
+        // then reports "block group [...] used X but extent items used
+        // Y". A plan closed by `plan_transaction_closed` always holds
+        // that leaf; one built another way may not.
+        if let Some((start, delta)) = deltas.iter().find(|(g, _)| !used_written.contains(g)) {
+            return Err(Error::UnsupportedFeature(format!(
+                "the plan moves the used count of the block group at {start} by {delta} bytes, \
+                 but the leaf holding its block group item is not one the plan rewrites"
+            )));
+        }
+        // NOR IS A REFERENCE A NEW ROOT HOLDS: its child's record would
+        // count one fewer than point at it (#700).
+        if applied.block_refs != data.block_refs.len() {
+            return Err(Error::UnsupportedFeature(format!(
+                "the change gives {} tree blocks a reference, and the plan edited the records \
+                 of {}",
+                data.block_refs.len(),
+                applied.block_refs
+            )));
+        }
+        // NOR IS A SHARED REFERENCE FILED AS AN ITEM: the record would count
+        // one nothing lists (#700).
+        let keyed_shared = backrefs
+            .adds
+            .iter()
+            .filter(|a| a.item_leaf.is_some())
+            .count();
+        if applied.keyed_shared != keyed_shared {
+            return Err(Error::UnsupportedFeature(format!(
+                "copying a shared block files {keyed_shared} references as items of their own, \
+                 and the plan inserted {}",
+                applied.keyed_shared
+            )));
+        }
+        // NOR IS A REFERENCE A COPY GIVES OR TAKES (#734): a record would
+        // count what no item lists, or name a block that is gone.
+        let keyed_items = backrefs
+            .keyed_adds
+            .iter()
+            .filter(|a| a.item.is_some())
+            .count();
+        let shared_items = backrefs
+            .shared_drops
+            .iter()
+            .filter(|d| d.item_leaf.is_some())
+            .count();
+        if applied.keyed_adds != backrefs.keyed_adds.len()
+            || applied.keyed_items != keyed_items
+            || applied.shared_drops != backrefs.shared_drops.len()
+            || applied.shared_items != shared_items
+        {
+            return Err(Error::UnsupportedFeature(format!(
+                "copying blocks a snapshot shares gives {} references, {keyed_items} as items, \
+                 and takes {}, {shared_items} as items, and the plan edited {}, {}, {} and {}",
+                backrefs.keyed_adds.len(),
+                backrefs.shared_drops.len(),
+                applied.keyed_adds,
+                applied.keyed_items,
+                applied.shared_drops,
+                applied.shared_items
+            )));
+        }
+        // NOR IS A FLAG CHANGE: a plan that missed the leaf holding the
+        // subvolume's root item would commit nothing and report success.
+        if let Some((id, _)) = data.root_flags {
+            if applied.root_flags != 1 {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the plan rewrote {} root items of subvolume {id}, not the one whose \
+                     flags change",
+                    applied.root_flags
+                )));
+            }
+        }
+        // NOR IS AN ITEM EDIT: one whose leaf the plan does not rewrite
+        // would be committed as a change that never happened.
+        let edits = data.edits.len() + data.csum_edits.len() + data.tree_edits.len();
+        if edits_applied != edits {
+            return Err(Error::UnsupportedFeature(format!(
+                "the change edits {edits} items, and the plan rewrote the leaves of \
+                 {edits_applied}"
+            )));
+        }
+        if data.default_subvol.is_some() && applied.default_subvol != 1 {
+            return Err(Error::UnsupportedFeature(format!(
+                "the plan repointed {} `default` entries in the root tree, not one",
+                applied.default_subvol
+            )));
+        }
+        // NOR IS A FILE WRITE. Every part of it is in a leaf the plan was
+        // closed over, so a part not applied means the leaf it is in was
+        // missed — and committing without it leaves an extent nothing
+        // references, or an item naming one nothing records.
+        if applied.shared != data.shares.len() {
+            return Err(Error::UnsupportedFeature(format!(
+                "the clone adds a reference to {} data extents, and the plan edited the \
+                 records of {}",
+                data.shares.len(),
+                applied.shared
+            )));
+        }
+        let n = data.moves.len();
+        let inode = usize::from(n > 0);
+        if applied.items != n || applied.inodes != inode {
+            return Err(Error::UnsupportedFeature(format!(
+                "the write moves {n} extents of inode {}, and the plan rewrote {} of its \
+                 extent items and {} of its inode items",
+                data.ino, applied.items, applied.inodes
+            )));
+        }
+        let released = data.released_extents().len();
+        let dropped = data.dropped_references().count();
+        if applied.unreffed != dropped {
+            return Err(Error::UnsupportedFeature(format!(
+                "the write drops {dropped} references of shared data extents, and the plan \
+                 edited the records of {}",
+                applied.unreffed
+            )));
+        }
+        if applied.keyed_unreffed != applied.keyed_expected {
+            return Err(Error::UnsupportedFeature(format!(
+                "the write drops {} keyed data references, and the plan edited {} items",
+                applied.keyed_expected, applied.keyed_unreffed
+            )));
+        }
+        if applied.records != data.records.len() {
+            return Err(Error::UnsupportedFeature(format!(
+                "the change replaces the records of {} data extents, and the plan rewrote {} \
+                 of them",
+                data.records.len(),
+                applied.records
+            )));
+        }
+        let recorded = data.allocations().count();
+        if applied.released != released || applied.recorded != recorded {
+            return Err(Error::UnsupportedFeature(format!(
+                "the write allocates {recorded} data extents and releases {released}, and the \
+                 plan released the records of {} and recorded {}",
+                applied.released, applied.recorded
+            )));
+        }
+        Ok(Rendered {
+            blocks: out,
+            leaves,
+        })
+    }
+
+    /// The root of tree `objectid` as a change edits it: the chunk tree's
+    /// from the superblock, every other tree's from its `ROOT_ITEM`.
+    pub(crate) fn edit_root(&self, objectid: u64) -> Result<u64> {
+        match objectid {
+            objectid::CHUNK_TREE => Ok(self.sb.chunk_root),
+            // No `ROOT_ITEM` names the root tree; the superblock does.
+            objectid::ROOT_TREE => Ok(self.sb.root),
+            _ => self.tree_root(objectid),
+        }
+    }
+
+    /// Where the chunk tree's root ends up, for a plan that moves it
+    /// (#264).
+    pub(crate) fn planned_chunk_root(&self, plan: &Plan) -> Option<u64> {
+        plan.rewrites
+            .iter()
+            .find(|r| r.old == self.sb.chunk_root)
+            .map(|r| r.new)
+    }
+
+    /// Where the root tree ends up, for a plan that moves it.
+    ///
+    /// The superblock names the root tree, so committing a plan needs
+    /// this. Returns `None` when the plan does not move the root tree,
+    /// which means the superblock's existing value still stands.
+    pub fn planned_root(&self, plan: &Plan) -> Option<u64> {
+        plan.rewrites
+            .iter()
+            .find(|r| r.old == self.sb.root)
+            .map(|r| r.new)
+    }
+}
+
+impl Filesystem {
+    /// Plan a transaction including the extent tree's own rewrite.
+    ///
+    /// [`Filesystem::plan_transaction`] computes the spine: the dirty
+    /// blocks, their ancestors, and the root tree leaf naming a tree
+    /// whose root moved. That is not a whole transaction, because moving
+    /// a block means recording the move — a `METADATA_ITEM` added for
+    /// the new address and the old one's removed — and those items live
+    /// in extent tree leaves, which are themselves blocks that must then
+    /// be rewritten.
+    ///
+    /// That is the recursion `docs/cow-transaction.md` measured, where a
+    /// commit changing NOTHING still rewrote four blocks. It terminates
+    /// because the extent tree ends up recording its own new blocks
+    /// rather than growing: each rewrite is an allocation and a release.
+    ///
+    /// This closes it by iterating. Each round works out which extent
+    /// tree leaves hold the records for the blocks moved so far, adds
+    /// them to the dirty set, and plans again. When a round adds nothing
+    /// the plan is closed.
+    ///
+    /// # Errors
+    ///
+    /// As [`Filesystem::plan_transaction`], and
+    /// [`Error::UnsupportedFeature`] if the iteration does not settle
+    /// within `rounds`. That is reported rather than papered over: a
+    /// transaction whose own bookkeeping keeps producing more work is
+    /// one that needs the kernel's reservation machinery, not another
+    /// turn of the loop.
+    pub fn plan_transaction_closed(&self, dirty: &[u64], rounds: usize) -> Result<Plan> {
+        self.plan_transaction_closed_with(dirty, &DataWrite::default(), rounds)
+    }
+
+    /// [`Filesystem::plan_transaction_closed`], closed over a file
+    /// write's data extents as well: the extent tree leaves holding their
+    /// records, the free-space tree leaves describing their groups, and
+    /// the leaves of those groups' `BLOCK_GROUP_ITEM`s are dirty too.
+    pub(crate) fn plan_transaction_closed_with(
+        &self,
+        dirty: &[u64],
+        data: &DataWrite,
+        rounds: usize,
+    ) -> Result<Plan> {
+        let mut seed: BTreeSet<u64> = dirty.iter().copied().collect();
+
+        for _ in 0..rounds {
+            let list: Vec<u64> = seed.iter().copied().collect();
+            let gaining: BTreeSet<u64> = data.block_refs.iter().map(|r| r.bytenr).collect();
+            let mut plan = self.plan_transaction_gaining(&list, &gaining)?;
+            // A block for each tree the change makes (#267), whose records
+            // are this round's too.
+            plan.created = self.plan_created(&plan, data)?;
+            // The leaves the change fills past a block, and the blocks
+            // their splits take, whose records are this round's too (#342).
+            plan.splits = self.plan_splits(&plan, data)?;
+            // The leaves the change empties leave their trees (#546): no
+            // new home, and their old blocks released.
+            self.plan_removals(&mut plan, data)?;
+            // A block that leaves records no copy of itself, so what fills
+            // an extent tree leaf is less than the splits above reckoned.
+            if !plan.removed.is_empty() {
+                plan.splits = self.plan_splits(&plan, data)?;
+            }
+
+            // Every address whose record changes: the old ones lose a
+            // METADATA_ITEM, the new ones gain one -- and each data
+            // extent the write moves loses or gains an EXTENT_ITEM.
+            let mut touched: Vec<u64> = plan.released();
+            touched.extend(plan.allocated());
+            touched.extend(data.addresses());
+            let backrefs = self.backrefs(&plan, data)?;
+            // A block a snapshot keeps loses this tree's reference, and
+            // each of its children gains one naming it (#262): their
+            // records change, and nothing is freed or taken for them.
+            let mut records = touched.clone();
+            records.extend(plan.kept.iter().copied());
+            records.extend(backrefs.adds.iter().map(|a| a.bytenr));
+            // A moved block flagged FULL_BACKREF is named by address in
+            // its children's records, and a copy of a block the tree does
+            // not own gives them keyed references (#287, #734).
+            records.extend(backrefs.keyed_adds.iter().map(|a| a.bytenr));
+            records.extend(backrefs.shared_drops.iter().map(|d| d.bytenr));
+            // And a block a new root points at gains that root's (#700).
+            records.extend(data.block_refs.iter().map(|r| r.bytenr));
+
+            let before = seed.len();
+            seed.extend(self.extent_leaves_for(&records)?);
+            // A reference filed as an item of its own lands where a descent
+            // for its key does, which need not be its record's leaf (#700).
+            seed.extend(backrefs.adds.iter().filter_map(|a| a.item_leaf));
+            seed.extend(
+                backrefs
+                    .keyed_adds
+                    .iter()
+                    .filter_map(|a| a.item.as_ref().map(|i| i.leaf)),
+            );
+            seed.extend(backrefs.shared_drops.iter().filter_map(|d| d.item_leaf));
+            // Keyed references need not share their extent record's
+            // leaf. Close over the leaf of each item we might drop.
+            for (old, _, offset) in data.dropped_references() {
+                if let Some((_, leaf)) =
+                    self.keyed_data_ref_leaf(old, data.root, data.ino, offset)?
+                {
+                    seed.insert(leaf);
+                }
+            }
+            // A shared extent's record gains a reference, and nothing is
+            // allocated or freed: its extent tree leaf is dirty, and no
+            // free-space or block group leaf is (#269).
+            let shared: Vec<u64> = data.shares.iter().map(|s| s.bytenr).collect();
+            seed.extend(self.extent_leaves_for(&shared)?);
+            // The free-space tree tracks the same moves from the other
+            // side, so its leaves for those addresses are dirty too.
+            seed.extend(self.free_space_leaves_for(&touched)?);
+            // A group the plan takes more from than it gives back, or the
+            // reverse, has its BLOCK_GROUP_ITEM's `used` rewritten, so
+            // the leaf holding that item is dirty too (#223).
+            let groups: BTreeSet<u64> = self.block_group_deltas(&plan, data)?.into_keys().collect();
+            seed.extend(self.block_group_item_leaves(&groups)?.into_values());
+            if seed.len() == before {
+                return Ok(plan);
+            }
+        }
+
+        Err(Error::UnsupportedFeature(format!(
+            "the transaction did not settle in {rounds} rounds: recording each round's \
+             moves keeps dirtying extent tree leaves that were not already in it. \
+             Breaking that needs reservations rather than another iteration"
+        )))
+    }
+
+    /// The leaves `plan` fills past one block, each with the blocks its
+    /// split takes (#342).
+    ///
+    /// Whether a leaf fills depends on every record the change adds, the
+    /// split blocks' own records among them, so this goes round until the
+    /// set of splitting leaves stops changing. Addresses come after the
+    /// rewrites' and never collide with them.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] for a split this does not make: of the
+    /// root tree's or the chunk tree's root, which the superblock names
+    /// with its level; and when the set does not settle. A leaf a snapshot
+    /// shares splits like any other (#262): the old block stays for the
+    /// snapshot, and both halves are new blocks of this tree. So does one
+    /// flagged full back references (#734): the references naming its old
+    /// address are settled against its old items, and its halves' are keyed
+    /// by the tree, whichever half an item lands in.
+    fn plan_splits(&self, plan: &Plan, data: &DataWrite) -> Result<Vec<Split>> {
+        let nodesize = self.sb.nodesize;
+        let generation = self.sb.generation + 1;
+        let places = self.placements()?;
+        let capacity = crate::tree_write::key_ptr_capacity(&self.sb);
+        let mut splits: Vec<Split> = Vec::new();
+        for _ in 0..8 {
+            let trial = Plan {
+                splits: splits.clone(),
+                ..plan.clone()
+            };
+            // A change the render refuses is the render's to report: given
+            // these splits it makes this same call and fails the same way,
+            // so planning does not take that refusal over (#87).
+            let Ok(leaves) = self.leaf_contents(&trial, data, generation) else {
+                return Ok(splits);
+            };
+            let mut full: BTreeMap<u64, usize> = BTreeMap::new();
+            for (&old, items) in &leaves {
+                if !crate::leaf_edit::fit(nodesize, items) {
+                    full.insert(
+                        old,
+                        crate::leaf_edit::split_to_fit(nodesize, items)?.len() - 1,
+                    );
+                }
+            }
+            // Carry every additional pointer through the ancestors.
+            // Sibling gains can increase a node's split count again;
+            // propagate only the additional gain each time (#515, #615).
+            let mut gained: BTreeMap<u64, usize> = BTreeMap::new();
+            let mut pending: Vec<(u64, usize)> = full.iter().map(|(&old, &n)| (old, n)).collect();
+            while let Some((child, count)) = pending.pop() {
+                let Some(node) = places.get(&child).and_then(|p| p.parent) else {
+                    continue;
+                };
+                let more = gained.entry(node).or_default();
+                *more += count;
+                let held = self
+                    .read_tree_block(node)?
+                    .body
+                    .key_ptrs()
+                    .map_or(0, <[_]>::len);
+                let needed = (held + *more).div_ceil(capacity).saturating_sub(1);
+                let previous = full.get(&node).copied().unwrap_or(0);
+                if needed > previous {
+                    full.insert(node, needed);
+                    pending.push((node, needed - previous));
+                }
+            }
+            let have: BTreeMap<u64, usize> = splits.iter().map(|s| (s.leaf, s.new.len())).collect();
+            if full == have {
+                return Ok(splits);
+            }
+            splits.retain(|s| full.get(&s.leaf) == Some(&s.new.len()));
+            let mut taken: BTreeSet<u64> = Plan {
+                splits: splits.clone(),
+                ..plan.clone()
+            }
+            .allocated()
+            .into_iter()
+            .collect();
+            for (&leaf, &count) in &full {
+                if have.get(&leaf) == Some(&count) {
+                    continue;
+                }
+                let place = places.get(&leaf).ok_or_else(|| {
+                    Error::UnsupportedFeature(format!(
+                        "the leaf at {leaf} fills, and is not reachable from any tree"
+                    ))
+                })?;
+                let is_root = place.parent.is_none();
+                let between = if is_root {
+                    upper_counts(count + 1, capacity)
+                } else {
+                    Vec::new()
+                };
+                if is_root
+                    && usize::from(place.level) + between.len() + 1
+                        >= usize::from(crate::superblock::MAX_LEVEL)
+                {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the root at {leaf} needs {} child pointers after splitting, and \
+                         its tree would grow past the tallest a tree can be",
+                        count + 1
+                    )));
+                }
+                if is_root
+                    && (place.owner == objectid::ROOT_TREE || place.owner == objectid::CHUNK_TREE)
+                {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the change fills the root {} of tree {}, whose root and level the \
+                         superblock names, and growing that tree a level is not implemented",
+                        if place.level == 0 { "leaf" } else { "node" },
+                        place.owner
+                    )));
+                }
+                let mut new = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let at = self.next_free_block_for(place.owner, &taken)?;
+                    taken.insert(at);
+                    new.push(at);
+                }
+                let mut upper = Vec::with_capacity(between.len());
+                for n in between {
+                    let mut nodes = Vec::with_capacity(n);
+                    for _ in 0..n {
+                        let at = self.next_free_block_for(place.owner, &taken)?;
+                        taken.insert(at);
+                        nodes.push(at);
+                    }
+                    upper.push(nodes);
+                }
+                let root = if is_root {
+                    let r = self.next_free_block_for(place.owner, &taken)?;
+                    taken.insert(r);
+                    Some(r)
+                } else {
+                    None
+                };
+                splits.push(Split {
+                    leaf,
+                    level: place.level,
+                    new,
+                    owner: place.owner,
+                    root,
+                    upper,
+                });
+            }
+        }
+        Err(Error::UnsupportedFeature(
+            "the leaves the change fills did not settle: each round's splits filled \
+             another"
+                .into(),
+        ))
+    }
+
+    /// Move empty leaves and, from the leaves up, nodes whose children
+    /// all leave, from rewrites to removals (#546, #548). An empty root
+    /// node instead becomes one empty leaf.
+    ///
+    /// A leaf that is its parent's first child leaves too (#547): the
+    /// render then gives the parent the first key of its next child left,
+    /// and carries it up through every ancestor whose own first key it
+    /// was.
+    ///
+    /// A block a snapshot keeps leaves this tree the same way (#734), and
+    /// stays where it is for the snapshot.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] for collapsing a root whose level the
+    /// superblock names.
+    fn plan_removals(&self, plan: &mut Plan, data: &DataWrite) -> Result<()> {
+        let generation = self.sb.generation + 1;
+        // A change the render refuses is the render's to report (#87).
+        let Ok(leaves) = self.leaf_contents(plan, data, generation) else {
+            return Ok(());
+        };
+        let places = self.placements()?;
+        let mut empty: BTreeSet<u64> = leaves
+            .iter()
+            .filter(|(_, items)| items.is_empty())
+            .map(|(&old, _)| old)
+            .collect();
+        let mut order = plan.rewrites.clone();
+        order.sort_by_key(|r| r.level);
+        for rewrite in order {
+            let old = rewrite.old;
+            if rewrite.level > 0 {
+                let block = self.read_tree_block(old)?;
+                if block.body.key_ptrs().is_some_and(|ptrs| {
+                    !ptrs.is_empty() && ptrs.iter().all(|p| empty.contains(&p.blockptr))
+                }) {
+                    empty.insert(old);
+                }
+            }
+            if !empty.contains(&old) {
+                continue;
+            }
+            let Some(place) = places.get(&old) else {
+                continue;
+            };
+            if place.parent.is_none() && rewrite.level == 0 {
+                continue;
+            }
+            if place.parent.is_none() {
+                if matches!(rewrite.owner, objectid::ROOT_TREE | objectid::CHUNK_TREE) {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the change empties root node {old} of tree {}, whose level the \
+                         superblock names, and collapsing that tree is not implemented",
+                        rewrite.owner
+                    )));
+                }
+                plan.collapsed.insert(old);
+                continue;
+            }
+            if let Some(at) = plan.rewrites.iter().position(|r| r.old == old) {
+                plan.removed.push(plan.rewrites.remove(at));
+            }
+        }
+        Ok(())
+    }
+
+    /// A block for the root leaf of each tree `data` makes (#267), after
+    /// the rewrites' and never colliding with them.
+    ///
+    /// # Errors
+    ///
+    /// As allocating a block for a rewrite.
+    fn plan_created(&self, plan: &Plan, data: &DataWrite) -> Result<Vec<Created>> {
+        let mut taken: BTreeSet<u64> = plan.rewrites.iter().map(|r| r.new).collect();
+        let mut out = Vec::with_capacity(data.new_trees.len());
+        for tree in &data.new_trees {
+            let new = self.next_free_block_for(tree.objectid, &taken)?;
+            taken.insert(new);
+            out.push(Created {
+                new,
+                owner: tree.objectid,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Whether the block at `addr` is tree `owner`'s root. The superblock
+    /// names the root tree's and the chunk tree's roots; the root tree
+    /// names every other's.
+    fn is_tree_root(&self, owner: u64, addr: u64) -> Result<bool> {
+        Ok(match owner {
+            objectid::ROOT_TREE => self.sb.root == addr,
+            objectid::CHUNK_TREE => self.sb.chunk_root == addr,
+            _ => self.tree_root(owner)? == addr,
+        })
+    }
+
+    /// The extent tree leaves that hold, or would hold, the records for
+    /// `addresses`.
+    ///
+    /// "Would hold" is the important half. An insert dirties the leaf it
+    /// lands in even though nothing is filed under that key yet, and
+    /// which leaf that is follows the same rule a descent uses: the LAST
+    /// leaf whose first key is not greater than the one being inserted.
+    ///
+    /// A range test — is the address between this leaf's first and last
+    /// key — is not that rule, and gets the common case wrong. A newly
+    /// allocated address is usually PAST every key in the tree, so it
+    /// falls in no leaf's range, no leaf is dirtied, and the record is
+    /// never written. The block then has no back reference and `btrfs
+    /// check` says so: "tree extent[...] has no backref item in extent
+    /// tree". It only showed up on a fixture whose free space happened
+    /// to lie beyond the last record rather than among them.
+    fn extent_leaves_for(&self, addresses: &[u64]) -> Result<BTreeSet<u64>> {
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        self.leaves_holding(root, addresses)
+    }
+
+    /// The leaves of `root` that an insert of each address would land
+    /// in.
+    fn leaves_holding(&self, root: u64, addresses: &[u64]) -> Result<BTreeSet<u64>> {
+        // A reference leaf can begin with the same objectid as the
+        // record's leaf. Descend by the complete key, before all keyed
+        // backrefs, rather than comparing objectids alone.
+        let kind = if self.read_tree_block(root)?.header.owner == objectid::EXTENT_TREE {
+            key_type::METADATA_ITEM
+        } else {
+            key_type::FREE_SPACE_EXTENT
+        };
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+        addresses
+            .iter()
+            .map(|at| {
+                Ok(tree
+                    .descend(
+                        root,
+                        &DiskKey {
+                            objectid: *at,
+                            key_type: kind,
+                            offset: u64::MAX,
+                        },
+                    )?
+                    .header
+                    .bytenr)
+            })
+            .collect()
+    }
+
+    /// The tree block records `data` gives a reference, by the extent tree
+    /// leaf holding each (#700).
+    fn block_refs_by_leaf(&self, data: &DataWrite) -> Result<BTreeMap<u64, Vec<TreeBlockRef>>> {
+        let mut out: BTreeMap<u64, Vec<TreeBlockRef>> = BTreeMap::new();
+        if data.block_refs.is_empty() {
+            return Ok(out);
+        }
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+        for r in &data.block_refs {
+            let key = DiskKey {
+                objectid: r.bytenr,
+                key_type: key_type::METADATA_ITEM,
+                offset: u64::from(r.level),
+            };
+            out.entry(tree.descend(root, &key)?.header.bytenr)
+                .or_default()
+                .push(*r);
+        }
+        Ok(out)
+    }
+
+    /// The keyed item holding this reference, and the leaf holding it.
+    /// The kernel files a reference whose hash key is taken at the next
+    /// free key offset, so the probe walks up from the hash and matches
+    /// each item by its root, inode and offset (#608). A gap ends it.
+    fn keyed_data_ref_leaf(
+        &self,
+        old: u64,
+        tree: u64,
+        ino: u64,
+        offset: u64,
+    ) -> Result<Option<(DiskKey, u64)>> {
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let reader = self.pool_reader();
+        let mut key = DiskKey {
+            objectid: old,
+            key_type: crate::backref::EXTENT_DATA_REF,
+            offset: crate::extent_write::data_ref_hash(tree, ino, offset),
+        };
+        loop {
+            let Some(item) = reader.tree().search(root, &key)? else {
+                return Ok(None);
+            };
+            if keyed_data_ref_names(&item.data, tree, ino, offset) {
+                let leaf = reader.tree().descend(root, &key)?;
+                return Ok(Some((key, leaf.header.bytenr)));
+            }
+            let Some(next) = key.offset.checked_add(1) else {
+                return Ok(None);
+            };
+            key.offset = next;
+        }
+    }
+}
+
+impl Filesystem {
+    /// Apply a plan's allocations and releases to one extent tree leaf.
+    ///
+    /// Each moved block loses the `METADATA_ITEM` naming its old address
+    /// and gains one naming the new. Only the items belonging in THIS
+    /// leaf are touched: which leaf an address belongs to is decided by
+    /// the key range, and every leaf that any of them falls into is in
+    /// the plan — that is what closing the plan over its own bookkeeping
+    /// guarantees.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a refusal from the leaf editor. An address whose
+    /// record is missing is an error rather than a skip: it means the
+    /// extent tree does not say what the plan believes, and carrying on
+    /// would leave a block recorded as allocated for ever.
+    fn apply_records(
+        &self,
+        leaf: u64,
+        items: Vec<crate::leaf_edit::OwnedItem>,
+        data: &DataWrite,
+        moves: Moves<'_>,
+        generation: u64,
+        applied: &mut DataApplied,
+    ) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+        use crate::extent_write::{record_tree_block, TreeBlockAllocation};
+        use crate::leaf_edit::{delete, insert_unbounded as insert, OwnedItem};
+
+        // Which leaf each address belongs to, by the rule a descent
+        // uses — NOT by whether this leaf's existing keys bracket it. A
+        // newly allocated address is usually past every key in the tree,
+        // and a bracket test skips it: the record is never written and
+        // `btrfs check` reports the block as having no backref item.
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let mine =
+            |at: u64| -> Result<bool> { Ok(self.leaves_holding(root, &[at])?.contains(&leaf)) };
+
+        let mut out = items;
+
+        // Releases first, so the leaf is at its smallest before
+        // anything is added to it. A block a snapshot keeps is not
+        // released; its record is edited below (#262). A leaf the change
+        // removes is released like any other (#546).
+        for rewrite in moves.plan.rewrites.iter().chain(&moves.plan.removed) {
+            if moves.plan.kept.contains(&rewrite.old) || !mine(rewrite.old)? {
+                continue;
+            }
+            let key = TreeBlockAllocation {
+                bytenr: rewrite.old,
+                level: rewrite.level,
+                generation,
+                owner: rewrite.owner,
+            }
+            .key();
+            // NOT GUARDED. A missing record is the error `delete` reports:
+            // the extent tree does not say what the plan believes, and
+            // skipping it left the old block recorded as allocated for
+            // ever -- on a volume without SKINNY_METADATA, where the record
+            // is an EXTENT_ITEM under another key, on every transaction
+            // (#87).
+            // ONE REFERENCE, OR NOT OURS TO RELEASE (#178). Deleting the
+            // record is how a block with a single owner is freed. A block
+            // with more is shared, usually by a snapshot of a tree whose
+            // root is a node, and the other tree still points at it once
+            // this one has moved on. In a subvolume's tree the plan keeps
+            // such a block (#262) and it never reaches here; anywhere else
+            // a second reference is not something this driver knows how
+            // to drop.
+            if let Some(item) = out.iter().find(|i| i.key == key) {
+                let refs = item
+                    .data
+                    .get(..8)
+                    .map(|b| u64::from_le_bytes(b.try_into().expect("8 bytes")));
+                if refs != Some(1) {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the tree block at {} has {} references, so another tree still \
+                         points at it; it is in tree {}, which no snapshot shares, and \
+                         dropping one reference of it is not implemented",
+                        rewrite.old,
+                        refs.map_or("an unreadable number of".to_string(), |r| r.to_string()),
+                        rewrite.owner
+                    )));
+                }
+            }
+            out = delete(&out, &key)?;
+        }
+
+        // Each child of a root a snapshot copies gains a reference from the
+        // snapshot (#700), before a kept block below gives up its tree's.
+        for r in moves.block_refs.get(&leaf).into_iter().flatten() {
+            let key = DiskKey {
+                objectid: r.bytenr,
+                key_type: key_type::METADATA_ITEM,
+                offset: u64::from(r.level),
+            };
+            let body = out
+                .iter()
+                .find(|i| i.key == key)
+                .map(|i| i.data.clone())
+                .ok_or_else(|| {
+                    Error::UnsupportedFeature(format!(
+                        "the tree block at {} a new root points at has no record where the \
+                         plan looked",
+                        r.bytenr
+                    ))
+                })?;
+            let body = if r.keyed {
+                crate::backref::raise_total(key.key_type, &body, 1)?
+            } else {
+                crate::backref::add_inline_tree_ref(key.key_type, &body, r.tree)?
+            };
+            out = delete(&out, &key)?;
+            out = insert(&out, OwnedItem { key, data: body })?;
+            applied.block_refs += 1;
+        }
+
+        // Each child of a block a snapshot keeps gains a shared reference
+        // naming it (#262), before anything is taken from the same
+        // records: a kept block below another gains one and then gives up
+        // its tree's, and a data extent a kept leaf points at keeps a
+        // reference for the snapshot whatever this change takes.
+        for add in &moves.backrefs.adds {
+            if add.item_leaf == Some(leaf) {
+                out = insert(&out, add.item())?;
+                applied.keyed_shared += 1;
+            }
+            if mine(add.bytenr)? {
+                out = apply_shared_add(self.sb.nodesize, out, add)?;
+            }
+        }
+
+        // Each block a snapshot keeps loses this tree's reference -- the
+        // copy has its own (#262). One this tree owned refers to its children
+        // by its address from now on, as the references just added say; one
+        // it does not goes on referring to them as it did (#734).
+        for drop in &moves.backrefs.kept_drops {
+            if mine(drop.rewrite.old)? {
+                out = drop_kept_tree_ref(out, &drop.rewrite, drop.own)?;
+            }
+        }
+
+        // A moved block flagged FULL_BACKREF stops naming its children by
+        // its address, and a copy of a block the tree does not own, like that
+        // one, names them by the tree (#287, #734). Without this the data
+        // under a moved leaf is recorded as referred to by a block that no
+        // longer exists, and `btrfs check` reports a referencer count
+        // mismatch for every extent of it. Before the data references are
+        // released or dropped: those are the keyed ones this makes.
+        for drop in &moves.backrefs.shared_drops {
+            if drop.item_leaf == Some(leaf) {
+                out = delete(&out, &drop.item_key())?;
+                applied.shared_items += 1;
+            }
+            if mine(drop.bytenr)? {
+                out = apply_shared_drop(out, drop)?;
+                applied.shared_drops += 1;
+            }
+        }
+        for add in &moves.backrefs.keyed_adds {
+            if let Some(item) = add.item.as_ref().filter(|i| i.leaf == leaf) {
+                if item.replaces {
+                    out = delete(&out, &item.key)?;
+                }
+                out = insert(
+                    &out,
+                    OwnedItem {
+                        key: item.key,
+                        data: item.data.clone(),
+                    },
+                )?;
+                applied.keyed_items += 1;
+            }
+            if mine(add.bytenr)? {
+                out = apply_keyed_add(self.sb.nodesize, out, add)?;
+                applied.keyed_adds += 1;
+            }
+        }
+
+        // Each data extent the write releases: its record goes, but only
+        // once it is shown to be the record the planner refused
+        // everything else for -- the write's own items' references, held
+        // inline, and no other. Anything else would free bytes another
+        // file or a snapshot still reads.
+        for (old, old_len, ref_offsets) in data.released_extents() {
+            if !mine(old)? {
+                continue;
+            }
+            let key = DiskKey {
+                objectid: old,
+                key_type: key_type::EXTENT_ITEM,
+                offset: old_len,
+            };
+            let body = out.iter().find(|i| i.key == key).map(|i| i.data.as_slice());
+            if !body.is_some_and(|b| held_only_by(b, data.root, data.ino, &ref_offsets)) {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the data extent at {} is not recorded as {} references held inline by \
+                     inode {} at {:?} in tree {}, so releasing it could free bytes something \
+                     else reads",
+                    old,
+                    ref_offsets.len(),
+                    data.ino,
+                    ref_offsets,
+                    data.root
+                )));
+            }
+            out = delete(&out, &key)?;
+            applied.released += 1;
+        }
+
+        // Each data extent another reference shares, of which the write
+        // drops one (#262, #261): its record stays, less this file item's
+        // inline reference -- counted down, or removed at a count of one --
+        // and one from its total. A reference the kernel filed as a keyed
+        // item is dropped from that item (#442). A shared reference, or
+        // the extent's last, is refused: the last is a release.
+        for (at, (old, old_len, old_ref_offset)) in data.dropped_references().enumerate() {
+            // The reference a copy of this leaf would give the extent, and
+            // this change would take straight back (#734).
+            if moves.backrefs.cancelled.contains(&at) {
+                if mine(old)? {
+                    applied.unreffed += 1;
+                }
+                continue;
+            }
+            let record_here = mine(old)?;
+            let keyed_location =
+                self.keyed_data_ref_leaf(old, data.root, data.ino, old_ref_offset)?;
+            let keyed_here = keyed_location.is_some_and(|(_, at)| at == leaf);
+            if !record_here && !keyed_here {
+                continue;
+            }
+            let key = DiskKey {
+                objectid: old,
+                key_type: key_type::EXTENT_ITEM,
+                offset: old_len,
+            };
+            let body = if record_here {
+                out.iter().find(|i| i.key == key).map(|i| i.data.clone())
+            } else {
+                self.pool_reader()
+                    .tree()
+                    .search(root, &key)?
+                    .map(|i| i.data)
+            }
+            .ok_or_else(|| {
+                Error::UnsupportedFeature(format!(
+                    "the shared data extent at {old} has no record where the plan looked"
+                ))
+            })?;
+            let inline = crate::backref::drop_inline_data_ref(
+                key_type::EXTENT_ITEM,
+                &body,
+                data.root,
+                data.ino,
+                old_ref_offset,
+            )?;
+            let dropped = match inline {
+                Some(dropped) if record_here => dropped,
+                Some(_) => continue,
+                // Not inline: the kernel filed it as a keyed item of its
+                // own, keyed by a hash of its fields (#442). It is counted
+                // down, or deleted at a count of one, and the record loses
+                // one from its total.
+                None => {
+                    if record_here {
+                        applied.keyed_expected += 1;
+                    }
+                    // The item's actual key, which a taken hash shifts.
+                    let keyed = keyed_location.map_or(
+                        DiskKey {
+                            objectid: old,
+                            key_type: crate::backref::EXTENT_DATA_REF,
+                            offset: crate::extent_write::data_ref_hash(
+                                data.root,
+                                data.ino,
+                                old_ref_offset,
+                            ),
+                        },
+                        |(key, _)| key,
+                    );
+                    let item = if keyed_here {
+                        out.iter().find(|i| i.key == keyed).map(|i| i.data.clone())
+                    } else {
+                        self.pool_reader()
+                            .tree()
+                            .search(root, &keyed)?
+                            .map(|i| i.data)
+                    }
+                    .ok_or_else(|| {
+                        Error::UnsupportedFeature(format!(
+                            "the shared data extent at {old} holds no reference from inode \
+                                 {} at {old_ref_offset} in tree {}, inline or keyed at its \
+                                 hash, so which of its references to drop is not known",
+                            data.ino, data.root
+                        ))
+                    })?;
+                    let lowered = crate::backref::lower_total(key_type::EXTENT_ITEM, &body)?;
+                    let kept = crate::backref::drop_keyed_data_ref(
+                        &item,
+                        data.root,
+                        data.ino,
+                        old_ref_offset,
+                    )?;
+                    if keyed_here {
+                        out = delete(&out, &keyed)?;
+                        if let Some(kept) = kept {
+                            out = insert(
+                                &out,
+                                OwnedItem {
+                                    key: keyed,
+                                    data: kept,
+                                },
+                            )?;
+                        }
+                        applied.keyed_unreffed += 1;
+                    }
+                    lowered
+                }
+            };
+            if !record_here {
+                continue;
+            }
+            out = delete(&out, &key)?;
+            out = insert(&out, OwnedItem { key, data: dropped })?;
+            applied.unreffed += 1;
+        }
+
+        // Each data extent a clone shares (#269): its record stays, with
+        // the new file item's inline reference added -- counted up, or put
+        // where the kernel looks for it -- and one more on its total. A
+        // record whose references are kept as items of their own, or
+        // that would outgrow what the kernel keeps inline, is refused:
+        // filing a reference as an item is not written here.
+        for s in &data.shares {
+            if !mine(s.bytenr)? {
+                continue;
+            }
+            let key = DiskKey {
+                objectid: s.bytenr,
+                key_type: key_type::EXTENT_ITEM,
+                offset: s.len,
+            };
+            let body = out
+                .iter()
+                .find(|i| i.key == key)
+                .map(|i| i.data.clone())
+                .ok_or_else(|| {
+                    Error::UnsupportedFeature(format!(
+                        "the data extent at {} a clone shares has no record where the plan \
+                         looked",
+                        s.bytenr
+                    ))
+                })?;
+            let keyed = out.iter().any(|i| {
+                i.key.objectid == s.bytenr
+                    && matches!(
+                        i.key.key_type,
+                        crate::backref::EXTENT_DATA_REF | crate::backref::SHARED_DATA_REF
+                    )
+            });
+            let added = crate::backref::add_inline_data_ref(
+                key_type::EXTENT_ITEM,
+                &body,
+                data.root,
+                data.ino,
+                s.ref_offset,
+            )?;
+            let limit = max_inline_extent_item(self.sb.nodesize);
+            if keyed || (added.len() > body.len() && added.len() >= limit) {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the data extent at {} keeps its references as items of their own, or \
+                     would at {} bytes inline, and filing one that way is not implemented",
+                    s.bytenr,
+                    added.len()
+                )));
+            }
+            out = delete(&out, &key)?;
+            out = insert(&out, OwnedItem { key, data: added })?;
+            applied.shared += 1;
+        }
+
+        // Each data extent record replaced outright (#266), once it is
+        // shown to be what the change was computed from: a record that
+        // differs means the references it counts are not the ones the
+        // change adjusted.
+        for r in &data.records {
+            if !mine(r.bytenr)? {
+                continue;
+            }
+            let key = DiskKey {
+                objectid: r.bytenr,
+                key_type: key_type::EXTENT_ITEM,
+                offset: r.len,
+            };
+            let found = out.iter().find(|i| i.key == key).map(|i| i.data.clone());
+            if found != r.before {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the data extent at {} is not recorded as the change found it, so the \
+                     references it counts are not the ones the change adjusted",
+                    r.bytenr
+                )));
+            }
+            if found.is_some() {
+                out = delete(&out, &key)?;
+            }
+            if let Some(body) = &r.after {
+                out = insert(
+                    &out,
+                    OwnedItem {
+                        key,
+                        data: body.clone(),
+                    },
+                )?;
+            }
+            applied.records += 1;
+        }
+
+        for rewrite in &moves.plan.rewrites {
+            if !mine(rewrite.new)? {
+                continue;
+            }
+            let alloc = TreeBlockAllocation {
+                bytenr: rewrite.new,
+                level: if moves.plan.collapsed.contains(&rewrite.old) {
+                    0
+                } else {
+                    rewrite.level
+                },
+                generation,
+                owner: rewrite.owner,
+            };
+            // An ordinary record, whatever the old one said: the copy is
+            // a new block of its tree, which no snapshot has seen, so it
+            // is not FULL_BACKREF, and its parent -- moved too, and as
+            // ordinary -- refers to it by tree, not by address (#287).
+            let (key, body) = record_tree_block(&self.sb, alloc)?;
+            // Nor here: a record already under the new address means the
+            // free-space picture that chose it was wrong, and `insert`
+            // refuses a duplicate key.
+            out = insert(
+                &out,
+                OwnedItem {
+                    key,
+                    data: body.to_vec(),
+                },
+            )?;
+        }
+
+        // Each block a split adds (#342, #615, #649): every additional
+        // part, and when the block was its tree's root, each node between
+        // the parts and the new root, and the new root. Ordinary records,
+        // as a moved block's are.
+        for split in &moves.plan.splits {
+            let between = split
+                .upper
+                .iter()
+                .zip(1u8..)
+                .flat_map(|(nodes, up)| nodes.iter().map(move |&at| (at, split.level + up)));
+            let blocks = split
+                .new
+                .iter()
+                .map(|&at| (at, split.level))
+                .chain(between)
+                .chain(split.root.map(|r| (r, split.level + split.grown())));
+            for (bytenr, level) in blocks {
+                if !mine(bytenr)? {
+                    continue;
+                }
+                let (key, body) = record_tree_block(
+                    &self.sb,
+                    TreeBlockAllocation {
+                        bytenr,
+                        level,
+                        generation,
+                        owner: split.owner,
+                    },
+                )?;
+                out = insert(
+                    &out,
+                    OwnedItem {
+                        key,
+                        data: body.to_vec(),
+                    },
+                )?;
+            }
+        }
+
+        // Each tree the change makes (#267): its root leaf, recorded as
+        // that tree's own block.
+        for created in &moves.plan.created {
+            if !mine(created.new)? {
+                continue;
+            }
+            let (key, body) = record_tree_block(
+                &self.sb,
+                TreeBlockAllocation {
+                    bytenr: created.new,
+                    level: data.new_tree_level(created.owner),
+                    generation,
+                    owner: created.owner,
+                },
+            )?;
+            out = insert(
+                &out,
+                OwnedItem {
+                    key,
+                    data: body.to_vec(),
+                },
+            )?;
+        }
+
+        // And each copy the write allocated: one reference, inline, from
+        // the file item that now names it at offset zero.
+        for (new, disk_len, file_offset) in data.allocations() {
+            if !mine(new)? {
+                continue;
+            }
+            out = insert(
+                &out,
+                OwnedItem {
+                    key: DiskKey {
+                        objectid: new,
+                        key_type: key_type::EXTENT_ITEM,
+                        offset: disk_len,
+                    },
+                    data: data_extent_body(generation, data.root, data.ino, file_offset).to_vec(),
+                },
+            )?;
+            applied.recorded += 1;
+        }
+        Ok(out)
+    }
+}
+
+/// Where a plan moves each block, and what that does to references, as
+/// [`Filesystem::apply_records`] needs them.
+#[derive(Clone, Copy)]
+struct Moves<'a> {
+    /// The plan: every block moving.
+    plan: &'a Plan,
+    /// The references the moves change.
+    backrefs: &'a Backrefs,
+    /// The tree block references the change adds, by the extent tree leaf
+    /// holding each record (#700).
+    block_refs: &'a BTreeMap<u64, Vec<TreeBlockRef>>,
+}
+
+/// A reference a copy gives one of its block's children (#287, #734): what
+/// `btrfs_inc_ref` does for a block the tree does not own, or one flagged
+/// `FULL_BACKREF`. The child is named by the tree that made the copy.
+#[derive(Debug, Clone)]
+struct KeyedAdd {
+    /// The child: a tree block, or a data extent a leaf's items point at.
+    bytenr: u64,
+    /// The reference.
+    keyed: crate::backref::Keyed,
+    /// One for a tree block; for a data extent, how many items of the
+    /// tree's copy name it so, less any this change also takes out.
+    count: u32,
+    /// The item it is filed as, as the kernel files one once the extent has
+    /// any such item or its record has no more room. `None` when it goes
+    /// inline.
+    item: Option<KeyedItem>,
+}
+
+/// The item a [`KeyedAdd`] is filed as.
+#[derive(Debug, Clone)]
+struct KeyedItem {
+    /// Its key.
+    key: DiskKey,
+    /// Its body once the reference is counted.
+    data: Vec<u8>,
+    /// The extent tree leaf a descent for the key reaches.
+    leaf: u64,
+    /// Whether an item already holds the key: the same reference, counted.
+    replaces: bool,
+}
+
+/// A reference naming a block by its address, which a moved block's copy no
+/// longer needs (#287, #734).
+#[derive(Debug, Clone, Copy)]
+struct SharedDrop {
+    /// The child whose record holds it.
+    bytenr: u64,
+    /// `SHARED_BLOCK_REF` or `SHARED_DATA_REF`.
+    kind: u8,
+    /// The moved block's old address, which the reference names.
+    parent: u64,
+    /// What it counts, checked against the moved block's contents.
+    count: u32,
+    /// The extent tree leaf holding it as an item of its own, or `None`
+    /// when it is inline.
+    item_leaf: Option<u64>,
+}
+
+impl SharedDrop {
+    /// The key of the item it would be filed under.
+    fn item_key(&self) -> DiskKey {
+        DiskKey {
+            objectid: self.bytenr,
+            key_type: self.kind,
+            offset: self.parent,
+        }
+    }
+}
+
+/// A block a snapshot keeps, losing the reference of the tree that copied it.
+#[derive(Debug, Clone, Copy)]
+struct KeptDrop {
+    /// The move.
+    rewrite: Rewrite,
+    /// Whether the tree owned it: it is then flagged `FULL_BACKREF`, its
+    /// children having been given references naming it.
+    own: bool,
+}
+
+/// A reference naming a block a snapshot keeps, which copying the block
+/// gives each of its children (#262): the old block's pointers are the
+/// snapshot's, and it now refers to its children by its address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SharedAdd {
+    /// The child: a tree block the kept node points at, or a data extent
+    /// the kept leaf's items point at.
+    bytenr: u64,
+    /// `SHARED_BLOCK_REF` or `SHARED_DATA_REF`.
+    kind: u8,
+    /// The kept block's address, which the reference names.
+    parent: u64,
+    /// One for a tree block; for a data extent, how many of the leaf's
+    /// items point at it.
+    count: u32,
+    /// The extent tree leaf a descent for the reference's own key reaches,
+    /// when it is filed as an item of its own (#700), as the kernel files
+    /// one once the extent has any such item or its record has no more
+    /// room. `None` when it goes inline.
+    item_leaf: Option<u64>,
+}
+
+impl SharedAdd {
+    /// The key of the item the reference would be filed under.
+    fn item_key(&self) -> DiskKey {
+        DiskKey {
+            objectid: self.bytenr,
+            key_type: self.kind,
+            offset: self.parent,
+        }
+    }
+
+    /// The item it is filed as: a data reference's count, and nothing for
+    /// a tree block's.
+    fn item(&self) -> crate::leaf_edit::OwnedItem {
+        crate::leaf_edit::OwnedItem {
+            key: self.item_key(),
+            data: if self.kind == crate::backref::SHARED_DATA_REF {
+                self.count.to_le_bytes().to_vec()
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    /// How long it is inline: its type byte and its payload.
+    fn inline_size(&self) -> usize {
+        if self.kind == crate::backref::SHARED_DATA_REF {
+            13
+        } else {
+            9
+        }
+    }
+}
+
+/// The reference bookkeeping a plan's moves carry (#287).
+#[derive(Debug, Default)]
+struct Backrefs {
+    /// Every reference naming a block a snapshot keeps, which its
+    /// children gain (#262) -- moving children too, which the snapshot
+    /// keeps as well.
+    adds: Vec<SharedAdd>,
+    /// Every block a snapshot keeps that loses a reference from the tree
+    /// copying it. Not one whose parent's copy gave it that reference in this
+    /// same plan: the two come to nothing (#734).
+    kept_drops: Vec<KeptDrop>,
+    /// Every reference naming a moved full-backref block by address (#287),
+    /// except those of children that move and are released: their records
+    /// are replaced whole, and the new one is an ordinary one.
+    shared_drops: Vec<SharedDrop>,
+    /// Every reference the tree's copies give children that stay where they
+    /// are (#287, #734).
+    keyed_adds: Vec<KeyedAdd>,
+    /// Which of [`DataWrite::dropped_references`], by position, a keyed
+    /// reference the copy would give pays for (#734). The record's references
+    /// stay as they are, as they do in the kernel, whose delayed references
+    /// cancel in the same way.
+    cancelled: BTreeSet<usize>,
+}
+
+/// Refuse copying a block a snapshot keeps when it is of the old
+/// back-reference revision: its children's references are of a form this
+/// driver does not write.
+fn refuse_old_revision(rewrite: &Rewrite, block: &crate::btree::TreeBlock) -> Result<()> {
+    if block.header.backref_rev() < 1 {
+        return Err(Error::UnsupportedFeature(format!(
+            "the block at {}, which a snapshot shares, is of the old back-reference revision, \
+             and copying it is not implemented",
+            rewrite.old
+        )));
+    }
+    Ok(())
+}
+
+/// What the items of a leaf in tree `tree` refer to, by data extent: each
+/// inode and offset one names it at, and how many items do.
+fn data_refs_of(
+    tree: u64,
+    block: &crate::btree::TreeBlock,
+) -> BTreeMap<u64, BTreeMap<crate::backref::Keyed, u32>> {
+    use crate::backref::Keyed;
+    use crate::fs::{file_extent as fe, EXTENT_PREALLOC};
+
+    let le64 = |b: &[u8], at: usize| u64::from_le_bytes(b[at..at + 8].try_into().expect("8 bytes"));
+    let mut out: BTreeMap<u64, BTreeMap<Keyed, u32>> = BTreeMap::new();
+    for item in block.body.items().unwrap_or(&[]) {
+        if item.key.key_type != EXTENT_DATA_KEY {
+            continue;
+        }
+        let Some(d) = block.item_data(item) else {
+            continue;
+        };
+        if d.len() < fe::REGULAR_SIZE || !matches!(d[fe::TYPE], EXTENT_REGULAR | EXTENT_PREALLOC) {
+            continue;
+        }
+        let at = le64(d, fe::DISK_BYTENR);
+        // Zero is a hole: no extent, so no reference.
+        if at == 0 {
+            continue;
+        }
+        // The keyed form names where the extent's first byte would sit in
+        // the file: the item's own position less how far into the extent it
+        // starts.
+        let keyed = Keyed::Data {
+            tree,
+            objectid: item.key.objectid,
+            offset: item.key.offset.wrapping_sub(le64(d, fe::OFFSET)),
+        };
+        *out.entry(at).or_default().entry(keyed).or_default() += 1;
+    }
+    out
+}
+
+/// What copying `block`, which a snapshot keeps at `parent`, gives its
+/// children (#262), as the kernel's `btrfs_inc_ref` with full back
+/// references does: a node's every child a `SHARED_BLOCK_REF` naming it,
+/// and each data extent a leaf's items point at a `SHARED_DATA_REF`
+/// counting those items. An inline item, a hole and anything but a file
+/// extent hold no reference.
+fn shared_adds(parent: u64, block: &crate::btree::TreeBlock) -> Vec<SharedAdd> {
+    use crate::backref::{SHARED_BLOCK_REF, SHARED_DATA_REF};
+    use crate::fs::{file_extent as fe, EXTENT_PREALLOC};
+
+    if let Some(ptrs) = block.body.key_ptrs() {
+        return ptrs
+            .iter()
+            .map(|p| SharedAdd {
+                bytenr: p.blockptr,
+                kind: SHARED_BLOCK_REF,
+                parent,
+                count: 1,
+                item_leaf: None,
+            })
+            .collect();
+    }
+    let mut data: BTreeMap<u64, u32> = BTreeMap::new();
+    for item in block.body.items().unwrap_or(&[]) {
+        if item.key.key_type != EXTENT_DATA_KEY {
+            continue;
+        }
+        let Some(d) = block.item_data(item) else {
+            continue;
+        };
+        if d.len() < fe::REGULAR_SIZE || !matches!(d[fe::TYPE], EXTENT_REGULAR | EXTENT_PREALLOC) {
+            continue;
+        }
+        let at = u64::from_le_bytes(
+            d[fe::DISK_BYTENR..fe::DISK_BYTENR + 8]
+                .try_into()
+                .expect("8 bytes"),
+        );
+        if at != 0 {
+            *data.entry(at).or_default() += 1;
+        }
+    }
+    data.into_iter()
+        .map(|(bytenr, count)| SharedAdd {
+            bytenr,
+            kind: SHARED_DATA_REF,
+            parent,
+            count,
+            item_leaf: None,
+        })
+        .collect()
+}
+
+/// What the next reference of an extent finds, which decides whether it
+/// goes inline (#700): the rule in the kernel's
+/// `lookup_inline_extent_backref`.
+struct Filing {
+    /// How long its record is.
+    len: usize,
+    /// Whether any reference is already an item of its own, after which
+    /// every new one is too.
+    keyed: bool,
+}
+
+impl Filesystem {
+    /// The record of the extent or tree block at `bytenr`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] when the extent tree holds none, and
+    /// whatever reading it returns.
+    fn extent_record(&self, bytenr: u64) -> Result<crate::leaf_edit::OwnedItem> {
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let start = DiskKey {
+            objectid: bytenr,
+            key_type: key_type::EXTENT_ITEM,
+            offset: 0,
+        };
+        let mut found = None;
+        self.pool_reader()
+            .tree()
+            .for_each_from(root, &start, &mut |k: &DiskKey, d: &[u8]| {
+                if k.objectid == bytenr
+                    && matches!(k.key_type, key_type::EXTENT_ITEM | key_type::METADATA_ITEM)
+                {
+                    found = Some(crate::leaf_edit::OwnedItem {
+                        key: *k,
+                        data: d.to_vec(),
+                    });
+                }
+                Ok(false)
+            })?;
+        found.ok_or_else(|| {
+            Error::UnsupportedFeature(format!(
+                "the extent at {bytenr} a block a snapshot shares refers to has no record"
+            ))
+        })
+    }
+
+    /// How the record of the extent or tree block at `bytenr` stands.
+    ///
+    /// # Errors
+    ///
+    /// As [`Filesystem::extent_record`].
+    fn reference_filing(&self, bytenr: u64) -> Result<Filing> {
+        Ok(Filing {
+            len: self.extent_record(bytenr)?.data.len(),
+            keyed: self.has_keyed_backrefs(bytenr)?,
+        })
+    }
+
+    /// The reference naming the block at `parent` in the record of `bytenr`,
+    /// which the block's copy no longer needs, as what the block's contents
+    /// say it counts.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] when the extent tree holds no such
+    /// reference, or one counting something else: carrying on would leave a
+    /// reference naming a block that is gone.
+    fn shared_drop(&self, bytenr: u64, kind: u8, parent: u64, count: u32) -> Result<SharedDrop> {
+        let gone = || {
+            Error::UnsupportedFeature(format!(
+                "the block at {parent} moves, and the extent at {bytenr} is referred to by it, \
+                 but the extent tree holds no reference from it"
+            ))
+        };
+        let mut out = SharedDrop {
+            bytenr,
+            kind,
+            parent,
+            count,
+            item_leaf: None,
+        };
+        let record = self.extent_record(bytenr).map_err(|_| gone())?;
+        let found = match crate::backref::take_inline_shared(
+            record.key.key_type,
+            &record.data,
+            kind,
+            parent,
+        )? {
+            Some((_, found)) => found,
+            None => {
+                let root = self.tree_root(objectid::EXTENT_TREE)?;
+                let reader = self.pool_reader();
+                let tree = reader.tree();
+                let key = out.item_key();
+                let item = tree.search(root, &key)?.ok_or_else(gone)?;
+                out.item_leaf = Some(tree.descend(root, &key)?.header.bytenr);
+                if kind == crate::backref::SHARED_DATA_REF {
+                    item.data
+                        .get(..4)
+                        .map(|b| u32::from_le_bytes(b.try_into().expect("4 bytes")))
+                        .ok_or_else(gone)?
+                } else {
+                    1
+                }
+            }
+        };
+        if found != count {
+            return Err(Error::UnsupportedFeature(format!(
+                "the extent at {bytenr} is recorded as referred to {found} time(s) by the block \
+                 at {parent}, whose contents refer to it {count} time(s)"
+            )));
+        }
+        Ok(out)
+    }
+
+    /// File the keyed reference `keyed`, counting `count`, of the extent or
+    /// tree block at `bytenr`, by the rule in the kernel's
+    /// `lookup_inline_extent_backref`: an identical one takes the count, and
+    /// otherwise a new one goes inline unless the extent has a reference
+    /// filed as an item of its own or its record has no more room.
+    fn file_keyed_add(
+        &self,
+        filing: &mut Filing,
+        probed: &mut BTreeSet<(u64, u64)>,
+        (bytenr, keyed, count): (u64, crate::backref::Keyed, u32),
+        limit: usize,
+    ) -> Result<KeyedAdd> {
+        use crate::backref::{self, Keyed, EXTENT_DATA_REF, TREE_BLOCK_REF};
+        let root = self.tree_root(objectid::EXTENT_TREE)?;
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+        let new_item = |key: DiskKey, data: Vec<u8>| -> Result<KeyedItem> {
+            Ok(KeyedItem {
+                key,
+                data,
+                leaf: tree.descend(root, &key)?.header.bytenr,
+                replaces: false,
+            })
+        };
+        let item = match keyed {
+            Keyed::Block { tree: from } => {
+                if filing.keyed || filing.len + 9 >= limit {
+                    filing.keyed = true;
+                    let key = DiskKey {
+                        objectid: bytenr,
+                        key_type: TREE_BLOCK_REF,
+                        offset: from,
+                    };
+                    Some(new_item(key, Vec::new())?)
+                } else {
+                    filing.len += 9;
+                    None
+                }
+            }
+            Keyed::Data {
+                tree: from,
+                objectid: ino,
+                offset,
+            } => {
+                let record = self.extent_record(bytenr)?;
+                if backref::holds_inline_data_ref(
+                    record.key.key_type,
+                    &record.data,
+                    from,
+                    ino,
+                    offset,
+                )? {
+                    None
+                } else if let Some((key, leaf)) =
+                    self.keyed_data_ref_leaf(bytenr, from, ino, offset)?
+                {
+                    let held = tree
+                        .search(root, &key)?
+                        .and_then(|i| {
+                            i.data
+                                .get(24..28)
+                                .map(|b| u32::from_le_bytes(b.try_into().expect("4 bytes")))
+                        })
+                        .ok_or_else(|| {
+                            Error::UnsupportedFeature(format!(
+                                "the keyed reference of the data extent at {bytenr} from inode \
+                                 {ino} at {offset} is shorter than one"
+                            ))
+                        })?;
+                    let total = held.checked_add(count).ok_or_else(|| {
+                        Error::UnsupportedFeature(format!(
+                            "the data reference of inode {ino} at {offset} counts more items \
+                             than it can"
+                        ))
+                    })?;
+                    Some(KeyedItem {
+                        key,
+                        data: backref::keyed_data_ref_body(from, ino, offset, total),
+                        leaf,
+                        replaces: true,
+                    })
+                } else if filing.keyed || filing.len + 29 >= limit {
+                    filing.keyed = true;
+                    // A taken hash files the reference at the next free key
+                    // offset, as `insert_extent_data_ref` does (#608).
+                    let mut key = DiskKey {
+                        objectid: bytenr,
+                        key_type: EXTENT_DATA_REF,
+                        offset: crate::extent_write::data_ref_hash(from, ino, offset),
+                    };
+                    while probed.contains(&(bytenr, key.offset))
+                        || tree.search(root, &key)?.is_some()
+                    {
+                        key.offset = key.offset.checked_add(1).ok_or_else(|| {
+                            Error::UnsupportedFeature(format!(
+                                "no key offset is free for a reference of the data extent at \
+                                 {bytenr}"
+                            ))
+                        })?;
+                    }
+                    probed.insert((bytenr, key.offset));
+                    Some(new_item(
+                        key,
+                        backref::keyed_data_ref_body(from, ino, offset, count),
+                    )?)
+                } else {
+                    filing.len += 29;
+                    None
+                }
+            }
+        };
+        Ok(KeyedAdd {
+            bytenr,
+            keyed,
+            count,
+            item,
+        })
+    }
+
+    /// What `plan`'s moves do to back references, as the kernel's
+    /// `update_ref_for_cow` has them, walking each path from the root down:
+    ///
+    /// - A block a snapshot keeps, which this tree owns and which is not
+    ///   flagged `FULL_BACKREF`, gives each child a shared reference naming
+    ///   it, as the snapshot still reads its pointers (#262). The children's
+    ///   keyed references stay with the copy.
+    /// - Any other block a snapshot keeps goes on referring to its children
+    ///   as it did, and the copy gives each child a reference keyed by this
+    ///   tree (#734): a handle on a snapshot reaches blocks its source owns.
+    ///   Each child on the path is shared by then. It gives that reference
+    ///   straight back when it is copied in turn, so it is never written,
+    ///   and nor is one the change takes out of a data extent.
+    /// - A block no other tree keeps, flagged `FULL_BACKREF`, is named by
+    ///   address in its children's records. Balance leaves them too (#287).
+    ///   Its copy is an ordinary block of the tree, so each of those shared
+    ///   references gives way to a keyed one; see [`crate::backref`].
+    ///
+    /// # Errors
+    ///
+    /// Propagates a read failure, and a record whose inline references
+    /// cannot be read; and refuses a kept block in a shape this does not
+    /// copy, by [`refuse_old_revision`]'s rule, and one this tree owns below
+    /// a block whose copy names it by the tree, which would refer to it twice.
+    fn backrefs(&self, plan: &Plan, data: &DataWrite) -> Result<Backrefs> {
+        use crate::backref::{self, Keyed, BLOCK_FLAG_FULL_BACKREF};
+
+        let extent_root = self.tree_root(objectid::EXTENT_TREE)?;
+        let reader = self.pool_reader();
+        let tree = reader.tree();
+        let moving: BTreeSet<u64> = plan
+            .rewrites
+            .iter()
+            .chain(&plan.removed)
+            .map(|r| r.old)
+            .collect();
+        let limit = max_inline_extent_item(self.sb.nodesize);
+        // How each extent's record stands as this plan's references are
+        // added to it, in the order the render adds them.
+        let mut filings: BTreeMap<u64, Filing> = BTreeMap::new();
+
+        // From the root down: a block's parent decides what it holds by the
+        // time it is copied.
+        let mut order: Vec<&Rewrite> = plan.rewrites.iter().chain(&plan.removed).collect();
+        order.sort_by_key(|r| core::cmp::Reverse(r.level));
+
+        let mut out = Backrefs::default();
+        // Blocks whose parent's copy gives them this tree's reference, which
+        // they give straight back when they are copied in turn.
+        let mut given: BTreeSet<u64> = BTreeSet::new();
+        // The tree blocks gaining a keyed reference.
+        let mut block_adds: Vec<(u64, Keyed)> = Vec::new();
+        // The data references gaining, by extent.
+        let mut data_adds: BTreeMap<(u64, Keyed), u32> = BTreeMap::new();
+
+        for rewrite in order {
+            let key = DiskKey {
+                objectid: rewrite.old,
+                key_type: key_type::METADATA_ITEM,
+                offset: u64::from(rewrite.level),
+            };
+            // A missing record is `apply_records`' to report, when it
+            // comes to delete it.
+            let Some(record) = tree.search(extent_root, &key)? else {
+                continue;
+            };
+            let full_backref =
+                backref::flags(&record.data).is_some_and(|f| f & BLOCK_FLAG_FULL_BACKREF != 0);
+            let kept = plan.kept.contains(&rewrite.old);
+            if !full_backref && !kept {
+                continue;
+            }
+
+            let block = self.read_tree_block(rewrite.old)?;
+            let own = block.header.owner == rewrite.owner && !full_backref;
+            let given_here = given.contains(&rewrite.old);
+            if kept {
+                refuse_old_revision(rewrite, &block)?;
+                if own && given_here {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the block at {}, which tree {} owns, is below a block that tree reaches \
+                         and does not own, which would give the tree two references to it",
+                        rewrite.old, rewrite.owner
+                    )));
+                }
+                if !given_here {
+                    out.kept_drops.push(KeptDrop {
+                        rewrite: *rewrite,
+                        own,
+                    });
+                }
+                if own {
+                    for mut add in shared_adds(rewrite.old, &block) {
+                        let filing = match filings.entry(add.bytenr) {
+                            alloc::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+                            alloc::collections::btree_map::Entry::Vacant(e) => {
+                                e.insert(self.reference_filing(add.bytenr)?)
+                            }
+                        };
+                        if filing.keyed || filing.len + add.inline_size() >= limit {
+                            filing.keyed = true;
+                            add.item_leaf =
+                                Some(tree.descend(extent_root, &add.item_key())?.header.bytenr);
+                        } else {
+                            filing.len += add.inline_size();
+                        }
+                        out.adds.push(add);
+                    }
+                    continue;
+                }
+            }
+
+            // The tree's copy names its children by the tree. A block nothing
+            // else keeps also stops naming them by its address.
+            if let Some(ptrs) = block.body.key_ptrs() {
+                for child in ptrs.iter().map(|p| p.blockptr) {
+                    let staying = !moving.contains(&child);
+                    if !kept && (staying || plan.kept.contains(&child)) {
+                        out.shared_drops.push(self.shared_drop(
+                            child,
+                            backref::SHARED_BLOCK_REF,
+                            rewrite.old,
+                            1,
+                        )?);
+                    }
+                    if staying {
+                        block_adds.push((
+                            child,
+                            Keyed::Block {
+                                tree: rewrite.owner,
+                            },
+                        ));
+                    } else if plan.kept.contains(&child) {
+                        given.insert(child);
+                    }
+                }
+            } else {
+                for (extent, refs) in data_refs_of(rewrite.owner, &block) {
+                    if !kept {
+                        out.shared_drops.push(self.shared_drop(
+                            extent,
+                            backref::SHARED_DATA_REF,
+                            rewrite.old,
+                            refs.values().sum(),
+                        )?);
+                    }
+                    for (keyed, count) in refs {
+                        *data_adds.entry((extent, keyed)).or_default() += count;
+                    }
+                }
+            }
+        }
+
+        // A reference the change takes out of a data extent that a copy of
+        // its leaf would give it comes to nothing (#734).
+        for (at, (old, _, offset)) in data.dropped_references().enumerate() {
+            let keyed = Keyed::Data {
+                tree: data.root,
+                objectid: data.ino,
+                offset,
+            };
+            if let Some(count) = data_adds.get_mut(&(old, keyed)).filter(|c| **c > 0) {
+                *count -= 1;
+                out.cancelled.insert(at);
+            }
+        }
+
+        // What is left is filed, with the room each shared reference that
+        // goes leaves in its record.
+        for drop in &out.shared_drops {
+            if drop.item_leaf.is_none() {
+                let filing = match filings.entry(drop.bytenr) {
+                    alloc::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+                    alloc::collections::btree_map::Entry::Vacant(e) => {
+                        e.insert(self.reference_filing(drop.bytenr)?)
+                    }
+                };
+                let size = if drop.kind == backref::SHARED_DATA_REF {
+                    13
+                } else {
+                    9
+                };
+                filing.len = filing.len.saturating_sub(size);
+            }
+        }
+        let mut probed = BTreeSet::new();
+        let adds = block_adds
+            .into_iter()
+            .map(|(bytenr, keyed)| (bytenr, keyed, 1))
+            .chain(
+                data_adds
+                    .into_iter()
+                    .filter(|(_, count)| *count > 0)
+                    .map(|((bytenr, keyed), count)| (bytenr, keyed, count)),
+            );
+        for (bytenr, keyed, count) in adds {
+            let filing = match filings.entry(bytenr) {
+                alloc::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+                alloc::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(self.reference_filing(bytenr)?)
+                }
+            };
+            out.keyed_adds.push(self.file_keyed_add(
+                filing,
+                &mut probed,
+                (bytenr, keyed, count),
+                limit,
+            )?);
+        }
+        Ok(out)
+    }
+}
+
+/// The largest extent item that keeps its references inline, at
+/// `nodesize`: past it the kernel files them as items of their own.
+/// Measured, `docs/transaction-format.md`: 198 and 981 bytes were the
+/// largest seen at 4 KiB and 16 KiB nodes, and both fit under this.
+pub(crate) fn max_inline_extent_item(nodesize: u32) -> usize {
+    ((nodesize as usize - 101) >> 4) - 25
+}
+
+/// Take the shared reference `drop` describes out of its child's record, in
+/// the extent-tree leaf holding it, and its count off the record's total. A
+/// child left counting nothing gains its keyed reference straight after.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedFeature`] when this leaf holds no record for the
+/// child, or the reference is not in it. And as
+/// [`crate::backref::take_inline_shared`].
+fn apply_shared_drop(
+    items: Vec<crate::leaf_edit::OwnedItem>,
+    drop: &SharedDrop,
+) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+    use crate::backref::{reduce_total, take_inline_shared};
+    use crate::leaf_edit::{delete, insert_unbounded as insert, OwnedItem};
+
+    let gone = || {
+        Error::UnsupportedFeature(format!(
+            "the block at {} moves, and the extent at {} is referred to by it, but the extent \
+             tree leaf holding that extent's record names no reference from it",
+            drop.parent, drop.bytenr
+        ))
+    };
+    let record = record_of(&items, drop.bytenr).cloned().ok_or_else(gone)?;
+    let body = if drop.item_leaf.is_some() {
+        record.data.clone()
+    } else {
+        take_inline_shared(record.key.key_type, &record.data, drop.kind, drop.parent)?
+            .ok_or_else(gone)?
+            .0
+    };
+    let body = reduce_total(record.key.key_type, &body, u64::from(drop.count))?;
+    let out = delete(&items, &record.key)?;
+    insert(
+        &out,
+        OwnedItem {
+            key: record.key,
+            data: body,
+        },
+    )
+}
+
+/// Count the keyed reference `add` describes in its child's record, in the
+/// extent-tree leaf holding it: inline where the kernel's scan would look, or
+/// on the total alone when [`KeyedAdd::item`] files it as an item of its own.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedFeature`] when this leaf holds no record for the
+/// child, when the child already names the tree, or when the larger item
+/// would be too long to keep its references inline.
+fn apply_keyed_add(
+    nodesize: u32,
+    items: Vec<crate::leaf_edit::OwnedItem>,
+    add: &KeyedAdd,
+) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+    use crate::backref::{add_inline_data_ref, add_inline_tree_ref, raise_total, Keyed};
+    use crate::leaf_edit::{delete, insert_unbounded as insert, OwnedItem};
+
+    let record = record_of(&items, add.bytenr).cloned().ok_or_else(|| {
+        Error::UnsupportedFeature(format!(
+            "copying a block a snapshot shares gives the extent at {} a reference, and the \
+             extent tree leaf the plan looked in holds no record for it",
+            add.bytenr
+        ))
+    })?;
+    let kind = record.key.key_type;
+    let body = if add.item.is_some() {
+        raise_total(kind, &record.data, u64::from(add.count))?
+    } else {
+        match add.keyed {
+            Keyed::Block { tree } => add_inline_tree_ref(kind, &record.data, tree)?,
+            Keyed::Data {
+                tree,
+                objectid,
+                offset,
+            } => {
+                let mut body = record.data.clone();
+                for _ in 0..add.count {
+                    body = add_inline_data_ref(kind, &body, tree, objectid, offset)?;
+                }
+                body
+            }
+        }
+    };
+    if body.len() > record.data.len() && body.len() > max_inline_extent_item(nodesize) {
+        return Err(Error::UnsupportedFeature(format!(
+            "the reference copying a block a snapshot shares gives the extent at {} makes its \
+             item {} bytes, past the {} a {nodesize}-byte node keeps inline",
+            add.bytenr,
+            body.len(),
+            max_inline_extent_item(nodesize)
+        )));
+    }
+    let out = delete(&items, &record.key)?;
+    insert(
+        &out,
+        OwnedItem {
+            key: record.key,
+            data: body,
+        },
+    )
+}
+
+/// The extent-tree record of the extent or tree block at `bytenr` among
+/// `items`: its `EXTENT_ITEM` or `METADATA_ITEM`.
+fn record_of(
+    items: &[crate::leaf_edit::OwnedItem],
+    bytenr: u64,
+) -> Option<&crate::leaf_edit::OwnedItem> {
+    items.iter().find(|i| {
+        i.key.objectid == bytenr
+            && matches!(
+                i.key.key_type,
+                key_type::EXTENT_ITEM | key_type::METADATA_ITEM
+            )
+    })
+}
+
+/// Add the shared reference `add` describes to its child's record, in the
+/// extent-tree leaf holding it (#262). The kernel files a new reference
+/// inline, where its scan would look for it, when the item has room and
+/// the extent has no reference filed as an item of its own, and otherwise
+/// as an item of its own that the record only counts (#700):
+/// [`SharedAdd::item_leaf`] says which, and the item is inserted where
+/// that says.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedFeature`] when this leaf holds no record for the
+/// child, or when the larger item would be too long to keep its references
+/// inline. And as [`crate::backref::add_inline_shared`].
+fn apply_shared_add(
+    nodesize: u32,
+    items: Vec<crate::leaf_edit::OwnedItem>,
+    add: &SharedAdd,
+) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+    use crate::backref::{add_inline_shared, raise_total};
+    use crate::leaf_edit::{delete, insert_unbounded as insert, OwnedItem};
+
+    let record = record_of(&items, add.bytenr).cloned().ok_or_else(|| {
+        Error::UnsupportedFeature(format!(
+            "the block at {}, which a snapshot shares, refers to the extent at {}, and the \
+             extent tree leaf the plan looked in holds no record for it",
+            add.parent, add.bytenr
+        ))
+    })?;
+    let body = if add.item_leaf.is_some() {
+        raise_total(record.key.key_type, &record.data, u64::from(add.count))?
+    } else {
+        add_inline_shared(
+            record.key.key_type,
+            &record.data,
+            add.kind,
+            add.parent,
+            add.count,
+        )?
+    };
+    if body.len() > max_inline_extent_item(nodesize) {
+        return Err(Error::UnsupportedFeature(format!(
+            "the shared reference copying the block at {} gives the extent at {} makes its \
+             item {} bytes, past the {} a {nodesize}-byte node keeps inline, and filing it \
+             as an item of its own is not implemented",
+            add.parent,
+            add.bytenr,
+            body.len(),
+            max_inline_extent_item(nodesize)
+        )));
+    }
+    let out = delete(&items, &record.key)?;
+    insert(
+        &out,
+        OwnedItem {
+            key: record.key,
+            data: body,
+        },
+    )
+}
+
+/// Take the reference of tree `rewrite.owner` out of the record of the
+/// block a snapshot keeps at `rewrite.old`: this tree's copy carries its own
+/// reference. When the tree owned the block, flag it `FULL_BACKREF` (#262):
+/// the old block, which only the snapshot reads now, refers to its children
+/// by its address. Otherwise it goes on referring to them as it did (#734).
+/// The reference is taken from wherever it is: inline, or a `TREE_BLOCK_REF`
+/// item of its own.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedFeature`] when the leaf holds no record for the
+/// block or no reference from the tree, and when that reference is the
+/// block's last: then nothing else points at it, and the plan should have
+/// released it.
+fn drop_kept_tree_ref(
+    items: Vec<crate::leaf_edit::OwnedItem>,
+    rewrite: &Rewrite,
+    own: bool,
+) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+    use crate::backref::{
+        drop_inline_tree_ref, with_flags, BLOCK_FLAG_FULL_BACKREF, TREE_BLOCK_REF,
+    };
+    use crate::leaf_edit::{delete, insert_unbounded as insert, OwnedItem};
+
+    let (at, tree) = (rewrite.old, rewrite.owner);
+    let gone = || {
+        Error::UnsupportedFeature(format!(
+            "the block at {at}, which a snapshot shares, has no record holding a reference \
+             from tree {tree} where the plan looked"
+        ))
+    };
+    let record = items
+        .iter()
+        .find(|i| {
+            i.key.objectid == at
+                && i.key.key_type == key_type::METADATA_ITEM
+                && i.key.offset == u64::from(rewrite.level)
+        })
+        .cloned()
+        .ok_or_else(gone)?;
+    let (body, mut out) = match drop_inline_tree_ref(record.key.key_type, &record.data, tree)? {
+        Some(body) => (body, items),
+        None => {
+            let key = DiskKey {
+                objectid: at,
+                key_type: TREE_BLOCK_REF,
+                offset: tree,
+            };
+            if !items.iter().any(|i| i.key == key) {
+                return Err(gone());
+            }
+            let total = u64::from_le_bytes(record.data[..8].try_into().expect("a fixed part"));
+            if total <= 1 {
+                return Err(Error::UnsupportedFeature(format!(
+                    "the block at {at} is kept for a snapshot, but its record counts one \
+                     reference, tree {tree}'s"
+                )));
+            }
+            let mut body = record.data.clone();
+            body[..8].copy_from_slice(&(total - 1).to_le_bytes());
+            (body, delete(&items, &key)?)
+        }
+    };
+    let body = if own {
+        with_flags(&body, BLOCK_FLAG_FULL_BACKREF)?
+    } else {
+        body
+    };
+    out = delete(&out, &record.key)?;
+    insert(
+        &out,
+        OwnedItem {
+            key: record.key,
+            data: body,
+        },
+    )
+}
+
+/// What [`Filesystem::render`] made: the blocks, or in a dry run each
+/// rewritten leaf's items.
+struct Rendered {
+    blocks: Vec<crate::commit::PlacedBlock>,
+    leaves: BTreeMap<u64, Vec<crate::leaf_edit::OwnedItem>>,
+}
+
+/// Whether a keyed `EXTENT_DATA_REF` body names this reference: its
+/// root, inode and offset, little-endian, ahead of its count.
+fn keyed_data_ref_names(body: &[u8], tree: u64, ino: u64, offset: u64) -> bool {
+    let field = |at: usize| {
+        body.get(at..at + 8)
+            .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+    };
+    field(0) == Some(tree) && field(8) == Some(ino) && field(16) == Some(offset)
+}
+
+/// How much of a [`DataWrite`] the rendered leaves carried.
+#[derive(Debug, Default)]
+struct DataApplied {
+    /// `EXTENT_DATA` items pointed at their new extent.
+    items: usize,
+    /// Inode items stamped.
+    inodes: usize,
+    /// Old data extents whose record was removed.
+    released: usize,
+    /// Shared data extents whose record lost one reference.
+    unreffed: usize,
+    /// Keyed drops counted by record edits and by reference item edits.
+    keyed_expected: usize,
+    keyed_unreffed: usize,
+    /// Data extents whose record gained one reference from a clone.
+    shared: usize,
+    /// New data extents recorded.
+    recorded: usize,
+    /// `ROOT_ITEM`s whose flags were set.
+    root_flags: usize,
+    /// `default` entries repointed.
+    default_subvol: usize,
+    /// `ROOT_ITEM`s pointed at a tree the change makes.
+    created: usize,
+    /// Data extent records replaced outright (#266).
+    records: usize,
+    /// Tree block records given a reference (#700).
+    block_refs: usize,
+    /// Shared references filed as items of their own (#700).
+    keyed_shared: usize,
+    /// Records given a keyed reference by a block's copy (#734).
+    keyed_adds: usize,
+    /// Such references filed as items of their own.
+    keyed_items: usize,
+    /// Records relieved of a reference naming a moved block by address.
+    shared_drops: usize,
+    /// Such references that were items of their own.
+    shared_items: usize,
+}
+
+/// Offsets within a data extent's `EXTENT_ITEM` body carrying one inline
+/// `EXTENT_DATA_REF` — the 53-byte shape `docs/transaction-format.md`
+/// measured.
+mod extent_body {
+    /// `u64` reference count.
+    pub const REFS: usize = 0;
+    /// `u64` the transaction that allocated the extent.
+    pub const GENERATION: usize = 8;
+    /// `u64` `EXTENT_FLAG_DATA`.
+    pub const FLAGS: usize = 16;
+    /// `u8` the inline reference's type, `EXTENT_DATA_REF`.
+    pub const REF_TYPE: usize = 24;
+    /// `u64` the tree holding the referencing item.
+    pub const REF_ROOT: usize = 25;
+    /// `u64` the inode.
+    pub const REF_OBJECTID: usize = 33;
+    /// `u64` the file offset of the extent's first byte.
+    pub const REF_OFFSET: usize = 41;
+    /// `u32` how many of that inode's items reference the extent there.
+    pub const REF_COUNT: usize = 49;
+    /// The whole item.
+    pub const SIZE: usize = 53;
+}
+
+/// `BTRFS_EXTENT_DATA_REF_KEY`, as an inline reference type.
+const EXTENT_DATA_REF: u8 = 178;
+
+/// A new data extent's `EXTENT_ITEM` body: one reference, an inline
+/// `EXTENT_DATA_REF` of count one.
+fn data_extent_body(generation: u64, root: u64, ino: u64, offset: u64) -> [u8; extent_body::SIZE] {
+    use crate::extent_write::EXTENT_FLAG_DATA;
+    use extent_body::*;
+    let mut out = [0u8; SIZE];
+    out[REFS..REFS + 8].copy_from_slice(&1u64.to_le_bytes());
+    out[GENERATION..GENERATION + 8].copy_from_slice(&generation.to_le_bytes());
+    out[FLAGS..FLAGS + 8].copy_from_slice(&EXTENT_FLAG_DATA.to_le_bytes());
+    out[REF_TYPE] = EXTENT_DATA_REF;
+    out[REF_ROOT..REF_ROOT + 8].copy_from_slice(&root.to_le_bytes());
+    out[REF_OBJECTID..REF_OBJECTID + 8].copy_from_slice(&ino.to_le_bytes());
+    out[REF_OFFSET..REF_OFFSET + 8].copy_from_slice(&offset.to_le_bytes());
+    out[REF_COUNT..REF_COUNT + 4].copy_from_slice(&1u32.to_le_bytes());
+    out
+}
+
+/// Whether a data extent's record `body` holds the references of the
+/// items `ref_offsets` names and nothing else: one in its total for each
+/// entry, every one an inline `EXTENT_DATA_REF` from inode `ino` of tree
+/// `root`, counting the entries at its reference offset (#261).
+///
+/// Releasing the extent is right only then. Two items of one file at one
+/// reference offset share one inline reference of count two, which is how
+/// the kernel records the two halves of an extent a write split.
+fn held_only_by(body: &[u8], root: u64, ino: u64, ref_offsets: &[u64]) -> bool {
+    use crate::extent_write::EXTENT_FLAG_DATA;
+    let Ok(refs) = crate::backref::inline_refs(key_type::EXTENT_ITEM, body) else {
+        return false;
+    };
+    let le64 = |b: &[u8]| u64::from_le_bytes(b.try_into().expect("8 bytes"));
+    let mut want: BTreeMap<u64, u32> = BTreeMap::new();
+    for &offset in ref_offsets {
+        *want.entry(offset).or_default() += 1;
+    }
+    // `inline_refs` succeeded, so the fixed part is there.
+    let total = le64(&body[extent_body::REFS..extent_body::REFS + 8]);
+    let mut seen = BTreeSet::new();
+    total == ref_offsets.len() as u64
+        && crate::backref::flags(body) == Some(EXTENT_FLAG_DATA)
+        && refs.len() == want.len()
+        && refs.iter().all(|r| {
+            let p = &r.payload;
+            r.kind == EXTENT_DATA_REF
+                && le64(&p[..8]) == root
+                && le64(&p[8..16]) == ino
+                && seen.insert(le64(&p[16..24]))
+                && want.get(&le64(&p[16..24]))
+                    == Some(&u32::from_le_bytes(p[24..28].try_into().expect("4 bytes")))
+        })
+}
+
+/// Point the file's `EXTENT_DATA` items at their new extents and stamp
+/// its inode item, in one fs tree leaf.
+///
+/// Every field is rewritten in place: an item keeps its size, so the
+/// leaf cannot overflow. Each item is checked against what the planner
+/// saw before it is changed — a regular, uncompressed extent at the old
+/// address covering exactly the moved length — because a leaf that says
+/// something else is not the file the plan was made for.
+fn apply_file_write(
+    items: &mut [crate::leaf_edit::OwnedItem],
+    data: &DataWrite,
+    generation: u64,
+    applied: &mut DataApplied,
+) -> Result<()> {
+    use crate::fs::file_extent as fe;
+    use crate::inode::{offsets as io, INODE_ITEM_KEY, INODE_ITEM_SIZE};
+    let le64 = |b: &[u8], at: usize| u64::from_le_bytes(b[at..at + 8].try_into().expect("8"));
+    let put64 = |b: &mut [u8], at: usize, v: u64| b[at..at + 8].copy_from_slice(&v.to_le_bytes());
+
+    for item in items.iter_mut() {
+        if item.key.objectid != data.ino {
+            continue;
+        }
+        let d = &mut item.data;
+        match item.key.key_type {
+            INODE_ITEM_KEY => {
+                if d.len() < INODE_ITEM_SIZE {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "inode {}'s item is {} bytes, shorter than an inode",
+                        data.ino,
+                        d.len()
+                    )));
+                }
+                // What the kernel changes when it writes a file's data:
+                // the transaction that last touched it, its change
+                // counter, and its change and modification times.
+                put64(d, io::TRANSID, generation);
+                let sequence = le64(d, io::SEQUENCE).wrapping_add(1);
+                put64(d, io::SEQUENCE, sequence);
+                for at in [io::CTIME, io::MTIME] {
+                    put64(d, at, data.time.0);
+                    d[at + 8..at + 12].copy_from_slice(&data.time.1.to_le_bytes());
+                }
+                applied.inodes += 1;
+            }
+            EXTENT_DATA_KEY => {
+                let Some(m) = data.moves.iter().find(|m| m.file_offset == item.key.offset) else {
+                    continue;
+                };
+                // Compressed or not: a copy replaces either, and is
+                // stored as `m.compression` says.
+                let regular = d.len() == fe::REGULAR_SIZE
+                    && d[fe::TYPE] == EXTENT_REGULAR
+                    && d[fe::COMPRESSION] <= 3
+                    && d[fe::ENCRYPTION] == 0
+                    && d[fe::OTHER_ENCODING..fe::OTHER_ENCODING + 2] == [0, 0];
+                if !regular
+                    || le64(d, fe::DISK_BYTENR) != m.old
+                    || le64(d, fe::NUM_BYTES) != m.item_len
+                    || item.key.offset.checked_sub(le64(d, fe::OFFSET)) != Some(m.old_ref_offset)
+                {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "inode {}'s extent item at {} is not the regular extent of {} bytes at \
+                         {} the write was planned against",
+                        data.ino, item.key.offset, m.item_len, m.old
+                    )));
+                }
+                put64(d, fe::GENERATION, generation);
+                put64(d, fe::NUM_BYTES, m.len);
+                put64(d, fe::RAM_BYTES, m.len);
+                put64(d, fe::DISK_BYTENR, m.new);
+                put64(d, fe::DISK_NUM_BYTES, m.disk_len);
+                put64(d, fe::OFFSET, 0);
+                d[fe::COMPRESSION] = m.compression;
+                applied.items += 1;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// `BTRFS_ROOT_TREE_DIR_OBJECTID`: the root tree's directory, which
+/// holds the one entry `default`.
+pub(crate) const ROOT_TREE_DIR_OBJECTID: u64 = 6;
+
+/// Point the root tree's `default` entry at subvolume `id`, in `items`.
+///
+/// The entry's location key is `(id, ROOT_ITEM, u64::MAX)`; only the
+/// objectid changes, so the item keeps its size. Returns how many entries
+/// it changed. An item under the `default` key holding any other name, or
+/// more than one name, is refused rather than guessed at.
+fn point_default_at(items: &mut [crate::leaf_edit::OwnedItem], id: u64) -> Result<usize> {
+    use crate::dir::{name_hash, offsets as d, DIR_ITEM_HEADER_SIZE, DIR_ITEM_KEY};
+    let hash = name_hash(b"default");
+    let mut changed = 0;
+    for item in items.iter_mut() {
+        if item.key.objectid != ROOT_TREE_DIR_OBJECTID
+            || item.key.key_type != DIR_ITEM_KEY
+            || item.key.offset != hash
+        {
+            continue;
+        }
+        let data = &mut item.data;
+        let well_formed = data.len() == DIR_ITEM_HEADER_SIZE + 7
+            && u16::from_le_bytes([data[d::NAME_LEN], data[d::NAME_LEN + 1]]) == 7
+            && u16::from_le_bytes([data[d::DATA_LEN], data[d::DATA_LEN + 1]]) == 0
+            && &data[d::NAME..d::NAME + 7] == b"default"
+            && data[d::LOCATION + 8] == ROOT_ITEM_KEY;
+        if !well_formed {
+            return Err(Error::UnsupportedFeature(
+                "the root tree's `default` entry is not the single entry naming a root item \
+                 that it should be"
+                    .into(),
+            ));
+        }
+        data[d::LOCATION..d::LOCATION + 8].copy_from_slice(&id.to_le_bytes());
+        changed += 1;
+    }
+    Ok(changed)
+}
+
+use crate::chunk::{key_type, DiskKey};
+use crate::fs::{EXTENT_DATA_KEY, EXTENT_REGULAR};
+
+impl Filesystem {
+    /// How far each block group's `used` moves under `plan`, in bytes:
+    /// a node for every block allocated in it, less one for every block
+    /// released from it -- not one another tree keeps (#262). Groups that
+    /// come out even are left out.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] for an address no block group
+    /// holds, which a plan cannot have chosen and a live tree block
+    /// cannot be at.
+    fn block_group_deltas(&self, plan: &Plan, data: &DataWrite) -> Result<BTreeMap<u64, i128>> {
+        let groups = self.block_groups()?;
+        let group_of = |at: u64| {
+            groups
+                .iter()
+                .find(|g| g.contains(at))
+                .map(|g| g.start)
+                .ok_or_else(|| {
+                    Error::UnsupportedFeature(format!(
+                        "the block at {at} is in no block group, so there is no used count \
+                         to move for it"
+                    ))
+                })
+        };
+        let nodesize = i128::from(self.sb.nodesize);
+        let mut out: BTreeMap<u64, i128> = BTreeMap::new();
+        for rewrite in &plan.rewrites {
+            *out.entry(group_of(rewrite.new)?).or_default() += nodesize;
+        }
+        // A block a snapshot keeps is not given back (#262).
+        for old in plan.released() {
+            *out.entry(group_of(old)?).or_default() -= nodesize;
+        }
+        // A split's blocks are taken and nothing is given back (#342),
+        // and so is a new tree's leaf (#267).
+        for split in &plan.splits {
+            for at in split.added() {
+                *out.entry(group_of(at)?).or_default() += nodesize;
+            }
+        }
+        for created in &plan.created {
+            *out.entry(group_of(created.new)?).or_default() += nodesize;
+        }
+        // A data extent counts its own length, not a node's.
+        for (new, disk_len, _) in data.allocations() {
+            *out.entry(group_of(new)?).or_default() += i128::from(disk_len);
+        }
+        for (old, old_len, _) in data.released_extents() {
+            *out.entry(group_of(old)?).or_default() -= i128::from(old_len);
+        }
+        for (at, len) in data.recorded_allocations() {
+            *out.entry(group_of(at)?).or_default() += i128::from(len);
+        }
+        for (at, len) in data.recorded_releases() {
+            *out.entry(group_of(at)?).or_default() -= i128::from(len);
+        }
+        out.retain(|_, delta| *delta != 0);
+        Ok(out)
+    }
+
+    /// The leaf holding the `BLOCK_GROUP_ITEM` of each group, in the
+    /// feature-selected block group tree or extent tree,
+    /// in `starts`, by group start.
+    ///
+    /// Found by the item itself rather than by the insert rule
+    /// `leaves_holding` uses: the item exists, and the leaf that holds it
+    /// is the one whose bytes change.
+    fn block_group_item_leaves(&self, starts: &BTreeSet<u64>) -> Result<BTreeMap<u64, u64>> {
+        let mut out = BTreeMap::new();
+        if starts.is_empty() {
+            return Ok(out);
+        }
+        let root = self.tree_root(self.block_group_tree_id())?;
+        self.for_each_tree_block(root, &mut |at, block, _| {
+            let Some(items) = block.body.items() else {
+                return;
+            };
+            for item in items {
+                if item.key.key_type == BLOCK_GROUP_ITEM_KEY && starts.contains(&item.key.objectid)
+                {
+                    out.insert(item.key.objectid, at);
+                }
+            }
+        })?;
+        Ok(out)
+    }
+}
+
+/// Move the `used` of every `BLOCK_GROUP_ITEM` in `items` that `deltas`
+/// names, and note each group written in `written`.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedFeature`] for an item too short to hold `used`, or
+/// a count the move would take below zero or past the group's length —
+/// either means the extent tree does not say what the plan believes.
+fn apply_block_group_used(
+    items: &mut [crate::leaf_edit::OwnedItem],
+    deltas: &BTreeMap<u64, i128>,
+    written: &mut BTreeSet<u64>,
+) -> Result<()> {
+    use crate::block_group::block_group_item::{SIZE, USED};
+    for item in items.iter_mut() {
+        if item.key.key_type != BLOCK_GROUP_ITEM_KEY {
+            continue;
+        }
+        let Some(&delta) = deltas.get(&item.key.objectid) else {
+            continue;
+        };
+        let start = item.key.objectid;
+        let whole = item.data.len() >= SIZE;
+        let field = item.data.get_mut(USED..USED + 8).filter(|_| whole);
+        let Some(field) = field else {
+            return Err(Error::UnsupportedFeature(format!(
+                "the block group item at {start} is shorter than the structure it declares"
+            )));
+        };
+        let used = u64::from_le_bytes((&*field).try_into().expect("8 bytes"));
+        let moved = i128::from(used) + delta;
+        if moved < 0 || moved > i128::from(item.key.offset) {
+            return Err(Error::UnsupportedFeature(format!(
+                "the block group at {start} records {used} bytes used, and the plan would move \
+                 that by {delta} to outside its {} bytes",
+                item.key.offset
+            )));
+        }
+        field.copy_from_slice(&(moved as u64).to_le_bytes());
+        written.insert(start);
+    }
+    Ok(())
+}
+
+use crate::chunk::key_type::BLOCK_GROUP_ITEM as BLOCK_GROUP_ITEM_KEY;
+use crate::chunk::key_type::{
+    FREE_SPACE_BITMAP as FREE_SPACE_BITMAP_KEY, FREE_SPACE_EXTENT as FREE_SPACE_EXTENT_KEY,
+    FREE_SPACE_INFO as FREE_SPACE_INFO_KEY,
+};
+
+impl Filesystem {
+    /// The free-space tree leaves that describe any of `addresses`.
+    fn free_space_leaves_for(&self, addresses: &[u64]) -> Result<BTreeSet<u64>> {
+        let Ok(root) = self.tree_root(objectid::FREE_SPACE_TREE) else {
+            return Ok(BTreeSet::new());
+        };
+        let groups = self.block_groups()?;
+        let spans: Vec<(u64, u64)> = groups
+            .iter()
+            .filter(|g| addresses.iter().any(|a| g.contains(*a)))
+            .map(|g| (g.start, g.end()))
+            .collect();
+        if spans.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+
+        // Same rule as the extent tree: an insert lands in the last
+        // leaf that begins at or before its key, which is not the same
+        // as the leaf whose existing keys bracket it.
+        let mut keys: Vec<u64> = Vec::new();
+        for (start, end) in &spans {
+            keys.push(*start);
+            for a in addresses.iter().filter(|a| **a >= *start && **a < *end) {
+                keys.push(*a);
+            }
+        }
+        self.leaves_holding(root, &keys)
+    }
+
+    /// Refuse a plan that touches a block group whose free-space records
+    /// span more than one leaf (#177).
+    ///
+    /// [`Filesystem::apply_free_space`] rewrites a group from the leaf
+    /// holding its `FREE_SPACE_INFO`, and writes every run of the group
+    /// back into that leaf. A leaf can end among a group's records, and
+    /// then the next leaf keeps its own copies of the group's tail: the
+    /// tree records that free space twice, and out of key order across
+    /// the boundary, which `btrfs check` reports as "free space extent
+    /// ... overlaps with previous". Moving records between leaves, and
+    /// the keys above them, is not implemented, so the plan is refused.
+    ///
+    /// Measured on a kernel-made 4 KiB-node volume: with ~160 records to
+    /// a leaf, a boundary lands inside some group as soon as a few groups
+    /// are fragmented (`tests/free_space_straddle.rs`).
+    fn refuse_free_space_straddle(&self, plan: &Plan, data: &DataWrite) -> Result<()> {
+        let Ok(root) = self.tree_root(objectid::FREE_SPACE_TREE) else {
+            return Ok(());
+        };
+        let moved: Vec<u64> = plan
+            .released()
+            .into_iter()
+            .chain(plan.allocated())
+            .chain(data.addresses())
+            .collect();
+        let touched: Vec<crate::block_group::BlockGroup> = self
+            .block_groups()?
+            .into_iter()
+            .filter(|g| moved.iter().any(|a| g.contains(*a)))
+            .collect();
+        if touched.is_empty() {
+            return Ok(());
+        }
+
+        // Which leaves hold records of each touched group, in one walk.
+        let mut leaves: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
+        self.for_each_tree_block(root, &mut |at, block, _| {
+            let Some(items) = block.body.items() else {
+                return;
+            };
+            for item in items {
+                if !matches!(
+                    item.key.key_type,
+                    FREE_SPACE_INFO_KEY | FREE_SPACE_EXTENT_KEY | FREE_SPACE_BITMAP_KEY
+                ) {
+                    continue;
+                }
+                if let Some(group) = touched.iter().find(|g| g.contains(item.key.objectid)) {
+                    leaves.entry(group.start).or_default().insert(at);
+                }
+            }
+        })?;
+
+        match leaves.iter().find(|(_, held)| held.len() > 1) {
+            Some((start, held)) => Err(Error::UnsupportedFeature(format!(
+                "the free-space records of the block group at {start} span {} leaves, and \
+                 rewriting a group across a leaf boundary is not implemented",
+                held.len()
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// Rewrite a free-space tree leaf so it describes what the plan
+    /// leaves behind.
+    ///
+    /// The free-space tree is the complement of the extent tree, so a
+    /// transaction that moves blocks changes both. A leaf left saying
+    /// where things used to be is what `btrfs check` reports as "cache
+    /// appears valid but isn't".
+    ///
+    /// # The two things a first attempt got wrong
+    ///
+    /// **A leaf is not per-block-group.** Measured: the whole tree can
+    /// be one leaf holding a `FREE_SPACE_INFO` for each of several
+    /// groups, each followed by that group's `FREE_SPACE_EXTENT`s in
+    /// objectid order. So a leaf is rewritten group by group, and every
+    /// group in it must come out again.
+    ///
+    /// **An `INFO` may name a group that no longer exists.** The tree
+    /// outlives its block groups and `btrfs check` calls that correct —
+    /// see `docs/cow-transaction.md`. Those entries are carried through
+    /// untouched: there is no block group to derive a free set from, and
+    /// dropping them would delete something the kernel put there.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedFeature`] for a leaf holding a
+    /// `FREE_SPACE_BITMAP`, which needs its bits rewritten rather than
+    /// its extents and is not implemented. Refusing beats writing
+    /// extents where the kernel will read bits. And for a group the plan
+    /// touches that no block group item describes: its free set cannot
+    /// be derived, and carrying its records leaves the plan's
+    /// allocations recorded as free.
+    ///
+    /// A group whose records continue into the next leaf is refused
+    /// before this runs, by [`Filesystem::refuse_free_space_straddle`].
+    fn apply_free_space(
+        &self,
+        items: Vec<crate::leaf_edit::OwnedItem>,
+        plan: &Plan,
+        data: &DataWrite,
+    ) -> Result<Vec<crate::leaf_edit::OwnedItem>> {
+        use crate::block_group::FreeExtent;
+        use crate::chunk::DiskKey;
+        use crate::leaf_edit::OwnedItem;
+
+        if items
+            .iter()
+            .any(|i| i.key.key_type == FREE_SPACE_BITMAP_KEY)
+        {
+            return Err(Error::UnsupportedFeature(
+                "this free-space tree records a block group as a bitmap, and rewriting \
+                 bits is not implemented"
+                    .to_string(),
+            ));
+        }
+
+        let groups = self.block_groups()?;
+        // Each range the transaction frees or takes: a node for every
+        // tree block, and a data extent's own length for each of those.
+        let nodesize = self.sb.nodesize as u64;
+        let released: Vec<(u64, u64)> = plan
+            .released()
+            .into_iter()
+            .map(|at| (at, nodesize))
+            .chain(
+                data.released_extents()
+                    .into_iter()
+                    .map(|(old, len, _)| (old, len)),
+            )
+            .chain(data.recorded_releases())
+            .collect();
+        let allocated: Vec<(u64, u64)> = plan
+            .allocated()
+            .into_iter()
+            .map(|at| (at, nodesize))
+            .chain(data.allocations().map(|(new, disk_len, _)| (new, disk_len)))
+            .chain(data.recorded_allocations())
+            .collect();
+
+        let mut out: Vec<OwnedItem> = Vec::with_capacity(items.len());
+        let mut i = 0usize;
+        while i < items.len() {
+            let item = &items[i];
+            if item.key.key_type != FREE_SPACE_INFO_KEY {
+                // An extent item with no info before it: carry it.
+                out.push(item.clone());
+                i += 1;
+                continue;
+            }
+
+            // This group's span, and the run of items belonging to it.
+            let start = item.key.objectid;
+            let end = start + item.key.offset;
+            let mut j = i + 1;
+            while j < items.len()
+                && items[j].key.key_type != FREE_SPACE_INFO_KEY
+                && items[j].key.objectid < end
+            {
+                j += 1;
+            }
+
+            let touched = released
+                .iter()
+                .chain(allocated.iter())
+                .any(|(a, _)| *a >= start && *a < end);
+            let group = groups.iter().find(|g| g.start == start);
+
+            match (touched, group) {
+                // Untouched: carry the whole run through exactly as it
+                // was, including an INFO naming a group that no longer
+                // exists.
+                (false, _) => out.extend_from_slice(&items[i..j]),
+                // Touched, but no block group starts here: the free-space
+                // tree and the extent tree disagree about where the group
+                // is. Carrying the old records would leave everything the
+                // plan allocates inside it recorded as free.
+                (true, None) => {
+                    return Err(Error::UnsupportedFeature(format!(
+                        "the free-space tree records a group at {start} that no block group \
+                         item describes, and the plan allocates or releases inside it"
+                    )))
+                }
+                (true, Some(group)) => {
+                    // What is free now, plus what the plan releases,
+                    // minus what it takes.
+                    let mut free = self.free_extents(group)?;
+                    for &(start, len) in released.iter().filter(|(a, _)| group.contains(*a)) {
+                        free.push(FreeExtent { start, len });
+                    }
+                    free.sort();
+
+                    // The same join the free-space reader does, and the
+                    // same function: two copies of "runs that touch
+                    // become one" is two places for it to stop being
+                    // true.
+                    let mut runs: Vec<FreeExtent> = crate::block_group::merge_adjacent(free);
+                    for &(at, len) in allocated.iter().filter(|(a, _)| group.contains(*a)) {
+                        runs = runs.into_iter().flat_map(|r| carve(r, at, len)).collect();
+                    }
+                    runs.retain(|r| r.len > 0);
+
+                    // A FREE_SPACE_INFO item that cannot hold its own
+                    // extent count is refused rather than passed through
+                    // with the old one. The `if` that used to guard this
+                    // wrote the count when the item was long enough and
+                    // said nothing when it was not — so a short item kept
+                    // a STALE count while its runs were rewritten
+                    // underneath it, and the free-space tree then
+                    // disagreed with itself with no signal that anything
+                    // had gone wrong.
+                    //
+                    // The offsets come from block_group::free_space_info,
+                    // which is where the reader already gets them; this
+                    // side was spelling them out by hand.
+                    let mut info = item.clone();
+                    if info.data.len() < crate::block_group::free_space_info::SIZE {
+                        return Err(Error::UnsupportedFeature(
+                            "FREE_SPACE_INFO item is shorter than the structure it declares"
+                                .to_string(),
+                        ));
+                    }
+                    let count_at = crate::block_group::free_space_info::EXTENT_COUNT;
+                    info.data[count_at..count_at + 4]
+                        .copy_from_slice(&(runs.len() as u32).to_le_bytes());
+                    out.push(info);
+                    for run in runs {
+                        out.push(OwnedItem {
+                            key: DiskKey {
+                                objectid: run.start,
+                                key_type: FREE_SPACE_EXTENT_KEY,
+                                offset: run.len,
+                            },
+                            data: Vec::new(),
+                        });
+                    }
+                }
+            }
+            i = j;
+        }
+        Ok(out)
+    }
+}
+
+/// `run` with `[at, at + len)` taken out of it.
+fn carve(
+    run: crate::block_group::FreeExtent,
+    at: u64,
+    len: u64,
+) -> Vec<crate::block_group::FreeExtent> {
+    use crate::block_group::FreeExtent;
+    let end = at + len;
+    if end <= run.start || at >= run.end() {
+        return vec![run];
+    }
+    let mut out = Vec::new();
+    if at > run.start {
+        out.push(FreeExtent {
+            start: run.start,
+            len: at - run.start,
+        });
+    }
+    if end < run.end() {
+        out.push(FreeExtent {
+            start: end,
+            len: run.end() - end,
+        });
+    }
+    out
+}

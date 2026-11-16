@@ -151,3 +151,14 @@ Except as contained in this notice, the name of a copyright holder shall
 not be used in advertising or otherwise to promote the sale, use or other
 dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
+
+Native Btrfs driver
+
+vendor/btrfs contains a bare-metal port of the filesystem and transaction
+code from https://github.com/antimatter-studios/rust-fs-btrfs at
+bac713a69c2b65f70ef1ea0845760f92858ad88d (0.11.0 development tree).
+Copyright (c) 2026 Chris Thomas. Its MIT license is in vendor/btrfs/LICENSE.
+The port uses the kernel block interface, allocation, clock and a bounded
+metadata cache. The filesystem-tree orphan lifecycle is implemented in Rust.
+vendor/btrfs/lzo1x contains the codec from rust-lzo1x 0.4.0, adapted for
+no_std; its upstream license is retained alongside the source.
