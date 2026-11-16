@@ -87,10 +87,12 @@ impl Volume {
             let mut at = 446;
             while at < 510 {
                 let kind = b(at + 4);
-                if kind == 4 || kind == 6 || kind == 14 || kind == 11 || kind == 12 {
+                if matches!(kind, 4 | 6 | 14 | 11 | 12) && (start == 0 || b(at) == 128) {
                     start = dw(at + 8);
                     length = dw(at + 12);
-                    break;
+                    if b(at) == 128 {
+                        break;
+                    }
                 }
                 at += 16;
             }
@@ -514,12 +516,15 @@ impl Volume {
             if !self.valid(c) || !sector(self.first(c) + (within >> 9) as u32, false) {
                 return u32::MAX;
             }
-            let mut i = within & 511;
-            while i < 512 && copied < amount {
-                store(dest, at + copied as u16, b(i));
-                i += 1;
-                copied += 1;
-            }
+            let inside = within & 511;
+            let room = 512 - inside;
+            let take = if amount - copied < room as u32 {
+                (amount - copied) as u16
+            } else {
+                room
+            };
+            super::copy_bytes(BUFFER, inside, dest, at + copied as u16, take);
+            copied += take as u32;
             let next = (within as u32 & 0xffff_fe00) + 512;
             if next == cluster_bytes {
                 within = 0;

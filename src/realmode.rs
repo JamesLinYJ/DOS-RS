@@ -24,32 +24,46 @@ fn equal(start: u16, len: u16, word: &str) -> bool {
 }
 
 use pc::disk::Volume;
-fn load_file(res: u16, vol: &Volume, hard: bool, dest: u16, max: u16) -> Option<u16> {
-    if hard {
+fn load_file(res: u16, vol: &Volume, hard: u16, dest: u16, max: u16) -> Option<u16> {
+    if hard > 2 {
+        return None;
+    }
+    if hard == 2 {
         vol.load(dest, max)
     } else {
-        pc::load(res, dest, max)
+        pc::store(pc::COMMAND, 258, hard);
+        let r = if hard == 0 && res != 0 {
+            res
+        } else {
+            pc::reserved()
+        };
+        if r == 0 { None } else { pc::load(r, dest, max) }
     }
 }
-fn path(vol: &mut Volume, start: u16, end: u16, default: bool) -> Option<bool> {
+fn path(vol: &mut Volume, start: u16, end: u16, default: u16) -> Option<u16> {
     let mut at = start;
     let mut hard = default;
     if end - start >= 2 && pc::byte(pc::COMMAND, start + 1) == 58 {
         if equal(start, 1, "C") {
-            hard = true;
+            hard = 2;
+        } else if equal(start, 1, "B") && pc::floppies() >= 2 {
+            hard = 1;
         } else if equal(start, 1, "A") {
-            hard = false;
+            hard = 0;
         } else {
             return None;
         }
         at += 2;
     }
-    if hard {
+    if hard == 2 {
         return if vol.path(pc::COMMAND, at, end - at, false) {
-            Some(true)
+            Some(2)
         } else {
             None
         };
+    }
+    if hard < 2 {
+        pc::store(pc::COMMAND, 258, hard);
     }
     if at < end && pc::byte(pc::COMMAND, at) == 92 {
         at += 1;
@@ -67,18 +81,55 @@ fn spaces(mut at: u16, end: u16) -> u16 {
     at
 }
 
-fn execute(res: u16, vol: &mut Volume, hard: &mut bool, n: u16) {
+fn execute(res: u16, vol: &mut Volume, hard: &mut u16, n: u16) {
     let mut split = 0;
     while split < n && pc::byte(pc::COMMAND, split) != 32 {
         split += 1;
     }
-    if split == 0 {
+    if split == 0 || equal(0, split, "REM") {
         return;
+    }
+    let cd = pc::cdrom::letter();
+    if split == 2 && pc::byte(pc::COMMAND, 1) == 58 && pc::byte(pc::COMMAND, 0) & 0xdf == 65 + cd {
+        if pc::cdrom::present() || pc::cdrom::probe() {
+            *hard = cd
+        } else {
+            pc::print("CD-ROM unavailable\r\n")
+        }
+        return;
+    }
+    let arg = spaces(split, n);
+    let explicit = n >= arg + 2 && pc::byte(pc::COMMAND, arg + 1) == 58;
+    let optical = if explicit {
+        pc::byte(pc::COMMAND, arg) & 0xdf == 65 + cd
+    } else {
+        *hard == cd
+    };
+    if optical {
+        let at = if explicit { arg + 2 } else { arg };
+        if equal(0, split, "CD") {
+            if !pc::cdrom::find(pc::COMMAND, at, n, true) {
+                pc::print("Directory unavailable\r\n")
+            }
+            return;
+        }
+        if equal(0, split, "DIR") {
+            if !pc::cdrom::list() {
+                pc::print("CD-ROM read failed\r\n")
+            }
+            return;
+        }
+        if equal(0, split, "TYPE") {
+            if !pc::cdrom::find(pc::COMMAND, at, n, false) || !pc::cdrom::display() {
+                pc::print("CD-ROM read failed\r\n")
+            }
+            return;
+        }
     }
     let original = vol.directory();
     if equal(0, split, "CD") {
         let at = spaces(split, n);
-        if *hard && vol.path(pc::COMMAND, at, n - at, true) {
+        if *hard == 2 && vol.path(pc::COMMAND, at, n - at, true) {
             return;
         }
         vol.restore(original);
@@ -88,14 +139,23 @@ fn execute(res: u16, vol: &mut Volume, hard: &mut bool, n: u16) {
     run(res, vol, hard, n, split, original);
     vol.restore(original);
 }
-fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original: u32) {
+fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original: u32) {
+    if equal(0, split, "B:") {
+        if pc::floppies() >= 2 {
+            *hard = 1;
+            pc::store(pc::COMMAND, 258, 1);
+        } else {
+            pc::print("B: unavailable\r\n");
+        }
+        return;
+    }
     if equal(0, split, "A:") {
-        *hard = false;
+        *hard = 0;
         return;
     }
     if equal(0, split, "C:") {
-        if vol.mounted() {
-            *hard = true;
+        if vol.mounted() || vol.mount() {
+            *hard = 2;
         } else {
             pc::print("C: unavailable\r\n");
         }
@@ -108,7 +168,7 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
             sep += 1;
         }
         let dst = spaces(sep, n);
-        if path(vol, dst, n, *hard) == Some(true) && vol.mounted() {
+        if path(vol, dst, n, *hard) == Some(2) && vol.mounted() {
             let mut i = 0;
             while i < 11 {
                 pc::store(pc::COMMAND, 160 + i, pc::byte(pc::COMMAND, 128 + i));
@@ -117,9 +177,9 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
             let destination = vol.directory();
             vol.restore(original);
             if let Some(from) = path(vol, src, sep, *hard) {
-                let copied = if from {
+                let copied = if from == 2 {
                     vol.duplicate(destination)
-                } else if let Some(size) = pc::load(res, mz::FILE, 0xfe00) {
+                } else if let Some(size) = load_file(res, vol, from, mz::FILE, 0xfe00) {
                     i = 0;
                     while i < 11 {
                         pc::store(pc::COMMAND, 128 + i, pc::byte(pc::COMMAND, 160 + i));
@@ -139,18 +199,33 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
         pc::print("Copy failed\r\n");
         return;
     }
+    if equal(0, split, "ECHO") {
+        let mut i = spaces(split, n);
+        while i < n {
+            pc::put(pc::byte(pc::COMMAND, i));
+            i += 1;
+        }
+        pc::print("\r\n");
+        return;
+    }
     if equal(0, split, "VER") {
         #[cfg(rust16_cpu = "286")]
         pc::print("DOS / 80286\r\n");
         #[cfg(rust16_cpu = "386")]
         pc::print("DOS / 80386\r\n");
     } else if equal(0, split, "DIR") {
-        if *hard {
+        if *hard == 2 {
             if !vol.list() {
                 pc::print("Directory read failed\r\n");
             }
         } else {
-            pc::list(res);
+            pc::store(pc::COMMAND, 258, *hard);
+            let r = pc::reserved();
+            if r != 0 {
+                pc::list(r)
+            } else {
+                pc::print("Disk unavailable\r\n");
+            }
         }
     } else if equal(0, split, "TYPE") {
         let mut at = split;
@@ -158,11 +233,11 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
             at += 1;
         }
         if let Some(from) = path(vol, at, n, *hard) {
-            if from {
+            if from == 2 {
                 if vol.mounted() && vol.type_file() {
                     return;
                 }
-            } else if let Some(size) = pc::load(res, pc::PROGRAM, 0xfe00) {
+            } else if let Some(size) = load_file(res, vol, from, pc::PROGRAM, 0xfe00) {
                 let mut i = 0;
                 while i < size {
                     pc::put(pc::byte(pc::PROGRAM, i));
@@ -174,7 +249,7 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
         pc::print("File read failed\r\n");
     } else {
         if let Some(from) = path(vol, 0, split, *hard) {
-            if from && !vol.mounted() {
+            if from == 2 && !vol.mounted() {
                 pc::print("C: unavailable\r\n");
                 return;
             }
@@ -186,10 +261,17 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
             if com {
                 if let Some(size) = load_file(res, vol, from, pc::PROGRAM + 16, 0xfc00) {
                     if size != 0 {
-                        psp(split, n);
-                        vol.restore(original);
-                        files::begin(*hard);
-                        pc::start_com(vol);
+                        pc::store(pc::COMMAND, 256, *hard);
+                        files::begin(*hard == 2);
+                        if size >= 2 && pc::system::w(pc::PROGRAM + 16, 0) == 0x5a4d {
+                            if !mz::open(vol, from, original, split, n) {
+                                pc::print("Invalid DOS executable\r\n");
+                            }
+                        } else {
+                            psp(split, n);
+                            vol.restore(original);
+                            pc::start_com(vol);
+                        }
                         files::finish(vol);
                         return;
                     }
@@ -199,15 +281,10 @@ fn run(res: u16, vol: &mut Volume, hard: &mut bool, n: u16, split: u16, original
                 extension(69, 88, 69);
             }
             if ext_is(69, 88, 69) {
-                if let Some(size) = load_file(res, vol, from, mz::FILE, 0xfe00) {
-                    psp(split, n);
-                    vol.restore(original);
-                    files::begin(*hard);
-                    if mz::run(vol, size) {
-                        files::finish(vol);
-                        return;
-                    }
-                    pc::print("Invalid MZ executable\r\n");
+                pc::store(pc::COMMAND, 256, *hard);
+                files::begin(*hard == 2);
+                if mz::open(vol, from, original, split, n) {
+                    files::finish(vol);
                     return;
                 }
             }
@@ -249,12 +326,11 @@ fn extension(a: u16, b: u16, c: u16) {
 #[unsafe(no_mangle)]
 pub fn main16() {
     let res = pc::reserved();
-    if res == 0 {
-        pc::print("Invalid boot volume\r\n");
-        return;
-    }
+    let boot_hd = pc::byte(0x6000, 0) >= 128;
     let mut vol = Volume::EMPTY;
-    let mut hard = false;
+    pc::cdrom::probe();
+    let boot = if boot_hd { 2 } else { pc::boot_unit() };
+    let mut hard = boot;
     if vol.mount() {
         pc::print(if vol.is32() {
             "C: FAT32\r\n"
@@ -266,7 +342,7 @@ pub fn main16() {
     execute(res, &mut vol, &mut hard, 3);
     pc::command("AUTOEXEC.BAT");
     if pc::filename(pc::COMMAND, 0, 12) {
-        if let Some(size) = pc::load(res, pc::BATCH, 2048) {
+        if let Some(size) = load_file(res, &vol, boot, pc::BATCH, 2048) {
             let mut i = 0;
             let mut count = 0;
             while i < size {
@@ -283,26 +359,30 @@ pub fn main16() {
             execute(res, &mut vol, &mut hard, count);
         }
     }
+    pc::command("COMMAND.COM");
+    pc::filename(pc::COMMAND, 0, 11);
+    let cwd = vol.directory();
+    vol.root();
+    // AUTOEXEC has finished. Reuse its arena up to the first application PSP.
+    let saved = load_file(res, &vol, boot, pc::BATCH, (pc::PROGRAM - pc::BATCH) * 16);
+    vol.restore(cwd);
+    let Some(n) = saved else {
+        pc::print("Missing COMMAND.COM\r\n");
+        return;
+    };
     loop {
-        pc::print(if hard { "C:\\> " } else { "A:\\> " });
-        let mut len = 0;
-        loop {
-            let c = pc::key();
-            if c == 13 {
-                pc::print("\r\n");
-                break;
-            }
-            if c == 8 && len > 0 {
-                len -= 1;
-                pc::print("\x08 \x08");
-            }
-            if c >= 32 && c <= 126 && len < 126 {
-                pc::store(pc::COMMAND, len, c);
-                len += 1;
-                pc::put(c);
-            }
+        pc::copy_bytes(pc::BATCH, 0, mz::FILE, 0, n);
+        psp(0, 0);
+        files::begin(hard == 2);
+        pc::store(pc::COMMAND, 256, hard);
+        pc::store(pc::COMMAND, 257, 0);
+        if !mz::run(&mut vol, n) {
+            pc::print("Invalid COMMAND.COM\r\n");
+            return;
         }
-        execute(res, &mut vol, &mut hard, len);
+        files::finish(&mut vol);
+        let count = pc::byte(pc::COMMAND, 257);
+        execute(res, &mut vol, &mut hard, count);
     }
 }
 #[panic_handler]

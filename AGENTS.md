@@ -16,13 +16,17 @@ Start from the boundary that owns the state you need to change. The i686 and x86
 
 ## Native 16-bit target
 
-The `dos` package selects its native shell when the target pointer width is 16. The BIOS loader in `boot/realmode` probes the CPU and loads one of two kernels. The firmware ABI owns real-mode segment registers, BIOS calls and interrupt stack transitions. Keep filesystem geometry in 32-bit sector and cluster units. DOS process state, PSPs, MZ relocation and dispatch live under `src/realmode*`. Both execution models use the DOS version word in `src/version.rs`. The resident COMMAND.COM in the boot volume accepts the minimum DOS level it requires.
+The `dos` package selects `src/realmode.rs` on targets with 16-bit pointers. The resident IO.SYS in `boot/realmode` probes the CPU, loads the selected image from MSDOS.SYS and owns firmware access, console, storage and optical media. Keep FAT geometry and file positions in 32-bit units. The kernel owns PSP setup, DOS handles, MZ relocations and shell dispatch. COMMAND.COM is a transient DOS program.
 
-Build the image with `scripts/realmode-image.py` and the pinned rust16 backend. Run `scripts/realmode-test.py --toolchain ../rust16 --ram-dir "$RAM_DISK"` to verify the CPU selection, FAT32 data after shutdown and the native INT 21h FILES.COM client. Give `--proof` a directory to retain the serial transcripts.
+The optional two-floppy set has a release ID on each disk. Test a wrong disk, cancellation, a swap in one drive, cold boot and host-side readback. SETUP uses the DOS file staging arena for the app payload and keeps its configuration buffer outside that arena.
+
+The native utilities are built with the same rust16 compiler. Partition inspection, file transfer, startup configuration and installer rendering have separate modules in `native-tools/src`. Edit uses a storage-independent gap buffer with a segmented DOS adapter. Use emulator key events for interaction tests. The pinned legacy DOS compatibility clients and their source revision are documented in [tests/fixtures/dos](tests/fixtures/dos/README.md).
+
+Build with the rust16 revision pinned in the README. Use a RAM volume for all writable test images. Run the native FAT, installer and Edit scripts listed in the README. Retain serial logs, screenshots and host-side file comparisons with `--proof`. Use `rustc +stable --edition 2024 --test tests/edit_buffer.rs -o target/edit-buffer-test && target/edit-buffer-test` to exercise document offsets beyond 64 KiB on a wide host.
 
 ## Checking a change
 
-Run `python3 scripts/prepare-cpu.py` before the first build. It verifies the upstream sources against the pinned manifests. The project-owned boot, kernel, scheduler and drivers are Rust. Keep compiler-generated instructions and pinned architecture-library sources distinct from project-owned files. Guest test programs can use NASM.
+Run `python3 scripts/prepare-cpu.py` before the first build. It verifies the upstream sources against the pinned manifests. The project-owned boot, kernel, scheduler and drivers are Rust. Keep compiler-generated instructions and pinned architecture-library sources distinct from project-owned files. Use Rust for new project-owned code and host-driven application tests.
 
 - Use [qemu.py](scripts/qemu.py) to boot the interactive kernel. Test BIOS and UEFI with each supported architecture. Use [qemu-native-gate.py](scripts/qemu-native-gate.py) to test the actual native INT 21h gate with both carry inputs.
 - Use [qemu-smoke.sh](scripts/qemu-smoke.sh) for host layout checks, [guest CPU and device tests](tests/pc386.rs) and DOS program regressions. The kernel-selftest build installs [its AUTOEXEC.BAT](tests/fixtures/AUTOEXEC.BAT) in a private copy of the shell volume. Each emulator must exit with status 33 and print `GUEST ARCH OK`. Record output with `PROOF_DIR`. Run `scripts/qemu-smoke.sh --pc386` to repeat the same DOS workloads with the protected-mode build.

@@ -6,23 +6,65 @@ DOS 是用 Rust 实现的操作系统。80286 和 80386 可以从同一张 BIOS 
 
 ## 在 286 或 386 上原生启动
 
-引导程序检查 CPU 的 FLAGS，从 A 盘载入 `K286.SYS` 或 `K386.SYS`。实模式应用直接使用 CPU 执行，Shell 可加载 COM 与 MZ EXE，处理 PSP、命令行、重定位和 INT 21h。系统名为 **DOS**。版本查询默认报告兼容版本 7.10。AH=30h 在 AX 中返回 0A07h，AX=3306h 在 BX 中返回 0A07h。
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/fc6597c6ac4a401e29853b3fc0df1cede45aa1f7)
 
-构建需要 mtools 和已经构建的 rust16 工具链。工具链在链接时自动加入实模式启动入口和 BIOS 调用代码，生成的启动盘可独立使用。下面的命令假定工具链位于相邻目录，RAM 盘上已有数据盘 `c.img`。[本次验证的 rust16 版本和构建步骤](https://github.com/JamesLinYJ/rust16/tree/34ea49274a0b6ff729dcf96a07b6ff0b21f8ee62)
+在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools 和已经构建的 rust16。
 
 ```sh
-python3 scripts/realmode-image.py --toolchain ../rust16 --output "$RAM_DISK/dos.img"
-qemu-system-i386 -boot a -drive "if=floppy,format=raw,readonly=on,file=$RAM_DISK/dos.img" \
-  -drive "if=ide,format=raw,file=$RAM_DISK/c.img"
+RAM_DISK=/Volumes/DOS-INSTALL-QA
+python3 scripts/realmode-image.py --toolchain ../rust16 --output "$RAM_DISK/install.img" --system-dir "$RAM_DISK/SYSTEM"
+test ! -e "$RAM_DISK/new-c.img" && qemu-img create -f raw "$RAM_DISK/new-c.img" 48M
+qemu-system-i386 -m 16 -boot a -drive "if=floppy,format=raw,readonly=on,file=$RAM_DISK/install.img" \
+  -drive "if=ide,format=raw,file=$RAM_DISK/new-c.img"
 ```
 
-A 盘是 1.44 MiB FAT12 启动软盘。已有 FAT16 或 FAT32 镜像可以作为 C 盘。原生内核支持 512 字节扇区、裸卷和 MBR 主分区、8.3 文件名、子目录及跨簇读写。`C:`、`DIR`、`CD`、`TYPE` 和 `COPY` 直接操作该卷。DOS 文件句柄支持打开、读取、定位、创建、写入与关闭。原生版当前同时运行一个前台程序，单个 COM/MZ 文件受近段大小限制。可同时打开一个可写句柄，写入暂存区上限为 65,024 字节。`COPY` 在同一 C 盘内逐扇区复制，可跨过 64 KiB。
+需要两张发行软盘时，构建命令可改为：
+
+```sh
+python3 scripts/realmode-image.py --toolchain ../rust16 --disk-set "$RAM_DISK/DISKS"
+```
+
+从 `DISK1.IMG` 启动。只有一个软驱时，SETUP 会提示换入 `DISK2.IMG` 读取 Edit 和示例文档，再换回第一张继续。第二张也可以预先挂在另一软驱。两张盘都有发行套装标识，复制前会校验每个文件。
+
+在提示符输入 `SETUP`，选择语言、目标硬盘、安装动作和启动配置。写入前可看到 BIOS 磁盘号、分区起止扇区和文件总量。复制页显示正在写入的文件、大小、序号和进度，再读回已安装的系统文件。安装完成后关闭 QEMU，从同一块内存硬盘启动。
+
+```sh
+qemu-system-i386 -m 16 -boot c -drive "if=ide,format=raw,file=$RAM_DISK/new-c.img"
+```
+
+![DOS 安装程序复制中文字库](docs/assets/native-setup.png)
+
+- `FDISK` 可单独创建主分区。安装程序支持空盘、可用的 MBR 主分区间隙，以及已安装系统的校验和修复。写入新分区前会检查整个目标范围。在已有分区旁安装时保留原引导记录和活动分区，需从原引导管理器启动新系统。GPT 和扩展分区会给出提示。
+- 安装到 C 盘时生成 `CONFIG.SYS` 和 `AUTOEXEC.BAT`。可以设置显示模式、磁盘缓存和光驱，批处理可以选择常规、精简或沿用安装介质上已有的文件。在磁盘选择页按 **L** 或 **F1** 可读 MIT 许可。[安装许可说明](docs/安装许可.md)
+- 图形界面支持 CGA 640×200、EGA 640×350 和 VGA 640×480。单色文本设备使用 80×25 英文界面。图形界面的八种语言按 BCP 47 标签排列，依次为德语、英语、西班牙语、法语、日语、韩语、简体中文和繁体中文。字库按需从引导卷读取，四字节 GB18030 的显示范围取决于已收录字形。
+- `SMARTDRV /STATUS` 显示写穿缓存状态，`SMARTDRV /BENCH` 比较相同访问序列的 BIOS 读取次数。独立的 B 软驱和 IDE ATAPI 光驱可从 Shell 读取。光驱支持 ISO 9660 目录与文件。[光驱驱动](boot/realmode/src/optical.rs)
+- 原生 16 位内核支持 FAT16、FAT32 数据盘、8.3 路径、跨簇读写和多段 MZ 加载。文件句柄的读取位置为 32 位，当前同时支持一个可写句柄，上限 65,024 字节。`COPY` 通过独立的扇区复制路径可复制更大的文件。
+
+### DOS 上的 Microsoft Edit 移植
+
+从安装后的 `C:\>` 输入 `EDIT` 新建文档，或输入 `EDIT NOTE.TXT` 打开文件。Edit 默认使用安装向导所选的语言。按 **F4** 可以在德语、英语、西班牙语、法语、日语、韩语、简体中文和繁体中文间切换，当前文档和撤销记录继续保留。修改系统盘 `CONFIG.SYS` 的 `LANG=` 可设置下次开机的默认语言，例如 `LANG=ja` 或 `LANG=zh-Hant`。单色文本适配器使用英文。
+
+文本缓冲、按词移动和编辑历史参考上游 Microsoft Edit，文件、屏幕、键盘和内存由 DOS 适配。原生版本提供单文档编辑、查找、撤销和重做。上游的多文档界面和正则搜索尚未移植。[上游版本](https://github.com/microsoft/edit/tree/b7f83220868373945945e2218e852c24cbb4dcf0) · [DOS 实现](native-tools/src/editor.rs)
+
+| 操作 | 按键 |
+| --- | --- |
+| 保存、另存、退出 | Ctrl+S、F2、Ctrl+Q |
+| 切换界面语言、快捷键帮助 | F4、F1 |
+| 查找、下一个匹配 | Ctrl+F、F3 |
+| 撤销、重做、按词移动 | Ctrl+Z、Ctrl+Y、Ctrl+← / → |
+| 输入汉字 | Ctrl+P 输入拼音选字，或 Ctrl+U 输入 Unicode 码位 |
+
+![原生 Edit 保存包含中文的文件](docs/assets/native-edit.png)
+
+[查看 Edit 的八种语言选择界面](docs/assets/edit-languages.png)
 
 ```sh
 python3 scripts/realmode-test.py --toolchain ../rust16 --ram-dir "$RAM_DISK"
+python3 scripts/realmode-install-test.py --image "$RAM_DISK/install.img" --ram-dir "$RAM_DISK" --disk-set "$RAM_DISK/DISKS" --proof target/native-install
+python3 scripts/realmode-edit-test.py --image "$RAM_DISK/install.img" --ram-dir "$RAM_DISK" --proof target/native-edit
 ```
 
-这项回归需要 DOSBox-X、QEMU、NASM、mtools 和 dosfstools。它用 286 与 386 CPU 模型启动同一张软盘，再通过两个 QEMU 系统模拟器输入命令。FAT32 根目录在第 66536 簇，测试文件从第 68001 簇开始。每次关机后用 mtools 读回文件，核对 100 KiB 文件的内容，并运行 `fsck.fat -n`。测试还覆盖 MBR 分区和每簇含两个扇区的 FAT16 卷。下文的 Windows 3.2、多核和多终端验收适用于 i686 和 x86_64 内核。
+单盘回归可以省略 `--disk-set`。回归需要 DOSBox-X、QEMU、mtools 和 dosfstools。它检查 286/386 开机、CGA/EGA/Hercules/VGA 机型上的编辑保存、中文 GB18030 字节读回、44,800 字节文档、FAT32 高簇号和 100 KiB 文件复制。Windows 3.2、多核和多终端验收使用下面的 i686 和 x86_64 内核。
 
 ## 在 QEMU 里启动 i686 和 x86_64 内核
 

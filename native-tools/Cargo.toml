@@ -1,0 +1,10 @@
+[package]
+name = "dos-tools"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dosrs-realmode = {path = "../boot/realmode"}
+
+[profile.release]
+panic = "abort"

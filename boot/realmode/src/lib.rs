@@ -2,15 +2,19 @@
 
 #[path = "../../../src/dos/fat_cluster.rs"]
 pub mod cluster;
+pub mod language;
 
 // The architecture runtime supplies the BIOS and segment-register operations.
 mod firmware {
     unsafe extern "Rust" {
-        pub fn bios_hd(lba: u32, seg: u16, write: u16) -> u16;
-        pub fn bios_read(chs: u16, head: u16, segment: u16) -> u16;
-        pub fn bios_reset();
+        pub fn bios_hd_unit(lba: u32, seg: u16, write: u16, unit: u16) -> u16;
+        pub fn floppy_read(chs: u16, head: u16, segment: u16, unit: u16) -> u16;
+        pub fn floppy_reset(unit: u16);
+        pub fn far_copy(src: u16, off: u16, dst: u16, at: u16, count: u16);
+        pub fn video_bios(ax: u16, bx: u16, cx: u16, dx: u16) -> u16;
         pub fn bios_cpu() -> u16;
         pub fn bios_char(value: u16);
+        pub fn resident_io(op: u16, a: u16, b: u16, c: u16) -> u16;
         pub fn bios_text(text: &str);
         pub fn bios_key() -> u16;
         pub fn bios_chain() -> !;
@@ -25,10 +29,25 @@ pub fn cpu() -> u16 {
     unsafe { firmware::bios_cpu() }
 }
 pub fn print(s: &str) {
-    unsafe { firmware::bios_text(s) }
+    if byte(COMMAND, 265) != 0xa5 {
+        unsafe { firmware::bios_text(s) };
+        return;
+    }
+    let mut i = 0;
+    while i < s.len() {
+        put(s.as_bytes()[i] as u16);
+        i += 1;
+    }
 }
 pub fn put(c: u16) {
-    unsafe { firmware::bios_char(c) }
+    if byte(COMMAND, 265) == 0xa5 {
+        control(1, c, 0, 0);
+    } else {
+        unsafe { firmware::bios_char(c) }
+    }
+}
+pub fn control(op: u16, a: u16, b: u16, c: u16) -> u16 {
+    unsafe { firmware::resident_io(op, a, b, c) }
 }
 pub fn key() -> u16 {
     unsafe { firmware::bios_key() }
@@ -48,9 +67,36 @@ pub fn start_com(volume: &mut disk::Volume) {
     unsafe { firmware::bios_run(volume, PROGRAM, 0x100, PROGRAM, 0xfffe) }
 }
 
+pub mod cache;
+pub mod cdrom;
 pub mod disk;
+pub mod optical;
+pub mod system;
+pub fn copy_bytes(s: u16, p: u16, d: u16, at: u16, n: u16) {
+    unsafe { firmware::far_copy(s, p, d, at, n) }
+}
+pub fn raw_hd(unit: u16, lba: u32, seg: u16, write: bool) -> bool {
+    unsafe { firmware::bios_hd_unit(lba, seg, write as u16, unit) == 0 }
+}
+pub fn hd(lba: u32, seg: u16, write: bool) -> bool {
+    cache::io(hard_unit(), lba, seg, write)
+}
+pub fn hard_unit() -> u16 {
+    let v = byte(COMMAND, 260);
+    if v >= 128 { v } else { 128 }
+}
+pub fn boot_unit() -> u16 {
+    byte(0x6000, 0)
+}
+pub fn floppies() -> u16 {
+    let eq = byte(0x40, 0x10);
+    if eq & 1 == 0 { 0 } else { 1 + (eq >> 6) }
+}
+pub fn video(ax: u16, bx: u16, cx: u16, dx: u16) -> u16 {
+    unsafe { firmware::video_bios(ax, bx, cx, dx) }
+}
 pub(crate) fn sector(lba: u32, write: bool) -> bool {
-    unsafe { firmware::bios_hd(lba, BUFFER, write as u16) == 0 }
+    hd(lba, BUFFER, write)
 }
 pub const BUFFER: u16 = 0x3000;
 pub const PROGRAM: u16 = 0x4000;
@@ -70,6 +116,9 @@ fn word(at: u16) -> u16 {
 }
 
 fn read(lba: u16, segment: u16) -> bool {
+    read_floppy(byte(COMMAND, 258), lba, segment)
+}
+pub fn read_floppy(unit: u16, lba: u16, segment: u16) -> bool {
     // The native boot format is a two-head, 18-sector/track 1.44 MiB floppy.
     if lba >= 2880 {
         return false;
@@ -77,11 +126,11 @@ fn read(lba: u16, segment: u16) -> bool {
     let chs = ((lba / 36) << 8) | (lba % 18 + 1);
     let mut tries = 3;
     while tries > 0 {
-        if unsafe { firmware::bios_read(chs, (lba / 18) % 2, segment) } == 0 {
+        if unsafe { firmware::floppy_read(chs, (lba / 18) % 2, segment, unit) } == 0 {
             return true;
         }
         unsafe {
-            firmware::bios_reset();
+            firmware::floppy_reset(unit);
         }
         tries -= 1;
     }
