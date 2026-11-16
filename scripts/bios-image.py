@@ -15,7 +15,7 @@ def stages():
     dest = ROOT / "target/bios"
     dest.mkdir(exist_ok=True)
     sysroot = subprocess.check_output(
-        ["rustc", "--print", "sysroot"], text=True
+        ["rustc", "--print", "sysroot"], cwd=ROOT, text=True
     ).strip()
     objcopy = next(Path(sysroot).glob("lib/rustlib/*/bin/llvm-objcopy"))
     result = []

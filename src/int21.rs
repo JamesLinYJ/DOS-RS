@@ -548,19 +548,25 @@ fn get_verify_on_write(frame: &mut LogicalFrame) {
 fn set_ctrl_c_trapping(frame: &mut LogicalFrame) {
     let result = (frame.status & 0xff) as u8;
     let data_low = (frame.buffer & 0xff) as u8;
+    if result == 6 {
+        frame.store_bx(DosWord(crate::version::WORD));
+        frame.store_dx(DosWord(0));
+        return;
+    }
     let (new_al, new_dl) = crate::dos::disp::set_ctrl_c(result, data_low);
     frame.set_al(ResultByte(new_al));
     frame.set_dl(new_dl);
 }
 
-/// AH=30h. AL is ignored.
+/// AH=30h. AL=1 requests DOS residency flags in BH.
 ///
-/// Writes AX=`0x0004`, BX=`0xFF00`, and CX=`0x0000` into the low 16 bits.
+/// Returns 7.10 in AX, zero in CX and the OEM identifier (or residency flags) in BH.
 /// Leaves the upper bits of those registers alone. Does not write DX, SI, DI, BP, DS, or ES.
 fn get_version(frame: &mut LogicalFrame) {
     let (ax, bx, cx) = crate::dos::getset::VERSION;
+    let flags_requested = frame.status as u8 == 1;
     frame.store_ax(DosWord(ax));
-    frame.store_bx(DosWord(bx));
+    frame.store_bx(DosWord(if flags_requested { 0 } else { bx }));
     frame.store_cx(DosWord(cx));
 }
 

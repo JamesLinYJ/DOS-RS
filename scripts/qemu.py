@@ -51,7 +51,7 @@ def build(arch, target_dir, image=None, features=None):
     if image:
         env["DOS_RS_GUEST_IMAGE"] = str(image)
     subprocess.run(args, cwd=ROOT, env=env, check=True)
-    return target_dir / target / "release/dos4-rs.efi"
+    return target_dir / target / "release/dos.efi"
 
 
 def boot_args(kernel, arch, work, cpus=4, mode="uefi"):

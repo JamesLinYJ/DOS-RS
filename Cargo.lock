@@ -27,14 +27,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "dos4-rs"
+name = "dos"
 version = "0.0.0"
 dependencies = [
+ "dosrs-realmode",
  "font8x8",
  "linked_list_allocator",
  "uefi",
  "x86",
 ]
+
+[[package]]
+name = "dosrs-realmode"
+version = "0.1.0"
 
 [[package]]
 name = "font8x8"

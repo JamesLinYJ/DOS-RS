@@ -697,8 +697,9 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             let version = read_word(ram, session.current_psp, 0x40)
                 .filter(|&v| v != 0)
                 .unwrap_or(default);
+            let flags_requested = cpu.low(Slot::Accumulator) == 1;
             cpu.set_wide(Slot::Accumulator, version);
-            cpu.set_wide(Slot::Base, bx);
+            cpu.set_wide(Slot::Base, if flags_requested { 0 } else { bx });
             cpu.set_wide(Slot::Count, cx);
             Action::Continue
         }
@@ -2047,6 +2048,11 @@ fn system_values(cpu: &mut CpuState, session: &mut Session) {
         }
         5 => {
             cpu.set_low(Slot::Data, 1);
+            cpu.set_carry(false);
+        }
+        6 => {
+            cpu.set_wide(Slot::Base, crate::version::WORD);
+            cpu.set_wide(Slot::Data, 0);
             cpu.set_carry(false);
         }
         _ => cpu.set_carry(true),

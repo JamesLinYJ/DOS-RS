@@ -46,5 +46,5 @@ pub const COMTAB: &[(&[u8], u8)] = &[
     (b"TRUENAME", F_SWITCH_ALLOWED | F_CHECK_DRIVE),
 ];
 
-/// Message 1040. Thirteen spaces sit between `DOS` and `Version`.
-pub const VER_MESSAGE: &[u8] = b"Microsoft DOS             Version ";
+/// The self-test prints the emulated API version alongside the version query.
+pub const VER_MESSAGE: &[u8] = b"DOS compatibility ";

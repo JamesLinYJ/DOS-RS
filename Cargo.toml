@@ -1,5 +1,5 @@
 [package]
-name = "dos4-rs"
+name = "dos"
 version = "0.0.0"
 edition = "2024"
 
@@ -14,7 +14,10 @@ panic = "abort"
 [profile.release]
 panic = "abort"
 
-[dependencies]
+[target.'cfg(target_pointer_width = "16")'.dependencies]
+dosrs-realmode = { path = "boot/realmode" }
+
+[target.'cfg(not(target_pointer_width = "16"))'.dependencies]
 font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
 uefi = { version = "0.38", default-features = false }
 x86 = { version = "0.52.0", default-features = false }

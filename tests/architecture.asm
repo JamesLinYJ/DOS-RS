@@ -23,6 +23,13 @@ jne bad_version
 cmp bp, 0x2468
 jne bad_version
 
+mov ax, 3306h
+int 21h
+cmp bx, 0a07h
+jne bad_version
+or dx, dx
+jnz bad_version
+
 ; Allocate above the running PSP, then patch a future instruction via a segment alias.
 mov bx, 0x20
 mov ah, 48h
@@ -45,7 +52,7 @@ mov bx, 0x1234
 mov cx, 0x5678
 int 21h
 pushf
-cmp ax, 4
+cmp ax, 0x0a07
 jne bad_version
 cmp bx, 0xff00
 jne bad_version

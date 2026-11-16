@@ -23,11 +23,11 @@ doctor() {
 		echo "want rustc 1.102.0-nightly from nightly-2026-11-08" >&2
 		missing=1
 	}
-	if [[ ! -f "$build_dir/i686-unknown-uefi/release/dos4-rs.efi" ]]; then
+	if [[ ! -f "$build_dir/i686-unknown-uefi/release/dos.efi" ]]; then
 		echo "missing i686 kernel. Build it before driving." >&2
 		missing=1
 	fi
-	if [[ ! -f "$build_dir/x86_64-unknown-uefi/release/dos4-rs.efi" ]]; then
+	if [[ ! -f "$build_dir/x86_64-unknown-uefi/release/dos.efi" ]]; then
 		echo "missing x86_64 kernel. Build it before driving." >&2
 		missing=1
 	fi
@@ -59,13 +59,13 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -qF "DOS-RS / $name" "$out"; then
+	if ! grep -qF "DOS / $name" "$out"; then
 		echo "$name missing banner" >&2
 		cat "$out" >&2
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "AX=0004 BX=FF00 CX=0000 CF=1" "$out" || ! grep -q "AX=0004 BX=FF00 CX=0000 CF=0" "$out"; then
+	if ! grep -q "AX=0A07 BX=FF00 CX=0000 CF=1" "$out" || ! grep -q "AX=0A07 BX=FF00 CX=0000 CF=0" "$out"; then
 		echo "$name missing AH=30h result" >&2
 		cat "$out" >&2
 		rm -f "$out"
@@ -185,7 +185,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -q "Microsoft DOS             Version 4.0" "$out"; then
+	if ! grep -q "DOS compatibility 7.10" "$out"; then
 		echo "$name missing VER line" >&2
 		cat "$out" >&2
 		rm -f "$out"
@@ -1229,7 +1229,7 @@ run_one() {
 		rm -f "$out"
 		exit 1
 	fi
-	if ! grep -qF "DOS-RS (DOS 4.00)" "$out" \
+	if ! grep -Fqx $'DOS\r' "$out" \
 		|| [ "$(grep -Fxc $'hello\r' "$out")" -lt 2 ] \
 		|| ! grep -qF "Found: HELLO.COM" "$out" \
 		|| ! grep -Fqx $'Z\r' "$out" \
@@ -1569,6 +1569,6 @@ doctor
 )
 printer_log="$(mktemp)"
 trap 'rm -f "$printer_log"' EXIT
-run_one i686 qemu-system-i386 "$build_dir/i686-unknown-uefi/release/dos4-rs.efi"
-run_one x86_64 qemu-system-x86_64 "$build_dir/x86_64-unknown-uefi/release/dos4-rs.efi"
+run_one i686 qemu-system-i386 "$build_dir/i686-unknown-uefi/release/dos.efi"
+run_one x86_64 qemu-system-x86_64 "$build_dir/x86_64-unknown-uefi/release/dos.efi"
 exit 0

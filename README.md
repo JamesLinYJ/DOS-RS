@@ -1,10 +1,30 @@
-# DOS-RS
+# DOS
 
-DOS-RS 在 i686 和 x86_64 上启动自己的 Rust 内核。按 **Alt+F1 ～ Alt+F4** 切换四个 DOS 终端。在一个终端等待键盘时，另一个终端仍可运行编译器，两者能通过 A 盘交换文件。
+DOS 是用 Rust 实现的操作系统。80286 和 80386 可以从同一张 BIOS 软盘启动原生 16 位内核。i686 与 x86_64 使用支持多会话的内核。在多会话内核中，按 **Alt+F1 ～ Alt+F4** 切换四个 DOS 终端。在一个终端等待键盘时，另一个终端仍可运行编译器，两者能通过 A 盘交换文件。
 
-![QEMU 中的 x86_64 终端显示 MEM 查询结果和 DOS 版本](docs/assets/terminal.png)
+![QEMU 中的 x86_64 终端显示 MEM 查询结果和系统名](docs/assets/terminal.png)
 
-## 在 QEMU 里启动
+## 在 286 或 386 上原生启动
+
+引导程序检查 CPU 的 FLAGS，从 A 盘载入 `K286.SYS` 或 `K386.SYS`。实模式应用直接使用 CPU 执行，Shell 可加载 COM 与 MZ EXE，处理 PSP、命令行、重定位和 INT 21h。系统名为 **DOS**。版本查询默认报告兼容版本 7.10。AH=30h 在 AX 中返回 0A07h，AX=3306h 在 BX 中返回 0A07h。
+
+构建需要 mtools 和已经构建的 rust16 工具链。工具链在链接时自动加入实模式启动入口和 BIOS 调用代码，生成的启动盘可独立使用。下面的命令假定工具链位于相邻目录，RAM 盘上已有数据盘 `c.img`。[本次验证的 rust16 版本和构建步骤](https://github.com/JamesLinYJ/rust16/tree/34ea49274a0b6ff729dcf96a07b6ff0b21f8ee62)
+
+```sh
+python3 scripts/realmode-image.py --toolchain ../rust16 --output "$RAM_DISK/dos.img"
+qemu-system-i386 -boot a -drive "if=floppy,format=raw,readonly=on,file=$RAM_DISK/dos.img" \
+  -drive "if=ide,format=raw,file=$RAM_DISK/c.img"
+```
+
+A 盘是 1.44 MiB FAT12 启动软盘。已有 FAT16 或 FAT32 镜像可以作为 C 盘。原生内核支持 512 字节扇区、裸卷和 MBR 主分区、8.3 文件名、子目录及跨簇读写。`C:`、`DIR`、`CD`、`TYPE` 和 `COPY` 直接操作该卷。DOS 文件句柄支持打开、读取、定位、创建、写入与关闭。原生版当前同时运行一个前台程序，单个 COM/MZ 文件受近段大小限制。可同时打开一个可写句柄，写入暂存区上限为 65,024 字节。`COPY` 在同一 C 盘内逐扇区复制，可跨过 64 KiB。
+
+```sh
+python3 scripts/realmode-test.py --toolchain ../rust16 --ram-dir "$RAM_DISK"
+```
+
+这项回归需要 DOSBox-X、QEMU、NASM、mtools 和 dosfstools。它用 286 与 386 CPU 模型启动同一张软盘，再通过两个 QEMU 系统模拟器输入命令。FAT32 根目录在第 66536 簇，测试文件从第 68001 簇开始。每次关机后用 mtools 读回文件，核对 100 KiB 文件的内容，并运行 `fsck.fat -n`。测试还覆盖 MBR 分区和每簇含两个扇区的 FAT16 卷。下文的 Windows 3.2、多核和多终端验收适用于 i686 和 x86_64 内核。
+
+## 在 QEMU 里启动 i686 和 x86_64 内核
 
 需要 Python 3、Rustup、NASM、mtools、QEMU，以及仓库指定的 Rust nightly。UEFI 启动还需要对应架构的 OVMF 固件。macOS 可用 Homebrew 安装 qemu、mtools、nasm 和 coreutils。
 
@@ -20,7 +40,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 
 | 命令 | 可以看到什么 |
 | --- | --- |
-| `COLOR 1E`、`VER` | 黄字蓝底的版本信息。本终端保留配色，`COLOR` 恢复默认。 |
+| `COLOR 1E`、`VER` | 黄字蓝底的系统名。本终端保留配色，`COLOR` 恢复默认。 |
 | `MEM` | 查看本终端空闲的 XMS、最大连续块和可映射的 EMS 页数。若当前目录有 FreeDOS MEM，则运行磁盘上的程序。 |
 | `HW` | 每颗在线 CPU 的 APIC ID、客体时间片计数和 PCI 设备。 |
 | `USB`、`USB READ 7` | 连接速度、设备 ID 和 USB 大容量存储第 7 个扇区的前 32 字节。 |
@@ -31,7 +51,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 
 **启动和并发**　传统 BIOS 从 MBR 启动，UEFI 从系统分区加载。二者进入同一套内核服务。启动 CPU 管理设备，其他 CPU 用独立栈并行执行不同会话的解释器时间片。单 CPU 自动回退到轮转。项目自有引导和内核源码使用 Rust。底层的 MBR 入口、实模式转换、AP 启动和中断门使用固定版本的外部架构代码。[外部组件说明](NOTICE)
 
-**16 位程序怎样执行**　两个内核使用 DOS-RS 自己的 Rust 指令解释器。每个会话有独立的寄存器、内存和设备状态。开启 `--pc386` 后，标准模式使用 Windows 的 DOSX。386 增强模式由 Windows 自己的 VMM 管理页表、保护模式任务和虚拟 8086 上下文，DOS-RS 按客体寄存器翻译地址、递交异常和中断。VGA 位平面绘图和 AT 键盘中断也由 DOS-RS 实现。宿主上的 QEMU 负责启动整台虚拟 PC。[执行器源码](src/guest/step.rs)
+**i686 和 x86_64 怎样执行 16 位程序**　这两个内核使用 DOS-RS 自己的 Rust 指令解释器。每个会话有独立的寄存器、内存和设备状态。开启 `--pc386` 后，标准模式使用 Windows 的 DOSX。386 增强模式由 Windows 自己的 VMM 管理页表、保护模式任务和虚拟 8086 上下文，DOS-RS 按客体寄存器翻译地址、递交异常和中断。VGA 位平面绘图和 AT 键盘中断也由 DOS-RS 实现。宿主上的 QEMU 负责启动整台虚拟 PC。[执行器源码](src/guest/step.rs)
 
 **DOS 程序和内存**　支持实模式 COM 和 MZ、嵌套 EXEC、MCB、每进程 JFT、共享文件偏移和驻留 DOS 驱动。每个终端有 640 KiB 常规内存，默认配 8 MiB 扩展内存。启动时可用 `--extended-mib 128` 为每个会话配置 128 MiB，直接构建可用 `DOS_RS_EXT_MIB` 指定 1～128 MiB。128 MiB 配置为高端内存区预留 64 KiB，XMS 和 EMS 共同分配余下的 131,008 KiB。XMS 支持句柄、搬移、锁定、调整大小、HMA 和 A20。DOS 与 XMS 共用 96 KiB 上位内存区（UMB），程序可通过 INT 21h 链接上位内存，CONFIG.SYS 可用 `DEVICEHIGH` 装载驱动。EMS 通过 INT 67h 提供 D000 段的四个 16 KiB 窗口、七组备用映射寄存器、跨页搬移、交换和映射调用。当前虚拟 EMS 设备没有 DMA 寄存器组。FreeDOS MEM 1.12 的 /XMS 与 /EMS 已在双架构、双固件运行。[FreeDOS MEM](https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/1.4/html/en/base/mem/20250410.0/index.html)
 

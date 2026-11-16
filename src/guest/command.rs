@@ -123,7 +123,7 @@ pub(super) fn execute(
             say(b"COLOR <background><foreground> (hex digits)\r\n");
         }
     } else if verb.eq_ignore_ascii_case(b"VER") {
-        say(b"DOS-RS (DOS 4.00)\r\n");
+        say(b"DOS\r\n");
     } else if verb.eq_ignore_ascii_case(b"ECHO") {
         let mut expanded = [0; 80];
         let length = expand(rest, &mut expanded, &session.environment);

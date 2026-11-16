@@ -100,9 +100,13 @@ def check(arch, mode, work):
                     saved = dbg.call(f"m{pc:x},2")
                     assert dbg.call(f"M{pc:x},2:cd21") == "OK"
                     assert dbg.call(f"Z1,{pc + 2:x},1") == "OK"
-                    for carry in (0, 1):
+                    dx = 3 if size == 8 else 2
+                    cases = [(0x3000, [(ax, 0x0A07), (bx, 0xFF00), (cx, 0)]),
+                             (0x3001, [(ax, 0x0A07), (bx, 0), (cx, 0)]),
+                             (0x3306, [(bx, 0x0A07), (dx, 0)])]
+                    for query, expected, carry in [(q, e, c) for q, e in cases for c in (0, 1)]:
                         regs = original.copy()
-                        for i, low in [(ax, 0x3000), (bx, 0x1234), (cx, 0x5678)]:
+                        for i, low in [(ax, query), (bx, 0x1234), (cx, 0x5678), (dx, 0xAAAA)]:
                             setreg(regs, i, (value(regs, i) & ~0xFFFF) | low)
                         setreg(regs, flags, (value(regs, flags, 4) & ~1) | carry, 4)
                         assert dbg.call("G" + regs.hex()) == "OK"
@@ -110,13 +114,13 @@ def check(arch, mode, work):
                         after = bytearray.fromhex(dbg.call("g"))
                         if value(after, ip) != pc + 2:
                             raise RuntimeError(f"INT 21h failed to return: {result}")
-                        for i, low in [(ax, 4), (bx, 0xFF00), (cx, 0)]:
+                        for i, low in expected:
                             assert (
                                 value(after, i) == (value(regs, i) & ~0xFFFF) | low
                             ), (arch, i, value(after, i))
                         assert value(after, flags, 4) & 1 == carry
                         print(
-                            f"{arch}/{mode} native INT 21h AX=0004 BX=FF00 CX=0000 CF={carry}",
+                            f"{arch}/{mode} INT 21h function={query:04X} passed CF={carry}",
                             flush=True,
                         )
                     assert dbg.call(f"z1,{pc + 2:x},1") == "OK"

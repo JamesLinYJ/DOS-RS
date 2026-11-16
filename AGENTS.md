@@ -1,6 +1,6 @@
 # Working on DOS-RS
 
-Start from the boundary that owns the state you need to change. Both architectures use the same guest, scheduler, filesystem and device services.
+Start from the boundary that owns the state you need to change. The i686 and x86_64 targets use the same guest, scheduler, filesystem and device services.
 
 | Owner | Code | Contract |
 | --- | --- | --- |
@@ -13,6 +13,12 @@ Start from the boundary that owns the state you need to change. Both architectur
 | Processes | [Loader](src/guest/process.rs), [DOS services](src/guest/run.rs), [handles](src/guest/run/handles.rs), [termination vectors](src/guest/run/termination.rs) | Return to the address in the guest PSP. Publish MCBs and each PSP's JFT. DUP and inheritance share the open description and seek position. Release the child's references on return. |
 | Storage | [Boot volume](src/guest/disk.rs), [FAT layout](src/guest/disk/volume.rs), [ATA volume](src/guest/disk/media.rs), [DOS drivers](src/guest/run/drivers.rs) | Open, EXEC and the guest BIOS see consistent media. Preserve the previous file on allocation failure. Keep sector devices separate from DOS path handling. |
 | Display | [Terminals](src/bios/pc.rs), [renderer](src/bios/screen.rs), [guest VGA](src/guest/vga.rs), [guest AT input](src/guest/at.rs), [guest BIOS](src/guest/run/bios.rs) | A terminal owns its cells, attribute, cursor and key queue. Render the foreground terminal. Preserve DOS-supplied character attributes. |
+
+## Native 16-bit target
+
+The `dos` package selects its native shell when the target pointer width is 16. The BIOS loader in `boot/realmode` probes the CPU and loads one of two kernels. The firmware ABI owns real-mode segment registers, BIOS calls and interrupt stack transitions. Keep filesystem geometry in 32-bit sector and cluster units. DOS process state, PSPs, MZ relocation and dispatch live under `src/realmode*`. Both execution models use the DOS version word in `src/version.rs`. The resident COMMAND.COM in the boot volume accepts the minimum DOS level it requires.
+
+Build the image with `scripts/realmode-image.py` and the pinned rust16 backend. Run `scripts/realmode-test.py --toolchain ../rust16 --ram-dir "$RAM_DISK"` to verify the CPU selection, FAT32 data after shutdown and the native INT 21h FILES.COM client. Give `--proof` a directory to retain the serial transcripts.
 
 ## Checking a change
 

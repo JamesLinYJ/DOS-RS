@@ -5,7 +5,9 @@
 //! FAT16 compare. `ALLOC.ASM` is the memory arena. Cluster allocate and
 //! release live in `DOS/ROM.ASM`.
 
-pub const FAT_LIMIT: u16 = 4096 - 10;
+#[path = "fat_cluster.rs"]
+mod cluster;
+pub use cluster::{FAT_LIMIT, is_eof, map_cluster};
 
 const IMAGE: &[u8] = include_bytes!("../../disks/msload.img");
 
@@ -30,34 +32,10 @@ pub fn boot_fat() -> &'static [u8] {
     &IMAGE[start..start + bps]
 }
 
-/// `JAE` after the 12-bit or 16-bit compare. `0x0FF0` is an end mark on FAT12.
-pub fn is_eof(max_cluster: u16, value: u16) -> bool {
-    if max_cluster >= FAT_LIMIT {
-        value >= 0xfff8
-    } else {
-        value == 0x0ff0 || value >= 0x0ff8
-    }
-}
-
-/// Byte offset of a cluster and whether its 12 bits sit in the high half.
-pub fn map_cluster(max_cluster: u16, cluster: u16) -> Option<(usize, bool)> {
-    if cluster > max_cluster {
-        return None;
-    }
-    let fat16 = max_cluster >= FAT_LIMIT;
-    let mut offset = u32::from(cluster);
-    if !fat16 {
-        offset >>= 1;
-    }
-    offset += u32::from(cluster);
-    let high = !fat16 && cluster & 1 != 0;
-    Some((offset as usize, high))
-}
-
 /// `UNPACK`. `None` is the bad-cluster path. Zero means a free cluster.
 pub fn unpack(fat: &[u8], max_cluster: u16, cluster: u16) -> Option<u16> {
     let (offset, high) = map_cluster(max_cluster, cluster)?;
-    if offset + 1 >= fat.len() {
+    if offset >= fat.len().saturating_sub(1) {
         return None;
     }
     let mut di = u16::from_le_bytes([fat[offset], fat[offset + 1]]);
@@ -74,7 +52,7 @@ pub fn pack(fat: &mut [u8], max_cluster: u16, cluster: u16, data: u16) -> bool {
     let Some((offset, high)) = map_cluster(max_cluster, cluster) else {
         return false;
     };
-    if offset + 1 >= fat.len() {
+    if offset >= fat.len().saturating_sub(1) {
         return false;
     }
     let mut si = u16::from_le_bytes([fat[offset], fat[offset + 1]]);

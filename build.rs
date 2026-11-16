@@ -1,4 +1,8 @@
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(rust16_cpu, values(\"286\", \"386\"))");
+    if std::env::var("CARGO_CFG_TARGET_POINTER_WIDTH").as_deref() == Ok("16") {
+        return;
+    }
     let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     println!("cargo:rustc-link-arg=/base:0x1000000");
     println!("cargo:rustc-link-arg=/export:dos_rs_bios_entry");

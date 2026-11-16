@@ -60,7 +60,7 @@ impl Task {
         session.scheduled = true;
         disk::restore(disk::Directories::ROOTS);
         let attr = pc::color(0x0b);
-        crate::puts("DOS-RS terminal ");
+        crate::puts("DOS terminal ");
         crate::bios::mscon::write_number((id + 1) as u8);
         pc::color(attr);
         crate::puts("   Alt+F1..F4 to switch\n");
