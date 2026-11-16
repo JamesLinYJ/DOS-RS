@@ -25,6 +25,8 @@ def check(work, proof, arch, firmware, cpus):
     def install(name, contents):
         subprocess.run(["mcopy", "-o", "-i", disk, "-", "::" + name], input=contents, check=True)
 
+    subprocess.run(["mmd", "-i", disk, "::other"], check=True)
+    install("other/seed.txt", b"other terminal")
     install("a.txt", PAYLOAD)
     install("seed.txt", b"same name, new file")
     install("count.txt", b"previous result must be truncated\n")
@@ -109,6 +111,13 @@ def check(work, proof, arch, firmware, cpus):
         command("unlink keys.txt")
         command("cat keys.txt", expect=b"cat: no such file or directory")
         command("cat a.txt | wc -c > count.txt")
+        enter("cat - seed.txt > resumed.txt")
+        key("alt-f2")
+        command("cd other", prompt=b"C:\\OTHER> ")
+        key("alt-f1")
+        start = log.stat().st_size
+        key("ctrl-d")
+        wait(b"C:\\> ", start)
     finally:
         if vm.poll() is None:
             monitor("quit")
@@ -119,6 +128,8 @@ def check(work, proof, arch, firmware, cpus):
         return subprocess.check_output(["mcopy", "-i", disk, "::" + name, "-"])
     if read("count.txt") != count + b"\n" or read("hold.txt") != b"same name, new file":
         raise ValueError(f"{arch}: incorrect redirected bytes")
+    if read("resumed.txt") != b"same name, new file":
+        raise ValueError(f"{arch}: resumed process lost its current directory")
     if read("zero.txt") != b"0\n":
         raise ValueError(f"{arch}: empty stream count is wrong")
     if read("copy.bin") != PAYLOAD or read("a.txt") != PAYLOAD:

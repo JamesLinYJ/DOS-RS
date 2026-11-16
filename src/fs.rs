@@ -323,13 +323,16 @@ pub fn finish_fcb(name: &[u8; 11], size: u32, time: u16, date: u16) -> bool {
 }
 
 pub fn remove_file(name: &[u8; 11]) -> bool {
-    remove(name, false)
+    remove_file_at(working_directory(), name)
+}
+pub fn remove_file_at(dir: u32, name: &[u8; 11]) -> bool {
+    remove(dir, name, false)
 }
 pub fn remove_dir(name: &[u8; 11]) -> bool {
-    remove(name, true)
+    remove(working_directory(), name, true)
 }
-fn remove(name: &[u8; 11], directory: bool) -> bool {
-    let disk = &mut disk(working_directory());
+fn remove(dir: u32, name: &[u8; 11], directory: bool) -> bool {
+    let disk = &mut disk(dir);
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -358,7 +361,7 @@ fn remove(name: &[u8; 11], directory: bool) -> bool {
         }
     }
     clear_long_name(disk, &map, &f);
-    if !open::detach(working_directory(), &f) {
+    if !open::detach(dir, &f) {
         map.release(&mut disk.bytes, f.cluster);
     }
     disk.bytes.edit(f.at..f.at + 1)[0] = 0xe5;
@@ -432,7 +435,10 @@ pub fn change_dir(path: &[u8]) -> bool {
     true
 }
 pub fn resolve_dir(path: &[u8]) -> Option<u32> {
-    let (mut dir, path) = path_start(path)?;
+    let (base, path) = path_start(path)?;
+    walk(base, path)
+}
+fn walk(mut dir: u32, path: &[u8]) -> Option<u32> {
     for part in path.split(|b| matches!(*b, b'/' | b'\\')) {
         if part.is_empty() || part == b"." {
             continue;
@@ -446,21 +452,34 @@ pub fn resolve_dir(path: &[u8]) -> Option<u32> {
     Some(dir)
 }
 pub fn path_start(path: &[u8]) -> Option<(u32, &[u8])> {
-    let mut dir = working_directory();
-    let mut tail = path;
-    if path.get(1) == Some(&b':') {
-        dir = drive_directory(path[0].to_ascii_uppercase().checked_sub(b'A')?)?;
-        tail = &path[2..];
-    }
-    if tail.first().is_some_and(|b| matches!(*b, b'/' | b'\\')) {
-        dir = root(dir);
-    }
-    Some((dir, tail))
+    directories().start(working_directory(), path)
 }
+
+impl Directories {
+    fn start(self, current: u32, path: &[u8]) -> Option<(u32, &[u8])> {
+        let (dir, tail) = if path.get(1) == Some(&b':') {
+            let drive = path[0].to_ascii_uppercase().checked_sub(b'A')?;
+            drive_root(drive)?;
+            (self.paths[usize::from(drive)], &path[2..])
+        } else {
+            (current, path)
+        };
+        let absolute = tail.first().is_some_and(|b| matches!(*b, b'/' | b'\\'));
+        Some((if absolute { root(dir) } else { dir }, tail))
+    }
+
+    pub fn locate(self, path: &[u8]) -> Option<(u32, &[u8])> {
+        self.start(self.paths[usize::from(self.active)], path)
+    }
+}
+
 pub fn path_name(path: &[u8]) -> Option<(u32, [u8; 11])> {
     let (base, tail) = path_start(path)?;
+    file_in(base, tail)
+}
+pub fn file_in(base: u32, tail: &[u8]) -> Option<(u32, [u8; 11])> {
     if let Some(i) = tail.iter().rposition(|b| matches!(*b, b'/' | b'\\')) {
-        let dir = in_dir(base, || resolve_dir(&tail[..i + 1]))?;
+        let dir = walk(base, &tail[..i])?;
         Some((dir, canonical(&tail[i + 1..])?))
     } else {
         Some((base, canonical(tail)?))
@@ -481,7 +500,10 @@ pub fn stamp_at(dir: u32, name: &[u8; 11]) -> Option<(u16, u16)> {
 }
 
 pub fn attribute(name: &[u8; 11]) -> Option<u8> {
-    let disk = &mut disk(working_directory());
+    attribute_at(working_directory(), name)
+}
+pub fn attribute_at(dir: u32, name: &[u8; 11]) -> Option<u8> {
+    let disk = &mut disk(dir);
     let map = layout(disk)?;
     Some(find(disk, &map, disk.cwd, name)?.attr)
 }

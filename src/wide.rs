@@ -18,7 +18,7 @@ pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
         }
         completed
     } else {
-        guest::run::interactive()
+        tasks::interactive()
     };
     debug_exit(success)
 }

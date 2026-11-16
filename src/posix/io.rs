@@ -1,8 +1,8 @@
 use super::{Waiters, pipe};
 use crate::{
     bios::pc,
-    fs::{self as disk, FileError, OpenFile},
     kernel_cell::KernelCell,
+    vfs::{self, Directories, File},
 };
 use alloc::{collections::VecDeque, sync::Arc, vec, vec::Vec};
 use core::{
@@ -10,49 +10,6 @@ use core::{
     task::{Context, Poll},
 };
 use dosrs_native_posix::{Access, Errno, Fd, Open, Process, Result};
-
-fn file_error(error: FileError) -> Errno {
-    match error {
-        FileError::Missing => Errno::NoEntry,
-        FileError::Directory => Errno::IsDirectory,
-        FileError::Access => Errno::Access,
-        FileError::Limit => Errno::TooManyFiles,
-        FileError::Space => Errno::NoSpace,
-        FileError::Io => Errno::Io,
-    }
-}
-
-// Reject names the DOS short-name parser would otherwise silently truncate.
-fn path_name(path: &str) -> Result<(u32, [u8; 11])> {
-    let tail = if path.as_bytes().get(1) == Some(&b':') {
-        &path[2..]
-    } else {
-        path
-    };
-    let mut parts = tail.split(['/', '\\']).peekable();
-    while let Some(part) = parts.next() {
-        if part.is_empty() || matches!(part, "." | "..") {
-            if parts.peek().is_none() {
-                return Err(Errno::Invalid);
-            }
-            continue;
-        }
-        let (base, ext) = part.split_once('.').unwrap_or((part, ""));
-        if base.len() > 8 || ext.len() > 3 {
-            return Err(Errno::NameTooLong);
-        }
-        if base.is_empty()
-            || part.ends_with('.')
-            || ext.contains('.')
-            || !part
-                .bytes()
-                .all(|b| b.is_ascii_graphic() && !b"\"*+,:;<=>?[\\]|".contains(&b))
-        {
-            return Err(Errno::Invalid);
-        }
-    }
-    disk::path_name(path.as_bytes()).ok_or(Errno::NoEntry)
-}
 
 pub(super) struct Terminal {
     line: VecDeque<u8>,
@@ -118,7 +75,7 @@ pub(super) enum Description {
     Output,
     Pipe(pipe::End),
     File {
-        object: OpenFile,
+        object: File,
         access: Access,
         offset: usize,
         dirty: bool,
@@ -130,9 +87,7 @@ impl Description {
         if let Self::File { object, dirty, .. } = self
             && *dirty
         {
-            if !object.sync() {
-                return Err(Errno::Io);
-            }
+            object.sync()?;
             *dirty = false;
         }
         Ok(())
@@ -147,7 +102,7 @@ impl Description {
                 offset,
                 ..
             } if access.readable() => {
-                let count = object.read(*offset, out).map_err(file_error)?;
+                let count = object.read(*offset, out)?;
                 *offset += count;
                 Poll::Ready(Ok(count))
             }
@@ -168,7 +123,7 @@ impl Description {
                 dirty,
             } if access.writable() => {
                 if !data.is_empty() {
-                    object.write(*offset, data).map_err(file_error)?;
+                    object.write(*offset, data)?;
                     *offset += data.len();
                     *dirty = true;
                 }
@@ -196,13 +151,17 @@ const OPEN_MAX: usize = 32;
 static NEXT_PID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
 pub(super) struct ProcessContext {
     pid: u32,
+    cwd: Directories,
+    io_budget: u8,
     fds: Vec<Option<Handle>>,
 }
 impl ProcessContext {
-    pub fn terminal(input: Arc<KernelCell<Terminal>>) -> Self {
+    pub fn terminal(input: Arc<KernelCell<Terminal>>, cwd: Directories) -> Self {
         let output = handle(Description::Output);
         Self {
             pid: 0,
+            cwd,
+            io_budget: IO_QUANTUM,
             fds: vec![
                 Some(handle(Description::Input(input))),
                 Some(output.clone()),
@@ -220,6 +179,8 @@ impl ProcessContext {
             .map_err(|_| Errno::TooManyFiles)?;
         Ok(Self {
             pid,
+            cwd: self.cwd,
+            io_budget: IO_QUANTUM,
             fds: self.fds.clone(),
         })
     }
@@ -269,7 +230,13 @@ impl ProcessContext {
 
 // Yield between successful transfers as well as on blocking I/O. A stream
 // that stays ready cannot monopolize the boot processor or another terminal.
-async fn timeslice() {
+const IO_QUANTUM: u8 = 8;
+async fn timeslice(budget: &mut u8) {
+    if *budget != 0 {
+        *budget -= 1;
+        return;
+    }
+    *budget = IO_QUANTUM - 1;
     let mut first = true;
     poll_fn(|cx| {
         if core::mem::take(&mut first) {
@@ -288,61 +255,20 @@ impl Process for ProcessContext {
     }
     fn open(&mut self, path: &str, flags: Open) -> Result<Fd> {
         let fd = self.available()?;
-        let (dir, name) = path_name(path)?;
-        if flags.truncate && !flags.access.writable() {
-            return Err(Errno::Invalid);
-        }
-        if flags.create && flags.exclusive && disk::exists_at(dir, &name) {
-            return Err(Errno::Exists);
-        }
-        let mut created = false;
-        let object = match OpenFile::open(dir, &name, flags.access.writable()) {
-            Ok(object) => object,
-            Err(FileError::Missing) if flags.create => {
-                if !disk::write_named_at(dir, &name, &[], 0x20) {
-                    return Err(Errno::NoSpace);
-                }
-                match OpenFile::open(dir, &name, flags.access.writable()) {
-                    Ok(object) => {
-                        created = true;
-                        object
-                    }
-                    Err(err) => {
-                        disk::in_dir(dir, || disk::remove_file(&name));
-                        return Err(file_error(err));
-                    }
-                }
-            }
-            Err(e) => return Err(file_error(e)),
-        };
-        if flags.truncate && !created {
-            object.write(0, &[]).map_err(file_error)?;
-        }
+        let (object, dirty) = vfs::open(self.cwd, path, flags)?;
         self.set(
             fd,
             handle(Description::File {
                 object,
                 offset: 0,
                 access: flags.access,
-                dirty: created || flags.truncate,
+                dirty,
             }),
         );
         Ok(fd)
     }
     fn unlink(&mut self, path: &str) -> Result<()> {
-        let (dir, name) = path_name(path)?;
-        let attr = disk::in_dir(dir, || disk::attribute(&name)).ok_or(Errno::NoEntry)?;
-        if attr & 0x10 != 0 {
-            return Err(Errno::IsDirectory);
-        }
-        if attr & 1 != 0 {
-            return Err(Errno::Access);
-        }
-        if disk::in_dir(dir, || disk::remove_file(&name)) && disk::flush(dir) {
-            Ok(())
-        } else {
-            Err(Errno::Io)
-        }
+        vfs::unlink(self.cwd, path)
     }
     fn close(&mut self, fd: Fd) -> Result<()> {
         let h = self
@@ -387,13 +313,13 @@ impl Process for ProcessContext {
         }
     }
     async fn read(&mut self, fd: Fd, out: &mut [u8]) -> Result<usize> {
+        timeslice(&mut self.io_budget).await;
         let h = self.get(fd)?;
-        timeslice().await;
         poll_fn(|cx| h.borrow().read(cx, out)).await
     }
     async fn write(&mut self, fd: Fd, bytes: &[u8]) -> Result<usize> {
+        timeslice(&mut self.io_budget).await;
         let h = self.get(fd)?;
-        timeslice().await;
         poll_fn(|cx| h.borrow().write(cx, bytes)).await
     }
 }

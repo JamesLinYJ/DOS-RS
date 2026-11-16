@@ -36,6 +36,10 @@ mod platform;
 #[cfg(not(target_pointer_width = "16"))]
 mod posix;
 #[cfg(not(target_pointer_width = "16"))]
+mod tasks;
+#[cfg(not(target_pointer_width = "16"))]
+mod vfs;
+#[cfg(not(target_pointer_width = "16"))]
 mod smoke;
 
 #[cfg(not(target_pointer_width = "16"))]

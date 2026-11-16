@@ -52,9 +52,11 @@ impl End {
             return pipe.reads.wait(cx);
         }
         let count = out.len().min(pipe.data.len());
-        for (dst, byte) in out.iter_mut().zip(pipe.data.drain(..count)) {
-            *dst = byte;
-        }
+        let (head, tail) = pipe.data.as_slices();
+        let split = count.min(head.len());
+        out[..split].copy_from_slice(&head[..split]);
+        out[split..count].copy_from_slice(&tail[..count - split]);
+        pipe.data.drain(..count);
         pipe.writes.wake();
         Poll::Ready(Ok(count))
     }

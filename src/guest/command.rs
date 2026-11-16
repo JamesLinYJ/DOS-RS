@@ -93,22 +93,25 @@ pub(super) fn execute(
     if line.is_empty() || depth > 4 {
         return;
     }
-    if let Some(job) = crate::posix::Job::launch(line) {
-        match job {
-            Ok(job) if session.scheduled => session.native = Some(job),
-            Ok(mut job) => loop {
-                if let Some(code) = job.tick() {
-                    session.last_code = u16::from(code);
-                    break;
-                }
-            },
-            Err(message) => {
-                crate::puts(message);
-                crate::puts("\n");
-                session.last_code = 2;
-            }
+    use crate::tasks::{self, Command};
+    match tasks::launch(
+        session.terminal,
+        session.scheduled,
+        line,
+        disk::directories(),
+    ) {
+        Command::Unknown => {}
+        Command::Started => return,
+        Command::Exited(code) => {
+            session.last_code = u16::from(code);
+            return;
         }
-        return;
+        Command::Failed(message) => {
+            crate::puts(message);
+            crate::puts("\n");
+            session.last_code = 2;
+            return;
+        }
     }
     let (verb, rest) = split(line);
     if verb.len() == 2 && verb[1] == b':' && rest.is_empty() {

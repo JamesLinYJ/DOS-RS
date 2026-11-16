@@ -89,13 +89,6 @@ impl Task {
     }
 
     fn tick(&mut self, ram: &mut GuestRam, completed: Option<(Outcome, u32)>) {
-        if let Some(job) = &mut self.session.native {
-            if let Some(code) = job.tick() {
-                self.session.last_code = u16::from(code);
-                self.session.native = None;
-            }
-            return;
-        }
         if self.waiting && pc::key(false).is_none() {
             return;
         }
@@ -256,91 +249,102 @@ pub(crate) fn worker_tick(worker: usize) -> bool {
     worked
 }
 
-pub fn interactive() -> ! {
-    disk::boot();
-    pc::enable_terminals();
+pub(crate) struct Terminals {
     #[cfg(feature = "pc386")]
-    let mut painted: Option<usize> = None;
+    painted: Option<usize>,
     #[cfg(feature = "pc386")]
-    let mut graphical = [false; pc::TERMINALS];
+    graphical: [bool; pc::TERMINALS],
     #[cfg(feature = "pc386")]
-    let mut scans: [alloc::collections::VecDeque<u8>; pc::TERMINALS] =
-        core::array::from_fn(|_| alloc::collections::VecDeque::new());
-    loop {
-        let foreground = pc::poll_keyboard(|_id, _code| {
+    scans: [alloc::collections::VecDeque<u8>; pc::TERMINALS],
+}
+impl Terminals {
+    pub fn new() -> Self {
+        Self {
             #[cfg(feature = "pc386")]
-            if graphical[_id] {
-                if scans[_id].len() < 128 {
-                    scans[_id].push_back(_code);
+            painted: None,
+            #[cfg(feature = "pc386")]
+            graphical: [false; pc::TERMINALS],
+            #[cfg(feature = "pc386")]
+            scans: core::array::from_fn(|_| alloc::collections::VecDeque::new()),
+        }
+    }
+    pub fn input(&mut self, _id: usize, _code: u8) -> bool {
+        #[cfg(feature = "pc386")]
+        if self.graphical[_id] {
+            if self.scans[_id].len() < 128 {
+                self.scans[_id].push_back(_code);
+            }
+            return true;
+        }
+        false
+    }
+    pub fn child_exit(&self, id: usize, code: u8) {
+        if let Some(task) = TASKS[id].borrow().as_mut() {
+            task.session.last_code = u16::from(code);
+        }
+    }
+    pub fn poll(&mut self, id: usize, foreground: usize) {
+        let state = STATE[id].load(Acquire);
+        if state == RUNNING {
+            return;
+        }
+        let mut task = TASKS[id].borrow();
+        if task.is_none() && id != foreground {
+            return;
+        }
+        pc::route_output(id);
+        let mut ram = memory::session_ram(id);
+        let task = task.get_or_insert_with(|| Task::boot(id, &mut ram));
+        disk::restore(task.cwd);
+        let completed = if state == DONE {
+            let slice = SLICES[id].borrow().take().unwrap();
+            task.cpu = Some(slice.cpu);
+            STATE[id].store(IDLE, Release);
+            Some((slice.event, slice.instruction))
+        } else {
+            None
+        };
+        #[cfg(feature = "pc386")]
+        {
+            // Only touch the controller after the worker has returned the session.
+            self.graphical[id] = ram.graphics.as_ref().is_some_and(|g| g.active);
+            if self.graphical[id]
+                && let Some(at) = &mut ram.at
+            {
+                for code in self.scans[id].drain(..) {
+                    at.key(code);
                 }
-                return true;
-            }
-            false
-        });
-        for (id, slot) in TASKS.iter().enumerate() {
-            let state = STATE[id].load(Acquire);
-            if state == RUNNING {
-                continue;
-            }
-            let mut task = slot.borrow();
-            if task.is_none() && id != foreground {
-                continue;
-            }
-            pc::route_output(id);
-            let mut ram = memory::session_ram(id);
-            let task = task.get_or_insert_with(|| Task::boot(id, &mut ram));
-            disk::restore(task.cwd);
-            let completed = if state == DONE {
-                let slice = SLICES[id].borrow().take().unwrap();
-                task.cpu = Some(slice.cpu);
-                STATE[id].store(IDLE, Release);
-                Some((slice.event, slice.instruction))
             } else {
-                None
-            };
-            #[cfg(feature = "pc386")]
-            {
-                // Only touch the controller after the worker has returned the session.
-                graphical[id] = ram.graphics.as_ref().is_some_and(|g| g.active);
-                if graphical[id]
-                    && let Some(at) = &mut ram.at
-                {
-                    for code in scans[id].drain(..) {
-                        at.key(code);
-                    }
-                } else {
-                    scans[id].clear();
-                }
-            }
-            #[cfg(feature = "pc386")]
-            if id == foreground {
-                if let Some(g) = &mut ram.graphics
-                    && g.active
-                {
-                    g.render(painted != Some(id));
-                    painted = Some(id);
-                } else if painted.take().is_some() {
-                    pc::restore_text();
-                }
-            }
-            ram.updated_text(pc::guest_text_row);
-            task.tick(&mut ram, completed);
-            task.cwd = disk::directories();
-            if crate::platform::worker(id) != 0
-                && task.session.native.is_none()
-                && !task.waiting
-                && !task.session.batches.ready(task.session.child_depth)
-                && let Some(cpu) = task.cpu.take()
-            {
-                *SLICES[id].borrow() = Some(Slice {
-                    cpu,
-                    event: Outcome::Continue,
-                    instruction: 0,
-                });
-                drop(ram);
-                STATE[id].store(RUNNING, Release);
+                self.scans[id].clear();
             }
         }
-        core::hint::spin_loop();
+        #[cfg(feature = "pc386")]
+        if id == foreground {
+            if let Some(g) = &mut ram.graphics
+                && g.active
+            {
+                g.render(self.painted != Some(id));
+                self.painted = Some(id);
+            } else if self.painted.take().is_some() {
+                pc::restore_text();
+            }
+        }
+        ram.updated_text(pc::guest_text_row);
+        task.tick(&mut ram, completed);
+        task.cwd = disk::directories();
+        if crate::platform::worker(id) != 0
+            && !crate::tasks::active(id)
+            && !task.waiting
+            && !task.session.batches.ready(task.session.child_depth)
+            && let Some(cpu) = task.cpu.take()
+        {
+            *SLICES[id].borrow() = Some(Slice {
+                cpu,
+                event: Outcome::Continue,
+                instruction: 0,
+            });
+            drop(ram);
+            STATE[id].store(RUNNING, Release);
+        }
     }
 }

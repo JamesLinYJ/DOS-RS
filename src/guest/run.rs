@@ -26,7 +26,7 @@ mod bios;
 use bios::serve_bios;
 mod smoke;
 pub(crate) use runtime::worker_tick;
-pub use runtime::{interactive, run_shell};
+pub(crate) use runtime::{Terminals, run_shell};
 pub use smoke::show;
 
 const LAUNCH_SEGMENT: u16 = 0x1600;
@@ -82,10 +82,7 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
         if let Some(end) = handle_event(event, instruction, cpu, ram, session) {
             return end;
         }
-        if session.native.is_some()
-            || session.pending.is_some()
-            || session.batches.ready(session.child_depth)
-        {
+        if session.pending.is_some() || session.batches.ready(session.child_depth) {
             return End::Switch;
         }
     }
@@ -209,7 +206,12 @@ fn dispatch_event(
             }
         }
         Outcome::Port { port, write, word } => serve_port(cpu, ram, port, write, word),
-        Outcome::Interrupt(0x2E) => super::command::invoke(cpu, ram, session),
+        Outcome::Interrupt(0x2E) => {
+            super::command::invoke(cpu, ram, session);
+            if session.scheduled && crate::tasks::active(session.terminal) {
+                return Some(End::Switch);
+            }
+        }
         Outcome::Interrupt(0x21) if matches!(cpu.high(Slot::Accumulator), 1 | 7 | 8) => {
             if let Some(key) = crate::bios::pc::key(true) {
                 cpu.set_low(Slot::Accumulator, key as u8);
@@ -300,9 +302,8 @@ static TRANSFER: KernelCell<[u8; u16::MAX as usize]> = KernelCell::new([0; u16::
 
 pub(super) struct Session {
     drivers: drivers::Drivers,
-    terminal: usize,
+    pub(super) terminal: usize,
     pub(super) scheduled: bool,
-    pub(super) native: Option<crate::posix::Job>,
     pending: Option<CpuState>,
     parents: [Option<Parent>; 8],
     pub(super) batches: super::command::Batches,
@@ -352,7 +353,6 @@ impl Session {
             drivers: drivers::Drivers::new(),
             terminal: 0,
             scheduled: false,
-            native: None,
             pending: None,
             parents: [const { None }; 8],
             batches: super::command::Batches::new(),
