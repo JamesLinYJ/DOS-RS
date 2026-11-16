@@ -79,6 +79,9 @@ fn glyph(code: u32) -> u32 {
                 + (((a - 129) as u32 * 190 + (b - 64 - if b > 127 { 1 } else { 0 }) as u32) << 5);
         }
     } else {
+        if let Some(bitmap) = font::four_byte(code) {
+            return bitmap;
+        }
         let mut lo = 0;
         let mut hi = rd(4);
         let index = rd(8);
@@ -164,12 +167,11 @@ fn paint(mode: u16, at: u16, bits: u16, fg: u16, bg: u16) {
         store(0xa000, at, 255);
     }
 }
-fn draw(code: u32, width: u16) {
+fn draw(start: u32, width: u16) {
     let mode = field(6);
     let scale = if field(24) == 2 { 2 } else { 1 };
     let x = field(8);
     let y = field(10) * 16;
-    let start = glyph(code);
     let fg = field(14);
     let bg = field(16);
     let mut row = 0;
@@ -319,8 +321,8 @@ fn newline() {
     set(10, y);
 }
 fn emit(code: u32, mut width: u16) {
+    let start = glyph(code);
     if code > 127 && code != u32::MAX {
-        let start = glyph(code);
         if start != 0 {
             let mut i = 0;
             while i < 16 && rb(start + i * 2 + 1) == 0 {
@@ -336,7 +338,7 @@ fn emit(code: u32, mut width: u16) {
         set(8, 0);
         newline()
     }
-    draw(code, width);
+    draw(start, width);
     let x = field(8) + advance;
     if x == 80 {
         set(8, 0);

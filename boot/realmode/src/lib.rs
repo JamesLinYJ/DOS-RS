@@ -265,6 +265,7 @@ fn copy(res: u16, mut cluster: u16, size: u16, mut dest: u16) -> Option<u16> {
     let first = res + 32;
     let limit = 2880 - first + 1;
     let mut remaining = size;
+    let mut cached_fat = 0xffff;
     loop {
         if cluster < 2 || cluster > limit || !read(first + cluster - 2, dest) {
             return None;
@@ -272,12 +273,18 @@ fn copy(res: u16, mut cluster: u16, size: u16, mut dest: u16) -> Option<u16> {
         let (offset, high) = cluster::map_cluster(limit, cluster)?;
         let fat = res + (offset / 512) as u16;
         let idx = (offset % 512) as u16;
-        if !read(fat, BUFFER) {
-            return None;
+        if fat != cached_fat {
+            if !read(fat, BUFFER) {
+                return None;
+            }
+            cached_fat = fat;
         }
         let low = byte(BUFFER, idx);
-        if idx == 511 && !read(fat + 1, BUFFER) {
-            return None;
+        if idx == 511 {
+            if !read(fat + 1, BUFFER) {
+                return None;
+            }
+            cached_fat = fat + 1;
         }
         let raw = low | byte(BUFFER, (idx + 1) % 512) << 8;
         cluster = if high { raw >> 4 } else { raw & 0xfff };

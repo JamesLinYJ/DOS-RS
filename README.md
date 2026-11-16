@@ -40,6 +40,12 @@ qemu-system-i386 -m 16 -boot c -drive "if=ide,format=raw,file=$RAM_DISK/new-c.im
 - `SMARTDRV /STATUS` 显示写穿缓存状态，`SMARTDRV /BENCH` 比较相同访问序列的 BIOS 读取次数。独立的 B 软驱和 IDE ATAPI 光驱可从 Shell 读取。光驱支持 ISO 9660 目录与文件。[光驱驱动](boot/realmode/src/optical.rs)
 - 原生 16 位内核支持 FAT16、FAT32 数据盘、8.3 路径、跨簇读写和多段 MZ 加载。文件句柄的读取位置为 32 位，当前同时支持一个可写句柄，上限 65,024 字节。`COPY` 通过独立的扇区复制路径可复制更大的文件。
 
+DOSBox-X 的 80286 机型（30,000 cycles/ms）从启动软盘进入提示符约需 8 秒。若启动批处理先用 `TYPE WELCOME.TXT` 显示多语言文本，两次冷启动实测为 10.8 和 10.9 秒。可用下列命令测量本机耗时；串口记录和计时结果写入 `--proof` 目录。
+
+```sh
+python3 scripts/realmode-boot-time.py --image "$RAM_DISK/install.img" --ram-dir "$RAM_DISK" --proof target/boot-time --cpu 286 --window --welcome
+```
+
 ### DOS 上的 Microsoft Edit 移植
 
 从安装后的 `C:\>` 输入 `EDIT` 新建文档，或输入 `EDIT NOTE.TXT` 打开文件。Edit 默认使用安装向导所选的语言。按 **F4** 可以在德语、英语、西班牙语、法语、日语、韩语、简体中文和繁体中文间切换，当前文档和撤销记录继续保留。修改系统盘 `CONFIG.SYS` 的 `LANG=` 可设置下次开机的默认语言，例如 `LANG=ja` 或 `LANG=zh-Hant`。单色文本适配器使用英文。

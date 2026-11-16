@@ -11,6 +11,19 @@ import struct
 import subprocess
 
 
+
+def four_byte_runs(keys):
+    """Index consecutive GB18030 code points without reading compressed key pages."""
+    runs = []
+    for code in keys:
+        a, b, c, d = code.to_bytes(4, "big")
+        ordinal = (((a - 0x81) * 10 + b - 0x30) * 126 + c - 0x81) * 10 + d - 0x30
+        if runs and runs[-1][0] + runs[-1][1] == ordinal:
+            runs[-1][1] += 1
+        else:
+            runs.append([ordinal, 1])
+    return runs
+
 def build(primary, upper, output, full, uconv):
     glyphs = {}
     for source in (primary, upper):
@@ -92,7 +105,11 @@ def build(primary, upper, output, full, uconv):
         if n <= 0:
             raise ValueError("LZ4 block")
         chunks.append(buf.raw[:n])
-    pos = 12 + 4 * (len(chunks) + 1)
+    # Old GBC1 readers follow offsets directly to block zero and skip this index.
+    runs = four_byte_runs(keys)
+    index = struct.pack("<4sII", b"GBR1", directory + 4 * len(keys), len(runs))
+    index += b"".join(struct.pack("<II", first, length) for first, length in runs)
+    pos = 12 + 4 * (len(chunks) + 1) + len(index)
     offsets = [pos]
     for chunk in chunks:
         pos += len(chunk)
@@ -100,6 +117,7 @@ def build(primary, upper, output, full, uconv):
     output.write_bytes(
         struct.pack("<4sII", b"GBC1", len(raw), len(chunks))
         + struct.pack("<" + "I" * len(offsets), *offsets)
+        + index
         + b"".join(chunks)
     )
     print(output, output.stat().st_size, "bytes,", len(keys), "four-byte glyphs")
