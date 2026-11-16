@@ -349,6 +349,14 @@ fn emit(code: u32, mut width: u16) {
 }
 pub fn output(c: u16) {
     unsafe { serial_char(c) }
+    // A DOS application can change the adapter directly through INT 10h.
+    // Keep its active BIOS page and CP437 characters visible in text mode.
+    let mode = byte(0x40, 0x49) & 0x7f;
+    if field(6) != 7 && mode != field(6) {
+        let page = byte(0x40, 0x62);
+        video(0x0e00 | c, (page << 8) | 7, 0, 0);
+        return;
+    }
     if field(6) == 7 && field(26) == 1 && c >= 32 {
         let x = field(8);
         let y = field(10);

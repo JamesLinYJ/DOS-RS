@@ -1,7 +1,9 @@
 #![no_std]
 #![no_main]
 mod console;
+mod devices;
 mod font;
+mod kernel_image;
 mod startup;
 use dosrs_realmode::{
     self as bios,
@@ -76,7 +78,24 @@ fn boot() -> Option<()> {
     }
     let entry = if cpu == 286 { 4 } else { 10 };
     let n = w(seg, entry + 4);
-    if n == 0 || n > 0xfff0 || !media.fetch(&file, dw(seg, entry), n, bios::KERNEL, 0) {
+    let offset = dw(seg, entry);
+    if n == 0 || n > 0xfff0 {
+        return None;
+    }
+    if offset & 0x80000000 != 0 {
+        let pos = offset & 0x7fffffff;
+        if pos > file.size {
+            return None;
+        }
+        let length = file.size - pos;
+        if length == 0
+            || length > 0xfff0
+            || !media.fetch(&file, pos, length as u16, kernel_image::STAGE, 0)
+        {
+            return None;
+        }
+        kernel_image::unpack(length as u16, n)?;
+    } else if !media.fetch(&file, offset, n, bios::KERNEL, 0) {
         return None;
     }
     bios::start_kernel()

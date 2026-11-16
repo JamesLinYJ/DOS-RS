@@ -34,6 +34,44 @@ def relocated(path, segment):
     return image
 
 
+def lz4_block(data):
+    """Encode an independent LZ4 block with a 64 KiB match window."""
+    out, seen = bytearray(), {}
+
+    def extra(length):
+        if length >= 15:
+            length -= 15
+            while length >= 255:
+                out.append(255)
+                length -= 255
+            out.append(length)
+
+    def literals(start, end, match=0):
+        n = end - start
+        out.append((min(n, 15) << 4) | min(match, 15))
+        extra(n)
+        out.extend(data[start:end])
+
+    start = pos = 0
+    while pos + 12 <= len(data):
+        key = bytes(data[pos : pos + 4])
+        previous = seen.get(key)
+        seen[key] = pos
+        if previous is None or pos - previous > 65535:
+            pos += 1
+            continue
+        length = 4
+        while pos + length < len(data) - 5 and data[previous + length] == data[pos + length]:
+            length += 1
+        literals(start, pos, length - 4)
+        out.extend(struct.pack("<H", pos - previous))
+        extra(length - 4)
+        pos += length
+        start = pos
+    literals(start, len(data))
+    return bytes(out)
+
+
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--toolchain", required=True, type=Path)
@@ -69,6 +107,8 @@ def main():
     def run(*cmd, **kwargs):
         subprocess.run(cmd, check=True, **kwargs)
 
+    run("python3", ROOT / "scripts/realmode-emm.py", "--toolchain", tools)
+    ems = target / "emm"
     bios = tools / "target/release/bios16"
 
     def compile(cpu, manifest, name, paragraph):
@@ -85,15 +125,16 @@ def main():
             env=dict(
                 os.environ,
                 RUST16_CPU=cpu,
+                RUST16_OBJECTS=str(ems / "device.obj") if cpu == "8086" else "",
                 RUST16_PLATFORM="bios-loader" if cpu == "8086" else "bios-kernel",
             ),
         )
         return relocated(build / "dos16/release" / name, paragraph)
 
     loader = compile(
-        "8086", ROOT / "boot/realmode/Cargo.toml", "dosrs-realmode.exe", 0x0300
+        "8086", ROOT / "boot/realmode/Cargo.toml", "dosrs-realmode.exe", 0x0100
     )
-    if len(loader) > 0xD000:
+    if len(loader) > 0xF000:
         raise ValueError("IO.SYS would overlap the kernel")
     kernels = [
         compile(cpu, ROOT / "Cargo.toml", "dos.exe", 0x1000) for cpu in ("286", "386")
@@ -101,10 +142,10 @@ def main():
     first = 512
     second = (first + len(kernels[0]) + 511) & ~511
     header = struct.pack(
-        "<4sIHIH", b"DOSK", first, len(kernels[0]), second, len(kernels[1])
+        "<4sIHIH", b"DOSK", first, len(kernels[0]), second | 0x80000000, len(kernels[1])
     )
     system = header.ljust(first, b"\0") + kernels[0]
-    system = system.ljust(second, b"\0") + kernels[1]
+    system = system.ljust(second, b"\0") + lz4_block(kernels[1])
     util = target / "util"
     util.mkdir(exist_ok=True)
     obj = util / "io.obj"
@@ -139,7 +180,7 @@ def main():
         if (d / "COMMAND.COM").stat().st_size > 0x7000:
             raise ValueError("COMMAND.COM exceeds its 28 KiB resident image cache")
         run(bios, "--mbr", d / "mbr")
-        run(bios, "--vbr", d / "vbr")
+        run(bios, "--vbr-at", "100", d / "vbr")
         (d / "BOOT.BIN").write_bytes(
             (d / "mbr").read_bytes() + (d / "vbr").read_bytes()
         )
@@ -172,6 +213,8 @@ def main():
         (d / "NOTICE.TXT").write_bytes(
             (ROOT / "NOTICE").read_text().replace("\n", "\r\n").encode()
         )
+        shutil.copyfile(ems / "EMM386.SYS", d / "EMM386.SYS")
+        (d / "CONFIG.SYS").write_bytes(b"DEVICE=EMM386.SYS\r\n")
         files = [
             d / n
             for n in [
@@ -190,6 +233,7 @@ def main():
                 "LICENSE.TXT",
                 "NOTICE.TXT",
                 "EDIT.EXE",
+                "EMM386.SYS",
             ]
         ]
         # File identities, lengths and Fletcher-32 over little-endian words.
@@ -210,6 +254,8 @@ def main():
             )
         (d / "CHECKSUM.DAT").write_bytes(manifest)
         files.append(d / "CHECKSUM.DAT")
+        if not any(f.name.upper() == "CONFIG.SYS" for f in args.file):
+            files.append(d / "CONFIG.SYS")
 
         def floppy(disk, payload, volume, bootable):
             with disk.open("xb") as stream:

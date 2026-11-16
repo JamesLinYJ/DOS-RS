@@ -32,13 +32,24 @@ pub fn apply(media: &Media) {
     if f.size > 2048 || !media.fetch(&f, 0, f.size as u16, BUFFER, 0) {
         return;
     }
+    let mut drivers = crate::devices::Devices::new();
     let mut p = 0;
     while p < f.size as u16 {
         let start = p;
         while p < f.size as u16 && byte(BUFFER, p) != 13 && byte(BUFFER, p) != 10 {
             p += 1
         }
-        if p - start > 5 && matches(start, start + 5, b"LANG=") {
+        if p - start >= 7 && matches(start, start + 7, b"DEVICE=") {
+            if !drivers.load(media, start + 7, p) {
+                pc::print("Device not loaded: ");
+                let mut i = start + 7;
+                while i < p {
+                    pc::put(byte(BUFFER, i));
+                    i += 1;
+                }
+                pc::print("\r\n");
+            }
+        } else if p - start > 5 && matches(start, start + 5, b"LANG=") {
             let mut id = 0;
             while id < 8 {
                 if matches(start + 5, p, pc::language::tag(id).as_bytes()) {

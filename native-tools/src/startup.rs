@@ -40,7 +40,7 @@ impl Settings {
             write(seg, &mut n, if self.cache { "ON" } else { "OFF" });
             write(seg, &mut n, "\r\nCDROM=");
             write(seg, &mut n, if self.cd { "ON" } else { "OFF" });
-            write(seg, &mut n, "\r\n");
+            write(seg, &mut n, "\r\nDEVICE=EMM386.SYS\r\n");
         } else if self.batch == 2 {
             let Some(f) = media.lookup(b"AUTOEXECBAT") else {
                 return 0;

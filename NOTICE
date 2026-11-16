@@ -168,6 +168,9 @@ MIT-licensed xv6 x86 CPU routines. The 32-bit routines are from MIT's
 xv6-public at eeb7b415dbcb12cc362d0783e41c3d1f44066b17. The 64-bit
 routines are from mars-research/xv6-64 at 1d89f61468ffe0ee975287712a2fb34fac4ba253.
 The build preparation script verifies both source and license digests.
+The native EMM386 monitor also uses the pinned xv6-public trap entry and
+context-switch routines listed above.
+
 The xv6 software is:
 
 Copyright (c) 2006-2018 Frans Kaashoek, Robert Morris, Russ Cox,

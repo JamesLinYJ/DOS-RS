@@ -82,7 +82,8 @@ impl Layout {
         if self.wide { self.data } else { self.root }
     }
 }
-const SYSTEM_COUNT: u16 = 16;
+const SYSTEM_COUNT: u16 = 17;
+const MANIFEST_SIZE: u16 = 4 + 19 * (SYSTEM_COUNT - 1);
 const FILE_COUNT: u16 = SYSTEM_COUNT + 2;
 const EXTENTS: u16 = 1024;
 pub(crate) fn name(i: u16) -> &'static [u8] {
@@ -102,9 +103,10 @@ pub(crate) fn name(i: u16) -> &'static [u8] {
         12 => b"LICENSE TXT",
         13 => b"NOTICE  TXT",
         14 => b"EDIT    EXE",
-        15 => b"CHECKSUMDAT",
-        16 => b"CONFIG  SYS",
-        17 => b"AUTOEXECBAT",
+        15 => b"EMM386  SYS",
+        16 => b"CHECKSUMDAT",
+        17 => b"CONFIG  SYS",
+        18 => b"AUTOEXECBAT",
         _ => b"",
     }
 }
@@ -477,8 +479,8 @@ pub fn preflight(src: &Package) -> u32 {
     let Some(manifest) = src.lookup(SYSTEM_COUNT - 1) else {
         return 0;
     };
-    if manifest.size != 289
-        || !src.fetch(SYSTEM_COUNT - 1, &manifest, 0, 289, DIR)
+    if manifest.size != MANIFEST_SIZE as u32
+        || !src.fetch(SYSTEM_COUNT - 1, &manifest, 0, MANIFEST_SIZE, DIR)
         || dw(DIR, 0) != 0x31565344
     {
         return 0;
@@ -487,7 +489,7 @@ pub fn preflight(src: &Package) -> u32 {
     let mut i = 0;
     while i < SYSTEM_COUNT - 1 {
         let mut row = 4;
-        while row < 289 {
+        while row < MANIFEST_SIZE {
             let mut j = 0;
             while j < 11 && byte(DIR, row + j) == name(i)[j as usize] as u16 {
                 j += 1;
@@ -497,7 +499,7 @@ pub fn preflight(src: &Package) -> u32 {
             }
             row += 19;
         }
-        if row >= 289 {
+        if row >= MANIFEST_SIZE {
             return 0;
         }
         let Some(f) = src.lookup(i) else {

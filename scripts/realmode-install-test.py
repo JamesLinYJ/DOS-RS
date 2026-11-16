@@ -313,7 +313,7 @@ def main():
         copy("::CONFIG.SYS", config)
         assert (
             config.read_bytes()
-            == b"LANG=zh-Hans\r\nDISPLAY=AUTO\r\nSMARTDRV=OFF\r\nCDROM=OFF\r\n"
+            == b"LANG=zh-Hans\r\nDISPLAY=AUTO\r\nSMARTDRV=OFF\r\nCDROM=OFF\r\nDEVICE=EMM386.SYS\r\n"
         )
         auto = d / "installed-autoexec"
         copy("::AUTOEXEC.BAT", auto)

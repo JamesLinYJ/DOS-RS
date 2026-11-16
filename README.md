@@ -6,9 +6,9 @@ DOS 是用 Rust 实现的操作系统。80286 和 80386 可以从同一张 BIOS 
 
 ## 在 286 或 386 上原生启动
 
-从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/fc6597c6ac4a401e29853b3fc0df1cede45aa1f7)
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/5550c631a5069e5ead029b31b619fcc9a7ec1da7)
 
-在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools 和已经构建的 rust16。
+在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
 
 ```sh
 RAM_DISK=/Volumes/DOS-INSTALL-QA
@@ -44,6 +44,20 @@ DOSBox-X 的 80286 机型（30,000 cycles/ms）从启动软盘进入提示符约
 
 ```sh
 python3 scripts/realmode-boot-time.py --image "$RAM_DISK/install.img" --ram-dir "$RAM_DISK" --proof target/boot-time --cpu 286 --window --welcome
+```
+
+### 原生 386 的扩展内存
+
+安装软盘和 SETUP 生成的 C 盘都通过 `CONFIG.SYS` 的 `DEVICE=EMM386.SYS` 加载驱动。80386 进入虚拟 8086 模式，DOS 程序通过 `INT 67h` 分配扩展内存、切页、保存和恢复映射。段地址 `D000h` 有四个 16 KiB 窗口。每次切页更新 386 的硬件页表，四个窗口可以映射同一逻辑页。80286 使用同一张安装盘，驱动在初始化时返回零驻留长度，系统继续启动。[Rust 驱动](boot/emm386/src/main.rs)
+
+当前驱动提供 LIM EMS 3.2 的基本接口，最多 4 MiB、31 个同时分配的句柄。它使用 HMA 以上的连续扩展内存，要求独占该内存区域和 D000h 页框。与其他 XMS 管理器共存、UMB、VCPI、EMS 4.0 和物理设备直接 DMA 到页框尚未验证或实现。
+
+回归使用 Borland C++ 的 `EMSTEST.COM` 2.0（1991）。把已有的程序传给 `--client`，脚本会核对 SHA-256。DOSBox-X 的 386 型号和 QEMU 安装后的 C 盘均须通过 128 页写入与读回、恢复映射和释放。286 以及去掉配置的 386 都须由同一程序报告找不到 EMS，并返回 Shell。测试程序只复制到临时内存盘。[QEMU 安装后读回 128 页的屏幕截图](docs/assets/native-386-ems.png)
+
+```sh
+python3 scripts/realmode-ems-test.py --image "$RAM_DISK/install.img" \
+  --disk1 "$RAM_DISK/DISKS/DISK1.IMG" --client /path/to/EMSTEST.COM \
+  --ram-dir "$RAM_DISK" --proof target/native-ems
 ```
 
 ### DOS 上的 Microsoft Edit 移植
