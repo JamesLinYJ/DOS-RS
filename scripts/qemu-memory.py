@@ -21,11 +21,7 @@ def main():
     root.mkdir(parents=True, exist_ok=True)
     disk = root / "dos.img"
     shutil.copyfile(qemu.ROOT / "disks/guest12.img", disk)
-    probe = root / "CHECKMEM.COM"
-    subprocess.run(
-        ["nasm", "-f", "bin", qemu.ROOT / "tests/extended-memory.asm", "-o", probe],
-        check=True,
-    )
+    probe = qemu.ROOT / "tests/fixtures/dos/CHECKMEM.COM"
     subprocess.run(["mcopy", "-o", "-i", disk, probe, "::CHECKMEM.COM"], check=True)
     commands = ["CHECKMEM.COM"]
     if args.mem:

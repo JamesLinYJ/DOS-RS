@@ -101,7 +101,6 @@ def prepare(d, tools):
         "-o",
         check,
     )
-    run("nasm", "-f", "bin", fixtures / "files.asm", "-o", d / "FILES.COM")
     note = d / "NOTE.TXT"
     note.write_bytes(b"Subdirectory read OK\r\n")
     batch = d / "AUTOEXEC.BAT"
@@ -122,7 +121,7 @@ def prepare(d, tools):
         "--file",
         check,
         "--file",
-        d / "FILES.COM",
+        ROOT / "tests/fixtures/dos/FILES.COM",
     )
     disk = d / "drive.img"
     with disk.open("wb") as out:

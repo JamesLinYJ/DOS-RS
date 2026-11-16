@@ -17,19 +17,7 @@ def prepare(out):
     image = out / "terminals.img"
     shutil.copyfile(ROOT / "disks/guest12.img", image)
     for name in ["SPIN", "WAITKEY", "CRASH", "CALC"]:
-        program = out / (name + ".COM")
-        subprocess.run(
-            [
-                "nasm",
-                "-f",
-                "bin",
-                "-D" + name,
-                ROOT / "tests/terminals.asm",
-                "-o",
-                program,
-            ],
-            check=True,
-        )
+        program = ROOT / "tests/fixtures/dos" / (name + ".COM")
         subprocess.run(["mcopy", "-o", "-i", image, program, "::"], check=True)
     return image
 

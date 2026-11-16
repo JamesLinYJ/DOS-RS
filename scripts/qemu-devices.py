@@ -5,7 +5,6 @@ import argparse
 import qemu
 from pathlib import Path
 import shutil
-import struct
 import subprocess
 import time
 
@@ -26,41 +25,10 @@ def prepare(output, setver):
     if setver:
         add(setver, "SETVER.SYS")
         directives.append("DEVICE=SETVER.SYS")
-    fixtures = [
-        ("REJECT.SYS", ["-DCHARACTER", "-DREJECT"]),
-        ("ECHO.SYS", ["-DCHARACTER", "-DCHAIN"]),
-        ("BLOCK.SYS", ["-DBLOCK"]),
-        ("PROBE.COM", ["-DSETVER"] if setver else []),
-    ]
-    for filename, defines in fixtures:
-        dest = output / filename
-        subprocess.run(
-            ["nasm", "-f", "bin", *defines, ROOT / "tests/devices.asm", "-o", dest],
-            check=True,
-        )
-        if filename == "ECHO.SYS":
-            payload = dest.read_bytes()
-            size = 32 + len(payload)
-            # An MZ overlay loads into the device segment without a PSP.
-            header = struct.pack(
-                "<14H",
-                0x5A4D,
-                size % 512,
-                (size + 511) // 512,
-                0,
-                2,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                28,
-                0,
-            )
-            dest.write_bytes(header.ljust(32, bytes(1)) + payload)
-        add(dest, filename)
+    fixtures = ROOT / "tests/fixtures/dos"
+    for driver in ("REJECT.SYS", "ECHO.SYS", "BLOCK.SYS"):
+        add(fixtures / driver, driver)
+    add(fixtures / ("PROBEVER.COM" if setver else "PROBE.COM"), "PROBE.COM")
     directives.extend(["DEVICE=REJECT.SYS", "DEVICEHIGH=ECHO.SYS", "DEVICE=BLOCK.SYS"])
     for filename, lines in [
         ("CONFIG.SYS", directives),
