@@ -22,8 +22,6 @@ mod dos;
 #[cfg(not(target_pointer_width = "16"))]
 mod drivers;
 #[cfg(not(target_pointer_width = "16"))]
-mod fs;
-#[cfg(not(target_pointer_width = "16"))]
 mod guest;
 #[cfg(not(target_pointer_width = "16"))]
 mod heap;

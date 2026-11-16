@@ -5,6 +5,7 @@
 //! of [`entry`].
 
 use crate::arch::GateToken;
+mod files;
 
 /// Low 16 bits of AX, BX, or CX as the DOS ABI freezes them.
 ///
@@ -155,45 +156,15 @@ impl LogicalFrame {
 /// One pointer per AH from 0 through the last slot.
 ///
 /// Every slot starts as [`in_range_stub`]. A translated function replaces one slot.
-/// The index is the function number. This array is the only catalog.
+/// Filesystem calls use the mounted DOS namespace before this register-only table.
 const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     let mut slots = [in_range_stub as fn(&mut LogicalFrame); 0x6D];
     slots[0x02] = std_con_output as fn(&mut LogicalFrame);
-    slots[0x0F] = fcb_open as fn(&mut LogicalFrame);
-    slots[0x10] = fcb_close as fn(&mut LogicalFrame);
-    slots[0x11] = dir_search_first as fn(&mut LogicalFrame);
-    slots[0x12] = dir_search_next as fn(&mut LogicalFrame);
-    slots[0x13] = fcb_delete as fn(&mut LogicalFrame);
-    slots[0x14] = fcb_seq_read as fn(&mut LogicalFrame);
-    slots[0x16] = fcb_create as fn(&mut LogicalFrame);
-    slots[0x17] = fcb_rename as fn(&mut LogicalFrame);
-    slots[0x21] = fcb_random_read as fn(&mut LogicalFrame);
-    slots[0x23] = fcb_length as fn(&mut LogicalFrame);
-    slots[0x24] = fcb_position as fn(&mut LogicalFrame);
     slots[0x29] = parse_fcb as fn(&mut LogicalFrame);
-    slots[0x1A] = set_dta as fn(&mut LogicalFrame);
-    slots[0x19] = get_default_drive as fn(&mut LogicalFrame);
     slots[0x09] = std_con_string_output as fn(&mut LogicalFrame);
-    slots[0x39] = mkdir as fn(&mut LogicalFrame);
-    slots[0x3A] = rmdir as fn(&mut LogicalFrame);
-    slots[0x3B] = chdir as fn(&mut LogicalFrame);
-    slots[0x43] = file_attributes as fn(&mut LogicalFrame);
     slots[0x44] = ioctl as fn(&mut LogicalFrame);
-    slots[0x57] = file_times as fn(&mut LogicalFrame);
-    slots[0x3C] = create_file as fn(&mut LogicalFrame);
-    slots[0x3D] = open_handle as fn(&mut LogicalFrame);
-    slots[0x3E] = close_handle as fn(&mut LogicalFrame);
-    slots[0x3F] = read_handle as fn(&mut LogicalFrame);
-    slots[0x40] = write_handle as fn(&mut LogicalFrame);
-    slots[0x42] = lseek as fn(&mut LogicalFrame);
-    slots[0x41] = delete_file as fn(&mut LogicalFrame);
-    slots[0x47] = get_cwd as fn(&mut LogicalFrame);
     slots[0x48] = alloc_memory as fn(&mut LogicalFrame);
     slots[0x49] = free_memory as fn(&mut LogicalFrame);
-    slots[0x4E] = find_first as fn(&mut LogicalFrame);
-    slots[0x4F] = find_next as fn(&mut LogicalFrame);
-    slots[0x56] = rename_file as fn(&mut LogicalFrame);
-    slots[0x5C] = lock_oper as fn(&mut LogicalFrame);
     slots[0x2A] = get_date as fn(&mut LogicalFrame);
     slots[0x2B] = set_date as fn(&mut LogicalFrame);
     slots[0x2C] = get_time as fn(&mut LogicalFrame);
@@ -201,7 +172,6 @@ const DISPATCH: [fn(&mut LogicalFrame); 0x6D] = {
     slots[0x2E] = set_verify_on_write as fn(&mut LogicalFrame);
     slots[0x30] = get_version as fn(&mut LogicalFrame);
     slots[0x33] = set_ctrl_c_trapping as fn(&mut LogicalFrame);
-    slots[0x4B] = exec_program as fn(&mut LogicalFrame);
     slots[0x54] = get_verify_on_write as fn(&mut LogicalFrame);
     slots[0x59] = get_extended_error as fn(&mut LogicalFrame);
     slots
@@ -219,62 +189,17 @@ const _: () = assert!(MAXCOM == 0x6C);
 /// write flags and does not touch an INDOS counter, because this module has no such counter.
 pub(crate) fn entry(token: &GateToken, frame: &mut LogicalFrame) {
     token.seal();
-    dispatch(frame);
+    if !files::call(token, frame) {
+        dispatch(frame);
+    }
 }
-fn dispatch(frame:&mut LogicalFrame){
+fn dispatch(frame: &mut LogicalFrame) {
     let function = frame.function();
     if function.above_max() {
         out_of_range(frame);
         return;
     }
     DISPATCH[function.index()](frame);
-}
-
-/// AH=1Ah. DX is the DTA.
-fn set_dta(frame: &mut LogicalFrame) {
-    crate::dos::search::set_dta(frame.buffer as *mut u8);
-}
-
-/// AH=4Eh. CX is the search attribute. DX is the ASCIIZ name.
-fn find_first(frame: &mut LogicalFrame) {
-    let code = crate::dos::search::find_first(frame.buffer as *const u8, frame.count as u8);
-    frame.store_ax(DosWord(code));
-}
-
-/// AH=4Fh. The DTA from find-first supplies the continuation.
-fn find_next(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::search::find_next()));
-}
-
-/// AH=41h. DX is the ASCIIZ name.
-fn delete_file(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::file::delete(frame.buffer as *const u8)));
-}
-
-/// AH=56h. DX is the old name and DI is the new name.
-fn rename_file(frame: &mut LogicalFrame) {
-    let code = crate::dos::file::rename(frame.buffer as *const u8, frame.destination as *const u8);
-    frame.store_ax(DosWord(code));
-}
-
-/// AH=3Ch. DX is the new name.
-fn create_file(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::file::create(frame.buffer as *const u8)));
-}
-
-/// AH=39h.
-fn mkdir(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::mkdir(frame.buffer as *const u8)));
-}
-
-/// AH=3Bh.
-fn chdir(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::chdir(frame.buffer as *const u8)));
-}
-
-/// AH=3Ah.
-fn rmdir(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::rmdir(frame.buffer as *const u8)));
 }
 
 /// AH=59h. AX is the last error. BH is the class, BL the action, CH the locus.
@@ -301,80 +226,16 @@ fn free_memory(frame: &mut LogicalFrame) {
     frame.store_ax(DosWord(crate::dos::alloc::free(frame.extra_segment as u16)));
 }
 
-/// AH=47h. SI receives the ASCIIZ path without the drive letter.
-fn get_cwd(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::path::getcwd(
-        frame.source as *mut u8,
-        frame.buffer as u8,
-    )));
-}
-
-/// AH=0Fh. DX is the FCB.
-fn fcb_open(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio2::open(frame.buffer as *mut u8)));
-}
-
-/// AH=10h. DX is the FCB.
-fn fcb_close(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio::close(frame.buffer as *const u8)));
-}
-
-/// AH=11h. A volume-label FCB still returns AL=0xFF on this disk.
-fn dir_search_first(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::search::fcb_search_first(frame.buffer as *const u8)));
-}
-
-/// AH=12h.
-fn dir_search_next(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::search::fcb_search_next()));
-}
-
-/// AH=13h.
-fn fcb_delete(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio::delete(frame.buffer as *const u8)));
-}
-
-/// AH=14h.
-fn fcb_seq_read(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio2::seq_read(frame.buffer as *mut u8)));
-}
-
-/// AH=16h.
-fn fcb_create(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio2::create(frame.buffer as *mut u8)));
-}
-
-/// AH=17h.
-fn fcb_rename(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio::rename(frame.buffer as *mut u8)));
-}
-
-/// AH=21h.
-fn fcb_random_read(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio2::random_read(frame.buffer as *mut u8)));
-}
-
-/// AH=23h.
-fn fcb_length(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio::file_length(frame.buffer as *mut u8)));
-}
-
-/// AH=24h.
-fn fcb_position(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(crate::dos::fcbio::set_position(frame.buffer as *mut u8)));
-}
-
 /// AH=29h. DS:SI is the text. ES:DI is the FCB. AL is the control bits.
 fn parse_fcb(frame: &mut LogicalFrame) {
     let flags = (frame.status & 0xff) as u8;
-    let (result, source) = crate::dos::parse::parse(flags, frame.source as *const u8, frame.destination as *mut u8);
+    let (result, source) = crate::dos::parse::parse(
+        flags,
+        frame.source as *const u8,
+        frame.destination as *mut u8,
+    );
     frame.set_al(ResultByte(result));
     frame.source = source as u64;
-}
-
-/// AH=19h. AL is the default drive. This image leaves it at 0, which is A.
-fn get_default_drive(frame: &mut LogicalFrame) {
-    frame.set_al(ResultByte(0));
 }
 
 /// AH=2. DL is the character. The console device receives that byte.
@@ -387,15 +248,6 @@ fn std_con_string_output(frame: &mut LogicalFrame) {
     crate::dos::cpmio::write_dollar_string(frame.buffer as u32);
 }
 
-/// AH=4Bh. AL is the exec function. 0, 1, and 3 load. 2 is rejected.
-fn exec_program(frame: &mut LogicalFrame) {
-    let result = (frame.status & 0xff) as u8;
-    match crate::dos::exec::dispatch(result, frame.buffer as u32 as *const u8) {
-        Ok(_) => frame.set_al(ResultByte(0)),
-        Err(code) => frame.store_ax(DosWord(code)),
-    }
-}
-
 /// DOS date. 1980-01-01 is the unset clock, a Tuesday.
 use core::sync::atomic::{AtomicU32, Ordering};
 static DATE: AtomicU32 = AtomicU32::new((1980 << 16) | 0x0101);
@@ -405,101 +257,15 @@ static TIME: AtomicU32 = AtomicU32::new(0);
 fn ioctl(frame: &mut LogicalFrame) {
     let result = (frame.status & 0xff) as u8;
     let (status, buffer, al_out) = crate::dos::ioctl::on_frame(result, frame.handle as u16);
-    frame.store_ax(DosWord(if result == 8 { u16::from(al_out) } else { status }));
+    frame.store_ax(DosWord(if result == 8 {
+        u16::from(al_out)
+    } else {
+        status
+    }));
     frame.store_dx(DosWord(buffer));
     if result == 8 && status == 0 {
         frame.set_al(ResultByte(al_out));
     }
-}
-
-/// AH=43h. AL=0 reads the attribute into CX. AL=1 stores CX into the directory entry.
-///
-/// `GET_FILE_INFO` and `SET_FILE_ATTRIBUTE` in `DOS/FINFO.ASM`. AX is 2 when
-/// the name is not in the root.
-fn file_attributes(frame: &mut LogicalFrame) {
-    let result = (frame.status & 0xff) as u8;
-    let Some(index) = crate::dos::search::lookup_asciiz(frame.buffer as *const u8) else {
-        frame.store_ax(DosWord(2));
-        return;
-    };
-    if result == 0 {
-        let ent = crate::dos::search::slot(index);
-        let attr = if ent.attr != 0 { ent.attr } else { 0x20 };
-        frame.store_cx(DosWord(u16::from(attr)));
-        frame.store_ax(DosWord(0));
-    } else if result == 1 {
-        crate::dos::search::set_attr(index, frame.count as u8);
-        frame.store_ax(DosWord(0));
-    } else {
-        frame.store_ax(DosWord(1));
-    }
-}
-
-/// AH=57h. AL=0 returns the open file's time in CX and date in DX.
-/// AL=1 stores CX and DX. A zero date stays 1980-01-01 until this call sets one.
-fn file_times(frame: &mut LogicalFrame) {
-    let result = (frame.status & 0xff) as u8;
-    let Some(index) = crate::dos::handle::opened_index(frame.handle as u16) else {
-        frame.store_ax(DosWord(6));
-        return;
-    };
-    if result == 0 {
-        let ent = crate::dos::search::slot(index);
-        frame.store_cx(DosWord(ent.time));
-        frame.store_dx(DosWord(if ent.date == 0 { 0x0021 } else { ent.date }));
-        frame.store_ax(DosWord(0));
-    } else if result == 1 {
-        crate::dos::search::set_stamp(index, frame.count as u16, frame.buffer as u16);
-        frame.store_ax(DosWord(0));
-    } else {
-        frame.store_ax(DosWord(1));
-    }
-}
-
-/// AH=3Eh. BX is the handle. AX is 0, or 6 when the handle is not open.
-fn close_handle(frame: &mut LogicalFrame) {
-    frame.store_ax(DosWord(crate::dos::handle::close(frame.handle as u16)));
-}
-
-/// AH=42h. AL is the method. CX:DX is the offset. DX:AX is the new position.
-fn lseek(frame: &mut LogicalFrame) {
-    let method = (frame.status & 0xff) as u8;
-    match crate::dos::handle::seek(frame.handle as u16, method, frame.buffer as u16, frame.count as u16) {
-        Ok(pos) => {
-            frame.store_ax(DosWord(pos as u16));
-            frame.store_dx(DosWord((pos >> 16) as u16));
-        }
-        Err(code) => frame.store_ax(DosWord(code)),
-    }
-}
-
-/// AH=5Ch. AL=0 locks CX:DX for SI:DI bytes. AL=1 unlocks that range.
-fn lock_oper(frame: &mut LogicalFrame) {
-    let result = (frame.status & 0xff) as u8;
-    let start = ((frame.count as u32) << 16) | (frame.buffer as u32);
-    let len = ((frame.source as u32) << 16) | (frame.destination as u32);
-    let open = crate::dos::handle::opened_index(frame.handle as u16).is_some();
-    frame.store_ax(DosWord(crate::dos::lock::oper(result, open, start, len)));
-}
-
-/// AH=3Dh. AX is handle 5, or 0xFFFF when the name is not in the root.
-fn open_handle(frame: &mut LogicalFrame) {
-    match crate::dos::handle::open_asciiz(frame.buffer as *const u8) {
-        Some(handle) => frame.store_ax(DosWord(handle)),
-        None => frame.store_ax(DosWord(0xffff)),
-    }
-}
-
-/// AH=40h. AX is the number of bytes copied from DX into the open file.
-fn write_handle(frame: &mut LogicalFrame) {
-    let n = crate::dos::handle::write(frame.handle as u16, frame.buffer as *const u8, frame.count as usize);
-    frame.store_ax(DosWord(n as u16));
-}
-
-/// AH=3Fh. AX is the number of bytes copied to DX.
-fn read_handle(frame: &mut LogicalFrame) {
-    let n = crate::dos::handle::read(frame.handle as u16, frame.buffer as *mut u8, frame.count as usize);
-    frame.store_ax(DosWord(n as u16));
 }
 
 /// AH=2Ah. CX is the year, DH the month, DL the day, AL the weekday.
@@ -623,11 +389,25 @@ pub fn store_time(hour: u8, minute: u8, second: u8, hundredth: u8) -> u8 {
     0
 }
 
-
 // Exercise the native service adapter with a typed register image. The QEMU
 // hardware-gate test separately drives the actual CPU interrupt and its flags.
-pub(crate) fn version_call(carry:bool)->(u16,u16,u16,bool){
-    let mut frame=LogicalFrame{status:0x30a5,handle:0x1234,count:0x5678,buffer:0,source:0,destination:0,base:0,data_segment:0,extra_segment:0};
+pub(crate) fn version_call(carry: bool) -> (u16, u16, u16, bool) {
+    let mut frame = LogicalFrame {
+        status: 0x30a5,
+        handle: 0x1234,
+        count: 0x5678,
+        buffer: 0,
+        source: 0,
+        destination: 0,
+        base: 0,
+        data_segment: 0,
+        extra_segment: 0,
+    };
     dispatch(&mut frame);
-    (frame.status as u16,frame.handle as u16,frame.count as u16,carry)
+    (
+        frame.status as u16,
+        frame.handle as u16,
+        frame.count as u16,
+        carry,
+    )
 }

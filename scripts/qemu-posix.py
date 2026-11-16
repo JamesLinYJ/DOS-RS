@@ -2,25 +2,26 @@
 """Exercise the live native shell, DOS coexistence and the shared FAT volume."""
 import argparse
 import hashlib
-import os
 from pathlib import Path
 import subprocess
 import tempfile
-import time
 
 import qemu
 
-KEYS = {" ": "spc", ".": "dot", "-": "minus", ":": "shift-semicolon",
-        "$": "shift-4", "?": "shift-slash", "|": "shift-backslash", ">": "shift-dot", "<": "shift-comma", "/": "slash"}
+from qemu_shell import Shell
+
 PAYLOAD = bytes(range(256)) * 78 + b"native DOS-RS\x00\xff"
 
 
-def check(work, proof, arch, firmware, cpus):
+def check(work, proof, arch, firmware, cpus, fat):
     kernel = qemu.build(arch, qemu.ROOT / "target")
     disk = work / "c.img"
     with disk.open("wb") as f:
-        f.truncate(4 << 20)
-    subprocess.run(["mformat", "-i", disk, "::"], check=True)
+        f.truncate(({12: 2, 16: 16, 32: 48}[fat] if fat else 4) << 20)
+    if fat:
+        subprocess.run(["mkfs.fat", "-F", str(fat), "-s", "1", disk], check=True)
+    else:
+        subprocess.run(["mformat", "-i", disk, "::"], check=True)
 
     def install(name, contents):
         subprocess.run(["mcopy", "-o", "-i", disk, "-", "::" + name], input=contents, check=True)
@@ -30,43 +31,11 @@ def check(work, proof, arch, firmware, cpus):
     install("a.txt", PAYLOAD)
     install("seed.txt", b"same name, new file")
     install("count.txt", b"previous result must be truncated\n")
-    log = proof / f"{arch}.log"
-    log.write_bytes(b"")
+    log = proof / (f"{arch}-fat{fat}.log" if fat else f"{arch}.log")
     cmd = qemu.boot_args(kernel, arch, work / "boot", cpus, firmware)
-    cmd += ["-drive", f"if=ide,index=0,format=raw,file={disk}", "-display", "none",
-            "-serial", "file:" + str(log), "-monitor", "stdio", "-nic", "none"]
-    env = dict(os.environ, TMPDIR=str(work))
-    vm = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, env=env)
-
-    def monitor(command):
-        vm.stdin.write((command + "\n").encode())
-        vm.stdin.flush()
-
-    def key(name):
-        monitor("sendkey " + name + " 20")
-        time.sleep(0.045)
-
-    def enter(line):
-        for ch in line:
-            key(KEYS.get(ch, ch))
-        key("ret")
-
-    def wait(marker, since=0):
-        deadline = time.monotonic() + 35
-        while time.monotonic() < deadline and vm.poll() is None:
-            data = log.read_bytes()
-            if marker in data[since:]:
-                return
-            time.sleep(0.06)
-        raise RuntimeError(f"{arch}: missing {marker!r}\n{log.read_bytes()[-1400:]!r}")
-
-    def command(line, prompt=b"C:\\> ", expect=None):
-        start = log.stat().st_size
-        enter(line)
-        wait(prompt, start)
-        if expect is not None:
-            wait(expect, start)
-
+    cmd += ["-drive", f"if=ide,index=0,format=raw,file={disk}"]
+    shell = Shell(cmd, log, work)
+    wait, command, enter, key = shell.wait, shell.command, shell.enter, shell.key
     count = str(len(PAYLOAD)).encode()
     try:
         wait(b"DOS / " + arch.encode())
@@ -121,10 +90,7 @@ def check(work, proof, arch, firmware, cpus):
         key("ctrl-d")
         wait(b"C:\\> ", start)
     finally:
-        if vm.poll() is None:
-            monitor("quit")
-            vm.wait(timeout=8)
-        vm.stdin.close()
+        shell.close()
 
     def read(name):
         return subprocess.check_output(["mcopy", "-i", disk, "::" + name, "-"])
@@ -138,7 +104,9 @@ def check(work, proof, arch, firmware, cpus):
         raise ValueError(f"{arch}: empty stream count is wrong")
     if read("copy.bin") != PAYLOAD or read("a.txt") != PAYLOAD:
         raise ValueError(f"{arch}: binary stream mismatch")
-    print(f"{arch}/{firmware}, {cpus} CPU: count={len(PAYLOAD)}, "
+    if fat:
+        subprocess.run(["fsck.fat", "-n", disk], check=True)
+    print(f"{arch}/{firmware}, FAT{fat or ' (automatic)'}, {cpus} CPU: count={len(PAYLOAD)}, "
           f"copy SHA-256={hashlib.sha256(PAYLOAD).hexdigest()}, unlink/dup/EOF, seek, append, terminal cwd and DOS COM passed", flush=True)
 
 
@@ -146,11 +114,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ram-dir", type=Path, required=True, help="mounted RAM disk for writable VM images")
     parser.add_argument("--proof", type=Path, default=qemu.ROOT / "target/posix-proof")
+    parser.add_argument("--fat", choices=[12, 16, 32], action="append", type=int,
+                        help="select a FAT format using dosfstools; repeat to exercise several")
     args = parser.parse_args()
     args.proof.mkdir(parents=True, exist_ok=True)
     for arch, firmware, cpus in [("i686", "bios", 1), ("x86_64", "uefi", 4)]:
-        with tempfile.TemporaryDirectory(dir=args.ram_dir.resolve()) as work:
-            check(Path(work), args.proof, arch, firmware, cpus)
+        for fat in args.fat or [None]:
+            with tempfile.TemporaryDirectory(dir=args.ram_dir.resolve()) as work:
+                check(Path(work), args.proof, arch, firmware, cpus, fat)
 
 
 if __name__ == "__main__":

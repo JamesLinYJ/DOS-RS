@@ -3,15 +3,7 @@
 use super::{Found, disk, find, flush, layout, read_chain, root, write_chain};
 use crate::kernel_cell::KernelCell;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FileError {
-    Missing,
-    Directory,
-    Access,
-    Limit,
-    Io,
-    Space,
-}
+use super::FileError;
 
 #[derive(Clone, Copy)]
 struct Pin {
@@ -34,6 +26,10 @@ impl OpenFile {
         }
         if writable && f.attr & 1 != 0 {
             return Err(FileError::Access);
+        }
+        let (clusters, _) = map.chain(&disk.bytes, f.cluster).ok_or(FileError::Io)?;
+        if f.size.div_ceil(map.cluster_bytes()) > clusters {
+            return Err(FileError::Io);
         }
         let volume = root(dir);
         let mut pins = PINS.borrow();
@@ -82,6 +78,9 @@ impl OpenFile {
         Ok(())
     }
 
+    pub fn volume(&self) -> u32 {
+        PINS.borrow()[self.0].unwrap().volume
+    }
     pub fn identity(&self) -> usize {
         self.0
     }

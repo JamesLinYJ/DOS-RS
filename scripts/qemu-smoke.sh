@@ -1562,8 +1562,7 @@ doctor
 (
     test_dir="$(mktemp -d)"
     trap 'rm -rf "$test_dir"' EXIT
-    rustc +nightly-2026-11-08 --edition=2024 --test "$root/tests/layout.rs" -o "$test_dir/layout"
-    "$test_dir/layout"
+    cargo +stable test --locked --manifest-path "$root/tests/host/Cargo.toml" --target-dir "$root/target/host-tests" --test layout
     rustc +nightly-2026-11-08 --edition=2024 --test --cfg 'feature="pc386"' "$root/tests/pc386.rs" -o "$test_dir/pc386"
     "$test_dir/pc386"
 )

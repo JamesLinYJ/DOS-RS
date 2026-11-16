@@ -93,18 +93,40 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 
 i686 和 x86_64 的交互提示符可以运行原生 Rust 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
 
-在含有 `a.txt` 的 FAT 目录中输入：
+在含有 `a.txt` 的可写目录中输入以下命令。
 
 ```text
 cat a.txt | wc -c > count.txt
 type count.txt
 ```
 
-`count.txt` 包含十进制字节数和一个 LF。`cat < a.txt | cat > copy.bin` 按原样复制字节。用 `cat a.txt >> copy.bin` 可以在已有文件末尾追加内容。原生程序和 DOS 共用已挂载的 FAT 卷，使用同一组文件对象。`unlink name.txt` 移除目录项，已经打开的描述符继续访问原文件，最后一次关闭释放簇链。要自行验证，运行 `fdcheck probe.tmp`。它要求该文件名尚未使用，会验证删除、同名重建和共享偏移，然后清理测试文件。
+`count.txt` 包含十进制字节数和一个 LF。`cat < a.txt | cat > copy.bin` 按原样复制字节。用 `cat a.txt >> copy.bin` 可以在已有文件末尾追加内容。原生程序和 DOS 通过同一套 VFS 打开文件。`unlink name.txt` 移除目录项，已经打开的描述符继续访问原文件，最后一次关闭后，文件系统可以回收存储空间。要自行验证，运行 `fdcheck probe.tmp`。它要求该文件名尚未使用，会验证删除、同名重建和共享偏移，然后清理测试文件。
 
-这一版的原生程序随内核静态链接，在同一地址空间协作调度。程序通过 Rust 接口使用 `open`、`read`、`write`、`close`、`lseek`、`dup`、`dup2`、`pipe` 和 `unlink`。文件名沿用 FAT 8.3。独立用户态可执行文件加载、C libc 和完整 POSIX 标准覆盖仍待实现。[程序接口](native-posix/src/lib.rs) · [内核实现](src/posix.rs)
+这一版的原生程序随内核静态链接，在同一地址空间协作调度。程序通过 Rust 接口使用 `open`、`read`、`write`、`close`、`lseek`、`dup`、`dup2`、`pipe` 和 `unlink`。独立用户态可执行文件加载、C libc 和完整 POSIX 标准覆盖仍待实现。[程序接口](native-posix/src/lib.rs) · [内核实现](src/posix.rs)
 
 双架构验收使用内存盘上的 C 盘，并在 QEMU 退出后逐字节核对输出。运行 `python3 scripts/qemu-posix.py --ram-dir /path/to/ramdisk`，其中路径指向已挂载的内存盘。
+
+## 文件系统
+
+i686 和 x86_64 的 DOS Shell、INT 21h、FCB、COM/MZ 加载器和原生进程使用同一套路径解析入口和已打开文件接口。内置启动盘使用 FAT。内核在 IDE 主盘上识别裸卷、MBR 主分区和 GPT 数据分区，按分区表顺序将第一个能挂载的数据卷分配给 C 盘。GPT 的 EFI 系统分区、恢复分区和禁止自动分配盘符的分区会跳过。[卷分派](src/vfs/driver.rs) · [分区识别](storage/block/src/partition.rs)
+
+| 格式 | 文件访问 | 已验证的范围 |
+| --- | --- | --- |
+| FAT12、FAT16、FAT32 | 读写，DOS 8.3 路径 | 两种内核都能跨终端打开、重命名和删除同一文件，保留旧描述符，重读复制结果并通过 `fsck.fat -n`。IDE 上的 FAT 卷当前上限为 64 MiB。 |
+| Btrfs | 单设备卷读写，原生程序可用长文件名，DOS 可用能表示为 8.3 的名称 | Linux 格式化的 128 MiB 单设备卷通过 DOS 程序加载、管道、跨终端删除和冷启动。Linux 的 `btrfs check --readonly --check-data-csum` 和 `btrfs restore` 核对了数据。 |
+| NTFS 3.x | 只读，按卷内 `$UpCase` 表匹配长文件名 | 读取常驻和非常驻数据、遍历 `$I30` 目录索引、运行 DOS COM。测试卷上的创建和删除被拒绝，退出后整盘 SHA-256 保持一致。 |
+
+NTFS 驱动使用 Rust 直接读取 MFT。目前支持 512 字节逻辑扇区和基记录内可完整描述的数据流。压缩、加密和重解析点返回未支持。Windows 系统卷的独占管理员写入及日志恢复仍待实现。原生 16 位 286/386 内核使用驻留 IO.SYS 提供的 FAT 服务。[NTFS 实现](storage/ntfs/src/lib.rs) · [16 位内核](src/realmode.rs)
+
+Btrfs 代码移植自 Antimatter Studios 维护的 Rust 驱动，DOS-RS 提供块设备、时钟与打开后删除的生命周期处理。源版本和许可证列在 NOTICE 中。[Rust 上游](https://github.com/antimatter-studios/rust-fs-btrfs/tree/bac713a69c2b65f70ef1ea0845760f92858ad88d) · [组件说明](NOTICE)
+
+以下命令使用已挂载的内存盘。FAT 需要 dosfstools 和 mtools，NTFS 需要 `mkntfs`、`ntfscp`、`ntfscat` 和 mtools。Btrfs 需要 Linux btrfs-progs，macOS 可加 `--linux-tools-image <本地镜像名>` 使用装有这些工具的 Linux 容器。
+
+```sh
+python3 scripts/qemu-posix.py --ram-dir /path/to/ramdisk --fat 12 --fat 16 --fat 32
+python3 scripts/qemu-btrfs.py --ram-dir /path/to/ramdisk
+python3 scripts/qemu-ntfs.py --ram-dir /path/to/ramdisk
+```
 
 ## 兼容范围
 
@@ -145,7 +167,7 @@ WIN /3
 
 i686 / 传统 BIOS 和 x86_64 / UEFI 均已用内存 C 盘冷启动。进入中文程序管理器后，按 `Alt+H`、`A` 打开“关于程序管理器”。Windows 3.2 在两台机器上均显示“386 增强方式”。[i686 截图](docs/assets/windows32-enhanced-i686.png) · [x86_64 截图](docs/assets/windows32-enhanced-x86_64.png)
 
-运行 `WIN /S` 可启动标准模式。两个架构也已在该模式下验证 640×480、16 色 VGA、键盘和计算器。NTFS 系统卷写入仍待验收。[验收记录](docs/guest-programs.md#windows-32-simplified-chinese)
+运行 `WIN /S` 可启动标准模式。两个架构也已在该模式下验证 640×480、16 色 VGA、键盘和计算器。[验收记录](docs/guest-programs.md#windows-32-simplified-chinese)
 
 ![i686 传统 BIOS 冷启动后的中文程序管理器及主群组](docs/assets/windows32-progman.png)
 
@@ -160,7 +182,7 @@ python3 scripts/qemu-terminals.py --firmware bios --output target/terminal-bios
 python3 scripts/qemu-devices.py --setver /path/to/SETVER.SYS
 python3 scripts/qemu-hardware.py
 python3 scripts/qemu-memory.py --extended-mib 128 --mem /path/to/MEM.EXE
-python3 scripts/qemu-native-gate.py
+python3 scripts/qemu-native-gate.py --ram-dir /path/to/ramdisk
 ```
 
 省略外部二进制参数即可运行仓库自带的测试。内核自测与交互启动独立。MASM、LINK、Microsoft C 等工作负载的输入和输出见[程序记录](docs/guest-programs.md)。修改模块和新增驱动的入口见[开发指南](AGENTS.md)。

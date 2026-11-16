@@ -122,7 +122,7 @@ pub(crate) fn poll_terminal(id: usize, input: bool) -> Option<Poll<u8>> {
 }
 
 pub(crate) fn interactive() -> ! {
-    crate::fs::boot();
+    crate::vfs::dos::boot();
     pc::enable_terminals();
     let mut dos = crate::guest::run::Terminals::new();
     loop {

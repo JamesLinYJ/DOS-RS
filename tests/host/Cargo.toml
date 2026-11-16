@@ -1,0 +1,15 @@
+[package]
+name = "dosrs-kernel-tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[dependencies]
+dosrs-block = { path = "../../storage/block" }
+dosrs-native-posix = { path = "../../native-posix" }
+dosrs-btrfs = { path = "../../vendor/btrfs" }
+[[test]]
+name = "layout"
+path = "../layout.rs"
+
+[features]
+pc386 = []

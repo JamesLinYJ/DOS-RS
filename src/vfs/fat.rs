@@ -1,100 +1,35 @@
 //! Mounted FAT volumes shared by native processes, the DOS guest and BIOS sector reads.
 #![forbid(unsafe_code)]
-#[path = "fs/volume.rs"]
+#[path = "fat/volume.rs"]
 mod volume;
 use volume::{Kind, Map, dword, word};
 
 #[cfg(test)]
-const IMAGE: &[u8] = include_bytes!("../disks/guest12.img");
+const IMAGE: &[u8] = include_bytes!("../../disks/guest12.img");
 #[cfg(not(test))]
 const IMAGE: &[u8] = include_bytes!(env!("DOS_RS_GUEST_IMAGE"));
 
-#[path = "fs/media.rs"]
+#[path = "fat/media.rs"]
 mod media;
-#[path = "fs/open.rs"]
+#[path = "fat/open.rs"]
 mod open;
-use media::{Disk, HARD, disk};
-pub use open::{FileError, OpenFile};
-pub fn in_dir<T>(dir: u32, act: impl FnOnce() -> T) -> T {
-    let saved = working_directory();
-    set_working(dir);
-    let result = act();
-    set_working(saved);
-    result
-}
-pub fn has_c() -> bool {
-    media::available()
-}
-pub fn flush(dir: u32) -> bool {
-    media::flush(dir)
-}
-pub fn root(dir: u32) -> u32 {
-    dir & HARD
-}
-pub fn drive_root(drive: u8) -> Option<u32> {
-    match drive {
-        0 | 1 => Some(0),
-        2 if has_c() => Some(HARD),
-        _ => None,
-    }
-}
-
-/// DOS keeps a different current directory for each drive in each virtual machine.
-#[derive(Clone, Copy)]
-pub struct Directories {
-    active: u8,
-    paths: [u32; 3],
-}
-impl Directories {
-    pub const ROOTS: Self = Self {
-        active: 0,
-        paths: [0, 0, HARD],
-    };
-}
-static DIRECTORIES: crate::kernel_cell::KernelCell<Directories> =
-    crate::kernel_cell::KernelCell::new(Directories::ROOTS);
-
-pub fn directories() -> Directories {
-    *DIRECTORIES.borrow()
-}
-pub fn restore(dirs: Directories) {
-    set_working(dirs.paths[usize::from(dirs.active)]);
-    *DIRECTORIES.borrow() = dirs;
-}
-pub fn drive_directory(drive: u8) -> Option<u32> {
-    drive_root(drive)?;
-    Some(DIRECTORIES.borrow().paths[usize::from(drive)])
-}
-pub fn select_drive(drive: u8) -> bool {
-    let Some(cwd) = drive_directory(drive) else {
-        return false;
-    };
-    DIRECTORIES.borrow().active = drive;
-    set_working(cwd);
-    true
-}
-
+use super::dos::FileError;
+use super::dos::{DirMatch, DriveBlock, attribute_visible, names_match, root};
+use super::driver::HARD;
+#[cfg(not(test))]
+pub(super) use media::mount;
+use media::{Disk, disk};
+pub(super) use media::{boot, flush};
+pub use open::OpenFile;
 fn layout(disk: &Disk) -> Option<Map> {
     Map::parse(&disk.bytes)
 }
-pub fn media_id() -> u8 {
-    disk(working_directory()).bytes[21]
-}
-pub struct DriveBlock {
-    pub bytes_per_sector: u16,
-    pub sectors_per_cluster: u8,
-    pub reserved: u16,
-    pub fats: u8,
-    pub root_entries: u16,
-    pub sectors_per_fat: u16,
-    pub media: u8,
-    pub data_sector: u16,
-    pub max_cluster: u16,
-    pub shift: u8,
+pub fn media_id(dir: u32) -> u8 {
+    disk(dir).bytes[21]
 }
 
-pub fn drive_block() -> Option<DriveBlock> {
-    let disk = disk(working_directory());
+pub fn drive_block(dir: u32) -> Option<DriveBlock> {
+    let disk = disk(dir);
     let map = layout(&disk)?;
     // The DOS 4 DPB has no encoding for a FAT32 root.
     if map.kind == Kind::Fat32 {
@@ -114,8 +49,8 @@ pub fn drive_block() -> Option<DriveBlock> {
     })
 }
 
-pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
-    let disk = disk(working_directory());
+pub fn volume_id(dir: u32) -> Option<([u8; 4], [u8; 11], [u8; 8])> {
+    let disk = disk(dir);
     let map = layout(&disk)?;
     let at = if map.kind == Kind::Fat32 { 66 } else { 38 };
     let mut serial = [0; 4];
@@ -127,8 +62,8 @@ pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
     Some((serial, label, map.kind.label()))
 }
 
-pub fn set_volume_id(serial: &[u8; 4], label: &[u8; 11]) -> bool {
-    let disk = &mut disk(working_directory());
+pub fn set_volume_id(dir: u32, serial: &[u8; 4], label: &[u8; 11]) -> bool {
+    let disk = &mut disk(dir);
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -145,8 +80,8 @@ pub fn set_volume_id(serial: &[u8; 4], label: &[u8; 11]) -> bool {
     true
 }
 
-pub fn space() -> Option<(u32, u32, u32, u32)> {
-    let disk = disk(working_directory());
+pub fn space(dir: u32) -> Option<(u32, u32, u32, u32)> {
+    let disk = disk(dir);
     let map = layout(&disk)?;
     Some((
         map.spc as u32,
@@ -156,77 +91,8 @@ pub fn space() -> Option<(u32, u32, u32, u32)> {
     ))
 }
 
-pub fn allocation() -> Option<(u16, u16, u16, u16)> {
-    allocation_at(working_directory())
-}
-pub fn allocation_at(dir: u32) -> Option<(u16, u16, u16, u16)> {
-    let (mut spc, bps, mut free, mut total) = in_dir(dir, space)?;
-    // Group allocation units for the classic 16-bit free-space interface.
-    while total > 0xfffe && spc < 128 {
-        total /= 2;
-        free /= 2;
-        spc *= 2;
-    }
-    Some((
-        spc as u16,
-        bps as u16,
-        free.min(0xfffe) as u16,
-        total.min(0xfffe) as u16,
-    ))
-}
-
-pub(super) fn with_media<T>(read: impl FnOnce(&[u8]) -> T) -> T {
+pub(crate) fn with_media<T>(read: impl FnOnce(&[u8]) -> T) -> T {
     read(&disk(0).bytes)
-}
-pub fn boot() {
-    media::boot();
-    restore(Directories::ROOTS);
-}
-pub fn file_len(name: &[u8; 11]) -> Option<usize> {
-    file_len_at(working_directory(), name)
-}
-
-pub fn file_len_at(dir: u32, name: &[u8; 11]) -> Option<usize> {
-    let disk = &disk(dir);
-    let map = layout(disk)?;
-    let found = find(disk, &map, dir, name)?;
-    if found.attr & 0x10 != 0 {
-        return None;
-    }
-    Some(found.size)
-}
-
-pub fn read_head(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
-    let disk = &mut disk(working_directory());
-    let map = layout(disk)?;
-    let found = find(disk, &map, disk.cwd, name)?;
-    if found.attr & 0x10 != 0 {
-        return None;
-    }
-    let want = found.size.min(out.len());
-    copy_cluster(disk, &map, found.cluster, want, out)
-}
-
-pub fn read_file(name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
-    read_file_at(working_directory(), name, out)
-}
-
-pub fn read_file_at(dir: u32, name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
-    let disk = &mut disk(dir);
-    let map = layout(disk)?;
-    let found = find(disk, &map, dir, name)?;
-    if found.attr & 0x10 != 0 {
-        return None;
-    }
-    copy_cluster(disk, &map, found.cluster, found.size, out)
-}
-
-pub fn write_file(name: &[u8; 11], data: &[u8]) -> bool {
-    write_named(name, data, 0x20)
-}
-
-pub fn write_named(name: &[u8; 11], data: &[u8], attr: u8) -> bool {
-    write_named_at(working_directory(), name, data, attr)
 }
 
 pub fn write_named_at(dir: u32, name: &[u8; 11], data: &[u8], attr: u8) -> bool {
@@ -281,55 +147,11 @@ pub fn write_named_at(dir: u32, name: &[u8; 11], data: &[u8], attr: u8) -> bool 
     true
 }
 
-pub fn finish_fcb(name: &[u8; 11], size: u32, time: u16, date: u16) -> bool {
-    let disk = &mut disk(working_directory());
-    let Some(map) = layout(disk) else {
-        return false;
-    };
-    let Some(f) = find(disk, &map, disk.cwd, name) else {
-        return false;
-    };
-    if f.attr & 0x10 != 0 || size as usize > f.size {
-        return false;
-    }
-    let Some((old, _)) = map.chain(&disk.bytes, f.cluster) else {
-        return false;
-    };
-    let keep = (size as usize).div_ceil(map.cluster_bytes());
-    if keep > old {
-        return false;
-    }
-    let mut raw = f.raw;
-    if keep < old {
-        if keep == 0 {
-            map.release(&mut disk.bytes, f.cluster);
-            map.set_first(&mut raw, 0);
-        } else {
-            let mut last = f.cluster;
-            for _ in 1..keep {
-                last = map.next(&disk.bytes, last).unwrap();
-            }
-            let tail = map.next(&disk.bytes, last).unwrap();
-            map.release(&mut disk.bytes, tail);
-            map.set(&mut disk.bytes, last, u32::MAX);
-        }
-        map.refresh_fsinfo(&mut disk.bytes);
-    }
-    raw[22..24].copy_from_slice(&time.to_le_bytes());
-    raw[24..26].copy_from_slice(&date.to_le_bytes());
-    raw[28..32].copy_from_slice(&size.to_le_bytes());
-    disk.bytes.edit(f.at..f.at + 32).copy_from_slice(&raw);
-    true
-}
-
-pub fn remove_file(name: &[u8; 11]) -> bool {
-    remove_file_at(working_directory(), name)
-}
 pub fn remove_file_at(dir: u32, name: &[u8; 11]) -> bool {
     remove(dir, name, false)
 }
-pub fn remove_dir(name: &[u8; 11]) -> bool {
-    remove(working_directory(), name, true)
+pub fn remove_dir(dir: u32, name: &[u8; 11]) -> bool {
+    remove(dir, name, true)
 }
 fn remove(dir: u32, name: &[u8; 11], directory: bool) -> bool {
     let disk = &mut disk(dir);
@@ -369,8 +191,8 @@ fn remove(dir: u32, name: &[u8; 11], directory: bool) -> bool {
     true
 }
 
-pub fn rename_file(from: &[u8; 11], to: &[u8; 11]) -> bool {
-    let disk = &mut disk(working_directory());
+pub fn rename_file(dir: u32, from: &[u8; 11], to: &[u8; 11]) -> bool {
+    let disk = &mut disk(dir);
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -385,8 +207,8 @@ pub fn rename_file(from: &[u8; 11], to: &[u8; 11]) -> bool {
     true
 }
 
-pub fn make_dir(name: &[u8; 11]) -> bool {
-    let disk = &mut disk(working_directory());
+pub fn make_dir(dir: u32, name: &[u8; 11]) -> bool {
+    let disk = &mut disk(dir);
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -418,98 +240,15 @@ pub fn make_dir(name: &[u8; 11]) -> bool {
     map.refresh_fsinfo(&mut disk.bytes);
     true
 }
-pub fn change_dir(path: &[u8]) -> bool {
-    let Some(dir) = resolve_dir(path) else {
-        return false;
-    };
-    let mut dirs = DIRECTORIES.borrow();
-    let drive = if path.get(1) == Some(&b':') {
-        path[0].to_ascii_uppercase() - b'A'
-    } else {
-        dirs.active
-    };
-    dirs.paths[usize::from(drive)] = dir;
-    if drive == dirs.active {
-        set_working(dir);
-    }
-    true
-}
-pub fn resolve_dir(path: &[u8]) -> Option<u32> {
-    let (base, path) = path_start(path)?;
-    walk(base, path)
-}
-fn walk(mut dir: u32, path: &[u8]) -> Option<u32> {
-    for part in path.split(|b| matches!(*b, b'/' | b'\\')) {
-        if part.is_empty() || part == b"." {
-            continue;
-        }
-        dir = if part == b".." {
-            parent_directory(dir)
-        } else {
-            directory_cluster(dir, &canonical(part)?)?
-        };
-    }
-    Some(dir)
-}
-pub fn path_start(path: &[u8]) -> Option<(u32, &[u8])> {
-    directories().start(working_directory(), path)
-}
 
-impl Directories {
-    fn start(self, current: u32, path: &[u8]) -> Option<(u32, &[u8])> {
-        let (dir, tail) = if path.get(1) == Some(&b':') {
-            let drive = path[0].to_ascii_uppercase().checked_sub(b'A')?;
-            drive_root(drive)?;
-            (self.paths[usize::from(drive)], &path[2..])
-        } else {
-            (current, path)
-        };
-        let absolute = tail.first().is_some_and(|b| matches!(*b, b'/' | b'\\'));
-        Some((if absolute { root(dir) } else { dir }, tail))
-    }
-
-    pub fn locate(self, path: &[u8]) -> Option<(u32, &[u8])> {
-        self.start(self.paths[usize::from(self.active)], path)
-    }
-}
-
-pub fn path_name(path: &[u8]) -> Option<(u32, [u8; 11])> {
-    let (base, tail) = path_start(path)?;
-    file_in(base, tail)
-}
-pub fn file_in(base: u32, tail: &[u8]) -> Option<(u32, [u8; 11])> {
-    if let Some(i) = tail.iter().rposition(|b| matches!(*b, b'/' | b'\\')) {
-        let dir = walk(base, &tail[..i])?;
-        Some((dir, canonical(&tail[i + 1..])?))
-    } else {
-        Some((base, canonical(tail)?))
-    }
-}
-
-pub fn stamp(name: &[u8; 11]) -> Option<(u16, u16)> {
-    stamp_at(working_directory(), name)
-}
-
-pub fn stamp_at(dir: u32, name: &[u8; 11]) -> Option<(u16, u16)> {
-    let disk = &mut disk(dir);
-    let map = layout(disk)?;
-    let found = find(disk, &map, dir, name)?;
-    let time = u16::from_le_bytes([found.raw[22], found.raw[23]]);
-    let date = u16::from_le_bytes([found.raw[24], found.raw[25]]);
-    Some((time, date))
-}
-
-pub fn attribute(name: &[u8; 11]) -> Option<u8> {
-    attribute_at(working_directory(), name)
-}
 pub fn attribute_at(dir: u32, name: &[u8; 11]) -> Option<u8> {
     let disk = &mut disk(dir);
     let map = layout(disk)?;
     Some(find(disk, &map, disk.cwd, name)?.attr)
 }
 
-pub fn set_attribute(name: &[u8; 11], attr: u8) -> bool {
-    let disk = &mut disk(working_directory());
+pub fn set_attribute(dir: u32, name: &[u8; 11], attr: u8) -> bool {
+    let disk = &mut disk(dir);
     let Some(map) = layout(disk) else {
         return false;
     };
@@ -630,32 +369,12 @@ fn room(disk: &Disk, map: &Map, need: usize) -> bool {
     map.free(&disk.bytes, 2).take(need).count() == need
 }
 
-fn copy_cluster(
-    disk: &Disk,
-    map: &Map,
-    cluster: u32,
-    size: usize,
-    out: &mut [u8],
-) -> Option<usize> {
-    let (len, _) = map.chain(&disk.bytes, cluster)?;
-    if size > out.len() || size.div_ceil(map.cluster_bytes()) > len {
-        return None;
-    }
-    let mut current = cluster;
-    for chunk in out[..size].chunks_mut(map.cluster_bytes()) {
-        let start = map.data(current).start;
-        chunk.copy_from_slice(&disk.bytes[start..start + chunk.len()]);
-        current = map.next(&disk.bytes, current).unwrap_or(0);
-    }
-    Some(size)
-}
-
 fn parent_of(disk: &Disk, map: &Map, cluster: u32) -> u32 {
     find(disk, map, cluster, b"..         ")
         .map_or(0, |f| if f.cluster == map.root { 0 } else { f.cluster })
 }
-pub fn current_path(out: &mut [u8]) -> usize {
-    let disk = &mut disk(working_directory());
+pub fn current_path(dir: u32, out: &mut [u8]) -> usize {
+    let disk = &mut disk(dir);
     if disk.cwd < 2 {
         return 0;
     }
@@ -718,14 +437,6 @@ fn write_component(out: &mut [u8], mut used: usize, name: &[u8; 11]) -> usize {
     used
 }
 
-pub fn working_directory() -> u32 {
-    media::cwd()
-}
-
-pub fn set_working(cluster: u32) {
-    media::select(cluster);
-}
-
 pub fn parent_directory(cluster: u32) -> u32 {
     if cluster & !HARD < 2 {
         return root(cluster);
@@ -735,15 +446,6 @@ pub fn parent_directory(cluster: u32) -> u32 {
         return root(cluster);
     };
     root(cluster) | parent_of(disk, &map, cluster & !HARD)
-}
-
-pub struct DirMatch {
-    pub name: [u8; 11],
-    pub attr: u8,
-    pub time: u16,
-    pub date: u16,
-    pub size: u32,
-    pub index: u16,
 }
 
 pub fn find_match(dir: u32, template: &[u8; 11], search_attr: u8, start: u16) -> Option<DirMatch> {
@@ -787,69 +489,12 @@ pub fn directory_cluster(parent: u32, name: &[u8; 11]) -> Option<u32> {
     Some(root(parent) | found.cluster)
 }
 
-fn attribute_visible(file_attr: u8, search_attr: u8) -> bool {
-    const SPECIAL: u8 = 0x02 | 0x04 | 0x08 | 0x10;
-    file_attr & SPECIAL & !search_attr == 0
-}
-
-fn names_match(template: &[u8; 11], name: &[u8; 11]) -> bool {
-    let mut index = 0usize;
-    while index < 11 {
-        if template[index] != b'?' && template[index] != name[index] {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
-pub fn canonical(text: &[u8]) -> Option<[u8; 11]> {
-    let mut name = [b' '; 11];
-    let mut extension = false;
-    let mut base = 0usize;
-    let mut ext = 0usize;
-    let mut seen = false;
-    for byte in text {
-        if *byte == 0 || *byte == b' ' {
-            break;
-        }
-        seen = true;
-        if *byte == b'.' && !extension {
-            extension = true;
-            continue;
-        }
-        let upper = if byte.is_ascii_lowercase() {
-            byte.wrapping_sub(b'a').wrapping_add(b'A')
-        } else {
-            *byte
-        };
-        if !extension && base < 8 {
-            name[base] = upper;
-            base += 1;
-        } else if extension && ext < 3 {
-            name[8 + ext] = upper;
-            ext += 1;
-        }
-    }
-    if seen { Some(name) } else { None }
-}
-
 // Skip complete clusters without building or copying the whole file.
 fn at_offset(map: &Map, image: &[u8], mut first: u32, offset: usize) -> Option<u32> {
     for _ in 0..offset / map.cluster_bytes() {
         first = map.next(image, first)?;
     }
     Some(first)
-}
-
-pub fn read_range(dir: u32, name: &[u8; 11], offset: usize, out: &mut [u8]) -> Option<usize> {
-    let disk = disk(dir);
-    let map = layout(&disk)?;
-    let f = find(&disk, &map, dir, name)?;
-    if f.attr & 0x10 != 0 {
-        return None;
-    }
-    read_chain(&disk, &map, &f.raw, offset, out)
 }
 
 fn read_chain(
@@ -957,4 +602,194 @@ fn write_chain(disk: &mut Disk, map: &Map, raw: &mut [u8; 32], offset: usize, da
         map.refresh_fsinfo(&mut disk.bytes);
     }
     true
+}
+
+use super::driver::Name;
+use dosrs_native_posix::{Errno, Open, Result as PosixResult};
+// Reject names the DOS short-name parser would otherwise silently truncate.
+fn path_name(base: u32, tail: &[u8]) -> PosixResult<(u32, [u8; 11])> {
+    let path = core::str::from_utf8(tail).map_err(|_| Errno::Invalid)?;
+    let mut parts = path.split(['/', '\\']).peekable();
+    while let Some(part) = parts.next() {
+        if part.is_empty() || matches!(part, "." | "..") {
+            if parts.peek().is_none() {
+                return Err(Errno::Invalid);
+            }
+            continue;
+        }
+        let (base, ext) = part.split_once('.').unwrap_or((part, ""));
+        if base.len() > 8 || ext.len() > 3 {
+            return Err(Errno::NameTooLong);
+        }
+        if base.is_empty()
+            || part.ends_with('.')
+            || ext.contains('.')
+            || !part
+                .bytes()
+                .all(|b| b.is_ascii_graphic() && !b"\"*+,:;<=>?[\\]|".contains(&b))
+        {
+            return Err(Errno::Invalid);
+        }
+    }
+    super::dos::file_in(base, tail).ok_or(Errno::NoEntry)
+}
+
+fn resolve(dir: u32, path: Name) -> PosixResult<(u32, [u8; 11])> {
+    match path {
+        Name::Dos(n) => Ok((dir, *n)),
+        Name::Native(n) => path_name(dir, n),
+    }
+}
+fn open_vfs(dir: u32, path: Name, flags: Open) -> PosixResult<(super::File, bool)> {
+    let (dir, name) = resolve(dir, path)?;
+    let name = &name;
+    if flags.create && flags.exclusive && exists_at(dir, name) {
+        return Err(Errno::Exists);
+    }
+    let mut created = false;
+    let object = match OpenFile::open(dir, name, flags.access.writable()) {
+        Ok(object) => object,
+        Err(FileError::Missing) if flags.create => {
+            if !write_named_at(dir, name, &[], 0x20) {
+                return Err(Errno::NoSpace);
+            }
+            match OpenFile::open(dir, name, flags.access.writable()) {
+                Ok(object) => {
+                    created = true;
+                    object
+                }
+                Err(err) => {
+                    remove_file_at(dir, name);
+                    return Err(file_error(err));
+                }
+            }
+        }
+        Err(e) => return Err(file_error(e)),
+    };
+    if flags.truncate && !created {
+        object.write(0, &[]).map_err(file_error)?;
+    }
+    Ok((alloc::boxed::Box::new(object), created || flags.truncate))
+}
+fn unlink_vfs(dir: u32, path: Name) -> PosixResult<()> {
+    let (dir, name) = resolve(dir, path)?;
+    let attr = attribute_at(dir, &name).ok_or(Errno::NoEntry)?;
+    if attr & 0x10 != 0 {
+        return Err(Errno::IsDirectory);
+    }
+    if attr & 1 != 0 {
+        return Err(Errno::Access);
+    }
+    if remove_file_at(dir, &name) && flush(dir) {
+        Ok(())
+    } else {
+        Err(Errno::Io)
+    }
+}
+
+use super::driver::{Volume, VolumeId};
+pub(super) struct Driver;
+impl Volume for Driver {
+    fn open(
+        &self,
+        dir: u32,
+        path: Name,
+        flags: Open,
+    ) -> dosrs_native_posix::Result<(super::File, bool)> {
+        open_vfs(dir, path, flags)
+    }
+    fn unlink(&self, dir: u32, path: Name) -> dosrs_native_posix::Result<()> {
+        unlink_vfs(dir, path)
+    }
+    fn child(&self, dir: u32, name: &[u8; 11]) -> Option<u32> {
+        directory_cluster(dir, name)
+    }
+    fn parent(&self, dir: u32) -> u32 {
+        parent_directory(dir)
+    }
+    fn path(&self, dir: u32, out: &mut [u8]) -> usize {
+        current_path(dir, out)
+    }
+    fn find(&self, dir: u32, pattern: &[u8; 11], attr: u8, start: u16) -> Option<DirMatch> {
+        find_match(dir, pattern, attr, start)
+    }
+    fn attr(&self, dir: u32, name: &[u8; 11]) -> Option<u8> {
+        attribute_at(dir, name)
+    }
+    fn set_attr(&self, dir: u32, name: &[u8; 11], attr: u8) -> bool {
+        set_attribute(dir, name, attr)
+    }
+    fn replace(&self, dir: u32, name: &[u8; 11], data: &[u8], attr: u8) -> bool {
+        write_named_at(dir, name, data, attr)
+    }
+
+    fn mkdir(&self, dir: u32, name: &[u8; 11]) -> bool {
+        make_dir(dir, name)
+    }
+    fn rmdir(&self, dir: u32, name: &[u8; 11]) -> bool {
+        remove_dir(dir, name)
+    }
+    fn rename(&self, dir: u32, from: &[u8; 11], to: &[u8; 11]) -> bool {
+        rename_file(dir, from, to)
+    }
+    fn media(&self, dir: u32) -> u8 {
+        media_id(dir)
+    }
+    fn volume(&self, dir: u32) -> Option<VolumeId> {
+        volume_id(dir)
+    }
+    fn set_volume(&self, dir: u32, serial: &[u8; 4], label: &[u8; 11]) -> bool {
+        set_volume_id(dir, serial, label)
+    }
+    fn parameters(&self, dir: u32) -> Option<DriveBlock> {
+        drive_block(dir)
+    }
+    fn space(&self, dir: u32) -> Option<(u32, u32, u32, u32)> {
+        space(dir)
+    }
+    fn flush(&self, dir: u32) -> bool {
+        flush(dir)
+    }
+}
+
+fn file_error(error: FileError) -> Errno {
+    match error {
+        FileError::Missing => Errno::NoEntry,
+        FileError::Directory => Errno::IsDirectory,
+        FileError::Access => Errno::Access,
+        FileError::Limit => Errno::TooManyFiles,
+        FileError::Space => Errno::NoSpace,
+        FileError::Io => Errno::Io,
+    }
+}
+
+impl super::Node for OpenFile {
+    fn len(&self) -> PosixResult<u64> {
+        Ok(self.len() as u64)
+    }
+    fn read(&self, offset: u64, out: &mut [u8]) -> PosixResult<usize> {
+        if offset > u64::from(u32::MAX) {
+            return Ok(0);
+        }
+        self.read(offset as usize, out).map_err(file_error)
+    }
+    fn write(&self, offset: u64, data: &[u8]) -> PosixResult<()> {
+        if offset.saturating_add(data.len() as u64) > u64::from(u32::MAX) {
+            return Err(Errno::FileTooLarge);
+        }
+        self.write(offset as usize, data).map_err(file_error)
+    }
+    fn sync(&self) -> PosixResult<()> {
+        self.sync().then_some(()).ok_or(Errno::Io)
+    }
+    fn identity(&self) -> (u32, u64) {
+        (self.volume(), self.identity() as u64)
+    }
+    fn stamp(&self) -> PosixResult<(u16, u16)> {
+        Ok(self.stamp())
+    }
+    fn set_stamp(&self, time: u16, date: u16) -> PosixResult<()> {
+        self.set_stamp(time, date);
+        Ok(())
+    }
 }

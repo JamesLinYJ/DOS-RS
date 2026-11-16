@@ -1,5 +1,6 @@
 //! Host tests for the same no_std modules compiled into both kernels.
 #![allow(dead_code)]
+extern crate alloc;
 #[path = "../src/guest/arena.rs"]
 mod arena;
 #[path = "../src/kernel_cell.rs"]
@@ -207,10 +208,7 @@ fn maximum_command_tail_preserves_the_psp_boundary() {
     assert_eq!(ram.load(psp, 0x100), Some(0xf4));
 }
 
-#[path = "../src/dos/fat.rs"]
-pub mod fat;
 mod dos {
-    pub use crate::fat;
     // Native allocation records extended errors through this adapter.
     pub mod ms_code {
         pub fn sys_ret_err(_: u16) {}
@@ -221,8 +219,9 @@ mod bios {
         pub fn con_write_bytes(_: &[u8]) {}
     }
 }
-#[path = "../src/fs.rs"]
-mod disk;
+#[path = "../src/vfs.rs"]
+mod vfs;
+use vfs::dos as disk;
 
 static DISK_LOCK: Mutex<()> = Mutex::new(());
 
@@ -370,4 +369,118 @@ fn flat_programs_leave_allocation_room_and_renamed_windows_loader_gets_the_large
     let mut arena = Arena::new();
     let (psp, _) = program(&loader).load(ram, &mut arena).unwrap();
     assert_eq!(read_word(ram, psp, 2), Some(END));
+}
+
+#[test]
+fn fcb_keeps_its_object_and_respects_the_end_of_the_dta_segment() {
+    let _guard = DISK_LOCK.lock().unwrap();
+    disk::boot();
+    let name = *b"RECORDS BIN";
+    let old = (0u8..=255).chain(0..17).collect::<Vec<_>>();
+    assert!(disk::write_file(&name, &old));
+    let mut raw = [0; 37];
+    raw[0] = 2; // Address the B alias explicitly while A is the default.
+    raw[1..12].copy_from_slice(&name);
+    let mut table = vfs::fcb::Table::new();
+    table.open(7, &mut raw, false).unwrap();
+    assert_eq!(
+        table.transfer(7, &mut raw, 0x14, 1, 127, |_, _, _| panic!()),
+        (2, 0)
+    );
+    assert!(disk::remove_file(&name));
+    assert!(disk::write_file(&name, b"replacement"));
+    let mut buf = [0xff; 384];
+    let status = table.transfer(7, &mut raw, 0x27, 3, buf.len(), |at, record, input| {
+        assert!(!input);
+        buf[at..at + record.len()].copy_from_slice(record);
+        true
+    });
+    assert_eq!(status, (3, 3));
+    assert_eq!(&buf[..old.len()], old.as_slice());
+    assert!(buf[old.len()..].iter().all(|&b| b == 0));
+    table.close(7, &mut raw).unwrap();
+    let mut actual = [0; 11];
+    assert_eq!(disk::read_file(&name, &mut actual), Some(11));
+    assert_eq!(&actual, b"replacement");
+}
+
+#[test]
+fn partition_errors_do_not_turn_a_protected_disk_into_a_raw_volume() {
+    use dosrs_block::{BlockRead, Error, partition::data_partitions};
+    struct Disk([u8; 1024]);
+    impl BlockRead for Disk {
+        fn read_at(&self, pos: u64, out: &mut [u8]) -> Result<(), Error> {
+            let start = pos as usize;
+            out.copy_from_slice(self.0.get(start..start + out.len()).ok_or(Error)?);
+            Ok(())
+        }
+        fn size_bytes(&self) -> u64 {
+            1024 * 512
+        }
+    }
+    let mut disk = Disk([0; 1024]);
+    disk.0[510..512].copy_from_slice(&[0x55, 0xaa]);
+    assert!(data_partitions(&disk).unwrap().is_none());
+    let mut partition = |slot: usize, start: u32, count: u32| {
+        let e = &mut disk.0[446 + 16 * slot..462 + 16 * slot];
+        e[4] = 7;
+        e[8..12].copy_from_slice(&start.to_le_bytes());
+        e[12..16].copy_from_slice(&count.to_le_bytes());
+    };
+    partition(0, 100, 200);
+    partition(1, 250, 50);
+    assert!(data_partitions(&disk).is_err());
+    disk.0[462..478].fill(0);
+    let selected = data_partitions(&disk).unwrap().unwrap();
+    assert_eq!((selected[0].first, selected[0].sectors), (100, 200));
+    disk.0[450] = 0xee;
+    disk.0[454..458].copy_from_slice(&1u32.to_le_bytes());
+    assert!(data_partitions(&disk).is_err());
+}
+
+#[test]
+fn a_volume_cannot_write_through_its_read_only_view_or_across_partition_edges() {
+    use dosrs_block::{BlockDevice, BlockRead, BlockWindow, Error, partition::Partition};
+    use std::sync::Arc;
+    struct Memory(Mutex<[u8; 1536]>);
+    impl BlockRead for Memory {
+        fn size_bytes(&self) -> u64 {
+            1536
+        }
+        fn read_at(&self, offset: u64, out: &mut [u8]) -> Result<(), Error> {
+            let start = offset as usize;
+            out.copy_from_slice(&self.0.lock().unwrap()[start..start + out.len()]);
+            Ok(())
+        }
+    }
+    impl BlockDevice for Memory {
+        fn is_writable(&self) -> bool {
+            true
+        }
+        fn write_at(&self, offset: u64, data: &[u8]) -> Result<(), Error> {
+            let start = offset as usize;
+            self.0.lock().unwrap()[start..start + data.len()].copy_from_slice(data);
+            Ok(())
+        }
+        fn flush(&self) -> Result<(), Error> {
+            Ok(())
+        }
+    }
+    let disk = Arc::new(Memory(Mutex::new([0; 1536])));
+    let window = BlockWindow::disk(disk.clone())
+        .partition(Partition {
+            first: 1,
+            sectors: 1,
+            read_only: false,
+        })
+        .unwrap();
+    window.write_at(511, &[0xf1]).unwrap();
+    assert!(window.write_at(511, &[0xf2, 0xf3]).is_err());
+    assert!(window.read_at(u64::MAX, &mut [0; 1]).is_err());
+    let protected = window.read_only();
+    assert!(!protected.is_writable());
+    assert!(protected.write_at(511, &[0xf4]).is_err());
+    let mut tail = [0; 3];
+    disk.read_at(1022, &mut tail).unwrap();
+    assert_eq!(tail, [0, 0xf1, 0]);
 }

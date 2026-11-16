@@ -23,6 +23,9 @@ pub enum Errno {
     TooManyFiles,
     Io,
     BrokenPipe,
+    NotDirectory,
+    ReadOnly,
+    NotSupported,
     IllegalSeek,
     FileTooLarge,
 }
@@ -40,6 +43,9 @@ impl Errno {
             Self::TooManyFiles => "too many open files",
             Self::Io => "I/O error",
             Self::BrokenPipe => "broken pipe",
+            Self::NotDirectory => "not a directory",
+            Self::ReadOnly => "read-only file system",
+            Self::NotSupported => "operation not supported",
             Self::IllegalSeek => "illegal seek",
             Self::FileTooLarge => "file too large",
         }

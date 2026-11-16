@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the native DOS interrupt on a stopped QEMU CPU and inspect its return frame."""
 
+import argparse
+import re
 import socket
 import subprocess
 import tempfile
@@ -38,14 +40,22 @@ class Debugger:
         return data.decode()
 
 
-def check(arch, mode, work):
+def check(arch, mode, work, proof):
     work.mkdir(parents=True, exist_ok=True)
-    kernel = qemu.build(arch, qemu.ROOT / "target")
-    log = work / "console.txt"
+    kernel = qemu.build(arch, qemu.ROOT / "target", features="native-gate-test")
+    proof.mkdir(parents=True, exist_ok=True)
+    log = proof / "console.txt"
+    disk = work / "c.img"
+    with disk.open("wb") as f:
+        f.truncate(4 << 20)
+    subprocess.run(["mformat","-i",disk,"::"],check=True)
+    seed = bytes(range(256)) + b"last record"
+    subprocess.run(["mcopy","-i",disk,"-","::seed.bin"],input=seed,check=True)
     log.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as short:
         endpoint = Path(short) / "cpu"
         cmd = qemu.boot_args(kernel, arch, work, 1, mode) + [
+            "-drive", f"if=ide,index=0,format=raw,file={disk}",
             "-display",
             "none",
             "-serial",
@@ -62,13 +72,13 @@ def check(arch, mode, work):
         ) as vm:
             try:
                 for _ in range(1500):
-                    if log.exists() and log.read_bytes().rstrip().endswith(b"A:\\>"):
+                    if log.exists() and re.search(rb"Native gate test buffer ([0-9a-fA-F]+)\r?\n", log.read_bytes()):
                         break
                     if vm.poll() is not None:
                         raise RuntimeError("QEMU exited before DOS prompt")
                     time.sleep(0.02)
                 else:
-                    raise RuntimeError("DOS prompt missing")
+                    raise RuntimeError("Native gate regression did not boot")
                 vm.stdin.write(b"stop\n")
                 vm.stdin.flush()
                 with socket.socket(socket.AF_UNIX) as sock:
@@ -123,6 +133,38 @@ def check(arch, mode, work):
                             f"{arch}/{mode} INT 21h function={query:04X} passed CF={carry}",
                             flush=True,
                         )
+                    arena = int(re.search(rb"Native gate test buffer ([0-9a-fA-F]+)", log.read_bytes())[1],16)
+                    def put(addr, data):
+                        assert dbg.call(f"M{addr:x},{len(data):x}:{data.hex()}") == "OK"
+                    def read(addr,n):
+                        return bytes.fromhex(dbg.call(f"m{addr:x},{n:x}"))
+                    def invoke(function, handle=0, count=0, address=0):
+                        regs = original.copy()
+                        for reg, bits in [(ax,function),(bx,handle),(cx,count),(dx,address)]:
+                            setreg(regs,reg,bits)
+                        assert dbg.call("G" + regs.hex()) == "OK"
+                        dbg.call("c")
+                        after = bytearray.fromhex(dbg.call("g"))
+                        assert value(after,ip) == pc+2
+                        return value(after,ax) & 0xffff
+                    put(arena,b"C:\\gate.bin\0")
+                    h = invoke(0x3c00,address=arena)
+                    assert h >= 5
+                    payload = b"shared VFS gate"
+                    put(arena+128,payload)
+                    assert invoke(0x4000,h,len(payload),arena+128) == len(payload)
+                    assert invoke(0x3e00,h) == 0
+                    # Explicit C while the default drive is A. Read the second full record,
+                    # then the final partial record through the same FCB and DTA.
+                    fcb = bytes([3])+b"SEED    BIN"+bytes(25)
+                    put(arena,fcb)
+                    assert invoke(0x0f00,address=arena)&255 == 0
+                    invoke(0x1a00,address=arena+128)
+                    for start,status in [(0,0),(128,0),(256,3)]:
+                        assert invoke(0x1400,address=arena)&255 == status
+                        assert read(arena+128,128) == seed[start:start+128].ljust(128,b"\0")
+                    assert invoke(0x1000,address=arena)&255 == 0
+                    print(f"{arch}/{mode}: native handle write and three explicit drive C FCB reads passed",flush=True)
                     assert dbg.call(f"z1,{pc + 2:x},1") == "OK"
                     assert dbg.call(f"M{pc:x},2:{saved}") == "OK"
                     assert dbg.call("G" + original.hex()) == "OK"
@@ -133,7 +175,15 @@ def check(arch, mode, work):
                     vm.wait(timeout=5)
 
 
+    if subprocess.check_output(["mcopy","-i",disk,"::gate.bin","-"]) != b"shared VFS gate":
+        raise ValueError("native INT 21h write did not reach the FAT disk")
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ram-dir", type=Path)
+    args = parser.parse_args()
     for mode in ["bios", "uefi"]:
         for arch in qemu.ARCH:
-            check(arch, mode, qemu.ROOT / "target/gate-proof" / f"{arch}-{mode}")
+            with tempfile.TemporaryDirectory(dir=args.ram_dir) as scratch:
+                check(arch, mode, Path(scratch), qemu.ROOT / "target/gate-proof" / f"{arch}-{mode}")

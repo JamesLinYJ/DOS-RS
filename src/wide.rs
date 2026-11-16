@@ -8,6 +8,9 @@ pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
     puts(firmware);
     puts("\n");
     platform::initialize(handoff);
+    if cfg!(feature = "native-gate-test") {
+        gate_test_wait();
+    }
     let success = if cfg!(feature = "kernel-selftest") {
         smoke::run();
         true
@@ -21,6 +24,20 @@ pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
         tasks::interactive()
     };
     debug_exit(success)
+}
+
+// The external CPU-gate regression owns this buffer while the BSP is idle.
+fn gate_test_wait() -> ! {
+    static mut BUFFER: [u8; 512] = [0; 512];
+    vfs::dos::boot();
+    puts("Native gate test buffer ");
+    for byte in (&raw mut BUFFER as usize).to_be_bytes() {
+        put_hex8(byte)
+    }
+    puts("\n");
+    loop {
+        core::hint::spin_loop()
+    }
 }
 
 fn banner() -> &'static str {

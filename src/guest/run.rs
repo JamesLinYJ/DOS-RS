@@ -18,10 +18,7 @@ mod runtime;
 mod sda;
 mod termination;
 pub(super) mod xms;
-use fcb::{
-    fcb_block_read, fcb_block_write, fcb_close, fcb_create, fcb_delete, fcb_find, fcb_open,
-    fcb_place, fcb_random_read, fcb_random_write, fcb_read, fcb_rename, fcb_size, fcb_write,
-};
+
 mod bios;
 use bios::serve_bios;
 mod smoke;
@@ -309,6 +306,7 @@ pub(super) struct Session {
     pub(super) batches: super::command::Batches,
     pub(super) environment: super::command::Environment,
     handles: handles::Handles,
+    fcbs: crate::vfs::fcb::Table,
     xms: xms::Xms,
     ems: ems::Ems,
     pub(super) last_code: u16,
@@ -358,6 +356,7 @@ impl Session {
             batches: super::command::Batches::new(),
             environment: super::command::Environment::new(),
             handles: handles::Handles::new(),
+            fcbs: crate::vfs::fcb::Table::new(),
             xms: xms::Xms::new(),
             ems: ems::Ems::new(),
             last_code: 0,
@@ -593,64 +592,8 @@ fn dispatch(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> Ac
             cpu.set_carry(false);
             Action::Continue
         }
-        0x0F => {
-            fcb_open(cpu, ram);
-            Action::Continue
-        }
-        0x10 => {
-            fcb_close(cpu, ram);
-            Action::Continue
-        }
-        0x11 => {
-            fcb_find(cpu, ram, session, false);
-            Action::Continue
-        }
-        0x12 => {
-            fcb_find(cpu, ram, session, true);
-            Action::Continue
-        }
-        0x13 => {
-            fcb_delete(cpu, ram);
-            Action::Continue
-        }
-        0x14 => {
-            fcb_read(cpu, ram, session);
-            Action::Continue
-        }
-        0x15 => {
-            fcb_write(cpu, ram, session);
-            Action::Continue
-        }
-        0x16 => {
-            fcb_create(cpu, ram);
-            Action::Continue
-        }
-        0x17 => {
-            fcb_rename(cpu, ram);
-            Action::Continue
-        }
-        0x21 => {
-            fcb_random_read(cpu, ram, session);
-            Action::Continue
-        }
-        0x22 => {
-            fcb_random_write(cpu, ram, session);
-            Action::Continue
-        }
-        0x23 => {
-            fcb_size(cpu, ram);
-            Action::Continue
-        }
-        0x24 => {
-            fcb_place(cpu, ram);
-            Action::Continue
-        }
-        0x27 => {
-            fcb_block_read(cpu, ram, session);
-            Action::Continue
-        }
-        0x28 => {
-            fcb_block_write(cpu, ram, session);
+        0x0f..=0x17 | 0x21..=0x24 | 0x27..=0x28 => {
+            fcb::service(cpu, ram, session);
             Action::Continue
         }
         0x25 => {
@@ -1613,13 +1556,12 @@ fn open_named(session: &mut Session, dir: u32, name: [u8; 11], access: u8) -> Re
             ..console_handle(0)
         }
     } else {
-        // DOS checks the read-only bit on write, including for a just-created
-        // file. Preserve its existing open/access behavior here.
-        let object = super::disk::OpenFile::open(dir, &name, false).map_err(|err| match err {
-            super::disk::FileError::Limit => 4u16,
-            super::disk::FileError::Missing | super::disk::FileError::Directory => 2,
-            _ => 5,
-        })?;
+        let object =
+            super::disk::OpenFile::dos_mode(dir, &name, access != 0).map_err(|err| match err {
+                super::disk::FileError::Limit => 4u16,
+                super::disk::FileError::Missing | super::disk::FileError::Directory => 2,
+                _ => 5,
+            })?;
         Opened {
             device: None,
             dir,
@@ -1982,6 +1924,7 @@ fn finish_child(
         crate::puts("Cannot commit child file.\n");
     }
     locks::discard_closed(session);
+    session.fcbs.release(session.prefix);
     session.arena.release_process(session.prefix);
     session.arena.publish(ram);
     session.prefix = parent.prefix;
@@ -2217,37 +2160,6 @@ fn ascii_upper(byte: u8) -> u8 {
     }
 }
 
-fn dos_name(text: &[u8; 64]) -> Option<[u8; 11]> {
-    let mut name = [b' '; 11];
-    let mut extension = false;
-    let mut base = 0usize;
-    let mut ext = 0usize;
-    let mut seen = false;
-    for byte in text {
-        if *byte == 0 {
-            break;
-        }
-        seen = true;
-        if *byte == b'.' && !extension {
-            extension = true;
-            continue;
-        }
-        let upper = if byte.is_ascii_lowercase() {
-            byte.wrapping_sub(b'a').wrapping_add(b'A')
-        } else {
-            *byte
-        };
-        if !extension && base < 8 {
-            name[base] = upper;
-            base += 1;
-        } else if extension && ext < 3 {
-            name[8 + ext] = upper;
-            ext += 1;
-        }
-    }
-    if seen { Some(name) } else { None }
-}
-
 fn print_marked(cpu: &CpuState, ram: &GuestRam) {
     let segment = cpu.selector(Segment::Data);
     let mut offset = cpu.wide(Slot::Data);
@@ -2340,7 +2252,10 @@ fn file_time(cpu: &mut CpuState, session: &mut Session) {
         cpu.set_wide(Slot::Count, time);
         cpu.set_wide(Slot::Data, date);
     } else {
-        object.set_stamp(cpu.wide(Slot::Count), cpu.wide(Slot::Data));
+        if !object.set_stamp(cpu.wide(Slot::Count), cpu.wide(Slot::Data)) {
+            fail(cpu, session, 5);
+            return;
+        }
     }
     cpu.set_carry(false);
 }
@@ -2704,98 +2619,8 @@ fn drive_letter(text: &[u8; 64]) -> Option<u8> {
 }
 
 fn search_spec(text: &[u8; 64]) -> Option<(u32, [u8; 11])> {
-    let mut end = 0usize;
-    while end < text.len() && text[end] != 0 {
-        end += 1;
-    }
-    if end == 0 {
-        return None;
-    }
-    let (mut dir, text) = super::disk::path_start(&text[..end])?;
-    let cursor = 0;
-    let end = text.len();
-    let mut last = cursor;
-    let mut index = cursor;
-    while index < end {
-        if text[index] == b'\\' || text[index] == b'/' {
-            dir = directory_at(dir, &text[last..index])?;
-            last = index + 1;
-        }
-        index += 1;
-    }
-    if last >= end {
-        return None;
-    }
-    Some((dir, component_template(&text[last..end])))
-}
-
-fn directory_at(parent: u32, text: &[u8]) -> Option<u32> {
-    if text == b"." || text.is_empty() {
-        return Some(parent);
-    }
-    if text == b".." {
-        return Some(super::disk::parent_directory(parent));
-    }
-    let mut padded = [0u8; 64];
-    let count = text.len().min(padded.len() - 1);
-    let mut index = 0usize;
-    while index < count {
-        padded[index] = text[index];
-        index += 1;
-    }
-    let name = dos_name(&padded)?;
-    super::disk::directory_cluster(parent, &name)
-}
-
-fn component_template(text: &[u8]) -> [u8; 11] {
-    let mut name = [b' '; 11];
-    let mut extension = false;
-    let mut fill = false;
-    let mut base = 0usize;
-    let mut ext = 0usize;
-    let mut index = 0usize;
-    while index < text.len() {
-        let upper = ascii_upper(text[index]);
-        if upper == b'.' && !extension {
-            if fill {
-                while base < 8 {
-                    name[base] = b'?';
-                    base += 1;
-                }
-            }
-            extension = true;
-            fill = false;
-            index += 1;
-            continue;
-        }
-        if upper == b'*' {
-            fill = true;
-            index += 1;
-            continue;
-        }
-        if !extension && base < 8 {
-            name[base] = if fill { b'?' } else { upper };
-            base += 1;
-        } else if extension && ext < 3 {
-            name[8 + ext] = if fill { b'?' } else { upper };
-            ext += 1;
-        }
-        index += 1;
-    }
-    if fill {
-        if extension {
-            while ext < 3 {
-                name[8 + ext] = b'?';
-                ext += 1;
-            }
-        } else {
-            while base < 8 {
-                name[base] = b'?';
-                base += 1;
-            }
-        }
-    }
-    name
+    let n = text.iter().position(|b| *b == 0).unwrap_or(text.len());
+    super::disk::search_path(&text[..n])
 }
 
 fn write_match(

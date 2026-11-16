@@ -12,6 +12,8 @@ pub mod msclock;
 pub mod mscon;
 pub mod msbio1;
 pub(crate) mod ata;
+pub(crate) mod ata_volume;
+pub(crate) mod rtc;
 pub(crate) mod pc;
 
 pub(crate) mod screen;

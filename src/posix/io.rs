@@ -124,7 +124,7 @@ impl Description {
             } if access.writable() => {
                 if !data.is_empty() {
                     // Filesystem operations run to completion on the boot CPU.
-                    let pos = if *append { object.len() } else { *offset };
+                    let pos = if *append { object.len()? } else { *offset };
                     object.write(pos, data)?;
                     *offset = pos + data.len() as u64;
                     *dirty = true;
@@ -260,7 +260,7 @@ impl Process for ProcessContext {
         let base = match whence {
             Whence::Start => 0,
             Whence::Current => *offset,
-            Whence::End => object.len(),
+            Whence::End => object.len()?,
         };
         let pos = base.checked_add_signed(delta).ok_or(Errno::Invalid)?;
         if pos > i64::MAX as u64 {

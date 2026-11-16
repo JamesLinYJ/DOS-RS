@@ -1,17 +1,20 @@
 //! Separate boot-volume and ATA-volume storage. Writes track the exact sectors to flush.
-use super::{IMAGE, volume::Map};
+use super::IMAGE;
+#[cfg(not(test))]
+use super::volume::Map;
 use crate::kernel_cell::{Guard, KernelCell};
 use core::ops::{Deref, Range};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 
-pub(super) const HARD: u32 = 1 << 31;
+use super::HARD;
 const LIMIT: usize = 64 << 20;
 const SECTOR: usize = 512;
+#[cfg(not(test))]
+static DEVICE: KernelCell<Option<dosrs_block::BlockWindow>> = KernelCell::new(None);
 static BOOT: KernelCell<[u8; IMAGE.len()]> = KernelCell::new([0; IMAGE.len()]);
 static HARD_DISK: KernelCell<[u8; LIMIT]> = KernelCell::new([0; LIMIT]);
 static DIRTY: KernelCell<[u64; LIMIT / SECTOR / 64]> = KernelCell::new([0; LIMIT / SECTOR / 64]);
 static LENGTH: AtomicU32 = AtomicU32::new(0);
-static SELECTED: AtomicU32 = AtomicU32::new(0);
 static NEEDS_FLUSH: AtomicBool = AtomicBool::new(false);
 
 pub(super) enum Bytes {
@@ -57,35 +60,17 @@ pub(super) fn disk(dir: u32) -> Disk {
         cwd: dir & !HARD,
     }
 }
-pub(super) fn available() -> bool {
-    LENGTH.load(Relaxed) != 0
-}
-pub(super) fn cwd() -> u32 {
-    SELECTED.load(Relaxed)
-}
-pub(super) fn select(dir: u32) {
-    SELECTED.store(dir, Relaxed);
-}
-
-pub(super) fn boot() {
+pub(crate) fn boot() {
     BOOT.borrow().copy_from_slice(IMAGE);
-    select(0);
-    #[cfg(not(test))]
-    if !available() && mount() {
-        crate::puts("Mounted persistent FAT volume C:\\ on IDE.\n");
-    }
 }
 
 // Accept a raw FAT volume, never infer FAT from the size of an unformatted or NTFS disk.
 #[cfg(not(test))]
-fn mount() -> bool {
-    use crate::bios::ata;
-    let Some(sectors) = ata::capacity() else {
-        return false;
-    };
+pub(crate) fn mount(dev: dosrs_block::BlockWindow) -> bool {
+    use dosrs_block::BlockRead;
     let mut data = HARD_DISK.borrow();
     let mut sector = [0u8; SECTOR];
-    if !ata::read(0, &mut sector)
+    if dev.read_at(0, &mut sector).is_err()
         || sector[510..] != [0x55, 0xaa]
         || u16::from_le_bytes([sector[11], sector[12]]) != 512
     {
@@ -97,7 +82,7 @@ fn mount() -> bool {
     } else {
         u32::from(short)
     };
-    if count == 0 || count > sectors || count as usize > LIMIT / SECTOR {
+    if count == 0 || u64::from(count) > dev.size_bytes() / 512 || count as usize > LIMIT / SECTOR {
         return false;
     }
     let size = count as usize * SECTOR;
@@ -105,20 +90,25 @@ fn mount() -> bool {
     if Map::parse(&data[..size]).is_none() {
         return false;
     }
-    if !ata::read_sectors(1, &mut data[SECTOR..size]) {
+    if dev.read_at(SECTOR as u64, &mut data[SECTOR..size]).is_err() {
         return false;
     }
+    *DEVICE.borrow() = Some(dev);
     LENGTH.store(size as u32, Relaxed);
     true
 }
 
-pub(super) fn flush(dir: u32) -> bool {
+pub(crate) fn flush(dir: u32) -> bool {
     if dir & HARD == 0 {
         return true;
     }
     #[cfg(not(test))]
     {
-        use crate::bios::ata;
+        use dosrs_block::BlockDevice;
+        let dev = DEVICE.borrow();
+        let Some(dev) = dev.as_ref() else {
+            return false;
+        };
         let data = HARD_DISK.borrow();
         let mut dirty = DIRTY.borrow();
         for (group, bits) in dirty.iter_mut().enumerate() {
@@ -126,10 +116,10 @@ pub(super) fn flush(dir: u32) -> bool {
                 let bit = bits.trailing_zeros() as usize;
                 let sector = group * 64 + bit;
                 let start = sector * SECTOR;
-                if !ata::write(
-                    sector as u32,
-                    data[start..start + SECTOR].try_into().unwrap(),
-                ) {
+                if dev
+                    .write_at(start as u64, &data[start..start + SECTOR])
+                    .is_err()
+                {
                     return false;
                 }
                 *bits &= !(1 << bit);
@@ -137,7 +127,7 @@ pub(super) fn flush(dir: u32) -> bool {
             }
         }
         if NEEDS_FLUSH.load(Relaxed) {
-            if !ata::flush() {
+            if dev.flush().is_err() {
                 return false;
             }
             NEEDS_FLUSH.store(false, Relaxed);

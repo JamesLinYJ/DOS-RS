@@ -106,6 +106,7 @@ pub(super) fn exit(
         resume(cpu, target);
         session.current_psp = parent;
         session.last_code = u16::from(code);
+        session.fcbs.release(psp);
         session.arena.release_process(psp);
         session.arena.publish(ram);
         return None;

@@ -1,0 +1,8 @@
+[package]
+name = "dosrs-ntfs"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+dosrs-block = { path = "../block" }
