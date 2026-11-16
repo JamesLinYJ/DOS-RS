@@ -23,6 +23,8 @@ pub enum Errno {
     TooManyFiles,
     Io,
     BrokenPipe,
+    IllegalSeek,
+    FileTooLarge,
 }
 impl Errno {
     pub fn message(self) -> &'static str {
@@ -33,11 +35,13 @@ impl Errno {
             Self::Access => "permission denied",
             Self::IsDirectory => "is a directory",
             Self::Invalid => "invalid argument",
-            Self::NameTooLong => "name exceeds FAT 8.3 limit",
+            Self::NameTooLong => "file name too long",
             Self::NoSpace => "no space left",
             Self::TooManyFiles => "too many open files",
             Self::Io => "I/O error",
             Self::BrokenPipe => "broken pipe",
+            Self::IllegalSeek => "illegal seek",
+            Self::FileTooLarge => "file too large",
         }
     }
 }
@@ -63,6 +67,7 @@ pub struct Open {
     pub create: bool,
     pub exclusive: bool,
     pub truncate: bool,
+    pub append: bool,
 }
 impl Open {
     pub const READ: Self = Self {
@@ -70,22 +75,38 @@ impl Open {
         create: false,
         exclusive: false,
         truncate: false,
+        append: false,
     };
     pub const OUTPUT: Self = Self {
         access: Access::Write,
         create: true,
         exclusive: false,
         truncate: true,
+        append: false,
+    };
+    pub const APPEND: Self = Self {
+        append: true,
+        truncate: false,
+        ..Self::OUTPUT
     };
     pub const NEW: Self = Self {
         access: Access::ReadWrite,
         create: true,
         exclusive: true,
         truncate: false,
+        append: false,
     };
 }
 
+#[derive(Clone, Copy)]
+pub enum Whence {
+    Start,
+    Current,
+    End,
+}
+
 pub trait Process {
+    fn lseek(&mut self, fd: Fd, delta: i64, whence: Whence) -> Result<u64>;
     fn getpid(&self) -> u32;
     fn open(&mut self, path: &str, options: Open) -> Result<Fd>;
     fn unlink(&mut self, path: &str) -> Result<()>;

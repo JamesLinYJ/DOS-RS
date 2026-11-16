@@ -75,6 +75,8 @@ def check(work, proof, arch, firmware, cpus):
         command("cat a.txt | wc -c > count.txt")
         command("type count.txt", expect=b"\r\n" + count + b"\n")
         command("cat < a.txt | cat > copy.bin")
+        command("cat seed.txt >> append.txt")
+        command("cat seed.txt >> append.txt")
         command("fdcheck gone.tmp", expect=b"unlink: ENOENT; old fd: original!; new file: replacement")
         command("cat gone.tmp", expect=b"cat: no such file or directory")
         # Leave two processes on VT1 waiting for input, then run a DOS binary on VT2.
@@ -128,6 +130,8 @@ def check(work, proof, arch, firmware, cpus):
         return subprocess.check_output(["mcopy", "-i", disk, "::" + name, "-"])
     if read("count.txt") != count + b"\n" or read("hold.txt") != b"same name, new file":
         raise ValueError(f"{arch}: incorrect redirected bytes")
+    if read("append.txt") != b"same name, new file" * 2:
+        raise ValueError(f"{arch}: append lost existing bytes")
     if read("resumed.txt") != b"same name, new file":
         raise ValueError(f"{arch}: resumed process lost its current directory")
     if read("zero.txt") != b"0\n":
@@ -135,7 +139,7 @@ def check(work, proof, arch, firmware, cpus):
     if read("copy.bin") != PAYLOAD or read("a.txt") != PAYLOAD:
         raise ValueError(f"{arch}: binary stream mismatch")
     print(f"{arch}/{firmware}, {cpus} CPU: count={len(PAYLOAD)}, "
-          f"copy SHA-256={hashlib.sha256(PAYLOAD).hexdigest()}, unlink/dup/EOF and DOS COM passed", flush=True)
+          f"copy SHA-256={hashlib.sha256(PAYLOAD).hexdigest()}, unlink/dup/EOF, seek, append, terminal cwd and DOS COM passed", flush=True)
 
 
 def main():

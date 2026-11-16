@@ -93,6 +93,9 @@ pub(crate) fn launch(id: usize, scheduled: bool, line: &[u8], cwd: Directories) 
         return Command::Started;
     }
     loop {
+        if pc::key(false).is_some() {
+            job.notify_input();
+        }
         if let Some(code) = job.tick() {
             return Command::Exited(code);
         }
@@ -102,10 +105,13 @@ pub(crate) fn launch(id: usize, scheduled: bool, line: &[u8], cwd: Directories) 
 pub(crate) fn active(id: usize) -> bool {
     JOBS[id].borrow().is_some()
 }
-pub(crate) fn poll_terminal(id: usize) -> Option<Poll<u8>> {
+pub(crate) fn poll_terminal(id: usize, input: bool) -> Option<Poll<u8>> {
     let mut slot = JOBS[id].borrow();
     let job = slot.as_mut()?;
     pc::route_output(id);
+    if input {
+        job.notify_input();
+    }
     match job.tick() {
         Some(code) => {
             *slot = None;
@@ -120,12 +126,12 @@ pub(crate) fn interactive() -> ! {
     pc::enable_terminals();
     let mut dos = crate::guest::run::Terminals::new();
     loop {
-        let foreground = pc::poll_keyboard(|id, code| dos.input(id, code));
+        let events = pc::poll_keyboard(|id, code| dos.input(id, code));
         for id in 0..pc::TERMINALS {
-            match poll_terminal(id) {
+            match poll_terminal(id, events.input[id]) {
                 Some(Poll::Ready(code)) => dos.child_exit(id, code),
                 Some(Poll::Pending) => {}
-                None => dos.poll(id, foreground),
+                None => dos.poll(id, events.foreground),
             }
         }
         core::hint::spin_loop();

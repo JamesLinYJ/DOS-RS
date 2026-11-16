@@ -1,4 +1,4 @@
-use super::{Errno, Fd, Open, Process, Result};
+use super::{Errno, Fd, Open, Process, Result, Whence};
 use alloc::{format, string::String};
 
 async fn copy(p: &mut (impl Process + Send), fd: Fd) -> Result<()> {
@@ -62,6 +62,9 @@ pub(super) async fn fdcheck(p: &mut (impl Process + Send), args: &[String]) -> R
         return Err(Errno::Invalid);
     };
     let (r, w) = p.pipe()?;
+    if p.lseek(r, 0, Whence::Start) != Err(Errno::IllegalSeek) {
+        return Err(Errno::Io);
+    }
     let alias = p.dup(w)?;
     p.close(w)?;
     p.write_all(alias, b"pipe").await?;
@@ -101,13 +104,45 @@ pub(super) async fn fdcheck(p: &mut (impl Process + Send), args: &[String]) -> R
     {
         return Err(Errno::Io);
     }
+    if p.lseek(shared, -1, Whence::End)? != 8
+        || p.lseek(shared, -9, Whence::Current) != Err(Errno::Invalid)
+        || p.lseek(shared, 0, Whence::Current)? != 8
+    {
+        return Err(Errno::Io);
+    }
     p.close(shared)?;
     let new = p.open(path, Open::READ)?;
     let mut fresh = [0; 11];
     if p.read(new, &mut fresh).await? != fresh.len() || &fresh != b"replacement" {
         return Err(Errno::Io);
     }
+    // Both i686 and x86_64 keep a signed 64-bit file position.
+    let beyond_fat = 1i64 << 32;
+    let alias = p.dup(new)?;
+    if p.lseek(alias, beyond_fat, Whence::Start)? != beyond_fat as u64
+        || p.read(new, &mut fresh).await? != 0
+        || p.lseek(new, 0, Whence::Current)? != beyond_fat as u64
+    {
+        return Err(Errno::Io);
+    }
+    p.close(alias)?;
     p.close(new)?;
+    let first = p.open(path, Open::APPEND)?;
+    let second = p.open(path, Open::APPEND)?;
+    p.write_all(second, b"1").await?;
+    p.lseek(first, 0, Whence::Start)?;
+    p.write_all(first, b"2").await?;
+    p.close(second)?;
+    p.close(first)?;
+    let check = p.open(path, Open::READ)?;
+    let mut suffix = [0; 2];
+    if p.lseek(check, -2, Whence::End)? != 11
+        || p.read(check, &mut suffix).await? != 2
+        || &suffix != b"12"
+    {
+        return Err(Errno::Io);
+    }
+    p.close(check)?;
     p.unlink(path)?;
     p.write_all(1, b"unlink: ENOENT; old fd: ").await?;
     p.write_all(1, &old).await?;

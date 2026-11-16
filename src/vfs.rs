@@ -6,11 +6,20 @@ use dosrs_native_posix::{Errno, Open, Result};
 
 pub(crate) struct File(OpenFile);
 impl File {
-    pub fn read(&self, offset: usize, out: &mut [u8]) -> Result<usize> {
-        self.0.read(offset, out).map_err(file_error)
+    pub fn len(&self) -> u64 {
+        self.0.len() as u64
     }
-    pub fn write(&self, offset: usize, data: &[u8]) -> Result<()> {
-        self.0.write(offset, data).map_err(file_error)
+    pub fn read(&self, offset: u64, out: &mut [u8]) -> Result<usize> {
+        if offset > u64::from(u32::MAX) {
+            return Ok(0);
+        }
+        self.0.read(offset as usize, out).map_err(file_error)
+    }
+    pub fn write(&self, offset: u64, data: &[u8]) -> Result<()> {
+        if offset.saturating_add(data.len() as u64) > u64::from(u32::MAX) {
+            return Err(Errno::FileTooLarge);
+        }
+        self.0.write(offset as usize, data).map_err(file_error)
     }
     pub fn sync(&self) -> Result<()> {
         if self.0.sync() {

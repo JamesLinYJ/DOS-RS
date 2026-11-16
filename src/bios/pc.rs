@@ -305,7 +305,13 @@ pub(crate) fn enable_terminals() {
 pub(crate) fn route_output(id: usize) {
     CONSOLES.borrow().running = id;
 }
-pub(crate) fn poll_keyboard(mut raw_input: impl FnMut(usize, u8) -> bool) -> usize {
+pub(crate) struct KeyboardEvents {
+    pub foreground: usize,
+    pub input: [bool; TERMINALS],
+}
+
+pub(crate) fn poll_keyboard(mut raw_input: impl FnMut(usize, u8) -> bool) -> KeyboardEvents {
+    let mut input = [false; TERMINALS];
     let mut consoles = CONSOLES.borrow();
     let mut keyboard = KEYBOARD.borrow();
     for _ in 0..32 {
@@ -324,9 +330,13 @@ pub(crate) fn poll_keyboard(mut raw_input: impl FnMut(usize, u8) -> bool) -> usi
             && let Some(key) = key
         {
             consoles.screens[id].enqueue(key);
+            input[id] = true;
         }
     }
-    consoles.foreground
+    KeyboardEvents {
+        foreground: consoles.foreground,
+        input,
+    }
 }
 pub(crate) fn key(consume: bool) -> Option<u16> {
     let mut consoles = CONSOLES.borrow();

@@ -27,9 +27,6 @@ impl Waiters {
             w.wake();
         }
     }
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
 
 pub(crate) struct Job {
@@ -66,9 +63,9 @@ impl Job {
                     .redirect(0, &path, Open::READ)
                     .map_err(|e| e.message())?;
             }
-            if let Some(path) = stage.output {
+            if let Some((path, mode)) = stage.output {
                 descriptors
-                    .redirect(1, &path, Open::OUTPUT)
+                    .redirect(1, &path, mode)
                     .map_err(|e| e.message())?;
             }
             group.spawn(async move {
@@ -82,8 +79,11 @@ impl Job {
         Ok(Self { terminal, group })
     }
 
+    pub fn notify_input(&self) {
+        self.terminal.borrow().notify_input();
+    }
+
     pub fn tick(&mut self) -> Option<u8> {
-        self.terminal.borrow().keyboard();
         self.group.tick()
     }
 }

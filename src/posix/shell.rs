@@ -1,12 +1,12 @@
 //! Parse native pipelines before opening any output files.
 use alloc::{string::String, vec::Vec};
-use dosrs_native_posix::Program;
+use dosrs_native_posix::{Open, Program};
 
 enum Token {
     Word(String),
     Pipe,
     Input,
-    Output,
+    Output(Open),
 }
 
 fn tokenize(line: &str) -> Result<Vec<Token>, &'static str> {
@@ -22,7 +22,8 @@ fn tokenize(line: &str) -> Result<Vec<Token>, &'static str> {
                 tokens.push(match ch {
                     '|' => Token::Pipe,
                     '<' => Token::Input,
-                    _ => Token::Output,
+                    '>' if chars.next_if_eq(&'>').is_some() => Token::Output(Open::APPEND),
+                    _ => Token::Output(Open::OUTPUT),
                 });
             }
             _ => {
@@ -55,7 +56,7 @@ pub(super) struct Stage {
     pub program: Program,
     pub argv: Vec<String>,
     pub input: Option<String>,
-    pub output: Option<String>,
+    pub output: Option<(String, Open)>,
 }
 
 pub(super) fn parse(line: &str) -> Result<Vec<Stage>, &'static str> {
@@ -74,16 +75,16 @@ pub(super) fn parse(line: &str) -> Result<Vec<Stage>, &'static str> {
                     break;
                 }
                 Token::Word(s) => argv.push(s),
-                Token::Input | Token::Output => {
-                    let dest = if matches!(token, Token::Input) {
-                        &mut input
-                    } else {
-                        &mut output
-                    };
+                Token::Input | Token::Output(_) => {
                     let Some(Token::Word(path)) = tokens.next() else {
                         return Err("missing redirection path");
                     };
-                    if dest.replace(path).is_some() {
+                    let duplicate = match token {
+                        Token::Input => input.replace(path).is_some(),
+                        Token::Output(mode) => output.replace((path, mode)).is_some(),
+                        _ => unreachable!(),
+                    };
+                    if duplicate {
                         return Err("duplicate redirection");
                     }
                 }

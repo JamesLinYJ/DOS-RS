@@ -9,7 +9,7 @@ use core::{
     future::poll_fn,
     task::{Context, Poll},
 };
-use dosrs_native_posix::{Access, Errno, Fd, Open, Process, Result};
+use dosrs_native_posix::{Access, Errno, Fd, Open, Process, Result, Whence};
 
 pub(super) struct Terminal {
     line: VecDeque<u8>,
@@ -24,10 +24,8 @@ impl Terminal {
             waiting: Waiters::default(),
         }
     }
-    pub fn keyboard(&mut self) {
-        if !self.waiting.is_empty() && pc::key(false).is_some() {
-            self.waiting.wake();
-        }
+    pub fn notify_input(&mut self) {
+        self.waiting.wake();
     }
     fn read(&mut self, cx: &Context, out: &mut [u8]) -> Poll<Result<usize>> {
         if out.is_empty() {
@@ -77,7 +75,8 @@ pub(super) enum Description {
     File {
         object: File,
         access: Access,
-        offset: usize,
+        offset: u64,
+        append: bool,
         dirty: bool,
     },
 }
@@ -103,7 +102,7 @@ impl Description {
                 ..
             } if access.readable() => {
                 let count = object.read(*offset, out)?;
-                *offset += count;
+                *offset += count as u64;
                 Poll::Ready(Ok(count))
             }
             _ => Poll::Ready(Err(Errno::BadFd)),
@@ -121,10 +120,13 @@ impl Description {
                 access,
                 offset,
                 dirty,
+                append,
             } if access.writable() => {
                 if !data.is_empty() {
-                    object.write(*offset, data)?;
-                    *offset += data.len();
+                    // Filesystem operations run to completion on the boot CPU.
+                    let pos = if *append { object.len() } else { *offset };
+                    object.write(pos, data)?;
+                    *offset = pos + data.len() as u64;
                     *dirty = true;
                 }
                 Poll::Ready(Ok(data.len()))
@@ -250,6 +252,23 @@ async fn timeslice(budget: &mut u8) {
 }
 
 impl Process for ProcessContext {
+    fn lseek(&mut self, fd: Fd, delta: i64, whence: Whence) -> Result<u64> {
+        let mut h = self.get(fd)?.borrow();
+        let Description::File { object, offset, .. } = &mut *h else {
+            return Err(Errno::IllegalSeek);
+        };
+        let base = match whence {
+            Whence::Start => 0,
+            Whence::Current => *offset,
+            Whence::End => object.len(),
+        };
+        let pos = base.checked_add_signed(delta).ok_or(Errno::Invalid)?;
+        if pos > i64::MAX as u64 {
+            return Err(Errno::FileTooLarge);
+        }
+        *offset = pos;
+        Ok(pos)
+    }
     fn getpid(&self) -> u32 {
         self.pid
     }
@@ -261,6 +280,7 @@ impl Process for ProcessContext {
             handle(Description::File {
                 object,
                 offset: 0,
+                append: flags.append,
                 access: flags.access,
                 dirty,
             }),
