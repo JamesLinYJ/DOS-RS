@@ -1,5 +1,4 @@
 pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
-    #[cfg(feature = "pc386")]
     heap::initialize();
     arch::install_interrupts();
     bios::pc::configure_serial(0x3f8, 0xe3);

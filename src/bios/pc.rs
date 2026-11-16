@@ -66,6 +66,7 @@ struct Keyboard {
     pending: Option<u16>,
     shift: u8,
     caps: bool,
+    ctrl: u8,
     alt: bool,
     extended: bool,
 }
@@ -73,6 +74,7 @@ static KEYBOARD: KernelCell<Keyboard> = KernelCell::new(Keyboard {
     pending: None,
     shift: 0,
     caps: false,
+    ctrl: 0,
     alt: false,
     extended: false,
 });
@@ -92,6 +94,15 @@ impl Keyboard {
                 self.shift |= bit;
             } else {
                 self.shift &= !bit;
+            }
+            return None;
+        }
+        if scan == 0x1d {
+            let bit = if extended { 2 } else { 1 };
+            if down {
+                self.ctrl |= bit;
+            } else {
+                self.ctrl &= !bit;
             }
             return None;
         }
@@ -118,7 +129,9 @@ impl Keyboard {
             if ch == 0 {
                 return None;
             }
-            if (self.shift != 0) ^ (ch.is_ascii_alphabetic() && self.caps) {
+            if self.ctrl != 0 && ch.is_ascii_alphabetic() {
+                ch & 0x1f
+            } else if (self.shift != 0) ^ (ch.is_ascii_alphabetic() && self.caps) {
                 upper[usize::from(scan)]
             } else {
                 ch

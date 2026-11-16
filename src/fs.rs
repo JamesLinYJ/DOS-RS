@@ -1,16 +1,20 @@
-//! Guest boot volume shared by DOS file services and BIOS sector reads.
-#[path = "disk/volume.rs"]
+//! Mounted FAT volumes shared by native processes, the DOS guest and BIOS sector reads.
+#![forbid(unsafe_code)]
+#[path = "fs/volume.rs"]
 mod volume;
 use volume::{Kind, Map, dword, word};
 
 #[cfg(test)]
-const IMAGE: &[u8] = include_bytes!("../../disks/guest12.img");
+const IMAGE: &[u8] = include_bytes!("../disks/guest12.img");
 #[cfg(not(test))]
 const IMAGE: &[u8] = include_bytes!(env!("DOS_RS_GUEST_IMAGE"));
 
-#[path = "disk/media.rs"]
+#[path = "fs/media.rs"]
 mod media;
+#[path = "fs/open.rs"]
+mod open;
 use media::{Disk, HARD, disk};
+pub use open::{FileError, OpenFile};
 pub fn in_dir<T>(dir: u32, act: impl FnOnce() -> T) -> T {
     let saved = working_directory();
     set_working(dir);
@@ -354,7 +358,9 @@ fn remove(name: &[u8; 11], directory: bool) -> bool {
         }
     }
     clear_long_name(disk, &map, &f);
-    map.release(&mut disk.bytes, f.cluster);
+    if !open::detach(working_directory(), &f) {
+        map.release(&mut disk.bytes, f.cluster);
+    }
     disk.bytes.edit(f.at..f.at + 1)[0] = 0xe5;
     map.refresh_fsinfo(&mut disk.bytes);
     true
@@ -472,29 +478,6 @@ pub fn stamp_at(dir: u32, name: &[u8; 11]) -> Option<(u16, u16)> {
     let time = u16::from_le_bytes([found.raw[22], found.raw[23]]);
     let date = u16::from_le_bytes([found.raw[24], found.raw[25]]);
     Some((time, date))
-}
-
-pub fn set_stamp_at(dir: u32, name: &[u8; 11], time: u16, date: u16) -> bool {
-    let disk = &mut disk(dir);
-    let Some(map) = layout(disk) else {
-        return false;
-    };
-    let Some(found) = find(disk, &map, dir, name) else {
-        return false;
-    };
-    let mut raw = found.raw;
-    let time_bytes = time.to_le_bytes();
-    let date_bytes = date.to_le_bytes();
-    raw[22] = time_bytes[0];
-    raw[23] = time_bytes[1];
-    raw[24] = date_bytes[0];
-    raw[25] = date_bytes[1];
-    {
-        disk.bytes
-            .edit(found.at..found.at + 32)
-            .copy_from_slice(&raw);
-        true
-    }
 }
 
 pub fn attribute(name: &[u8; 11]) -> Option<u8> {
@@ -844,11 +827,23 @@ pub fn read_range(dir: u32, name: &[u8; 11], offset: usize, out: &mut [u8]) -> O
     if f.attr & 0x10 != 0 {
         return None;
     }
-    let count = out.len().min(f.size.saturating_sub(offset));
+    read_chain(&disk, &map, &f.raw, offset, out)
+}
+
+fn read_chain(
+    disk: &Disk,
+    map: &Map,
+    raw: &[u8; 32],
+    offset: usize,
+    out: &mut [u8],
+) -> Option<usize> {
+    let count = out
+        .len()
+        .min((dword(raw, 28) as usize).saturating_sub(offset));
     if count == 0 {
         return Some(0);
     }
-    let mut cluster = at_offset(&map, &disk.bytes, f.cluster, offset)?;
+    let mut cluster = at_offset(map, &disk.bytes, map.first(raw), offset)?;
     let mut shift = offset % map.cluster_bytes();
     let mut used = 0;
     while used < count {
@@ -866,43 +861,38 @@ pub fn read_range(dir: u32, name: &[u8; 11], offset: usize, out: &mut [u8]) -> O
 }
 
 // DOS zero-length writes set the length to the current offset.
-pub fn write_range(dir: u32, name: &[u8; 11], offset: usize, data: &[u8]) -> bool {
-    let mut disk = disk(dir);
-    let Some(map) = layout(&disk) else {
-        return false;
-    };
-    let Some(f) = find(&disk, &map, dir, name) else {
-        return false;
-    };
+fn write_chain(disk: &mut Disk, map: &Map, raw: &mut [u8; 32], offset: usize, data: &[u8]) -> bool {
+    let previous = dword(raw, 28) as usize;
+    let cluster = map.first(raw);
     let Some(end) = offset
         .checked_add(data.len())
         .filter(|&n| n <= u32::MAX as usize)
     else {
         return false;
     };
-    if f.attr & 0x11 != 0 {
+    if raw[11] & 0x11 != 0 {
         return false;
     }
     let size = if data.is_empty() {
         end
     } else {
-        end.max(f.size)
+        end.max(previous)
     };
     let unit = map.cluster_bytes();
-    let Some((old, mut last)) = map.chain(&disk.bytes, f.cluster) else {
+    let Some((old, mut last)) = map.chain(&disk.bytes, cluster) else {
         return false;
     };
     let needed = size.div_ceil(unit);
-    if old < f.size.div_ceil(unit) || !room(&disk, &map, needed.saturating_sub(old)) {
+    if old < previous.div_ceil(unit) || !room(disk, map, needed.saturating_sub(old)) {
         return false;
     }
-    let mut first = f.cluster;
+    let mut first = cluster;
     if needed < old {
         if needed == 0 {
             map.release(&mut disk.bytes, first);
             first = 0;
         } else {
-            let keep = at_offset(&map, &disk.bytes, first, (needed - 1) * unit).unwrap();
+            let keep = at_offset(map, &disk.bytes, first, (needed - 1) * unit).unwrap();
             let tail = map.next(&disk.bytes, keep).unwrap();
             map.set(&mut disk.bytes, keep, u32::MAX);
             map.release(&mut disk.bytes, tail);
@@ -919,9 +909,9 @@ pub fn write_range(dir: u32, name: &[u8; 11], offset: usize, data: &[u8]) -> boo
             last = next;
         }
     }
-    let mut pos = offset.min(f.size);
+    let mut pos = offset.min(previous);
     if pos < end {
-        let mut cluster = at_offset(&map, &disk.bytes, first, pos).unwrap();
+        let mut cluster = at_offset(map, &disk.bytes, first, pos).unwrap();
         while pos < end {
             let shift = pos % unit;
             let n = (unit - shift).min(end - pos);
@@ -938,11 +928,9 @@ pub fn write_range(dir: u32, name: &[u8; 11], offset: usize, data: &[u8]) -> boo
             cluster = map.next(&disk.bytes, cluster).unwrap_or(0);
         }
     }
-    let mut raw = f.raw;
     raw[11] |= 0x20;
     raw[28..32].copy_from_slice(&(size as u32).to_le_bytes());
-    map.set_first(&mut raw, first);
-    disk.bytes.edit(f.at..f.at + 32).copy_from_slice(&raw);
+    map.set_first(raw, first);
     if old != needed {
         map.refresh_fsinfo(&mut disk.bytes);
     }

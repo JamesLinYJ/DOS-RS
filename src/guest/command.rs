@@ -93,6 +93,23 @@ pub(super) fn execute(
     if line.is_empty() || depth > 4 {
         return;
     }
+    if let Some(job) = crate::posix::Job::launch(line) {
+        match job {
+            Ok(job) if session.scheduled => session.native = Some(job),
+            Ok(mut job) => loop {
+                if let Some(code) = job.tick() {
+                    session.last_code = u16::from(code);
+                    break;
+                }
+            },
+            Err(message) => {
+                crate::puts(message);
+                crate::puts("\n");
+                session.last_code = 2;
+            }
+        }
+        return;
+    }
     let (verb, rest) = split(line);
     if verb.len() == 2 && verb[1] == b':' && rest.is_empty() {
         let drive = verb[0].to_ascii_uppercase().wrapping_sub(b'A');
@@ -124,6 +141,9 @@ pub(super) fn execute(
         }
     } else if verb.eq_ignore_ascii_case(b"VER") {
         say(b"DOS\r\n");
+    } else if verb.eq_ignore_ascii_case(b"ECHO") && rest == b"$?" {
+        crate::platform::number(u32::from(session.last_code & 0xff));
+        say(b"\r\n");
     } else if verb.eq_ignore_ascii_case(b"ECHO") {
         let mut expanded = [0; 80];
         let length = expand(rest, &mut expanded, &session.environment);

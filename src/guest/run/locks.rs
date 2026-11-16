@@ -3,10 +3,7 @@ use super::{CpuState, Session, Slot, fail};
 use crate::kernel_cell::KernelCell;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-struct FileKey {
-    directory: u32,
-    name: [u8; 11],
-}
+struct FileKey(usize);
 #[derive(Clone, Copy, Eq, PartialEq)]
 struct Owner {
     terminal: usize,
@@ -33,14 +30,9 @@ static LOCKS: KernelCell<[Option<Lock>; 32]> = KernelCell::new([None; 32]);
 
 fn identity(session: &Session, h: u16) -> Result<(FileKey, Owner), u16> {
     let file = session.handles.get(h).ok_or(6u16)?;
-    if !file.named {
-        return Err(1);
-    }
+    let object = file.object.as_ref().ok_or(1u16)?;
     Ok((
-        FileKey {
-            directory: file.dir,
-            name: file.name,
-        },
+        FileKey(object.identity()),
         Owner {
             terminal: session.terminal,
             description: session.handles.slot(h).unwrap(),

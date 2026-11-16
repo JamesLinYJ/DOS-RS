@@ -8,7 +8,7 @@
 pub mod alu;
 mod arena;
 pub mod command;
-pub mod disk;
+pub(crate) use crate::fs as disk;
 pub mod memory;
 pub mod mz;
 mod process;

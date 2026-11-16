@@ -11,7 +11,6 @@ pub(super) struct Job {
     map: [u8; HANDLE_SLOTS],
     pub limit: u16,
 }
-#[derive(Clone, Copy)]
 struct Description {
     file: Opened,
     refs: u16,
@@ -30,7 +29,7 @@ impl Handles {
                 map: [UNUSED; HANDLE_SLOTS],
                 limit: HANDLE_SLOTS as u16,
             },
-            descriptions: [None; SYSTEM_FILES],
+            descriptions: [const { None }; SYSTEM_FILES],
         };
         for h in 0..3 {
             table.insert(h, h, console_handle(h as u16), true);
@@ -150,7 +149,7 @@ impl Handles {
             entry[..2].copy_from_slice(&desc.refs.to_le_bytes());
             entry[2] = desc.file.access;
             entry[5..7].copy_from_slice(
-                &(if desc.file.named {
+                &(if desc.file.object.is_some() {
                     if super::super::disk::root(desc.file.dir) != 0 {
                         2u16
                     } else {

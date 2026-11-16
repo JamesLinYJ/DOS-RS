@@ -89,6 +89,13 @@ impl Task {
     }
 
     fn tick(&mut self, ram: &mut GuestRam, completed: Option<(Outcome, u32)>) {
+        if let Some(job) = &mut self.session.native {
+            if let Some(code) = job.tick() {
+                self.session.last_code = u16::from(code);
+                self.session.native = None;
+            }
+            return;
+        }
         if self.waiting && pc::key(false).is_none() {
             return;
         }
@@ -320,6 +327,7 @@ pub fn interactive() -> ! {
             task.tick(&mut ram, completed);
             task.cwd = disk::directories();
             if crate::platform::worker(id) != 0
+                && task.session.native.is_none()
                 && !task.waiting
                 && !task.session.batches.ready(task.session.child_depth)
                 && let Some(cpu) = task.cpu.take()

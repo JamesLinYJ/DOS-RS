@@ -1,9 +1,12 @@
-//! Kernel-owned storage for the optional 386 interpreter, available after firmware exit.
+//! Kernel-owned storage for native processes and the optional 386 interpreter, available after firmware exit.
 use core::mem::MaybeUninit;
 use linked_list_allocator::LockedHeap;
 #[global_allocator]
 static HEAP: LockedHeap = LockedHeap::empty();
-const BYTES: usize = 4 * (crate::guest::memory::RAM_BYTES + (2 << 20));
+#[cfg(not(feature = "pc386"))]
+const BYTES: usize = 1024 * 1024;
+#[cfg(feature = "pc386")]
+const BYTES: usize = (1024 * 1024) + 4 * (crate::guest::memory::RAM_BYTES + (2 << 20));
 #[repr(align(4096))]
 struct Backing([MaybeUninit<u8>; BYTES]);
 static mut BACKING: Backing = Backing([MaybeUninit::uninit(); BYTES]);

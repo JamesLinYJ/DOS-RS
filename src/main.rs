@@ -7,7 +7,7 @@
 
 mod version;
 
-#[cfg(all(feature = "pc386", not(target_pointer_width = "16")))]
+#[cfg(not(target_pointer_width = "16"))]
 extern crate alloc;
 #[cfg(not(target_pointer_width = "16"))]
 mod arch;
@@ -22,8 +22,10 @@ mod dos;
 #[cfg(not(target_pointer_width = "16"))]
 mod drivers;
 #[cfg(not(target_pointer_width = "16"))]
+mod fs;
+#[cfg(not(target_pointer_width = "16"))]
 mod guest;
-#[cfg(all(feature = "pc386", not(target_pointer_width = "16")))]
+#[cfg(not(target_pointer_width = "16"))]
 mod heap;
 #[cfg(not(target_pointer_width = "16"))]
 mod int21;
@@ -31,6 +33,8 @@ mod int21;
 mod kernel_cell;
 #[cfg(not(target_pointer_width = "16"))]
 mod platform;
+#[cfg(not(target_pointer_width = "16"))]
+mod posix;
 #[cfg(not(target_pointer_width = "16"))]
 mod smoke;
 

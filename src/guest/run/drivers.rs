@@ -406,7 +406,11 @@ fn transfer(
 }
 
 pub(super) fn ioctl(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) -> bool {
-    let Some(device) = copy_handle(session, cpu.wide(Slot::Base)).and_then(|f| f.device) else {
+    let Some(device) = session
+        .handles
+        .get(cpu.wide(Slot::Base))
+        .and_then(|f| f.device)
+    else {
         return false;
     };
     let function = cpu.low(Slot::Accumulator);
@@ -514,7 +518,7 @@ pub(super) fn handle_io(
     write: bool,
 ) -> bool {
     let handle = cpu.wide(Slot::Base);
-    let Some(opened) = copy_handle(session, handle) else {
+    let Some(opened) = session.handles.get(handle) else {
         return false;
     };
     let Some(device) = opened.device else {

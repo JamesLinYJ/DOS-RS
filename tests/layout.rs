@@ -221,11 +221,14 @@ mod bios {
         pub fn con_write_bytes(_: &[u8]) {}
     }
 }
-#[path = "../src/guest/disk.rs"]
+#[path = "../src/fs.rs"]
 mod disk;
+
+static DISK_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn replacing_a_file_on_a_full_volume_preserves_the_original_on_failure() {
+    let _guard = DISK_LOCK.lock().unwrap();
     disk::boot();
     let name = *b"ORIGINALDAT";
     assert!(disk::write_file(&name, b"original"));
@@ -248,6 +251,44 @@ fn replacing_a_file_on_a_full_volume_preserves_the_original_on_failure() {
     assert!(disk::write_file(&name, b"replaced"));
     assert_eq!(disk::read_file(&name, &mut out), Some(8));
     assert_eq!(&out, b"replaced");
+}
+
+#[test]
+fn open_handles_follow_renames_and_reclaim_unlinked_chains_on_final_close() {
+    let _guard = DISK_LOCK.lock().unwrap();
+    disk::boot();
+    let name = *b"PIN     DAT";
+    let renamed = *b"MOVED   DAT";
+    let free = || disk::space().unwrap().2;
+    let initial = free();
+    let data = [7; 1537];
+    assert!(disk::write_file(&name, &data));
+    let a = disk::OpenFile::open(0, &name, true).unwrap();
+    let b = disk::OpenFile::open(0, &name, false).unwrap();
+    assert_eq!(a.identity(), b.identity());
+    let linked = free();
+    assert!(disk::rename_file(&name, &renamed));
+    assert!(disk::remove_file(&renamed));
+    assert_eq!(free(), linked);
+    assert!(matches!(
+        disk::OpenFile::open(0, &renamed, false),
+        Err(disk::FileError::Missing)
+    ));
+    assert!(disk::write_file(&name, b"new"));
+    let new = disk::OpenFile::open(0, &name, false).unwrap();
+    assert_ne!(a.identity(), new.identity());
+    a.set_stamp(123, 456);
+    assert_eq!(b.stamp(), (123, 456));
+    assert_ne!(new.stamp(), b.stamp());
+    a.write(1536, b"end").unwrap();
+    drop(a);
+    let mut tail = [0; 4];
+    assert_eq!(b.read(1535, &mut tail), Ok(4));
+    assert_eq!(&tail, b"\x07end");
+    drop(b);
+    drop(new);
+    assert!(disk::remove_file(&name));
+    assert_eq!(free(), initial);
 }
 
 #[path = "../src/dos/alloc.rs"]

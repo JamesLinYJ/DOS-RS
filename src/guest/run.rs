@@ -82,7 +82,10 @@ fn drive(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session, limit: u
         if let Some(end) = handle_event(event, instruction, cpu, ram, session) {
             return end;
         }
-        if session.pending.is_some() || session.batches.ready(session.child_depth) {
+        if session.native.is_some()
+            || session.pending.is_some()
+            || session.batches.ready(session.child_depth)
+        {
             return End::Switch;
         }
     }
@@ -279,13 +282,12 @@ enum Action {
     Exit(u8),
 }
 
-#[derive(Clone, Copy)]
 struct Opened {
     device: Option<drivers::Device>,
     dir: u32,
     pos: usize,
     name: [u8; 11],
-    named: bool,
+    object: Option<super::disk::OpenFile>,
     console: bool,
     access: u8,
     dirty: bool,
@@ -300,6 +302,7 @@ pub(super) struct Session {
     drivers: drivers::Drivers,
     terminal: usize,
     pub(super) scheduled: bool,
+    pub(super) native: Option<crate::posix::Job>,
     pending: Option<CpuState>,
     parents: [Option<Parent>; 8],
     pub(super) batches: super::command::Batches,
@@ -307,7 +310,7 @@ pub(super) struct Session {
     handles: handles::Handles,
     xms: xms::Xms,
     ems: ems::Ems,
-    last_code: u16,
+    pub(super) last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
     prefix: u16,
@@ -349,6 +352,7 @@ impl Session {
             drivers: drivers::Drivers::new(),
             terminal: 0,
             scheduled: false,
+            native: None,
             pending: None,
             parents: [const { None }; 8],
             batches: super::command::Batches::new(),
@@ -1294,16 +1298,13 @@ fn console_handle(handle: u16) -> Opened {
         dir: 0,
         pos: 0,
         name: *b"CON        ",
-        named: false,
+        object: None,
         console: true,
         access: if handle == 0 { 0 } else { 1 },
         dirty: false,
     }
 }
 
-fn copy_handle(session: &Session, handle: u16) -> Option<Opened> {
-    session.handles.get(handle).copied()
-}
 fn force_duplicate(cpu: &mut CpuState, session: &mut Session) {
     match session
         .handles
@@ -1337,7 +1338,6 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         dir,
         name,
         access | cpu.low(Slot::Accumulator) & 0x80,
-        false,
     ) {
         Ok(handle) => {
             cpu.set_wide(Slot::Accumulator, handle);
@@ -1348,7 +1348,10 @@ fn open_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
 }
 
 fn flush_opened(opened: &Opened) -> bool {
-    !opened.named || super::disk::flush(opened.dir)
+    opened
+        .object
+        .as_ref()
+        .is_none_or(super::disk::OpenFile::sync)
 }
 
 fn commit_file(cpu: &mut CpuState, session: &mut Session) {
@@ -1383,7 +1386,7 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
     let requested = usize::from(cpu.wide(Slot::Count));
     let mut offset = cpu.wide(Slot::Data);
     let segment = cpu.selector(Segment::Data);
-    let Some(found) = copy_handle(session, handle) else {
+    let Some(found) = session.handles.get(handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -1421,12 +1424,11 @@ fn read_file(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         return;
     };
     let mut transfer = TRANSFER.borrow();
-    let Some(n) = super::disk::read_range(
-        opened.dir,
-        &opened.name,
-        opened.pos,
-        &mut transfer[..requested],
-    ) else {
+    let Some(n) = opened
+        .object
+        .as_ref()
+        .and_then(|object| object.read(opened.pos, &mut transfer[..requested]).ok())
+    else {
         fail(cpu, session, 5);
         return;
     };
@@ -1493,7 +1495,7 @@ fn create_temp(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         fail(cpu, session, 5);
         return;
     }
-    let Ok(handle) = open_named(session, dir, chosen, 2, true) else {
+    let Ok(handle) = open_named(session, dir, chosen, 2) else {
         fail(cpu, session, 4);
         return;
     };
@@ -1566,14 +1568,14 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
     let present = device || super::disk::exists_at(dir, &name);
     let exist_action = action & 0x0F;
     let missing_action = action >> 4;
-    let (empty, taken) = if present && exist_action == 1 {
-        (false, 1u16)
+    let taken = if present && exist_action == 1 {
+        1u16
     } else if present && exist_action == 2 {
         if !device && !super::disk::write_named_at(dir, &name, b"", attr) {
             fail(cpu, session, 5);
             return;
         }
-        (true, 3u16)
+        3u16
     } else if present {
         fail(cpu, session, 0x50);
         return;
@@ -1582,18 +1584,12 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
             fail(cpu, session, 5);
             return;
         }
-        (true, 2u16)
+        2u16
     } else {
         fail(cpu, session, 2);
         return;
     };
-    let handle = match open_named(
-        session,
-        dir,
-        name,
-        access | cpu.low(Slot::Base) & 0x80,
-        empty,
-    ) {
+    let handle = match open_named(session, dir, name, access | cpu.low(Slot::Base) & 0x80) {
         Ok(handle) => handle,
         Err(code) => {
             fail(cpu, session, code);
@@ -1605,13 +1601,7 @@ fn extended_open(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
     cpu.set_carry(false);
 }
 
-fn open_named(
-    session: &mut Session,
-    dir: u32,
-    name: [u8; 11],
-    access: u8,
-    empty: bool,
-) -> Result<u16, u16> {
+fn open_named(session: &mut Session, dir: u32, name: [u8; 11], access: u8) -> Result<u16, u16> {
     let (handle, slot) = session.handles.available().ok_or(4u16)?;
     let inherit = access & 0x80 == 0;
     let access = access & 7;
@@ -1623,15 +1613,19 @@ fn open_named(
             ..console_handle(0)
         }
     } else {
-        if !empty {
-            super::disk::file_len_at(dir, &name).ok_or(2u16)?;
-        }
+        // DOS checks the read-only bit on write, including for a just-created
+        // file. Preserve its existing open/access behavior here.
+        let object = super::disk::OpenFile::open(dir, &name, false).map_err(|err| match err {
+            super::disk::FileError::Limit => 4u16,
+            super::disk::FileError::Missing | super::disk::FileError::Directory => 2,
+            _ => 5,
+        })?;
         Opened {
             device: None,
             dir,
             pos: 0,
             name,
-            named: true,
+            object: Some(object),
             console: false,
             access,
             dirty: false,
@@ -1655,7 +1649,7 @@ fn create_file(cpu: &mut CpuState, ram: &GuestRam, session: &mut Session) {
         fail(cpu, session, 0x27);
         return;
     }
-    match open_named(session, dir, name, 2, true) {
+    match open_named(session, dir, name, 2) {
         Ok(h) => {
             cpu.set_wide(Slot::Accumulator, h);
             cpu.set_carry(false);
@@ -1691,7 +1685,7 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         return;
     }
     let handle = cpu.wide(Slot::Base);
-    let Some(found) = copy_handle(session, handle) else {
+    let Some(found) = session.handles.get(handle) else {
         fail(cpu, session, 6);
         return;
     };
@@ -1699,7 +1693,7 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         write_console(cpu, ram);
         return;
     }
-    if !found.named || found.access == 0 {
+    if found.object.is_none() || found.access == 0 {
         fail(cpu, session, 5);
         return;
     }
@@ -1728,12 +1722,11 @@ fn write_output(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         offset = offset.wrapping_add(1);
         seen += 1;
     }
-    if !super::disk::write_range(
-        opened.dir,
-        &opened.name,
-        opened.pos,
-        &transfer[..usize::from(seen)],
-    ) {
+    if opened.object.as_ref().is_none_or(|object| {
+        object
+            .write(opened.pos, &transfer[..usize::from(seen)])
+            .is_err()
+    }) {
         fail(cpu, session, 0x27);
         return;
     }
@@ -2334,32 +2327,20 @@ fn file_time(cpu: &mut CpuState, session: &mut Session) {
         fail(cpu, session, 6);
         return;
     }
-    let looked = session
-        .handles
-        .get(handle)
-        .map(|f| (f.dir, f.name, f.named, f.console));
-    let Some((dir, name, named, console)) = looked else {
+    let Some(file) = session.handles.get(handle) else {
         fail(cpu, session, 6);
         return;
     };
-    if !named || console {
+    let Some(object) = file.object.as_ref() else {
         fail(cpu, session, 1);
         return;
-    }
+    };
     if sub == 0 {
-        let Some((time, date)) = super::disk::stamp_at(dir, &name) else {
-            fail(cpu, session, 2);
-            return;
-        };
+        let (time, date) = object.stamp();
         cpu.set_wide(Slot::Count, time);
         cpu.set_wide(Slot::Data, date);
     } else {
-        let time = cpu.wide(Slot::Count);
-        let date = cpu.wide(Slot::Data);
-        if !super::disk::set_stamp_at(dir, &name, time, date) {
-            fail(cpu, session, 5);
-            return;
-        }
+        object.set_stamp(cpu.wide(Slot::Count), cpu.wide(Slot::Data));
     }
     cpu.set_carry(false);
 }
@@ -2379,7 +2360,7 @@ fn seek_file(cpu: &mut CpuState, session: &mut Session) {
     let next = match method {
         0 => offset,
         1 => (opened.pos as u32).wrapping_add(offset),
-        2 => (super::disk::file_len_at(opened.dir, &opened.name).unwrap_or(0) as u32)
+        2 => (opened.object.as_ref().map_or(0, super::disk::OpenFile::len) as u32)
             .wrapping_add(offset),
         _ => {
             cpu.set_carry(true);
@@ -3676,7 +3657,7 @@ fn input_status(cpu: &mut CpuState, session: &mut Session) {
         cpu.set_carry(false);
         return;
     }
-    let ready = if opened.pos < super::disk::file_len_at(opened.dir, &opened.name).unwrap_or(0) {
+    let ready = if opened.pos < opened.object.as_ref().map_or(0, super::disk::OpenFile::len) {
         0xFF
     } else {
         0

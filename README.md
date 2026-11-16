@@ -89,6 +89,23 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 | `NET`、`NET ARP 10.0.2.15 10.0.2.2` | 在挂有 e1000 的 QEMU 用户网络中，读出网卡地址并实际收发 ARP 帧。 |
 | `WIFI`、`BT` | Intel 无线适配器探测信息、标准 USB 蓝牙控制器状态或缺少设备的原因。 |
 
+## 原生 POSIX 文件和管道
+
+i686 和 x86_64 的交互提示符可以运行原生 Rust 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。输入来自终端时按 Ctrl+D 结束。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
+
+在含有 `a.txt` 的 FAT 目录中输入：
+
+```text
+cat a.txt | wc -c > count.txt
+type count.txt
+```
+
+`count.txt` 包含十进制字节数和一个 LF。`cat < a.txt | cat > copy.bin` 按原样复制字节。原生程序和 DOS 共用已挂载的 FAT 卷，使用同一组文件对象。`unlink name.txt` 移除目录项，已经打开的描述符继续访问原文件，最后一次关闭释放簇链。要自行验证，运行 `fdcheck probe.tmp`。它要求该文件名尚未使用，会验证删除、同名重建和共享偏移，然后清理测试文件。
+
+这一版的原生程序随内核静态链接，在同一地址空间协作调度。程序通过 Rust 接口使用 `open`、`read`、`write`、`close`、`dup`、`dup2`、`pipe` 和 `unlink`。文件名沿用 FAT 8.3。独立用户态可执行文件加载、C libc 和完整 POSIX 标准覆盖仍待实现。[程序接口](native-posix/src/lib.rs) · [内核实现](src/posix.rs)
+
+双架构验收使用内存盘上的 C 盘，并在 QEMU 退出后逐字节核对输出。运行 `python3 scripts/qemu-posix.py --ram-dir /path/to/ramdisk`，其中路径指向已挂载的内存盘。
+
 ## 兼容范围
 
 **启动和并发**　传统 BIOS 从 MBR 启动，UEFI 从系统分区加载。二者进入同一套内核服务。启动 CPU 管理设备，其他 CPU 用独立栈并行执行不同会话的解释器时间片。单 CPU 自动回退到轮转。项目自有引导和内核源码使用 Rust。底层的 MBR 入口、实模式转换、AP 启动和中断门使用固定版本的外部架构代码。[外部组件说明](NOTICE)
