@@ -81,3 +81,17 @@ pub(crate) fn session_nonce() -> u32 {
         ^ (ticks >> 32) as u32
         ^ SEQUENCE.fetch_add(0x9e3779b9, Ordering::Relaxed)
 }
+
+pub(super) fn user_timer(on: bool) {
+    if on {
+        apic_write(0x3e0, 3); // divide by 16
+        apic_write(0x320, 0xf0);
+        apic_write(0x380, 500_000);
+    } else {
+        apic_write(0x320, 0x10000 | 0xf0);
+        apic_write(0x380, 0);
+    }
+}
+pub(super) fn user_eoi() {
+    apic_write(0xb0, 0);
+}

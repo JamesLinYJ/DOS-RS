@@ -11,6 +11,8 @@ REV = "8628578dacd38b327d4f9acf820c6914f4b3a48f"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--from-checkout", type=Path)
 parser.add_argument("--bios-checkout", type=Path)
+parser.add_argument("--user32-checkout", type=Path)
+parser.add_argument("--user64-checkout", type=Path)
 args = parser.parse_args()
 
 
@@ -41,3 +43,7 @@ prepare(
     "3d7f72e36d4101ecf78b70cef2475d700bb01721",
     args.bios_checkout,
 )
+
+prepare("user32-cpu", "mit-pdos/xv6-public", "eeb7b415dbcb12cc362d0783e41c3d1f44066b17", args.user32_checkout)
+
+prepare("user64-cpu", "mars-research/xv6-64", "1d89f61468ffe0ee975287712a2fb34fac4ba253", args.user64_checkout)

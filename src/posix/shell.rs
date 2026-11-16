@@ -53,13 +53,13 @@ fn tokenize(line: &str) -> Result<Vec<Token>, &'static str> {
 }
 
 pub(super) struct Stage {
-    pub program: Program,
+    pub program: super::Native,
     pub argv: Vec<String>,
     pub input: Option<String>,
     pub output: Option<(String, Open)>,
 }
 
-pub(super) fn parse(line: &str) -> Result<Vec<Stage>, &'static str> {
+pub(super) fn parse(line: &str, cwd: crate::vfs::Directories) -> Result<Vec<Stage>, &'static str> {
     let mut stages = Vec::new();
     let mut tokens = tokenize(line)?.into_iter().peekable();
     loop {
@@ -91,12 +91,18 @@ pub(super) fn parse(line: &str) -> Result<Vec<Stage>, &'static str> {
             }
         }
         let name = argv.first().ok_or("missing command")?;
-        let program = Program::lookup(name).ok_or("unknown native program")?;
         // Four terminals share the native heap. Bound the number of simultaneous
         // continuations even for a long command line read from a batch file.
         if stages.len() == 32 {
             return Err("too many pipeline stages");
         }
+        let program = if let Some(p) = Program::lookup(name) {
+            super::Native::Builtin(p)
+        } else if name.to_ascii_lowercase().ends_with(".elf") {
+            super::Native::Disk(super::executable::Executable::load(cwd, name, &argv)?)
+        } else {
+            return Err("unknown native program");
+        };
         stages.push(Stage {
             program,
             argv,

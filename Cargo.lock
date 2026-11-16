@@ -98,6 +98,7 @@ version = "0.0.0"
 dependencies = [
  "dosrs-block",
  "dosrs-btrfs",
+ "dosrs-native-exec",
  "dosrs-native-posix",
  "dosrs-ntfs",
  "dosrs-realmode",
@@ -128,6 +129,13 @@ dependencies = [
 [[package]]
 name = "dosrs-lzo1x"
 version = "0.4.0"
+
+[[package]]
+name = "dosrs-native-exec"
+version = "0.1.0"
+dependencies = [
+ "object",
+]
 
 [[package]]
 name = "dosrs-native-posix"
@@ -191,12 +199,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
+name = "memchr"
+version = "2.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
+]
+
+[[package]]
+name = "object"
+version = "0.37.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

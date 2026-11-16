@@ -2,6 +2,7 @@
 pub(crate) mod io_memory;
 pub(crate) mod platform;
 mod traps;
+pub(crate) mod user;
 mod native_io;
 pub(crate) fn outw(port: u16, v: u16) {
     unsafe {

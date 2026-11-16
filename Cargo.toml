@@ -28,3 +28,4 @@ dosrs-native-posix = { path = "native-posix" }
 dosrs-btrfs = { path = "vendor/btrfs" }
 dosrs-block = { path = "storage/block" }
 dosrs-ntfs = { path = "storage/ntfs" }
+dosrs-native-exec = { path = "native-exec" }

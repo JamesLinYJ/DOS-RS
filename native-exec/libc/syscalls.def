@@ -1,0 +1,11 @@
+exit    2   1
+pipe    4   1
+read    5   3
+dup    10   1
+getpid 11   0
+open   15   2
+write  16   3
+unlink 18   1
+close  21   1
+dup2   22   2
+lseek  23   3

@@ -57,18 +57,40 @@ impl Gate {
 }
 static mut BSP_IDT: [Gate; 256] = [Gate::ZERO; 256];
 static mut AP_IDT: [Gate; 256] = [Gate::ZERO; 256];
+static mut USER_IDT: [Gate; 256] = [Gate::ZERO; 256];
+unsafe extern "C" {
+    static vectors: [usize; 256];
+}
+pub(super) unsafe fn use_user_gates(active: bool) {
+    let base = if active {
+        &raw const USER_IDT
+    } else {
+        &raw const BSP_IDT
+    };
+    unsafe {
+        lidt(&DescriptorTablePointer {
+            base: base.cast::<Gate>(),
+            limit: (size_of::<[Gate; 256]>() - 1) as u16,
+        });
+    }
+}
 pub(crate) fn install_interrupts() {
+    super::user::init();
     let mut map = Templates {
         base: 0,
         stride: 0,
         after: 0,
     };
     // The CPU library fills three native-sized fields. Tables become immutable
-    // before AP publication. The BSP keeps its firmware CS, APs use our GDT.
+    // before AP publication. The BSP and secondary CPUs use their own GDTs.
     unsafe {
         AsmGetTemplateAddressMap(&mut map);
         for n in 0..256 {
             let address = map.base + n * map.stride;
+            USER_IDT[n] = Gate::new(vectors[n], 8);
+            if n == 64 {
+                USER_IDT[n].attr = 0xee;
+            }
             BSP_IDT[n] = Gate::new(address, x86::segmentation::cs().bits());
             AP_IDT[n] = Gate::new(address, if cfg!(target_arch = "x86") { 8 } else { 24 });
         }

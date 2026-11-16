@@ -97,7 +97,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 
 ## 原生 POSIX 文件和管道
 
-i686 和 x86_64 的交互提示符可以运行原生 Rust 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
+i686 和 x86_64 的 Shell 可以运行内置 Rust 命令，也可以从挂载卷加载独立的静态 ELF 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
 
 在含有 `a.txt` 的可写目录中输入以下命令。
 
@@ -108,9 +108,18 @@ type count.txt
 
 `count.txt` 包含十进制字节数和一个 LF。`cat < a.txt | cat > copy.bin` 按原样复制字节。用 `cat a.txt >> copy.bin` 可以在已有文件末尾追加内容。原生程序和 DOS 通过同一套 VFS 打开文件。`unlink name.txt` 移除目录项，已经打开的描述符继续访问原文件，最后一次关闭后，文件系统可以回收存储空间。要自行验证，运行 `fdcheck probe.tmp`。它要求该文件名尚未使用，会验证删除、同名重建和共享偏移，然后清理测试文件。
 
-这一版的原生程序随内核静态链接，在同一地址空间协作调度。程序通过 Rust 接口使用 `open`、`read`、`write`、`close`、`lseek`、`dup`、`dup2`、`pipe` 和 `unlink`。独立用户态可执行文件加载、C libc 和完整 POSIX 标准覆盖仍待实现。[程序接口](native-posix/src/lib.rs) · [内核实现](src/posix.rs)
+磁盘上的 `.elf` 在 CPU 的用户态（Ring 3）执行。每个进程有独立的映射和 64 KiB 栈，启动 CPU 的本地 APIC 定时器能抢占纯计算循环。程序通过最小 C 运行库使用描述符、管道、64 位文件偏移和退出状态。当前 ABI 支持本架构的静态 ELF，使用固定的 2 MiB 虚拟地址窗口，所有进程合计最多驻留 2 MiB 用户页。动态链接、TLS、`fork` 和完整 POSIX 接口尚未实现。[用户态装载器](native-exec/src/lib.rs) · [C 接口](native-exec/libc/include/unistd.h)
 
-双架构验收使用内存盘上的 C 盘，并在 QEMU 退出后逐字节核对输出。运行 `python3 scripts/qemu-posix.py --ram-dir /path/to/ramdisk`，其中路径指向已挂载的内存盘。
+用目标架构的 `i686-elf-gcc` 或 `x86_64-elf-gcc` 和配套 binutils 构建程序。以下示例把程序放进已有的 FAT 内存盘镜像。启动同架构内核后在提示符输入 `C:`、`HELLO.ELF 7`，可看到 `hello from native C`。
+
+```sh
+python3 scripts/prepare-cpu.py
+python3 scripts/native-cc.py --arch i686 -o target/hello.elf native-exec/examples/hello.c
+mcopy -o -i "$RAM_DISK/c.img" target/hello.elf ::HELLO.ELF
+python3 scripts/qemu.py --arch i686 --firmware bios --ram-dir "$RAM_DISK" --c-disk "$RAM_DISK/c.img"
+```
+
+`python3 scripts/qemu-native-elf.py --ram-dir "$RAM_DISK"` 会为两种架构分别编译 C 程序，从 QEMU Shell 执行 `cat.elf a.txt | wc.elf -c > count.txt`，并在退出 QEMU 后核对文件。它还检查 unlink 后的描述符、并行进程的私有内存、异常退出、时钟抢占和 DOS COM 共存。内置命令的回归入口是 `scripts/qemu-posix.py`，同样接受 `--ram-dir`。
 
 ## 文件系统
 

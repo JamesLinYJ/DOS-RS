@@ -162,3 +162,32 @@ The port uses the kernel block interface, allocation, clock and a bounded
 metadata cache. The filesystem-tree orphan lifecycle is implemented in Rust.
 vendor/btrfs/lzo1x contains the codec from rust-lzo1x 0.4.0, adapted for
 no_std; its upstream license is retained alongside the source.
+
+Native user-mode context switching and the C system-call entry stubs use the
+MIT-licensed xv6 x86 CPU routines. The 32-bit routines are from MIT's
+xv6-public at eeb7b415dbcb12cc362d0783e41c3d1f44066b17. The 64-bit
+routines are from mars-research/xv6-64 at 1d89f61468ffe0ee975287712a2fb34fac4ba253.
+The build preparation script verifies both source and license digests.
+The xv6 software is:
+
+Copyright (c) 2006-2018 Frans Kaashoek, Robert Morris, Russ Cox,
+                        Massachusetts Institute of Technology
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

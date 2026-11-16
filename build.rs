@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rustc-link-arg=/base:0x1000000");
     println!("cargo:rustc-link-arg=/export:dos_rs_bios_entry");
     build_cpu_library(std::path::Path::new(&dir));
+    build_user_cpu(std::path::Path::new(&dir));
     println!("cargo:rerun-if-env-changed=DOS_RS_EXT_MIB");
     let mib = std::env::var("DOS_RS_EXT_MIB")
         .unwrap_or_else(|_| "8".into())
@@ -117,6 +118,57 @@ fn build_cpu_library(root: &std::path::Path) {
             .expect("install NASM for the upstream CPU library");
         assert!(status.success(), "could not build {}", source.display());
         println!("cargo:rerun-if-changed={}", source.display());
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+}
+
+/// Compile the pinned architecture library directly into PE/COFF objects.
+fn build_user_cpu(root: &std::path::Path) {
+    use std::{env, fs, path::PathBuf, process::Command};
+    let ia32 = env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "x86";
+    let (package, triple) = if ia32 {
+        ("user32-cpu", "i686-pc-windows-gnu")
+    } else {
+        ("user64-cpu", "x86_64-pc-windows-gnu")
+    };
+    let source = root.join("target").join(package);
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    println!("cargo:rerun-if-changed=scripts/{package}.sha256");
+    for name in ["mmu.h", "vectors.pl", "swtch.S", "trapasm.S"] {
+        println!("cargo:rerun-if-changed={}", source.join(name).display());
+    }
+    let vectors = Command::new("perl")
+        .arg(source.join("vectors.pl"))
+        .output()
+        .unwrap();
+    assert!(vectors.status.success());
+    let generated = out.join("vectors.S");
+    fs::write(&generated, vectors.stdout).unwrap();
+    for file in [source.join("swtch.S"), source.join("trapasm.S"), generated] {
+        let obj = out.join(file.file_stem().unwrap()).with_extension("obj");
+        let mut cc = Command::new("clang");
+        cc.args(["-target", triple, "-x", "assembler-with-cpp", "-c"])
+            .arg(&file)
+            .arg("-o")
+            .arg(&obj);
+        if ia32 {
+            // The three freestanding CPU stubs install no Windows SEH handlers.
+            let metadata = out.join("no-seh-handlers.inc");
+            fs::write(
+                &metadata,
+                ".def @feat.00; .scl 3; .type 0; .endef\n.set @feat.00, 1\n",
+            )
+            .unwrap();
+            cc.arg("-include").arg(metadata);
+            for symbol in ["swtch", "trapret", "trap", "vectors", "alltraps"] {
+                cc.arg(format!("-D{symbol}=_{symbol}"));
+            }
+        }
+        assert!(
+            cc.status().unwrap().success(),
+            "assembling {}",
+            file.display()
+        );
         println!("cargo:rustc-link-arg={}", obj.display());
     }
 }

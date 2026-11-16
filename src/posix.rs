@@ -2,6 +2,7 @@
 //! terminal scheduler and FAT volumes. Each native stage has its own Rust
 //! continuation and descriptor table, including inherited open descriptions.
 #![forbid(unsafe_code)]
+mod executable;
 mod io;
 mod pipe;
 mod shell;
@@ -11,6 +12,10 @@ use crate::{tasks::Group, vfs::Directories};
 use alloc::{sync::Arc, vec::Vec};
 use core::task::{Context, Poll, Waker};
 use dosrs_native_posix::{Open, Program};
+enum Native {
+    Builtin(Program),
+    Disk(executable::Executable),
+}
 use io::{ProcessContext, Terminal};
 
 #[derive(Default)]
@@ -38,8 +43,10 @@ impl Job {
     pub fn launch(line: &[u8], cwd: Directories) -> Option<Result<Self, &'static str>> {
         let line = core::str::from_utf8(line).ok()?;
         let name = line.split([' ', '\t', '|', '>', '<']).next()?;
-        Program::lookup(name)?;
-        Some(shell::parse(line).and_then(|stages| Self::spawn(stages, cwd)))
+        if Program::lookup(name).is_none() && !name.to_ascii_lowercase().ends_with(".elf") {
+            return None;
+        }
+        Some(shell::parse(line, cwd).and_then(|stages| Self::spawn(stages, cwd)))
     }
 
     fn spawn(stages: Vec<shell::Stage>, cwd: Directories) -> Result<Self, &'static str> {
@@ -69,7 +76,10 @@ impl Job {
                     .map_err(|e| e.message())?;
             }
             group.spawn(async move {
-                let status = stage.program.run(&mut descriptors, &stage.argv).await;
+                let status = match stage.program {
+                    Native::Builtin(p) => p.run(&mut descriptors, &stage.argv).await,
+                    Native::Disk(task) => task.run(&mut descriptors).await,
+                };
                 if descriptors.finish().is_err() {
                     return 1;
                 }
