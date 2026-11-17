@@ -1,0 +1,66 @@
+/* Read a bounded argv fixture and execute each tool with isolated stdio files.
+ * The host checks the files on the stopped image using the recorded wait status. */
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+static int exact(int fd, char *p, int n) {
+    while (n) {
+        int r = read(fd, p, n);
+        if (r <= 0) return -1;
+        p += r;
+        n -= r;
+    }
+    return 0;
+}
+static int string(int fd, char *p, int n) {
+    while (n-- > 0) {
+        if (exact(fd, p, 1)) return -1;
+        if (!*p++) return 0;
+    }
+    return -1;
+}
+static int redirect_to(const char *name, int dst) {
+    int fd = open(name, dst ? O_CREAT | O_TRUNC | O_WRONLY : O_RDONLY, 0600);
+    if (fd < 0 || dup2(fd, dst) != dst) return -1;
+    return fd == dst ? 0 : close(fd);
+}
+int main(void) {
+    int cfg = open("cases.bin", O_RDONLY);
+    int results = open("status.bin", O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    if (cfg < 0 || results < 0) return 101;
+    for (int idx = 0; idx < 1000; idx++) {
+        unsigned char count;
+        if (exact(cfg, (char *)&count, 1) || count > 24) return 102;
+        if (!count) {
+            if (close(results) || close(cfg)) return 103;
+            return write(1, "coreutils cases finished\n", 25) == 25 ? 0 : 104;
+        }
+        char input[32], locale[32], values[24][160], path[100], *args[25];
+        if (string(cfg, input, sizeof input) || string(cfg, locale, sizeof locale) || string(cfg, path, sizeof path)) return 105;
+        for (int i = 0; i < count; i++) {
+            if (string(cfg, values[i], sizeof values[i])) return 106;
+            args[i] = values[i];
+        }
+        args[count] = 0;
+        char out[] = "q000.out", err[] = "q000.err";
+        out[1] = err[1] = '0' + idx / 100;
+        out[2] = err[2] = '0' + idx / 10 % 10;
+        out[3] = err[3] = '0' + idx % 10;
+        int child = fork();
+        if (child < 0) return 107;
+        if (!child) {
+            char *env[] = {locale, "LANG=C", "TZ=UTC", "PATH=/bin", 0};
+            close(cfg); close(results);
+            if (redirect_to(input, 0) || redirect_to(out, 1) || redirect_to(err, 2)) _exit(108);
+            execve(path, args, env);
+            _exit(109);
+        }
+        int status;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 110;
+        unsigned char code = WEXITSTATUS(status);
+        if (write(results, &code, 1) != 1) return 111;
+    }
+    return 112;
+}
