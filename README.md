@@ -144,6 +144,8 @@ cat a.txt | wc -c > count.txt
 cat count.txt
 ```
 
+两个架构的原生 Shell 均可执行嵌套的 `$(...)`、反引号命令替换和整数算术展开。通过 `PATH` 启动具有执行权限、没有 shebang 的文本脚本时，Shell 和 musl 的 `execvp`、`execlp` 会传递原参数和环境。回归同时核对了脚本退出码、重定向文件和大于管道容量的输出。[Shell 回归](scripts/qemu-user-shell.py)
+
 制盘需要 QEMU、mtools、目标架构交叉编译器。有 `mkfs.btrfs` 时在宿主制盘。macOS 也可由脚本启动 Linux，在内存盘上格式化 Btrfs。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。
 
 ```sh
@@ -173,6 +175,8 @@ type count.txt
 
 BIOS 从 E820、UEFI 从退出启动服务时的内存图交付空闲物理页。帧分配器使用 4 GiB 以下可由内核直接访问的物理内存，扣除固件、内核及保留区。程序可以按 4 KiB 页申请匿名内存，物理页耗尽时收到 `ENOMEM`。未映射页访问触发进程异常，进程退出后释放其页帧。双架构在单核及四核 QEMU 上都测试了耗尽、重新分配和跨线程撤销映射。[内存接口](native-exec/libc/include/dos_memory.h) · [内存盘回归](scripts/qemu-native-frames.py)
 
+原生 ELF 主线程的栈启动时占用 64 KiB，可按需增长到 8 MiB。两个架构均验证了 256 KiB 局部缓冲区、`fork` 后的栈数据隔离，以及子进程耗尽栈后父进程继续运行。[双架构进程回归](scripts/qemu-native-process.py)
+
 C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。静态 musl 1.2.6 程序支持 ELF TLS、pthread、`fork`、`execve` 和 `waitpid`。动态链接和完整 POSIX 验收仍待完成。[musl 复测](ports/musl/test.py) [独立 ELF 多核回归](scripts/qemu-native-threads.py)
 
 用目标架构的 `i686-elf-gcc` 或 `x86_64-elf-gcc` 和配套 binutils 构建程序。以下示例把程序放进已有的 FAT 内存盘镜像。启动同架构内核后在提示符输入 `C:`、`HELLO.ELF 7`，可看到 `hello from native C`。
@@ -200,7 +204,7 @@ i686 和 x86_64 的 DOS Shell、INT 21h、FCB、COM/MZ 加载器和原生进程�
 
 NTFS 驱动使用 Rust 直接读取 MFT。目前支持 512 字节逻辑扇区和基记录内可完整描述的数据流。压缩、加密和重解析点返回未支持。Windows 系统卷的独占管理员写入及日志恢复仍待实现。原生 16 位 286/386 内核使用驻留 IO.SYS 提供的 FAT 服务。[NTFS 实现](storage/ntfs/src/lib.rs) · [16 位内核](src/realmode.rs)
 
-在 i686 和 x86_64 上，程序可以用 musl 的 `statvfs` 或 `fstatvfs` 查询 Btrfs 根卷和 FAT 盘的可用空间。只读卷报告 `ST_RDONLY` 和零个可分配块。单设备 Btrfs 卷可在写入时增加数据块组。两端都在 Linux 格式化的 128 MiB 卷上把初始 8 MiB 数据块组用完，新增了 16 MiB 块组。关机后 Linux 从每块盘恢复的 9,469,952 字节均与宿主生成的数据一致。[容量与扩容回归](scripts/qemu-btrfs-capacity.py)
+在 i686 和 x86_64 上，程序可以用 musl 的 `statvfs` 或 `fstatvfs` 查询 Btrfs 根卷和 FAT 盘的可用空间。只读卷报告 `ST_RDONLY` 和零个可分配块。单设备 Btrfs 卷可在写入时增加数据块组。两端都在 Linux 格式化的 128 MiB 卷上把初始 8 MiB 数据块组用完，新增了 16 MiB 块组。关机后 Linux 从每块盘恢复的 9,469,952 字节均与宿主生成的数据一致。另用 64 KiB 树节点和 1,100 个内联文件填充元数据，验证两个架构都能新增 8 MiB 元数据块组。[容量与扩容回归](scripts/qemu-btrfs-capacity.py)
 
 Btrfs 代码移植自 Antimatter Studios 维护的 Rust 驱动，DOS-RS 提供块设备、时钟与打开后删除的生命周期处理。源版本和许可证列在 NOTICE 中。[Rust 上游](https://github.com/antimatter-studios/rust-fs-btrfs/tree/bac713a69c2b65f70ef1ea0845760f92858ad88d) · [组件说明](NOTICE)
 
