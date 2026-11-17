@@ -122,6 +122,10 @@ static long signal_action(long sig, struct k_sigaction *sa, struct k_sigaction *
 long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
 {
     switch (n) {
+    case SYS_uname:
+        return sys_uname(a);
+    case SYS_sethostname:
+        return sys_sethostname(a, b);
     case SYS_getrandom:
         return sys_getrandom(a, b, c);
     case SYS_clock_gettime:

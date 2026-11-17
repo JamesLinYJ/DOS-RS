@@ -15,12 +15,13 @@ TOOLS = (
     "base32", "base64", "comm", "cut", "expand", "fold", "nl", "paste", "printf",
     "seq", "sort", "tr", "unexpand", "uniq",
 )
-
-
 DATA_TOOLS = (
     "basenc", "b2sum", "cksum", "md5sum", "sha1sum", "sha224sum", "sha256sum",
     "sha384sum", "sha512sum", "sum", "expr", "factor", "fmt", "numfmt", "od", "tac", "tsort",
 )
+
+
+SYSTEM_TOOLS = ("arch", "uname")
 
 
 def digest(path):
@@ -30,8 +31,9 @@ def digest(path):
 def source(archive):
     if digest(archive) != ARCHIVE:
         raise SystemExit("uutils release archive SHA-256 mismatch")
-    patch = ROOT / "userland/uutils/gnu-decoder-diagnostic.patch"
-    work = ROOT / "target/uutils-source" / digest(patch)[:16]
+    patches = sorted((ROOT / "userland/uutils").glob("*.patch"))
+    version = hashlib.sha256("".join(map(digest, patches)).encode()).hexdigest()[:16]
+    work = ROOT / "target/uutils-source" / version
     work.mkdir(parents=True, exist_ok=True)
     package = "coreutils-" + VERSION
     src = work / package
@@ -39,7 +41,8 @@ def source(archive):
         with tempfile.TemporaryDirectory(dir=work) as temporary:
             subprocess.run(["tar", "xzf", archive], cwd=temporary, check=True)
             extracted = Path(temporary) / package
-            subprocess.run(["patch", "-p1", "-i", patch], cwd=extracted, check=True)
+            for patch in patches:
+                subprocess.run(["patch", "-p1", "-i", patch], cwd=extracted, check=True)
             try:
                 extracted.rename(src)
             except OSError:
@@ -97,6 +100,6 @@ if __name__ == "__main__":
     cli.add_argument("--offline", action="store_true")
     cli.add_argument("tools", nargs="*", metavar="TOOL")
     args = cli.parse_args()
-    if set(args.tools) - set(TOOLS + DATA_TOOLS):
+    if set(args.tools) - set(TOOLS + DATA_TOOLS + SYSTEM_TOOLS):
         cli.error("unknown utility in requested build")
-    build(args.arch, args.archive, args.output, args.tools or (TOOLS + DATA_TOOLS), args.offline)
+    build(args.arch, args.archive, args.output, args.tools or (TOOLS + DATA_TOOLS + SYSTEM_TOOLS), args.offline)

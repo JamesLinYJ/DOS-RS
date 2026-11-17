@@ -10,6 +10,7 @@ mod poll;
 mod process;
 mod shell;
 mod threads;
+mod uts;
 pub(crate) use threads::clock::tick as poll_timers;
 
 use crate::kernel_cell::KernelCell;

@@ -216,6 +216,8 @@ fn immediate(
         return result;
     }
     match call {
+        Call::Uname => super::uts::uname(image, a),
+        Call::Sethostname => super::uts::sethostname(image, p.uid, a, b),
         Call::Pipe | Call::Pipe2 => {
             image.check(a, 8, true).map_err(|_| -14isize)?;
             let (r, w) = p.pipe2(if call == Call::Pipe2 { b } else { 0 }).map_err(errno)?;
