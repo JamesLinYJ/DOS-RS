@@ -3,10 +3,10 @@ use dosrs_realmode::{
     self as pc,
     system::{Media, sd, sw, w},
 };
-const REQUEST: u16 = 0x34a0;
+pub(super) const REQUEST: u16 = 0x34a0;
 const CONFIG: u16 = 0x3400;
 unsafe extern "Rust" {
-    fn device_call(segment: u16, offset: u16, packet: u16, at: u16);
+    pub(super) fn device_call(segment: u16, offset: u16, packet: u16, at: u16);
 }
 
 pub struct Devices {
@@ -15,6 +15,7 @@ pub struct Devices {
 }
 impl Devices {
     pub fn new() -> Self {
+        super::char_device::reset();
         Self {
             next: 0x9000,
             last: 0,
@@ -102,10 +103,15 @@ impl Devices {
         if top < seg as u32 * 16 || top > limit as u32 * 16 {
             return false;
         }
+        if !super::char_device::register(seg, top) {
+            return false;
+        }
         sd(seg, 0, u32::MAX);
         if self.last != 0 {
             sw(self.last, 0, 0);
             sw(self.last, 2, seg);
+        } else {
+            sd(pc::dos_tables::LIST_SEG, pc::dos_tables::LIST + 0x22, u32::from(seg) << 16);
         }
         self.last = seg;
         self.next = (((top + 4095) >> 12) << 8) as u16;

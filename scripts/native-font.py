@@ -2,8 +2,7 @@
 
 import argparse
 import gzip
-import ctypes
-import ctypes.util
+from lz4block import compress
 import io
 import json
 from pathlib import Path
@@ -87,24 +86,7 @@ def build(primary, upper, output, full, uconv):
         for k in keys:
             f.write(extra[k])
         raw = f.getvalue()
-    lib = ctypes.CDLL(
-        ctypes.util.find_library("lz4") or "/opt/homebrew/opt/lz4/lib/liblz4.dylib"
-    )
-    lib.LZ4_compress_HC.argtypes = [
-        ctypes.c_char_p,
-        ctypes.c_void_p,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_int,
-    ]
-    chunks = []
-    buf = ctypes.create_string_buffer(4200)
-    for pos in range(0, len(raw), 4096):
-        block = raw[pos : pos + 4096]
-        n = lib.LZ4_compress_HC(block, buf, len(block), len(buf), 12)
-        if n <= 0:
-            raise ValueError("LZ4 block")
-        chunks.append(buf.raw[:n])
+    chunks = [compress(raw[pos : pos + 4096]) for pos in range(0, len(raw), 4096)]
     # Old GBC1 readers follow offsets directly to block zero and skip this index.
     runs = four_byte_runs(keys)
     index = struct.pack("<4sII", b"GBR1", directory + 4 * len(keys), len(runs))

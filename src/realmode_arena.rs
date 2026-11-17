@@ -1,30 +1,50 @@
-//! The native process arena occupies PSP:0000 through paragraph 6000h.
+//! Conventional memory ends just below the resident font workspace.
 use dosrs_realmode::{
     PROGRAM, byte, store,
     system::{sw, w},
 };
 const FIRST: u16 = PROGRAM - 1;
-pub(super) const END: u16 = 0x5fff;
+pub(super) fn end() -> u16 {
+    dosrs_realmode::font_workspace() - 1
+}
 fn block(seg: u16, owner: u16, end: u16) {
     store(seg, 0, 77);
     sw(seg, 1, owner);
     sw(seg, 3, end - seg - 1);
 }
+pub fn current() -> u16 {
+    w(dosrs_realmode::COMMAND, dosrs_realmode::layout::CURRENT_PSP)
+}
+pub fn select(psp: u16) {
+    sw(
+        dosrs_realmode::COMMAND,
+        dosrs_realmode::layout::CURRENT_PSP,
+        psp,
+    );
+    sw(
+        dosrs_realmode::dos_tables::LIST_SEG,
+        dosrs_realmode::dos_tables::SDA + 16,
+        psp,
+    );
+}
 pub fn begin() {
-    block(FIRST, PROGRAM, END);
+    select(PROGRAM);
+    block(FIRST, PROGRAM, end());
 }
 fn next(seg: u16) -> u16 {
+    let arena_end = end();
     let size = w(seg, 3);
-    if size >= END - seg || !matches!(byte(seg, 0), 77 | 90) {
+    if size >= arena_end - seg || !matches!(byte(seg, 0), 77 | 90) {
         0
     } else {
         seg + 1 + size
     }
 }
 fn limit(mut seg: u16) -> u16 {
+    let arena_end = end();
     loop {
         let n = next(seg);
-        if n == 0 || n == END || w(n, 1) != 0 {
+        if n == 0 || n == arena_end || w(n, 1) != 0 {
             return n;
         }
         seg = n;
@@ -35,25 +55,27 @@ fn split(seg: u16, end: u16, sz: u16) -> u32 {
     if after < end {
         block(after, 0, end)
     }
-    block(seg, PROGRAM, after);
-    if seg == FIRST {
-        sw(PROGRAM, 2, after);
+    let owner = current();
+    block(seg, owner, after);
+    if seg + 1 == owner {
+        sw(owner, 2, after);
     }
     u32::from(seg + 1)
 }
 fn low(ah: u16, sz: u16, target: u16, largest: &mut u16) -> u32 {
+    let arena_end = end();
     let fit = byte(dosrs_realmode::COMMAND, 273);
     let mut chosen = 0;
     let mut best = u16::MAX;
     let mut seg = FIRST;
-    while seg < END {
+    while seg < arena_end {
         let end = next(seg);
         if end == 0 {
             return 0x10007;
         }
         let owner = w(seg, 1);
         let match_alloc = ah == 0x48 && owner == 0;
-        if match_alloc || (ah != 0x48 && target == seg + 1 && owner == PROGRAM) {
+        if match_alloc || (ah != 0x48 && target == seg + 1 && owner == current()) {
             let room = limit(seg);
             if room == 0 {
                 return 0x10007;
@@ -103,9 +125,10 @@ unsafe extern "Rust" {
     fn dos_upper_request(ax: u16, bx: u16, seg: u16, phase: u16) -> u32;
 }
 pub fn init() {
-    store(END, 0, 90);
-    sw(END, 1, 8);
-    sw(END, 3, 0);
+    let arena_end = end();
+    store(arena_end, 0, 90);
+    sw(arena_end, 1, 8);
+    sw(arena_end, 3, 0);
     store(dosrs_realmode::COMMAND, 273, 0);
     unsafe {
         dos_upper_request(0x5803, byte(dosrs_realmode::COMMAND, 272), 0, 0);
@@ -152,5 +175,37 @@ pub fn request(ax: u16, size: u16, target: u16, room: &mut u16) -> u32 {
             return result;
         }
         phase = 1;
+    }
+}
+
+/// Allocate the largest contiguous conventional block for a child process.
+pub fn child_block() -> Option<(u16, u16)> {
+    let mut largest = 0;
+    low(0x48, 0xffff, 0, &mut largest);
+    if largest < 16 {
+        return None;
+    }
+    let child = low(0x48, largest, 0, &mut largest);
+    if child > 65535 {
+        return None;
+    }
+    let psp = child as u16;
+    sw(psp - 1, 1, psp);
+    Some((psp, largest))
+}
+pub fn discard(psp: u16) {
+    unsafe {
+        dos_upper_request(0xf000, 0, psp, 0);
+    }
+    let mut m = FIRST;
+    while m < end() {
+        let n = next(m);
+        if n == 0 {
+            break;
+        }
+        if w(m, 1) == psp {
+            sw(m, 1, 0);
+        }
+        m = n;
     }
 }

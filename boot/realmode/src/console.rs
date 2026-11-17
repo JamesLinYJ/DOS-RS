@@ -5,7 +5,6 @@ use dosrs_realmode::{
     video,
 };
 const STATE: u16 = 0x37b0;
-pub use crate::font::MAP;
 use crate::font::{self, rb, rd};
 
 unsafe extern "Rust" {

@@ -361,7 +361,7 @@ impl Session {
             environment: super::command::Environment::new(),
             handles: handles::Handles::new(),
             fcbs: crate::vfs::fcb::Table::new(),
-            xms: xms::Xms::new(),
+            xms: xms::Xms::with_handles(1,1),
             ems: ems::Ems::new(),
             import_map: (0, 0),
             last_code: 0,

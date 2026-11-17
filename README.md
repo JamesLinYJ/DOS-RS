@@ -6,9 +6,9 @@ DOS 是用 Rust 实现的操作系统。80286 和 80386 可以从同一张 BIOS 
 
 ## 在 286 或 386 上原生启动
 
-从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/6310a99f258282efc77d27ded3169083caef9023)
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/d4b18403c56382722f43907752d2cd80543538c1)
 
-在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
+在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
 
 ```sh
 RAM_DISK=/Volumes/DOS-INSTALL-QA
@@ -56,7 +56,9 @@ python3 scripts/realmode-boot-time.py --image "$RAM_DISK/install.img" --ram-dir 
 | XMS 3.0 与 UMB | XMS 块、锁定、移动、调整大小、HMA 和 A20 管理。XMS 与 DOS 共用 UMB 分配器，按安装机器的 ROM 布局确定可用窗口 | `XMSTEST` 通过四种源、目标重叠关系。`XMSSTAT` 查询容量并申请、释放最大的 UMB |
 | VCPI 1.0 | V86 和保护模式之间切换，换入客户端 CR3、描述符表和任务状态，保护模式入口支持查询、分配和释放 4 KiB 页 | `TESTVCPI` 在保护模式中输出 `hello from pm` 并返回 DOS。`VCPI` 在保护模式查询并分配内存，再按实际返回的物理地址释放 |
 
-`CONFIG.SYS` 中的 `DEVICE=EMM386.SYS` 加载驱动，`DOS=UMB` 将可用高端段接入 DOS 的 MCB 链。286 使用同一张盘，跳过驱动后继续启动。物理扩展内存池上限为 32 MiB，实际容量受 BIOS 报告的内存和常驻结构占用影响。新分配的内存会清零，VCPI 只接受本接口分配的页进行释放。本次验收覆盖 DOSBox-X 和 QEMU。物理 ISA DMA 到页框、第三方 XMS 管理器共存及非标准的 XMS 句柄表查询 `INT 2Fh/4309h` 均在已验证范围之外。[Rust 驱动](boot/emm386/src/main.rs) · [安装后运行画面](docs/assets/native-386-ems.png)
+`CONFIG.SYS` 中的 `DEVICE=EMM386.SYS` 加载驱动，`DOS=UMB` 将可用高端段接入 DOS 的 MCB 链。286 使用同一张盘，跳过驱动后继续启动。传统 EMS、XMS 和 VCPI 共用的内存池上限为 32 MiB，实际容量受 BIOS 报告的内存和常驻结构占用影响。新分配的内存会清零，VCPI 只接受本接口分配的页进行释放。本次验收覆盖 DOSBox-X 和 QEMU。Jemm 的 `XMSSTAT` 可用 `INT 2Fh/4309h` 取得原生句柄和空闲区表。`MEMSTAT /TEST` 验证同一远指针在分配、调整大小、锁定及释放后能读到更新。物理 ISA DMA 到页框和第三方 XMS 管理器共存仍待验证。[Rust 驱动](boot/emm386/src/main.rs) · [安装后运行画面](docs/assets/native-386-ems.png)
+
+在带有 PAE、PSE 和高位可用 RAM 的 CPU 上，16 位程序可通过 DOS 页句柄读写 4 GiB 以上的物理页。驱动依据 E820 和处理器地址宽度分配。标准 QEMU 验证了 4 GiB 以上的读写，另用将 RAM 放在 128 TiB 处的测试机验证了物理地址的第 47 位。安装盘带有测试程序 `MEMSTAT /HIGH`。[调用约定和复现命令](docs/dos-high-memory.md)
 
 回归脚本会核对 Borland EMSTEST 2.0 的 SHA-256。传入上游 Jemm 源码时，脚本用宿主机 JWasm 直接编译独立测试程序，也可以用 `--clients` 指定已编译程序的目录。全部可写虚拟磁盘放在 `--ram-dir` 所指的内存卷。[验收使用的 Jemm 源码](https://github.com/Baron-von-Riedesel/Jemm/tree/89cd461f539120cbb4c37f677987e64823930cc7)
 
@@ -65,6 +67,19 @@ python3 scripts/realmode-ems-test.py --image "$RAM_DISK/install.img" \
   --disk1 "$RAM_DISK/DISKS/DISK1.IMG" --client /path/to/EMSTEST.COM \
   --jemm /path/to/Jemm --jwasm /path/to/jwasm \
   --ram-dir "$RAM_DISK" --proof target/native-ems
+```
+
+### 用原生 386 内核启动中文版 Windows 3.2
+
+在装有中文版 Windows 3.2 的 FAT32 启动盘上，保留 `CONFIG.SYS` 中的 `DEVICE=EMM386.SYS`。从 DOS 提示符进入 `C:\WINDOWS`，运行 `WIN /3`。原版 WIN386 通过 `EMMXXXX0` 取得驻留驱动的 EMS 导入表，再接管保护模式和分页。按 **Alt+H**、**A** 打开程序管理器的「关于」窗口，可查看 Windows 报告的运行模式。
+
+两次 BIOS 冷启动均显示「版本 3.2」和「386 增强方式」。i686 使用 QEMU Pentium III，x86_64 使用 QEMU64，两者均加载同一套原生 16 位 DOS 系统文件。[i686 关于画面](docs/assets/native-windows32-enhanced-i686.png) · [x86_64 关于画面](docs/assets/native-windows32-enhanced-x86_64.png)
+
+以下回归使用已安装 Windows 的原始磁盘镜像，要求开机停在 `C:\>`、Windows 位于 `C:\WINDOWS`，并采用默认中文 VGA 桌面布局。脚本为两台机器各建一个临时内存盘写入层，先运行 `MEMSTAT /TEST`，再输入启动命令，检查窗口标题、版本和模式文字，并保存两张完整截图。
+
+```sh
+python3 scripts/realmode-win32.py --disk "$RAM_DISK/windows-installed.img" \
+  --ram-dir "$RAM_DISK" --proof target/native16/windows-about
 ```
 
 ### DOS 上的 Microsoft Edit 移植
@@ -91,7 +106,7 @@ python3 scripts/realmode-install-test.py --image "$RAM_DISK/install.img" --ram-d
 python3 scripts/realmode-edit-test.py --image "$RAM_DISK/install.img" --ram-dir "$RAM_DISK" --proof target/native-edit
 ```
 
-单盘回归可以省略 `--disk-set`。回归需要 DOSBox-X、QEMU、mtools 和 dosfstools。它检查 286/386 开机、CGA/EGA/Hercules/VGA 机型上的编辑保存、中文 GB18030 字节读回、44,800 字节文档、FAT32 高簇号和 100 KiB 文件复制。Windows 3.2、多核和多终端验收使用下面的 i686 和 x86_64 内核。
+单盘回归可以省略 `--disk-set`。回归需要 DOSBox-X、QEMU、mtools 和 dosfstools。它检查 286/386 开机、CGA/EGA/Hercules/VGA 机型上的编辑保存、中文 GB18030 字节读回、44,800 字节文档、FAT32 高簇号和 100 KiB 文件复制。多核和多终端验收使用下面的 i686 和 x86_64 内核。
 
 ## 在 QEMU 里启动 i686 和 x86_64 内核
 
@@ -139,6 +154,8 @@ python3 scripts/native-cc.py --arch i686 -o target/hello.elf native-exec/example
 mcopy -o -i "$RAM_DISK/c.img" target/hello.elf ::HELLO.ELF
 python3 scripts/qemu.py --arch i686 --firmware bios --ram-dir "$RAM_DISK" --c-disk "$RAM_DISK/c.img"
 ```
+
+x86_64 的原生 ELF 支持低半区的 48 位规范虚拟地址。按实际装载段分配四级页表，用户栈、读写权限和不可执行页由各进程独立维护。QEMU 已从 `0x7f0000001000` 执行代码，并通过 `0x7ffffffff000` 的数据页完成跨进程管道传输。所有原生 ELF 进程合计可使用 2 MiB 驻留数据和代码页。i686 保留原有 ELF32 地址范围。[装载器和运行示例](native-exec/examples/highva.c)
 
 `python3 scripts/qemu-native-elf.py --ram-dir "$RAM_DISK"` 会为两种架构分别编译 C 程序，从 QEMU Shell 执行 `cat.elf a.txt | wc.elf -c > count.txt`，并在退出 QEMU 后核对文件。它还检查 unlink 后的描述符、并行进程的私有内存、异常退出、时钟抢占和 DOS COM 共存。内置命令的回归入口是 `scripts/qemu-posix.py`，同样接受 `--ram-dir`。
 

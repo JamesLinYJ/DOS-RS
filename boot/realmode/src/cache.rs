@@ -4,7 +4,7 @@ use super::{
     system::{dw, sd, sw, w},
 };
 const META: u16 = 0x3700;
-const DATA: u16 = 0x8000;
+const DATA: u16 = 0x8b00;
 const STAMP: u16 = 0x5344;
 pub fn init() {
     sw(META, 0, STAMP);
@@ -12,10 +12,10 @@ pub fn init() {
     sw(
         META,
         2,
-        if kib >= 584 {
-            128
-        } else if kib >= 552 {
-            64
+        if kib >= 572 {
+            32
+        } else if kib >= 564 {
+            16
         } else {
             0
         },

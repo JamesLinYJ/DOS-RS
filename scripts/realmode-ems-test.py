@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import time
@@ -52,16 +53,56 @@ def check_display(picture):
         raise ValueError("the EMS result appeared on serial but the display is empty")
 
 
+def check_import(session, work):
+    session.type("memstat /gemmis\n")
+    session.expect("GEMMIS 1.0 physical address ")
+    session.expect("C:\\> ")
+    match = re.search(rb"GEMMIS 1\.0 physical address (\d+)\r\n", session.log.read_bytes())
+    if not match:
+        raise ValueError("missing DOS device IOCTL result")
+    physical = int(match[1])
+    def physical_bytes(address, size, name):
+        dump = work / name
+        session.monitor(f'pmemsave {address:#x} {size} "{dump}"')
+        until = time.monotonic() + 5
+        while (not dump.is_file() or dump.stat().st_size != size) and time.monotonic() < until:
+            time.sleep(0.05)
+        return dump.read_bytes()
+
+    # MEMSTAT snapshots its two logical pages while all free XMS is held.
+    size = 0x18d + 32
+    data = physical_bytes(physical, size, "ems-import.bin")
+    if struct.unpack_from("<HH", data, 2) != (size, 1) or data[0x18c] != 2:
+        raise ValueError("invalid physical EMM import header or handle count")
+    for slot in range(4):
+        start = 10 + 6 * (0xd0000 // 16384 + slot)
+        if data[start] != 3 or data[start + 4] != slot:
+            raise ValueError("incorrect EMS frame in the native import table")
+    pages, page_list = struct.unpack_from("<HI", data, 0x18d + 16 + 10)
+    if pages != 2 or not page_list:
+        raise ValueError("missing active EMS pages in snapshot")
+    entries = struct.unpack("<8I", physical_bytes(page_list, 32, "ems-import-pages.bin"))
+    for page in range(2):
+        first = entries[page * 4] & ~0xfff
+        for sub in range(4):
+            if entries[page * 4 + sub] != (first + 4096 * sub) | 7:
+                raise ValueError("invalid EMS physical page-table entries")
+        if physical_bytes(first, 1, f"ems-import-data{page}.bin") != bytes([0x61 + page]):
+            raise ValueError("imported EMS page does not contain the client's data")
+
+
 # Unmodified clients from Jemm Test/, Tools/XMSSTAT and Tools/VCPI.
 CASES = (
     ("EMS4E", "", (b"size to save all pages: 16", b"Ok")),
     ("EMS56", "", (b"ax=5600h ok",)),
     ("EMS57", "", (b"move to expanded memory ok", b"move from expanded memory ok")),
-    ("XMSSTAT", "", (b"XMS version: 3.0", b"segment of largest UMB:", b"size of largest UMB")),
+    ("XMSSTAT", "", (b"XMS version: 3.0", b"XMS handle table at", b"XMS handle array at",
+                     b"segment of largest UMB:", b"size of largest UMB")),
     ("XMSTEST", "", (b"src+len < dest, ok", b"src+len > dest, ok", b"src > dest+len, ok", b"src < dest+len, ok")),
     ("VCPI", " -q", (b"VCPI version: 1.0", b"free pages in pm, status ah=00")),
     ("TESTVCPI", "", (b"hello from pm",)),
-    ("MEMSTAT", " /TEST", (b"XMS + EMS + UMB data verified", b"DOS high allocation, resize and free verified",
+    ("MEMSTAT", " /TEST", (b"XMS handle table allocation, lock, resize and release verified",
+                          b"XMS + EMS + UMB data verified", b"DOS high allocation, resize and free verified",
                           b"PASS: page reuse, VCPI ownership and pool balance")),
 )
 
@@ -175,6 +216,7 @@ def installed(args, work):
                 session.expect(marker.decode())
             session.expect("C:\\> ")
         session.picture("memory-services")
+        check_import(session, work)
         session.type("vcpi -a 1\n")
         session.expect("alloced 1 page(s) in pm, last status ah=00")
         session.expect("C:\\> ")

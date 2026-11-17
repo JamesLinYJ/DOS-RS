@@ -1,4 +1,6 @@
 //! DOS-RS real-mode shell. Native COM programs run with a separate PSP and stack.
+#[path = "realmode_env.rs"]
+mod environment;
 #[path = "realmode_files.rs"]
 mod files;
 #[path = "realmode_mz.rs"]
@@ -24,7 +26,7 @@ fn equal(start: u16, len: u16, word: &str) -> bool {
 }
 
 use pc::disk::Volume;
-fn load_file(res: u16, vol: &Volume, hard: u16, dest: u16, max: u16) -> Option<u16> {
+fn load_file(vol: &Volume, hard: u16, dest: u16, max: u16) -> Option<u16> {
     if hard > 2 {
         return None;
     }
@@ -32,12 +34,23 @@ fn load_file(res: u16, vol: &Volume, hard: u16, dest: u16, max: u16) -> Option<u
         vol.load(dest, max)
     } else {
         pc::store(pc::COMMAND, 258, hard);
-        let r = if hard == 0 && res != 0 {
-            res
+        if pc::control(23, hard, 0, 0) == 0 {
+            return None;
+        }
+        let r = 0x35e0;
+        let size = pc::system::dw(r, 4);
+        if size > u32::from(max) {
+            return None;
+        }
+        pc::system::sd(r, 8, 0);
+        pc::system::sw(r, 12, size as u16);
+        pc::system::sw(r, 14, dest);
+        pc::system::sw(r, 16, 0);
+        if pc::control(24, hard, 0, 0) == 0 {
+            None
         } else {
-            pc::reserved()
-        };
-        if r == 0 { None } else { pc::load(r, dest, max) }
+            Some(size as u16)
+        }
     }
 }
 fn path(vol: &mut Volume, start: u16, end: u16, default: u16) -> Option<u16> {
@@ -81,7 +94,7 @@ fn spaces(mut at: u16, end: u16) -> u16 {
     at
 }
 
-fn execute(res: u16, vol: &mut Volume, hard: &mut u16, n: u16) {
+fn execute(vol: &mut Volume, hard: &mut u16, n: u16) {
     let mut split = 0;
     while split < n && pc::byte(pc::COMMAND, split) != 32 {
         split += 1;
@@ -130,16 +143,17 @@ fn execute(res: u16, vol: &mut Volume, hard: &mut u16, n: u16) {
     if equal(0, split, "CD") {
         let at = spaces(split, n);
         if *hard == 2 && vol.path(pc::COMMAND, at, n - at, true) {
+            environment::path_change(pc::COMMAND, at, n);
             return;
         }
         vol.restore(original);
         pc::print("Directory unavailable\r\n");
         return;
     }
-    run(res, vol, hard, n, split, original);
+    run(vol, hard, n, split, original);
     vol.restore(original);
 }
-fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original: u32) {
+fn run(vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original: u32) {
     if equal(0, split, "B:") {
         if pc::floppies() >= 2 {
             *hard = 1;
@@ -179,7 +193,7 @@ fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original:
             if let Some(from) = path(vol, src, sep, *hard) {
                 let copied = if from == 2 {
                     vol.duplicate(destination)
-                } else if let Some(size) = load_file(res, vol, from, mz::FILE, 0xfe00) {
+                } else if let Some(size) = load_file(vol, from, mz::FILE, 0xfe00) {
                     i = 0;
                     while i < 11 {
                         pc::store(pc::COMMAND, 128 + i, pc::byte(pc::COMMAND, 160 + i));
@@ -237,7 +251,7 @@ fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original:
                 if vol.mounted() && vol.type_file() {
                     return;
                 }
-            } else if let Some(size) = load_file(res, vol, from, pc::PROGRAM, 0xfe00) {
+            } else if let Some(size) = load_file(vol, from, pc::PROGRAM, 0xfe00) {
                 let mut i = 0;
                 while i < size {
                     pc::put(pc::byte(pc::PROGRAM, i));
@@ -259,7 +273,7 @@ fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original:
             }
             let com = ext_is(67, 79, 77);
             if com {
-                if let Some(size) = load_file(res, vol, from, pc::PROGRAM + 16, 0xfc00) {
+                if let Some(size) = load_file(vol, from, pc::PROGRAM + 16, 0xfc00) {
                     if size != 0 {
                         pc::store(pc::COMMAND, 256, *hard);
                         files::begin(*hard == 2);
@@ -296,18 +310,15 @@ fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original:
 #[path = "realmode_arena.rs"]
 mod arena;
 fn psp(split: u16, n: u16) {
-    let mut i = 0;
-    while i < 256 {
-        pc::store(pc::PROGRAM, i, 0);
-        i += 1;
-    }
-    pc::store(pc::PROGRAM, 0, 0xcd);
-    pc::store(pc::PROGRAM, 1, 0x20);
-    pc::store(pc::PROGRAM, 3, 0x60);
-    pc::store(pc::PROGRAM, 0x40, crate::version::WORD);
-    pc::store(pc::PROGRAM, 0x41, crate::version::WORD >> 8);
+    pc::control(25, pc::PROGRAM, pc::PROGRAM, arena::end());
+    environment::root(pc::PROGRAM);
+    pc::system::sd(
+        pc::dos_tables::LIST_SEG,
+        pc::dos_tables::SDA + 12,
+        (u32::from(pc::PROGRAM) << 16) | 0x80,
+    );
     pc::store(pc::PROGRAM, 0x80, n - split);
-    i = split;
+    let mut i = split;
     while i < n {
         pc::store(pc::PROGRAM, 0x81 + i - split, pc::byte(pc::COMMAND, i));
         i += 1;
@@ -327,9 +338,16 @@ fn extension(a: u16, b: u16, c: u16) {
 
 #[unsafe(no_mangle)]
 pub fn main16() {
+    pc::dos_tables::init();
+    unsafe extern "Rust" {
+        fn dos16_bind_mux();
+    }
+    // The linker supplies the real-mode entry gate and preserves the prior vector.
+    unsafe {
+        dos16_bind_mux();
+    }
     arena::init();
-    let res = pc::reserved();
-    let boot_hd = pc::byte(0x6000, 0) >= 128;
+    let boot_hd = pc::boot_unit() >= 128;
     let mut vol = Volume::EMPTY;
     pc::cdrom::probe();
     let boot = if boot_hd { 2 } else { pc::boot_unit() };
@@ -342,39 +360,39 @@ pub fn main16() {
         });
     }
     pc::command("VER");
-    execute(res, &mut vol, &mut hard, 3);
+    execute(&mut vol, &mut hard, 3);
     pc::command("AUTOEXEC.BAT");
     if pc::filename(pc::COMMAND, 0, 12) {
-        if let Some(size) = load_file(res, &vol, boot, pc::BATCH, 2048) {
+        if let Some(size) = load_file(&vol, boot, pc::BATCH, 2048) {
             let mut i = 0;
             let mut count = 0;
             while i < size {
                 let c = pc::byte(pc::BATCH, i);
                 i += 1;
                 if c == 10 || c == 13 {
-                    execute(res, &mut vol, &mut hard, count);
+                    execute(&mut vol, &mut hard, count);
                     count = 0;
                 } else if count < 126 {
                     pc::store(pc::COMMAND, count, c);
                     count += 1;
                 }
             }
-            execute(res, &mut vol, &mut hard, count);
+            execute(&mut vol, &mut hard, count);
         }
     }
-    pc::command("COMMAND.COM");
-    pc::filename(pc::COMMAND, 0, 11);
-    let cwd = vol.directory();
-    vol.root();
-    // AUTOEXEC has finished. Reuse its arena up to the first application PSP.
-    let saved = load_file(res, &vol, boot, pc::BATCH, (pc::PROGRAM - pc::BATCH) * 16);
-    vol.restore(cwd);
-    let Some(n) = saved else {
-        pc::print("Missing COMMAND.COM\r\n");
-        return;
-    };
     loop {
-        pc::copy_bytes(pc::BATCH, 0, mz::FILE, 0, n);
+        // Reload the transient shell into the file staging area. Keeping a
+        // second copy permanently used the space now occupied by the DOS stack.
+        pc::command("COMMAND.COM");
+        pc::filename(pc::COMMAND, 0, 11);
+        let cwd = vol.directory();
+        vol.root();
+        let saved = load_file(&vol, boot, mz::FILE, 0xfe00);
+        vol.restore(cwd);
+        let Some(n) = saved else {
+            pc::print("Missing COMMAND.COM\r\n");
+            return;
+        };
         psp(0, 0);
         files::begin(hard == 2);
         pc::store(pc::COMMAND, 256, hard);
@@ -385,10 +403,15 @@ pub fn main16() {
         }
         files::finish(&mut vol);
         let count = pc::byte(pc::COMMAND, 257);
-        execute(res, &mut vol, &mut hard, count);
+        execute(&mut vol, &mut hard, count);
     }
 }
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     pc::halt()
+}
+
+#[unsafe(no_mangle)]
+pub fn dos16_mux(ss: u16, sp: u16) -> u16 {
+    pc::control(31, ss, sp, 0)
 }

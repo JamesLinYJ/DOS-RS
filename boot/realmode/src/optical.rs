@@ -3,7 +3,8 @@ use super::{
     byte, copy_bytes, store,
     system::{dw, sd, sw, w},
 };
-const BUF: u16 = 0x7800;
+// Dedicated 2 KiB transfer buffer between the sector buffer and FAT scratch.
+const BUF: u16 = 0x3020;
 const STATE: u16 = 0x35c0;
 unsafe extern "Rust" {
     fn read_port(p: u16) -> u16;

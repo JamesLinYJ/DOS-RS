@@ -117,12 +117,12 @@ impl Arena {
         self.headers();
     }
     fn headers(&self) {
-        const BRIDGE: u16 = 0x5fff;
+        let bridge = super::layout::arena_limit(super::word(0x413));
         let mut at = self.first;
         if self.linked && at != 0 {
-            header(BRIDGE, 8, at - BRIDGE - 1, false)
+            header(bridge, 8, at - bridge - 1, false)
         } else {
-            header(BRIDGE, 8, 0, true)
+            header(bridge, 8, 0, true)
         }
         while at < self.end {
             let block = self
@@ -196,7 +196,7 @@ pub fn map(ram: &mut super::GuestRam, arena: &mut Arena) {
 // AX=0 delegates to conventional DOS; 1 returns DX; other values are DOS errors.
 impl Arena {
     pub fn dos(&mut self, f: &mut super::Frame) {
-        const PSP: u16 = 0x4000;
+        let owner = super::current_psp();
         let size = f.bx as u16;
         let target = f.dx as u16;
         let phase = f.si as u16;
@@ -221,7 +221,7 @@ impl Arena {
                     && ((phase == 0 && self.strategy >= 0x40)
                         || (phase == 1 && self.strategy < 0x40)) =>
             {
-                let r = self.alloc(PSP, size, self.strategy as u8);
+                let r = self.alloc(owner, size, self.strategy as u8);
                 match r {
                     Ok(at) => Ok(Some(at)),
                     Err(_) if self.strategy >= 0x80 => Ok(None),
@@ -230,14 +230,15 @@ impl Arena {
             }
             0x4900 | 0x4a00 if target >= self.first && target <= self.end && target != 0 => {
                 if f.cx as u16 == 0x4900 {
-                    self.free(PSP, target).map(|_| Some(0))
+                    self.free(owner, target).map(|_| Some(0))
                 } else {
-                    self.resize(PSP, target, size).map(|_| Some(0))
+                    self.resize(owner, target, size).map(|_| Some(0))
                 }
             }
             0xf000 => {
+                let owner = if target == 0 { owner } else { target };
                 for b in &mut self.blocks {
-                    if b.owner == PSP {
+                    if b.owner == owner {
                         b.size = 0
                     }
                 }

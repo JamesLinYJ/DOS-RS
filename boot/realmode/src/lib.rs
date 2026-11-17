@@ -2,7 +2,9 @@
 
 #[path = "../../../src/dos/fat_cluster.rs"]
 pub mod cluster;
+pub mod dos_tables;
 pub mod language;
+pub mod layout;
 
 // The architecture runtime supplies the BIOS and segment-register operations.
 mod firmware {
@@ -19,7 +21,14 @@ mod firmware {
         pub fn bios_key() -> u16;
         pub fn bios_chain() -> !;
         pub fn bios_stop() -> !;
-        pub fn bios_run(volume: &mut super::disk::Volume, cs: u16, ip: u16, ss: u16, sp: u16);
+        pub fn bios_run(
+            volume: &mut super::disk::Volume,
+            psp: u16,
+            cs: u16,
+            ip: u16,
+            ss: u16,
+            sp: u16,
+        );
         pub fn mem_byte(segment: u16, offset: u16) -> u16;
         pub fn mem_store(segment: u16, offset: u16, value: u16);
     }
@@ -58,13 +67,13 @@ pub fn halt() -> ! {
 pub fn start_kernel() -> ! {
     unsafe { firmware::bios_chain() }
 }
-pub fn start_exe(volume: &mut disk::Volume, cs: u16, ip: u16, ss: u16, sp: u16) {
-    unsafe { firmware::bios_run(volume, cs, ip, ss, sp) }
+pub fn start_exe(volume: &mut disk::Volume, psp: u16, cs: u16, ip: u16, ss: u16, sp: u16) {
+    unsafe { firmware::bios_run(volume, psp, cs, ip, ss, sp) }
 }
 pub fn start_com(volume: &mut disk::Volume) {
     store(PROGRAM, 0xfffe, 0);
     store(PROGRAM, 0xffff, 0);
-    unsafe { firmware::bios_run(volume, PROGRAM, 0x100, PROGRAM, 0xfffe) }
+    unsafe { firmware::bios_run(volume, PROGRAM, PROGRAM, 0x100, PROGRAM, 0xfffe) }
 }
 
 pub mod cache;
@@ -86,7 +95,7 @@ pub fn hard_unit() -> u16 {
     if v >= 128 { v } else { 128 }
 }
 pub fn boot_unit() -> u16 {
-    byte(0x6000, 0)
+    byte(0x3900, 0)
 }
 pub fn floppies() -> u16 {
     let eq = byte(0x40, 0x10);
@@ -99,9 +108,12 @@ pub(crate) fn sector(lba: u32, write: bool) -> bool {
     hd(lba, BUFFER, write)
 }
 pub const BUFFER: u16 = 0x3000;
-pub const PROGRAM: u16 = 0x4000;
-pub const COMMAND: u16 = 0x3800;
-pub const BATCH: u16 = 0x3900;
+pub use layout::{COMMAND, FONT_META, PROGRAM};
+pub const BATCH: u16 = 0x3a00;
+/// On smaller ATs keep the font workspace at its original, lower address.
+pub fn font_workspace() -> u16 {
+    system::w(FONT_META, layout::FONT_WORKSPACE_SEGMENT)
+}
 pub const KERNEL: u16 = 0x1000;
 // Regions handed to Rust contain no host references. The HAL translates
 // these segment:offset pairs without manufacturing Rust flat pointers.

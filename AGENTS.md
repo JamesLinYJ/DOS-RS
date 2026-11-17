@@ -30,6 +30,10 @@ The optional two-floppy set has a release ID on each disk. Test a wrong disk, ca
 
 The native utilities are built with the same rust16 compiler. Partition inspection, file transfer, startup configuration and installer rendering have separate modules in `native-tools/src`. Edit uses a storage-independent gap buffer with a segmented DOS adapter. Use emulator key events for interaction tests. The pinned legacy DOS compatibility clients and their source revision are documented in [tests/fixtures/dos](tests/fixtures/dos/README.md).
 
+For native EMM changes, run the installation and legacy CPU checks in `scripts/realmode-ems-test.py`. Run `scripts/realmode-high-memory.py` to compare the DOS client's high-page reads with QEMU physical memory. For changes to ELF virtual addresses use the native ELF tests on both architectures, including high page faults and pipeline data.
+
+The native DOS kernel owns the PSP and MCB chain, including high-loading an MZ image when both allocation fields are zero. Keep the conventional arena bound fixed across the Windows VMM handoff. Reserve GEMMIS snapshot space before exposing the XMS free list. Run [the native Windows test](scripts/realmode-win32.py) with an installed Chinese Windows 3.2 BIOS disk and a RAM volume. It boots i686 and x86_64 separately, runs the XMS test, enters `WIN /3` and captures Windows' About box on both machines.
+
 Build with the rust16 revision pinned in the README. Use a RAM volume for all writable test images. Run the native FAT, installer and Edit scripts listed in the README. Retain serial logs, screenshots and host-side file comparisons with `--proof`. Use `rustc +stable --edition 2024 --test tests/edit_buffer.rs -o target/edit-buffer-test && target/edit-buffer-test` to exercise document offsets beyond 64 KiB on a wide host.
 
 ## Checking a change

@@ -1,30 +1,22 @@
 //! File handles for a native DOS process. Read positions use full 32-bit
 //! offsets; a single near-segment write staging area is shared by the process.
+#[path = "realmode_char.rs"]
+mod char_device;
 use dosrs_realmode::{self as pc, disk::Volume};
-const TABLE: u16 = 0x3600;
+use pc::dos_tables::{LIST, LIST_SEG, SEG as TABLE, entry as slot};
 const STAGE: u16 = super::mz::FILE;
 const FIRST: u16 = 5;
-const END: u16 = 13;
+const END: u16 = 20;
 const LIMIT: u16 = 0xfe00;
-fn b(seg: u16, at: u16) -> u16 {
-    pc::byte(seg, at)
-}
-fn w(seg: u16, at: u16) -> u16 {
-    b(seg, at) | b(seg, at.wrapping_add(1)) << 8
-}
-fn set(seg: u16, at: u16, x: u16) {
-    pc::store(seg, at, x);
-    pc::store(seg, at.wrapping_add(1), x >> 8);
-}
+use pc::{
+    byte as b,
+    system::{dw, sd, sw as set, w},
+};
 fn d(at: u16) -> u32 {
-    w(TABLE, at) as u32 | ((w(TABLE, at + 2) as u32) << 16)
+    dw(TABLE, at)
 }
-fn set_d(at: u16, v: u32) {
-    set(TABLE, at, v as u16);
-    set(TABLE, at + 2, (v >> 16) as u16);
-}
-fn slot(fd: u16) -> u16 {
-    32 + (fd - FIRST) * 32
+fn set_d(at: u16, value: u32) {
+    sd(TABLE, at, value)
 }
 pub fn begin(hard: bool) {
     super::arena::begin();
@@ -37,16 +29,31 @@ pub fn begin(hard: bool) {
     }
 }
 fn close(vol: &mut Volume, fd: u16) -> bool {
+    let psp = super::arena::current();
+    let device = pc::control(27, psp, fd, 0);
+    if device != 0 {
+        return device == 1;
+    }
+    let sys = b(psp, 0x18 + fd);
+    if sys != fd {
+        return false;
+    }
     let s = slot(fd);
+    let refs = w(TABLE, s);
+    if refs > 1 {
+        set(TABLE, s, refs - 1);
+        pc::store(psp, 0x18 + fd, 255);
+        return true;
+    }
     if w(TABLE, 2) == fd {
         let mut i = 0;
         while i < 11 {
-            pc::store(pc::COMMAND, 128 + i, b(TABLE, s + 16 + i));
+            pc::store(pc::COMMAND, 128 + i, b(TABLE, s + 0x20 + i));
             i += 1;
         }
         let current = vol.directory();
-        vol.restore(d(s + 28));
-        let saved = vol.save(STAGE, d(s + 8) as u16);
+        vol.restore(d(0x900 + fd * 4));
+        let saved = vol.save(STAGE, d(s + 0x11) as u16);
         vol.restore(current);
         if !saved {
             return false;
@@ -54,16 +61,41 @@ fn close(vol: &mut Volume, fd: u16) -> bool {
         set(TABLE, 2, 0);
     }
     set(TABLE, s, 0);
+    pc::store(super::arena::current(), 0x18 + fd, 255);
     true
 }
+pub fn inherit(psp: u16) {
+    let mut fd = FIRST;
+    while fd < END {
+        if b(psp, 0x18 + fd) == fd {
+            let s = slot(fd);
+            set(TABLE, s, w(TABLE, s) + 1);
+        }
+        fd += 1;
+    }
+}
+pub fn reap(vol: &mut Volume, psp: u16) {
+    let mut fd = FIRST;
+    while fd < END {
+        if b(psp, 0x18 + fd) == fd {
+            close(vol, fd);
+        }
+        fd += 1;
+    }
+}
 pub fn finish(vol: &mut Volume) {
+    let mut fd = FIRST;
+    while fd < END {
+        pc::control(27, super::arena::current(), fd, 0);
+        fd += 1;
+    }
     super::arena::release();
     let f = w(TABLE, 2);
     if f != 0 && !close(vol, f) {
         pc::print("File close failed\r\n");
     }
 }
-fn name(vol: &mut Volume, seg: u16, addr: u16) -> bool {
+pub(super) fn name(vol: &mut Volume, seg: u16, addr: u16) -> bool {
     let mut at = addr;
     let mut hard = w(TABLE, 0) != 0;
     if b(seg, at.wrapping_add(1)) == 58 {
@@ -101,23 +133,22 @@ fn open(vol: &mut Volume, creating: bool, access: u16) -> u32 {
         return failure(2);
     }
     let s = slot(fd);
-    set_d(s + 28, vol.directory());
+    set_d(0x900 + fd * 4, vol.directory());
     if access != 0 {
         if size > LIMIT as u32 || vol.read_at(head, size, 0, size as u16, STAGE, 0) != size {
             return failure(8);
         }
-        let mut i = 0;
-        while i < 11 {
-            pc::store(TABLE, s + 16 + i, b(pc::COMMAND, 128 + i));
-            i += 1;
-        }
+
         set(TABLE, 2, fd);
     }
-    set(TABLE, s + 2, 2);
-    set(TABLE, s, access + 1);
-    set_d(s + 4, head);
-    set_d(s + 8, size);
-    set_d(s + 12, 0);
+    set(TABLE, s + 5, 2);
+    set(TABLE, s + 2, access);
+    set(TABLE, s, 1);
+    pc::copy_bytes(pc::COMMAND, 128, TABLE, s + 0x20, 11);
+    pc::store(super::arena::current(), 0x18 + fd, fd);
+    set_d(s + 0x2b, head);
+    set_d(s + 0x11, size);
+    set_d(s + 0x15, 0);
     fd as u32
 }
 fn removable(seg: u16, at: u16, n: u16, drive: u16, write: bool) -> u32 {
@@ -156,10 +187,13 @@ fn removable(seg: u16, at: u16, n: u16, drive: u16, write: bool) -> u32 {
     }
     let s = slot(fd);
     set(TABLE, s, 1);
-    set(TABLE, s + 2, drive);
-    set_d(s + 4, head);
-    set_d(s + 8, size);
-    set_d(s + 12, 0);
+    set(TABLE, s + 2, 0);
+    set(TABLE, s + 5, drive);
+    pc::copy_bytes(pc::COMMAND, 128, TABLE, s + 0x20, 11);
+    pc::store(super::arena::current(), 0x18 + fd, fd);
+    set_d(s + 0x2b, head);
+    set_d(s + 0x11, size);
+    set_d(s + 0x15, 0);
     fd as u32
 }
 fn opened(vol: &mut Volume, ds: u16, dx: u16, ah: u16, al: u16) -> u32 {
@@ -195,7 +229,7 @@ fn failure(error: u16) -> u32 {
     0x10000 | error as u32
 }
 fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: bool) -> u32 {
-    if at as u32 + count as u32 > 65536 {
+    if write && at as u32 + count as u32 > 65536 {
         return failure(5);
     }
     if write && (fd == 1 || fd == 2) {
@@ -210,14 +244,24 @@ fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: boo
         return failure(6);
     }
     let s = slot(fd);
-    let access = w(TABLE, s);
-    if access == 0 {
+    let access = w(TABLE, s + 2);
+    if w(TABLE, s) == 0 {
         return failure(6);
     }
-    let pos = d(s + 12);
-    let size = d(s + 8);
+    let pos = d(s + 0x15);
+    let size = d(s + 0x11);
+    let count = if !write && pos >= size {
+        0
+    } else if !write && size - pos < u32::from(count) {
+        (size - pos) as u16
+    } else {
+        count
+    };
+    if u32::from(at) + u32::from(count) > 65536 {
+        return failure(5);
+    }
     let n = if write {
-        if access == 1 {
+        if access == 0 {
             return failure(5);
         }
         if pos > LIMIT as u32 || count as u32 > LIMIT as u32 - pos {
@@ -235,11 +279,11 @@ fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: boo
         }
         let end = pos + count as u32;
         if end > size || count == 0 {
-            set_d(s + 8, end);
+            set_d(s + 0x11, end);
         }
         count as u32
     } else {
-        if access == 2 {
+        if access == 1 {
             return failure(5);
         }
         if w(TABLE, 2) == fd {
@@ -257,9 +301,9 @@ fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: boo
             }
             n as u32
         } else {
-            let drive = w(TABLE, s + 2);
+            let drive = w(TABLE, s + 5);
             let n = if drive == 2 {
-                vol.read_at(d(s + 4), size, pos, count, seg, at)
+                vol.read_at(d(s + 0x2b), size, pos, count, seg, at)
             } else if drive < 2 {
                 let n = if pos >= size {
                     0
@@ -269,7 +313,7 @@ fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: boo
                     count
                 };
                 let r = 0x35e0;
-                pc::system::sd(r, 0, d(s + 4));
+                pc::system::sd(r, 0, d(s + 0x2b));
                 pc::system::sd(r, 4, size);
                 pc::system::sd(r, 8, pos);
                 pc::system::sw(r, 12, n);
@@ -281,7 +325,7 @@ fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: boo
                     u32::MAX
                 }
             } else {
-                pc::cdrom::fetch(d(s + 4), size, pos, count, seg, at)
+                pc::cdrom::fetch(d(s + 0x2b), size, pos, count, seg, at)
             };
             if n == u32::MAX {
                 return failure(23);
@@ -289,13 +333,20 @@ fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: boo
             n
         }
     };
-    set_d(s + 12, pos + n);
+    set_d(s + 0x15, pos + n);
     n
 }
 
 /// SS:SP identifies nine saved registers followed by the real INT frame.
 #[unsafe(no_mangle)]
 pub fn dos16_service(vol: &mut Volume, ss: u16, sp: u16) {
+    let in_dos = pc::dos_tables::SDA + 1;
+    let old = b(LIST_SEG, in_dos);
+    pc::store(LIST_SEG, in_dos, old + 1);
+    service(vol, ss, sp);
+    pc::store(LIST_SEG, in_dos, old);
+}
+fn service(vol: &mut Volume, ss: u16, sp: u16) {
     let ax = w(ss, sp);
     let ah = ax >> 8;
     let al = ax & 255;
@@ -303,6 +354,20 @@ pub fn dos16_service(vol: &mut Volume, ss: u16, sp: u16) {
     let cx = w(ss, sp + 4);
     let dx = w(ss, sp + 6);
     let ds = w(ss, sp + 16);
+    if matches!(ah, 0x3c..=0x40 | 0x42 | 0x44) {
+        match pc::control(26, ss, sp, super::arena::current()) {
+            1 => return,
+            2 => {
+                char_device::open(ss, sp, super::arena::current());
+                return;
+            }
+            _ => (),
+        }
+    }
+    let seg = pc::dos_tables::LIST_SEG;
+    let sda = pc::dos_tables::SDA;
+    set(seg, pc::dos_tables::SAVED_REGS, ds);
+    set(seg, pc::dos_tables::SAVED_REGS + 2, bx);
     if ax == 0xf102 && bx >= 2 && bx <= 15 {
         set(ss, sp, pc::control(bx, cx, dx, 0));
         return;
@@ -354,69 +419,155 @@ pub fn dos16_service(vol: &mut Volume, ss: u16, sp: u16) {
         return;
     }
     let current = vol.directory();
-    let result = match ah {
-        0x25 => {
-            set(0, al * 4, dx);
-            set(0, al * 4 + 2, ds);
-            0
-        }
-        0x35 => {
-            set(ss, sp + 2, w(0, al * 4));
-            set(ss, sp + 14, w(0, al * 4 + 2));
-            u32::from(ax)
-        }
-        0x48..=0x4a | 0x58 => {
-            let mut room = 0;
-            let result = super::arena::request(
-                if ah == 0x58 { ax } else { ah << 8 },
-                bx,
-                w(ss, sp + 14),
-                &mut room,
-            );
-            if result == 0x10008 {
-                set(ss, sp + 2, room);
+    let invalid = (0x3e..=0x40).contains(&ah) || ah == 0x42;
+    let mut keep_directory = false;
+    let result = if invalid && (bx >= END || b(super::arena::current(), 0x18 + bx) != bx) {
+        failure(6)
+    } else {
+        match ah {
+            0x59 if al == 0 => {
+                set(ss, sp + 2, w(seg, sda + 6));
+                set(ss, sp + 4, w(seg, sda + 8));
+                u32::from(w(seg, sda + 4))
             }
-            result
-        }
-        0x3c | 0x3d => opened(vol, ds, dx, ah, al),
-        0x3e => {
-            if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {
-                failure(6)
-            } else if close(vol, bx) {
-                0
-            } else {
-                failure(39)
-            }
-        }
-        0x3f | 0x40 => transfer(vol, bx, cx, ds, dx, ah == 0x40),
-        0x42 => {
-            if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {
-                failure(6)
-            } else if al > 2 {
-                failure(1)
-            } else {
-                let s = slot(bx);
-                let base = if al == 0 {
+            0x3b => {
+                let mut at = dx;
+                if b(ds, at.wrapping_add(1)) == 58 && b(ds, at) & 0xdf == 67 {
+                    at = at.wrapping_add(2);
+                }
+                let mut n = 0;
+                while n < 64 && b(ds, at.wrapping_add(n)) != 0 {
+                    n += 1;
+                }
+                if n == 64 || at > u16::MAX - n || !vol.path(ds, at, n, true) {
+                    failure(3)
+                } else {
+                    super::environment::path_change(ds, at, at + n);
+                    keep_directory = true;
                     0
-                } else if al == 1 {
-                    d(s + 12)
-                } else {
-                    d(s + 8)
-                };
-                let delta = ((cx as u32) << 16) | dx as u32;
-                let pos = base.wrapping_add(delta);
-                if (cx & 0x8000 == 0 && pos < base) || (cx & 0x8000 != 0 && pos > base) {
-                    failure(1)
-                } else {
-                    set_d(s + 12, pos);
-                    set(ss, sp + 6, (pos >> 16) as u16);
-                    pos as u16 as u32
                 }
             }
+            0x43 if al == 0 => {
+                if !name(vol, ds, dx) {
+                    failure(3)
+                } else if let Some(attr) = vol.attributes() {
+                    set(ss, sp + 4, attr);
+                    0
+                } else {
+                    failure(2)
+                }
+            }
+            0x47 if dx & 255 == 0 || dx & 255 == 3 => {
+                super::environment::cwd(ds, w(ss, sp + 8));
+                0x100
+            }
+            0x4b if al == 0 => super::mz::child(vol, super::arena::current(), ss, sp),
+            0x4d => u32::from(b(0x3900, 10)),
+            0x51 | 0x62 => {
+                set(ss, sp + 2, super::arena::current());
+                u32::from(ax)
+            }
+            0x1a => {
+                set(seg, sda + 12, dx);
+                set(seg, sda + 14, ds);
+                u32::from(ax)
+            }
+            0x2f => {
+                set(ss, sp + 2, w(seg, sda + 12));
+                set(ss, sp + 14, w(seg, sda + 14));
+                u32::from(ax)
+            }
+            0x34 => {
+                set(ss, sp + 2, sda + 1);
+                set(ss, sp + 14, seg);
+                u32::from(ax)
+            }
+            0x5d if al == 6 => {
+                set(ss, sp + 16, seg);
+                set(ss, sp + 8, sda);
+                set(ss, sp + 4, 32);
+                set(ss, sp + 6, 32);
+                u32::from(ax)
+            }
+            0x50 => {
+                super::arena::select(bx);
+                u32::from(ax)
+            }
+            0x52 => {
+                set(ss, sp + 2, LIST);
+                set(ss, sp + 14, LIST_SEG);
+                u32::from(ax)
+            }
+            0x25 => {
+                set(0, al * 4, dx);
+                set(0, al * 4 + 2, ds);
+                0
+            }
+            0x35 => {
+                set(ss, sp + 2, w(0, al * 4));
+                set(ss, sp + 14, w(0, al * 4 + 2));
+                u32::from(ax)
+            }
+            0x48..=0x4a | 0x58 => {
+                let mut room = 0;
+                let result = super::arena::request(
+                    if ah == 0x58 { ax } else { ah << 8 },
+                    bx,
+                    w(ss, sp + 14),
+                    &mut room,
+                );
+                if result == 0x10008 {
+                    set(ss, sp + 2, room);
+                }
+                result
+            }
+            0x3c | 0x3d => opened(vol, ds, dx, ah, al),
+            0x3e => {
+                if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {
+                    failure(6)
+                } else if close(vol, bx) {
+                    0
+                } else {
+                    failure(39)
+                }
+            }
+            0x3f | 0x40 => transfer(vol, bx, cx, ds, dx, ah == 0x40),
+            0x42 => {
+                if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {
+                    failure(6)
+                } else if al > 2 {
+                    failure(1)
+                } else {
+                    let s = slot(bx);
+                    let base = if al == 0 {
+                        0
+                    } else if al == 1 {
+                        d(s + 0x15)
+                    } else {
+                        d(s + 0x11)
+                    };
+                    let delta = ((cx as u32) << 16) | dx as u32;
+                    let pos = base.wrapping_add(delta);
+                    if (cx & 0x8000 == 0 && pos < base) || (cx & 0x8000 != 0 && pos > base) {
+                        failure(1)
+                    } else {
+                        set_d(s + 0x15, pos);
+                        set(ss, sp + 6, (pos >> 16) as u16);
+                        pos as u16 as u32
+                    }
+                }
+            }
+            _ => failure(1),
         }
-        _ => failure(1),
     };
-    vol.restore(current);
+    if !keep_directory {
+        vol.restore(current);
+    }
+    if result >= 0x10000 {
+        set(seg, sda + 4, result as u16);
+        set(seg, sda + 6, 0);
+        set(seg, sda + 8, 0);
+    }
     set(ss, sp, result as u16);
     let flags = w(ss, sp + 22);
     set(

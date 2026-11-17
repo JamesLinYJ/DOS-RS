@@ -7,22 +7,30 @@ pub(super) const EXT_START: usize = 0x120000;
 pub(super) const RAM_BYTES: usize = EXT_START + 32 * 1024 * 1024;
 const UNITS: usize = (RAM_BYTES - EXT_START) / 1024;
 pub(super) struct GuestRam {
+    pub import_header: Option<usize>,
+    pub import_pages: (usize, usize),
     pub frame: [Option<usize>; 4],
     used: [u32; UNITS / 32],
     vcpi: [u32; UNITS / 128],
     units: usize,
     ems_capacity: usize,
     pub a20: bool,
+    pub table_dirty: bool,
+    pub table_requested: bool,
 }
 impl GuestRam {
     pub const fn new() -> Self {
         Self {
+            import_header: None,
+            import_pages: (0, 0),
             frame: [None; 4],
             used: [0; UNITS / 32],
             vcpi: [0; UNITS / 128],
             units: 0,
             ems_capacity: 0,
-            a20: true,
+            a20: false,
+            table_dirty: true,
+            table_requested: false,
         }
     }
     pub fn init(&mut self, end: usize) {
@@ -43,7 +51,7 @@ impl GuestRam {
     fn occupied(&self, n: usize) -> bool {
         self.used[n / 32] & (1 << (n % 32)) != 0
     }
-    fn holes(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+    pub fn holes(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
         let mut i = 0;
         core::iter::from_fn(move || {
             while i < self.units && self.occupied(i) {
@@ -55,8 +63,10 @@ impl GuestRam {
             }
             (start < i).then_some((EXT_START + 1024 * start, (i - start) * 1024))
         })
+        .take(super::handle_table::FREE_SLOTS)
     }
     pub fn mark(&mut self, at: usize, len: usize, used: bool) {
+        self.table_dirty = true;
         let start = (at - EXT_START) / 1024;
         for n in start..start + len / 1024 {
             let bit = 1 << (n % 32);

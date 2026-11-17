@@ -1,6 +1,7 @@
 """Build one native BIOS FAT12 disk with an 8086 loader and both DOS-RS kernels."""
 
 import argparse
+from lz4block import compress
 import hashlib
 import os
 import json
@@ -32,44 +33,6 @@ def relocated(path, segment):
         (value,) = struct.unpack_from("<H", image, at)
         struct.pack_into("<H", image, at, value + segment)
     return image
-
-
-def lz4_block(data):
-    """Encode an independent LZ4 block with a 64 KiB match window."""
-    out, seen = bytearray(), {}
-
-    def extra(length):
-        if length >= 15:
-            length -= 15
-            while length >= 255:
-                out.append(255)
-                length -= 255
-            out.append(length)
-
-    def literals(start, end, match=0):
-        n = end - start
-        out.append((min(n, 15) << 4) | min(match, 15))
-        extra(n)
-        out.extend(data[start:end])
-
-    start = pos = 0
-    while pos + 12 <= len(data):
-        key = bytes(data[pos : pos + 4])
-        previous = seen.get(key)
-        seen[key] = pos
-        if previous is None or pos - previous > 65535:
-            pos += 1
-            continue
-        length = 4
-        while pos + length < len(data) - 5 and data[previous + length] == data[pos + length]:
-            length += 1
-        literals(start, pos, length - 4)
-        out.extend(struct.pack("<H", pos - previous))
-        extra(length - 4)
-        pos += length
-        start = pos
-    literals(start, len(data))
-    return bytes(out)
 
 
 def main():
@@ -140,13 +103,13 @@ def main():
         compile(cpu, ROOT / "Cargo.toml", "dos.exe", 0x1000) for cpu in ("286", "386")
     ]
     first = 512
-    packed286 = lz4_block(kernels[0])
+    packed286 = compress(kernels[0])
     second = first + len(packed286)
     header = struct.pack(
         "<4sIHIH", b"DOSK", first | 0x80000000, len(kernels[0]),
         second | 0x80000000, len(kernels[1])
     )
-    system = header.ljust(first, b"\0") + packed286 + lz4_block(kernels[1])
+    system = header.ljust(first, b"\0") + packed286 + compress(kernels[1])
     util = target / "util"
     util.mkdir(exist_ok=True)
     obj = util / "io.obj"

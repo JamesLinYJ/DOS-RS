@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+mod char_device;
 mod console;
 mod devices;
 mod font;
@@ -11,10 +12,19 @@ use dosrs_realmode::{
 };
 unsafe extern "Rust" {
     fn bind_resident_io();
+    fn bind_console();
 }
 #[unsafe(no_mangle)]
 pub fn io_dispatch(op: u16, a: u16, b: u16, _c: u16) -> u16 {
     match op {
+        31 => bios::dos_tables::multiplex(a, b),
+        26 => char_device::dispatch(a, b, _c),
+        27 => char_device::close(a, b),
+        28 => char_device::open_request(a, b),
+        25 => {
+            bios::dos_tables::psp(a, b, _c);
+            1
+        }
         16 => bios::optical::probe() as u16,
         17 => bios::optical::present() as u16,
         18 => bios::optical::list() as u16,
@@ -55,6 +65,13 @@ pub fn io_dispatch(op: u16, a: u16, b: u16, _c: u16) -> u16 {
 }
 fn boot() -> Option<()> {
     let unit = bios::boot_unit();
+    // A DOS extender can reduce its guest BDA base memory after startup.
+    // The screen font and the existing MCB chain keep their original addresses.
+    bios::system::sw(
+        bios::FONT_META,
+        bios::layout::FONT_WORKSPACE_SEGMENT,
+        bios::layout::arena_limit(w(0x40, 0x13)) + 1,
+    );
     bios::store(bios::COMMAND, 258, if unit < 128 { unit } else { 0 });
     bios::store(bios::COMMAND, 260, if unit >= 128 { unit } else { 128 });
     bios::cache::init();
@@ -62,12 +79,19 @@ fn boot() -> Option<()> {
     if cpu < 286 {
         return None;
     }
-    let media = Media::open(bios::byte(0x6000, 0) >= 128)?;
+    let media = Media::open(bios::boot_unit() >= 128)?;
     let font = media.lookup(b"GLYPHS  FNT")?;
-    let pages = media.map_sectors(&font, console::MAP, 2560);
+    let pages = media.map_sectors(&font, bios::font_workspace(), 2560);
     console::init(unit, pages);
+    bios::system::sd(
+        bios::dos_tables::LIST_SEG,
+        bios::dos_tables::LIST + 0x22,
+        u32::MAX,
+    );
     startup::apply(&media);
+    bios::dos_tables::extended_init();
     unsafe {
+        bind_console();
         bind_resident_io();
     }
     bios::store(bios::COMMAND, 265, 0xa5);

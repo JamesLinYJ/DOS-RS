@@ -6,6 +6,6 @@ SECTIONS {
     .rodata : { *(.rodata .rodata.*) }
     .data : { *(.data .data.*) *(.got*) }
     .bss (NOLOAD) : { __zero_start = .; *(.bss .bss.*) *(COMMON) __zero_end = .; }
-    ASSERT(. <= 0xb000, "resident tables overlap the monitor stack")
+    ASSERT(. <= 0xc000, "resident tables overlap the monitor stack")
     /DISCARD/ : { *(.eh_frame*) *(.comment) *(.note*) }
 }

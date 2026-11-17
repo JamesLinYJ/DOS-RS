@@ -472,6 +472,14 @@ impl Volume {
         let mut entry = Entry::EMPTY;
         self.scan(1, &mut entry)
     }
+    pub fn attributes(&self) -> Option<u16> {
+        let mut item = Entry::EMPTY;
+        if self.scan(0, &mut item) {
+            Some(item.attr)
+        } else {
+            None
+        }
+    }
     pub fn describe(&self, first: &mut u32, len: &mut u32) -> bool {
         let mut entry = Entry::EMPTY;
         if !self.scan(0, &mut entry) || entry.attr & 16 != 0 {

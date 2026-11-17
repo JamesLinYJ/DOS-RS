@@ -3,11 +3,17 @@
 #![no_main]
 use dos_tools::{argument, install::number, text};
 use dosrs_realmode::{byte, store, system::w};
+#[path = "memstat/high_memory.rs"]
+mod high_memory;
 unsafe extern "Rust" {
     fn dos_memory_call(regs: *mut u16);
     fn dos_data_segment() -> u16;
 }
 type Regs = [u16; 12];
+#[path = "memstat/handle_table.rs"]
+mod handle_table;
+#[path = "memstat/import.rs"]
+mod import;
 const EMS: u16 = 0;
 const MULTIPLEX: u16 = 1;
 const XMS: u16 = 2;
@@ -163,6 +169,9 @@ fn test(r: &mut Regs, frame: u16, free: u16) -> bool {
 }
 #[unsafe(no_mangle)]
 pub fn main16() -> u16 {
+    if argument(1, "/HIGH") {
+        return high_memory::test();
+    }
     if w(0, 0x67 * 4 + 2) == 0 || w(0, 0x2f * 4 + 2) == 0 {
         text("No 386 memory manager installed\r\n");
         return 1;
@@ -173,8 +182,18 @@ pub fn main16() -> u16 {
         return 1;
     }
     call(&mut r, MULTIPLEX, 0x4310, 0, 0);
+    if argument(1, "/TEST")
+        && byte(r[6], r[1]) != 0xea
+        && (w(r[6], r[1]) != 0x03eb || w(r[6], r[1] + 2) != 0x9090 || byte(r[6], r[1] + 4) != 0x90)
+    {
+        text("Invalid XMS control header\r\n");
+        return 1;
+    }
     r[7] = r[1];
     r[8] = r[6];
+    if argument(1, "/GEMMIS") {
+        return import::test(&mut r);
+    }
     call(&mut r, XMS, 0, 0, 0);
     let xv = r[0];
     if !ems(&mut r, 0x4600, 0, 0) {
@@ -204,6 +223,11 @@ pub fn main16() -> u16 {
     if !argument(1, "/TEST") {
         return 0;
     }
+    if !handle_table::test(&mut r) {
+        text("XMS handle table test FAILED\r\n");
+        return 1;
+    }
+    text("XMS handle table allocation, lock, resize and release verified\r\n");
     if !ems(&mut r, 0x4100, 0, 0) {
         return 1;
     }

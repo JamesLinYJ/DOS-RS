@@ -10,22 +10,33 @@ struct Block {
 }
 pub(super) struct Xms {
     blocks: [Option<Block>; BLOCKS],
+    first: u16,
+    stride: u16,
     hma: bool,
     global: bool,
     local: u16,
 }
 impl Xms {
-    pub const fn new() -> Self {
+    pub const fn with_handles(first: u16, stride: u16) -> Self {
         Self {
             blocks: [None; BLOCKS],
+            first,
+            stride,
             hma: false,
             global: false,
             local: 0,
         }
     }
+    pub fn descriptors(&self) -> impl Iterator<Item = Option<(u8, usize, usize)>> + '_ {
+        self.blocks
+            .iter()
+            .map(|b| b.map(|b| (b.locks, b.start, b.len)))
+    }
     fn index(&self, handle: u16) -> Result<usize, u8> {
-        usize::from(handle)
-            .checked_sub(1)
+        handle
+            .checked_sub(self.first)
+            .filter(|off| off % self.stride == 0)
+            .map(|off| usize::from(off / self.stride))
             .filter(|i| self.blocks.get(*i).is_some_and(Option::is_some))
             .ok_or(0xa2)
     }
@@ -125,7 +136,7 @@ impl Xms {
                         len,
                         locks: 0,
                     });
-                    cpu.set_wide(Slot::Data, (i + 1) as u16);
+                    cpu.set_wide(Slot::Data, self.first + i as u16 * self.stride);
                 }
                 10 => {
                     let i = self.index(dx)?;

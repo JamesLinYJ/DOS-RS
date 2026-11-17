@@ -1,12 +1,16 @@
 //! Resident 80386 monitor. Rust pointers are offsets from the driver load segment.
 #![no_std]
 #![no_main]
-#[path = "../../../src/dos_memory/ems.rs"]
 mod ems;
+mod handle_table;
+mod high_memory;
+#[path = "../../realmode/src/layout.rs"]
+mod layout;
 mod memory;
 mod registers;
 mod upper;
 mod vcpi;
+mod windows;
 #[path = "../../../src/dos_memory/xms.rs"]
 mod xms;
 use memory::{EMS_FRAME, EMS_PAGE, EXT_START, GuestRam, RAM_BYTES};
@@ -29,6 +33,8 @@ use x86::{
     segmentation::SegmentSelector,
 };
 const FRAME: u32 = 0xd0000;
+// rust16-device reserves this downward-growing stack and one page above it.
+const STACK_TOP: u32 = 0xe000;
 const VM: u32 = 1 << 17;
 // The HMA ends at 10FFEFh. Paging, the TSS and IDT occupy 64 KiB
 // immediately above it; none of these pages is returned by any allocator.
@@ -38,7 +44,7 @@ const FIRST: u32 = 0x111000;
 const TSS: u32 = 0x11c000;
 const IDT: u32 = 0x11f000;
 static mut MANAGER: ems::Ems = ems::Ems::new();
-static mut XMS: xms::Xms = xms::Xms::new();
+static mut XMS: xms::Xms = xms::Xms::with_handles(handle_table::FIRST, handle_table::STRIDE);
 static mut UPPER: Arena = Arena::new();
 static mut RAM: GuestRam = GuestRam::new();
 unsafe extern "C" {
@@ -80,6 +86,9 @@ fn field(off: usize) -> u16 {
 }
 fn load_base() -> u32 {
     u32::from(field(0x304)) << 4
+}
+fn current_psp() -> u16 {
+    word(u32::from(layout::COMMAND) * 16 + u32::from(layout::CURRENT_PSP))
 }
 fn address(linear: u32) -> *mut u8 {
     linear.wrapping_sub(load_base()) as *mut u8
@@ -156,6 +165,7 @@ fn driver(f: &mut Frame) {
     let manager = unsafe { &mut *(&raw mut MANAGER) };
     let previous = (ram.frame, ram.a20);
     match f.ip {
+        0x26 => manager.device_command(ram, f),
         0x22 => {
             take_interrupt_return(f);
             if f.high(Slot::Accumulator) == 0xde {
@@ -165,20 +175,34 @@ fn driver(f: &mut Frame) {
             manager.call(f, ram);
         }
         0x34 => unsafe {
+            // Lock counts and zero-length handles can change without moving any pages.
+            if matches!(
+                f.high(Slot::Accumulator),
+                0x09 | 0x89 | 0x0a | 0x0c | 0x0d | 0x0f | 0x8f
+            ) {
+                ram.table_dirty = true;
+            }
             (*(&raw mut XMS)).call(f, ram, &mut *(&raw mut UPPER));
         },
         0x38 => {
             manager.return_call(f, ram);
         }
         0x3c => match f.ax as u16 {
+            0x1605 if f.dx & 1 == 0 => windows::broadcast(f),
             0xd7a0 if f.di as u16 == 0x5253 => {
+                if f.cx as u16 == 0xf000 {
+                    let owner = if f.dx as u16 == 0 { current_psp() } else { f.dx as u16 };
+                    high_memory::release_process(owner);
+                }
                 f.set_wide(Slot::Dest, 0x5352);
                 unsafe { (*(&raw mut UPPER)).dos(f) }
             }
+            0xd7b0..=0xd7b4 if f.di as u16 == 0x4850 => high_memory::call(f),
             0x4300 => f.set_low(Slot::Accumulator, 0x80),
+            0x4309 => handle_table::query(f, ram),
             0x4310 => {
                 f.ves = load_base() >> 4;
-                f.set_wide(Slot::Base, 0x32);
+                f.set_wide(Slot::Base, 0x12);
             }
             _ => {
                 let prev = read32(load_base() + 0x3b8);
@@ -188,10 +212,13 @@ fn driver(f: &mut Frame) {
                 }
             }
         },
+        0x212 => windows::finish_broadcast(f),
+        0x7f6 => windows::disable(f),
         _ => f.reflect(0xe6),
     }
     // A 386 invalidates its whole TLB on a CR3 reload. Queries and identical
     // mappings leave live translations alone.
+    handle_table::sync(ram);
     if previous != (ram.frame, ram.a20) {
         install_mapping(ram);
     }
@@ -276,13 +303,15 @@ extern "C" fn monitor_start() -> ! {
         ptr::write_bytes(zero, 0, (&raw mut __zero_end as usize) - (zero as usize));
         ptr::write_unaligned(0x348 as *mut usize, dos_ems_trap as *const () as usize);
         let base = load_base();
+        windows::init(base);
         let bytes = u32::from(field(0x30a)) * 1024;
         let ram = &mut *(&raw mut RAM);
         ram.init((0x100000 + bytes) as usize);
         ptr::write_bytes(address(DIRECTORY), 0, 0x10000);
+        high_memory::init(ram);
         for i in 0..(ram.highest_address() as u32 / 4096 + 1) {
             let linear = i * 4096;
-            let resident = linear > base && linear < base + 0xd000;
+            let resident = linear > base && linear < base + STACK_TOP;
             set_pte(
                 i,
                 linear
@@ -306,7 +335,7 @@ extern "C" fn monitor_start() -> ! {
             | (0x89u64 << 40)
             | ((u64::from(t) & 0xff000000) << 32);
         ptr::write_unaligned(0x338 as *mut u64, desc);
-        write32(TSS + 4, 0xd000);
+        write32(TSS + 4, STACK_TOP);
         put(TSS + 8, 16);
         put(TSS + 102, 104);
         put(TSS + 104 + 8192, 0xff);
@@ -330,7 +359,12 @@ extern "C" fn monitor_start() -> ! {
         ptr::write_unaligned(address(0x67 * 4).cast::<u32>(), (base << 12) | 0x20);
         write32(base + 0x3b8, read32(0x2f * 4));
         write32(0x2f * 4, (base << 12) | 0x3a);
+        handle_table::map(base);
         upper::map(ram, &mut *(&raw mut UPPER));
+        ems::Ems::reserve_import(ram);
+        // The CPU needs A20 physically enabled to reach our tables. The DOS
+        // process starts with zero XMS enable references, so its HMA wraps.
+        install_mapping(ram);
         ram.finish_reservations();
         write32(base + 0x3ac, vcpi::resume_pic as *const () as u32);
         vcpi::resume_pic();

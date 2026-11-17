@@ -1,0 +1,9 @@
+--- a/hw/i386/x86.c
++++ b/hw/i386/x86.c
+@@ -369,5 +369,5 @@
+     x86ms->oem_id = g_strndup(ACPI_BUILD_APPNAME6, 6);
+     x86ms->oem_table_id = g_strndup(ACPI_BUILD_APPNAME8, 8);
+     x86ms->bus_lock_ratelimit = 0;
+-    x86ms->above_4g_mem_start = 4 * GiB;
++    x86ms->above_4g_mem_start = UINT64_C(1) << 47;
+ }

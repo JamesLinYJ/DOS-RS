@@ -3,12 +3,17 @@ use dosrs_realmode::{
     byte, copy_bytes,
     system::{block, dw, sd, sw, w},
 };
-pub const MAP: u16 = 0x7000;
-const META: u16 = 0x37c0;
+const META: u16 = dosrs_realmode::FONT_META;
 const RAW: u16 = 0x3320;
-const CACHE: u16 = 0x7280;
-// Between the four decoded pages and the ATAPI transfer buffer at 7800:0000.
-const HEADER: u16 = 0x7680;
+fn map() -> u16 {
+    w(META, 28)
+}
+fn cache() -> u16 {
+    map() + 0x280
+}
+fn header() -> u16 {
+    map() + 0x680
+}
 const HEADER_BYTES: u16 = 6144;
 pub fn init(unit: u16, pages: u16) -> bool {
     sw(META, 0, unit);
@@ -42,7 +47,7 @@ pub fn init(unit: u16, pages: u16) -> bool {
         }
         let left = first as u16 - at;
         let n = if left < 512 { left } else { 512 };
-        copy_bytes(RAW, 0, HEADER, at, n);
+        copy_bytes(RAW, 0, header(), at, n);
         at += n;
     }
     sw(META, 24, first as u16);
@@ -55,10 +60,10 @@ pub fn init(unit: u16, pages: u16) -> bool {
 // The extension sits between the offset table and the first compressed block.
 // Older GBC1 files have no extension and use the original on-disk key array.
 fn indexed_ranges(table: u16, end: u16) -> bool {
-    if end - table < 12 || dw(HEADER, table) != 0x31524247 {
+    if end - table < 12 || dw(header(), table) != 0x31524247 {
         return false;
     }
-    let count = dw(HEADER, table + 8);
+    let count = dw(header(), table + 8);
     if count > ((end - table - 12) >> 3) as u32 {
         return false;
     }
@@ -67,8 +72,8 @@ fn indexed_ranges(table: u16, end: u16) -> bool {
     let mut i = 0;
     while i < count as u16 {
         let p = table + 12 + i * 8;
-        let first = dw(HEADER, p);
-        let length = dw(HEADER, p + 4);
+        let first = dw(header(), p);
+        let length = dw(header(), p + 4);
         if first < last || first >= 1587600 || length == 0 || length > 1587600 - first {
             return false;
         }
@@ -76,7 +81,7 @@ fn indexed_ranges(table: u16, end: u16) -> bool {
         glyphs += length;
         i += 1;
     }
-    let data = dw(HEADER, table + 4);
+    let data = dw(header(), table + 4);
     let raw = dw(META, 8);
     data <= raw && glyphs <= ((raw - data) >> 5)
 }
@@ -84,7 +89,7 @@ fn page(n: u16) -> bool {
     if w(META, 4) == n {
         return true;
     }
-    if n >= w(META, 2) || !block(w(META, 0), dw(MAP, n * 4), RAW) {
+    if n >= w(META, 2) || !block(w(META, 0), dw(map(), n * 4), RAW) {
         return false;
     }
     sw(META, 4, n);
@@ -124,7 +129,7 @@ fn extended(count: u16, pos: &mut u32, end: u32) -> u16 {
 fn unpack(id: u16, seg: u16) -> bool {
     let tab = 12 + (id as u32) * 4;
     let (mut p, end) = if tab + 8 <= w(META, 24) as u32 {
-        (dw(HEADER, tab as u16), dw(HEADER, tab as u16 + 4))
+        (dw(header(), tab as u16), dw(header(), tab as u16 + 4))
     } else {
         (phys32(tab), phys32(tab + 4))
     };
@@ -178,7 +183,7 @@ pub fn rb(at: u32) -> u16 {
     let id = (at >> 12) as u16;
     let slot = id & 3;
     let tag = 16 + slot * 2;
-    let seg = CACHE + (slot << 8);
+    let seg = cache() + (slot << 8);
     if w(META, tag) != id {
         sw(META, tag, 65535);
         if !unpack(id, seg) {
@@ -207,13 +212,13 @@ pub fn four_byte(code: u32) -> Option<u32> {
     }
     let lead = ((a - 129) * 10 + (b - 48)) as u32;
     let ordinal = (lead * 126 + (c - 129) as u32) * 10 + (d - 48) as u32;
-    let mut bitmap = dw(HEADER, p + 4);
-    let count = w(HEADER, p + 8);
+    let mut bitmap = dw(header(), p + 4);
+    let count = w(header(), p + 8);
     let mut i = 0;
     while i < count {
         let at = p + 12 + i * 8;
-        let first = dw(HEADER, at);
-        let n = dw(HEADER, at + 4);
+        let first = dw(header(), at);
+        let n = dw(header(), at + 4);
         if ordinal < first {
             break;
         }

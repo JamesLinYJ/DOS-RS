@@ -283,3 +283,8 @@ For enhanced mode, each architecture cold booted DOS-RS with four QEMU CPUs and 
 | CALC.EXE | 43,536 | `5c77689fd680540b00a2c5cfc60cfc64bacfbc9ffdee6d2e4b7f7ba4982aef1b` |
 
 The Windows launcher checks the size of its initial conventional-memory block in the PSP before requesting more memory. DOS-RS recognizes the launcher's `XW` and `SMARTAAR` header fields and gives it the largest free block. Ordinary flat COM programs retain their initial allocation and can request more with INT 21h. CPU instruction decoding is shared across programs. See the [startup commands and screenshot](../README.md).
+## Native BIOS character devices
+
+On the native 286/386 disk, `DEVICE=` initializes a flat DOS character driver and links its resident header after NUL in the DOS List of Lists. Opening a device creates a process handle and system file table entry bound to that header. DOS passes reads, writes, IOCTL input/output and status requests through its strategy and interrupt routines. Drivers with the open/close attribute also receive those notifications. The built-in CON header offers BIOS keyboard input, screen output and keyboard/output status to DOS callers.
+
+Run `python3 scripts/realmode-char-device.py --toolchain /path/to/rust16 --image /path/to/install.img --ram-dir /path/to/ramdisk --proof target/native16/character-device`. The 16-bit client opens ten independent CON handles, checks device information and output readiness, then uses a loaded echo driver to compare ordinary and IOCTL transfers. It also checks a wrapped buffer, a read-only handle and a closed handle. Each QEMU target cold boots the installed C disk. [Native test client](../native-tools/examples/char_device.rs)

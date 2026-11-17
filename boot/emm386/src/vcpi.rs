@@ -17,6 +17,7 @@ fn pages(ax: u32, dx: u32, ram: &mut GuestRam) -> (u32, u32) {
         0xde05 => (0x8a, dx),
         _ => (0x84, dx),
     };
+    super::handle_table::sync(ram);
     ((ax & !0xff00) | (status << 8), ret)
 }
 pub extern "C" fn pm_pages(ax: u32, dx: u32) -> u64 {
