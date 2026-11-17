@@ -2148,13 +2148,13 @@ utilities	tag_19_15	chapter	utilities/V3_chap02.html#tag_19_15	open	open
 utilities	break	base	utilities/V3_chap02.html#tag_19_16	open	open	
 utilities	colon	base	utilities/V3_chap02.html#tag_19_17	open	open	
 utilities	continue	base	utilities/V3_chap02.html#tag_19_18	open	open	
-utilities	dot	base	utilities/V3_chap02.html#tag_19_19	open	open	
-utilities	eval	base	utilities/V3_chap02.html#tag_19_20	open	open	
+utilities	dot	base	utilities/V3_chap02.html#tag_19_19	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh,tests/user-shell/source-errors.sh
+utilities	eval	base	utilities/V3_chap02.html#tag_19_20	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-errors.sh
 utilities	exec	base	utilities/V3_chap02.html#tag_19_21	open	open	
 utilities	exit	base	utilities/V3_chap02.html#tag_19_22	open	open	
 utilities	export	base	utilities/V3_chap02.html#tag_19_23	partial	partial	tests/user-shell/variables.sh
 utilities	readonly	base	utilities/V3_chap02.html#tag_19_24	partial	partial	tests/user-shell/variables.sh
-utilities	return	base	utilities/V3_chap02.html#tag_19_25	open	open	
+utilities	return	base	utilities/V3_chap02.html#tag_19_25	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh
 utilities	set	base	utilities/V3_chap02.html#tag_19_26	partial	partial	tests/user-shell/expand.sh
 utilities	shift	base	utilities/V3_chap02.html#tag_19_27	partial	partial	tests/user-shell/expand.sh
 utilities	times	base	utilities/V3_chap02.html#tag_19_28	open	open	
