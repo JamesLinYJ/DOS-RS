@@ -42,8 +42,11 @@ pub(crate) fn initialize(handoff: crate::boot::Handoff) {
     number(PCI.borrow().devices().len() as u32);
     crate::puts("\n");
 }
+pub(crate) fn online_mask() -> usize {
+    ONLINE.load(Acquire)
+}
 fn online(slot: usize) -> bool {
-    ONLINE.load(Acquire) & (1 << slot) != 0
+    online_mask() & (1 << slot) != 0
 }
 pub(crate) extern "efiapi" fn ap_entry(_context: usize, slot: usize) -> ! {
     let (id, _) = arch::boot_cpu();

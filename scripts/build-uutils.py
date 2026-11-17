@@ -21,7 +21,7 @@ DATA_TOOLS = (
 )
 
 
-SYSTEM_TOOLS = ("arch", "uname")
+SYSTEM_TOOLS = ("arch", "uname", "nproc")
 FILE_TOOLS = (
     "chmod", "cp", "du", "install", "ln", "ls", "mv", "readlink", "rm", "split",
     "stat", "tee", "touch", "truncate",

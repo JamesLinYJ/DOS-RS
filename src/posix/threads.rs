@@ -1,6 +1,7 @@
 //! Process-owned threads. CPUs execute runnable threads in parallel. At a
 //! quantum boundary, all CPUs release the process pages before the kernel
 //! reads a syscall buffer, changes a mapping or tears down the process.
+mod affinity;
 pub(super) mod clock;
 mod musl;
 mod poll;
@@ -36,6 +37,7 @@ enum State {
 
 struct Member {
     tid: u32,
+    secondary: Option<affinity::ActiveTid>,
     cpu: usize,
     stack: Range<usize>,
     errno: usize,
@@ -60,6 +62,11 @@ impl Member {
     ) -> Result<Self, &'static str> {
         Ok(Self {
             tid,
+            secondary: if tid == 0 {
+                None
+            } else {
+                Some(affinity::ActiveTid::register(tid)?)
+            },
             cpu: user::assign_cpu(),
             stack,
             errno,
@@ -442,6 +449,7 @@ impl Threads {
                     }
                 }
                 Call::Threxit => {
+                    self.0[i].secondary = None;
                     self.0[i].state = State::Exited(a as u8);
                     self.0[i].registers = None;
                     cx.waker().wake_by_ref();
@@ -468,6 +476,7 @@ impl Threads {
                 | Call::Futexmove => Poll::Ready(self.musl_call(i, image, call, args)),
                 Call::Thrspawn => Poll::Ready(self.spawn(image, a, b, c)),
                 Call::Thrjoin => self.join(i, a),
+                Call::Getaffinity => Poll::Ready(affinity::get(image, args)),
                 Call::Gettid => Poll::Ready(Ok(self.0[i].tid as usize)),
                 Call::Threrrno => Poll::Ready(Ok(self.0[i].errno)),
                 Call::Futexwait | Call::Futexwake => self.futex(i, p.getpid(), image, call, a, b),

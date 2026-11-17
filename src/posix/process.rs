@@ -72,6 +72,13 @@ pub fn exited(pid: u32, status: i32) {
     table.retain(|p| p.parent != 0 || p.status.is_none());
 }
 
+pub(super) fn live_pid(pid: u32) -> bool {
+    TABLE
+        .borrow()
+        .iter()
+        .any(|p| p.pid == pid && p.status.is_none())
+}
+
 pub fn parent(pid: u32) -> u32 {
     TABLE
         .borrow()

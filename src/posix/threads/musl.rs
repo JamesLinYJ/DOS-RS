@@ -178,6 +178,7 @@ impl Threads {
             }
         }
         self.0[i].registers = None;
+        self.0[i].secondary = None;
         self.0[i].state = State::Joined;
         Ok(())
     }

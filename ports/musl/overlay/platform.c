@@ -371,6 +371,8 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
     }
     case SYS_getpid:
         return sys_getpid();
+    case SYS_sched_getaffinity:
+        return sys_getaffinity(a, b, c);
     case SYS_gettid:
         return sys_gettid();
     case SYS_exit_group:

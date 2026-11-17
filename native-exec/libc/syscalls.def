@@ -101,3 +101,4 @@ fstatvfs 139 2
 getrandom 160 3
 uname 161 1
 sethostname 162 2
+getaffinity 163 3
