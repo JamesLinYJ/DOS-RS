@@ -119,6 +119,7 @@ impl Shell {
                 Part::Quoted(text) => (text.clone(), true),
                 Part::Parameter(key, quoted) => (self.parameter(key), *quoted),
                 Part::Substitution(body, quoted) => (self.capture(body)?, *quoted),
+                Part::Arithmetic(word, quoted) => (self.arithmetic(word)?, *quoted),
             };
             for ch in text.chars() {
                 if quoted {

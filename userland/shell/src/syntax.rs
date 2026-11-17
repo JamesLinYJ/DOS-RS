@@ -9,6 +9,7 @@ pub enum Part {
     Quoted(String),
     Parameter(String, bool),
     Substitution(Vec<Pipeline>, bool),
+    Arithmetic(Word, bool),
 }
 pub type Word = Vec<Part>;
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -118,6 +119,111 @@ pub fn identifier(s: &str) -> bool {
 
 type Input<'s> = core::iter::Peekable<core::str::Chars<'s>>;
 
+fn backquote(
+    input: &mut Input<'_>,
+    depth: u16,
+    in_double_quote: bool,
+) -> Result<Vec<Pipeline>, Error> {
+    let mut source = String::new();
+    loop {
+        match input.next() {
+            Some('`') => break,
+            Some('\\') => {
+                let ch = input
+                    .next()
+                    .ok_or(Error::Incomplete("unfinished backquote"))?;
+                if !matches!(ch, '$' | '`' | '\\' | '\n') && !(in_double_quote && ch == '"') {
+                    source.push('\\');
+                }
+                if ch != '\n' {
+                    source.push(ch);
+                }
+            }
+            Some(c) => source.push(c),
+            None => return Err(Error::Incomplete("unterminated backquote")),
+        }
+    }
+    grammar::parse_input(&mut source.chars().peekable(), depth + 1)
+}
+
+fn dollar(parts: &mut Word, input: &mut Input<'_>, depth: u16, quoted: bool) -> Result<(), Error> {
+    if depth >= 64 {
+        return Err(Error::Invalid("expansion nested too deeply"));
+    }
+    if input.next_if_eq(&'(').is_some() {
+        let mut nested = input.clone();
+        if nested.next_if_eq(&'(').is_some()
+            && let Some(word) = arithmetic_word(&mut nested, depth + 1)?
+        {
+            *input = nested;
+            parts.push(Part::Arithmetic(word, quoted));
+            return Ok(());
+        }
+        parts.push(Part::Substitution(
+            grammar::substitution(input, depth + 1)?,
+            quoted,
+        ));
+        return Ok(());
+    }
+    let mut name = String::new();
+    if input.next_if_eq(&'{').is_some() {
+        loop {
+            match input.next() {
+                Some('}') => break,
+                Some(ch) => name.push(ch),
+                None => return Err(Error::Incomplete("unterminated parameter")),
+            }
+        }
+    } else if let Some(&ch) = input.peek() {
+        if ch == '_' || ch.is_ascii_alphabetic() {
+            while let Some(ch) = input.next_if(|v| *v == '_' || v.is_ascii_alphanumeric()) {
+                name.push(ch);
+            }
+        } else if "?$#!@*".contains(ch) || ch.is_ascii_digit() {
+            name.push(input.next().unwrap());
+        }
+    }
+    if name.is_empty() {
+        literal(parts, '$', quoted);
+    } else {
+        parts.push(Part::Parameter(name, quoted));
+    }
+    Ok(())
+}
+
+fn arithmetic_word(input: &mut Input<'_>, depth: u16) -> Result<Option<Word>, Error> {
+    let mut word = Vec::new();
+    let mut groups = 0usize;
+    while let Some(ch) = input.next() {
+        match ch {
+            '(' => {
+                groups += 1;
+                literal(&mut word, ch, true);
+            }
+            ')' if groups == 0 => return Ok(input.next_if_eq(&')').map(|_| word)),
+            ')' => {
+                groups -= 1;
+                literal(&mut word, ch, true);
+            }
+            '$' => dollar(&mut word, input, depth, true)?,
+            '`' => word.push(Part::Substitution(backquote(input, depth, true)?, true)),
+            '\\' => {
+                let escaped = input
+                    .next()
+                    .ok_or(Error::Incomplete("unfinished arithmetic escape"))?;
+                if !"$`\"\\\n".contains(escaped) {
+                    literal(&mut word, ch, true);
+                }
+                if escaped != '\n' {
+                    literal(&mut word, escaped, true);
+                }
+            }
+            _ => literal(&mut word, ch, true),
+        }
+    }
+    Err(Error::Incomplete("unterminated arithmetic expansion"))
+}
+
 fn word(input: &mut Input<'_>, depth: u16) -> Result<(Word, bool), Error> {
     let mut parts = Vec::new();
     let mut quoted = false;
@@ -148,62 +254,14 @@ fn word(input: &mut Input<'_>, depth: u16) -> Result<(Word, bool), Error> {
             }
             '`' if quote != Some('\'') => {
                 quoted = true;
-                let mut source = String::new();
-                loop {
-                    match input.next() {
-                        Some('`') => break,
-                        Some('\\') => {
-                            let ch = input
-                                .next()
-                                .ok_or(Error::Incomplete("unfinished backquote"))?;
-                            if !matches!(ch, '$' | '`' | '\\' | '\n')
-                                && !(quote == Some('"') && ch == '"')
-                            {
-                                source.push('\\');
-                            }
-                            if ch != '\n' {
-                                source.push(ch);
-                            }
-                        }
-                        Some(c) => source.push(c),
-                        None => return Err(Error::Incomplete("unterminated backquote")),
-                    }
-                }
-                let body = grammar::parse_input(&mut source.chars().peekable(), depth + 1)?;
-                parts.push(Part::Substitution(body, quote.is_some()));
+                parts.push(Part::Substitution(
+                    backquote(input, depth, quote == Some('"'))?,
+                    quote.is_some(),
+                ));
             }
             '$' if quote != Some('\'') => {
                 quoted = true;
-                if input.next_if_eq(&'(').is_some() {
-                    let body = grammar::substitution(input, depth + 1)?;
-                    parts.push(Part::Substitution(body, quote.is_some()));
-                    continue;
-                }
-                let mut name = String::new();
-                if input.next_if_eq(&'{').is_some() {
-                    loop {
-                        match input.next() {
-                            Some('}') => break,
-                            Some(ch) => name.push(ch),
-                            None => return Err(Error::Incomplete("unterminated parameter")),
-                        }
-                    }
-                } else if let Some(&ch) = input.peek() {
-                    if ch == '_' || ch.is_ascii_alphabetic() {
-                        while let Some(ch) =
-                            input.next_if(|v| *v == '_' || v.is_ascii_alphanumeric())
-                        {
-                            name.push(ch);
-                        }
-                    } else if "?$#!@*".contains(ch) || ch.is_ascii_digit() {
-                        name.push(input.next().unwrap());
-                    }
-                }
-                if name.is_empty() {
-                    literal(&mut parts, '$', quote.is_some());
-                } else {
-                    parts.push(Part::Parameter(name, quote.is_some()));
-                }
+                dollar(&mut parts, input, depth, quote.is_some())?;
             }
             _ => literal(&mut parts, c, quote.is_some()),
         }

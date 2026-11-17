@@ -109,4 +109,17 @@ bulk=x
 for k in a b c d e f g h i j k l m; do bulk="$bulk$bulk"; done
 result=$(echo "$bulk")
 for bytes in $(echo "$result" | wc -c); do echo "bytes:$bytes"; done
+echo "radices:$((0x11 + 012 * (3 + 1)))"
+neg=-012
+echo "signed:$((neg)):$((+7 % 3)):$((~-1))"
+echo "assignment:$((n = m = 7)):$n:$m"
+echo "compound:$((n *= (m -= 2)))"
+echo "after:$n:$m"
+echo "logical:$((0 && (n=100))):$((1 || (1/0))):$n"
+echo "selection:$((0 ? 1/0 : m == 5 ? 21 : 0))"
+echo "bits:$(((((2 << 4) | 3) ^ 2) & 63)):$((32 >> 2))"
+echo "expanded:$(( ${m} + $(echo 3) * $((1+1)) ))"
+echo "wide:$((4294967296 + 1))"
+echo "subshell:$( (echo grouped) )"
+if sh -c 'echo "$((1/0))"; echo wrong-zero' 2> arith.err; then echo wrong-status; else echo arithmetic-error; fi
 exit 13

@@ -20,6 +20,7 @@ impl Shell {
                 let _ = close(writer);
             }
             self.monitor = false;
+            self.interactive = false;
             self.jobs.clear();
             self.background.clear();
             exit(if body.is_empty() {

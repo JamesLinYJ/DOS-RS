@@ -1,5 +1,6 @@
 #![no_std]
 extern crate alloc;
+mod arithmetic;
 mod compound;
 mod jobs;
 mod redirection;
@@ -77,6 +78,7 @@ struct Shell {
     loop_depth: usize,
     flow: Option<compound::LoopControl>,
     monitor: bool,
+    interactive: bool,
     exiting: bool,
 }
 impl Shell {
@@ -111,6 +113,7 @@ impl Shell {
             loop_depth: 0,
             flow: None,
             monitor: false,
+            interactive: false,
             exiting: false,
         }
     }
@@ -138,6 +141,15 @@ impl Shell {
             }
         }
     }
+    fn arithmetic(&mut self, word: &Word) -> Result<String, ()> {
+        let text = self.expand(word, false)?.concat();
+        arithmetic::evaluate(self, &text)
+            .map(|n| n.to_string())
+            .map_err(|message| {
+                diagnostic(&format!("arithmetic: {message}"));
+                self.exiting = !self.interactive;
+            })
+    }
     fn expand(&mut self, word: &Word, split: bool) -> Result<Vec<String>, ()> {
         let mut fields = Vec::new();
         let mut field = String::new();
@@ -157,10 +169,13 @@ impl Shell {
                         present = true;
                     }
                 }
-                Part::Parameter(_, quoted) | Part::Substitution(_, quoted) => {
+                Part::Parameter(_, quoted)
+                | Part::Substitution(_, quoted)
+                | Part::Arithmetic(_, quoted) => {
                     let text = match part {
                         Part::Parameter(name, _) => self.parameter(name),
                         Part::Substitution(body, _) => self.capture(body)?,
+                        Part::Arithmetic(word, _) => self.arithmetic(word)?,
                         _ => unreachable!(),
                     };
                     if *quoted || !split {
@@ -543,6 +558,7 @@ impl Shell {
                 .map(|part| match part {
                     Part::Literal(s) | Part::Quoted(s) | Part::Parameter(s, _) => s.clone(),
                     Part::Substitution(..) => "$(…)".into(),
+                    Part::Arithmetic(..) => "$((…))".into(),
                 })
                 .unwrap_or_default();
             let Some(mut job) = jobs::Job::new(group, children, name) else {
@@ -688,6 +704,7 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         },
         &env,
     );
+    sh.interactive = interactive;
     sh.monitor = interactive && jobs::interactive();
     if sh.monitor {
         jobs::ignore_keyboard();
