@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Create a new bootable DOS-RS disk with a DOS FAT C: and a separate POSIX Btrfs root."""
 import argparse
+import errno
 import os
 from pathlib import Path
 import shutil
@@ -27,6 +28,10 @@ def make_root(arch, work, extra):
     for app in (tree/"bin").iterdir():
         if app.is_file(): app.chmod(0o755)
     volume = work / "root.img"
+    if not shutil.which("mkfs.btrfs"):
+        subprocess.run([sys.executable, qemu.ROOT / "scripts/linux-btrfs.py", "create",
+                        "--root", tree, "--image", volume], check=True)
+        return volume
     with volume.open("xb") as f:
         f.truncate(128*MIB)
     subprocess.run(["mkfs.btrfs", "-f", "-m", "single", "-d", "single", "-L", "DOSRS-ROOT",
@@ -82,6 +87,12 @@ def assemble(arch, output, ram_dir, volume=None, tree=None, trace=False):
             d.seek(0);d.write(mbr);d.flush();os.fsync(d.fileno())
         # The publish step never opens an existing user disk for writing.
         output.parent.mkdir(parents=True,exist_ok=True)
+        try:
+            os.link(disk, output)
+            return output
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
         with tempfile.NamedTemporaryFile(dir=output.parent) as staging:
             with disk.open("rb") as src: shutil.copyfileobj(src,staging)
             staging.flush();os.fsync(staging.fileno());os.link(staging.name,output)

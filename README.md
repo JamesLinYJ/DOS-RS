@@ -144,7 +144,7 @@ cat a.txt | wc -c > count.txt
 cat count.txt
 ```
 
-制盘需要 QEMU、mtools、目标架构交叉编译器和带 `mkfs.btrfs` 的构建环境。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。
+制盘需要 QEMU、mtools、目标架构交叉编译器。有 `mkfs.btrfs` 时在宿主制盘。macOS 也可由脚本启动 Linux，在内存盘上格式化 Btrfs。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。
 
 ```sh
 python3 scripts/prepare-cpu.py

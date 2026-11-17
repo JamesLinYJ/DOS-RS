@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cold-boot both installed partitions as a single disk and verify Btrfs with Linux."""
 import argparse
+import base64
 import hashlib
 import gzip
 import importlib.util
@@ -58,8 +59,19 @@ def run(arch,work,proof,volume,archive):
     mode="bios" if arch=="i686" else "uefi"
     disk=work/"system.img"
     data=work/"tree"
+    expected = {"count.txt": b"21254\n", "copy.bin": shell.DATA, "a.txt": shell.DATA}
+    std_tools = volume is None and bool(os.environ.get("DOSRS_UUTILS_ARCHIVE"))
     if volume is None:
         data.mkdir()
+        source = qemu.ROOT / "tests/user-shell/control.sh"
+        shutil.copyfile(source, data / "control.sh")
+        reference = subprocess.run(["/bin/sh", source, "one", "two words"], cwd=work,
+                                   env=dict(os.environ, LC_ALL="C"), capture_output=True)
+        if reference.returncode != 13 or reference.stderr:
+            raise ValueError("shell fixture failed on the reference host")
+        expected.update({"subst.out": reference.stdout, "subst.rc": b"13\n"})
+        if std_tools:
+            expected.update({"encoded.txt": base64.encodebytes(shell.DATA), "decoded.bin": shell.DATA})
         (data/"a.txt").write_bytes(shell.DATA)
     installer.assemble(arch,disk,work,volume,data if volume is None else None,trace=True)
     table=partitions(disk)
@@ -69,7 +81,7 @@ def run(arch,work,proof,volume,archive):
     fat=table[0x0c]
     subprocess.run(["mcopy","-i",f"{disk}@@{fat[0]*512}",app,"::FDCHECK.ELF"],check=True)
     serial=proof/(arch+"-install.serial")
-    shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True)
+    shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,grammar=volume is None,std_tools=std_tools)
     second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)
     try:
         second.wait(b"A:\\> ")
@@ -105,9 +117,9 @@ def run(arch,work,proof,volume,archive):
             shutil.copyfile(restored/"check.log",proof/(arch+"-btrfs-check.log"))
             restored=restored/"files"
         result={}
-        for name,expected in [("count.txt",b"21254\n"),("copy.bin",shell.DATA),("a.txt",shell.DATA)]:
+        for name,reference_bytes in expected.items():
             actual=(restored/name).read_bytes()
-            if actual!=expected: raise ValueError(f"Linux recovered different {name}")
+            if actual!=reference_bytes: raise ValueError(f"Linux recovered different {name}")
             result[name]={"bytes":len(actual),"sha256":hashlib.sha256(actual).hexdigest()}
             (proof/(arch+"-"+name)).write_bytes(actual)
         if (restored/"gone.tmp").exists():raise ValueError("unlinked file survived")

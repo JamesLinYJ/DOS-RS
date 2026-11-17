@@ -14,7 +14,7 @@ from qemu_shell import Shell
 DATA = bytes(range(256)) * 83 + b"DOS-RS"
 
 
-def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=False, grammar=False):
+def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=False, grammar=False, std_tools=False):
     vm = Shell(args, serial, root)
     try:
         vm.wait(b"A:\\> ")
@@ -27,8 +27,11 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
         vm.command("cat a.txt | cat > copy.bin", prompt=b"$ ", timeout=180 if dual_volume else 40)
         vm.command("absent", prompt=b"$ ", expect=b"command not found")
         vm.command("echo $?", prompt=b"$ ", expect=b"127\r\n")
+        if std_tools:
+            vm.command("base64 a.txt > encoded.txt", prompt=b"$ ", timeout=240)
+            vm.command("base64 -d encoded.txt > decoded.bin", prompt=b"$ ", timeout=240)
         if grammar:
-            vm.command('sh control.sh one "two words" > subst.out', prompt=b"$ ", timeout=120)
+            vm.command('sh control.sh one "two words" > subst.out', prompt=b"$ ", timeout=300 if dual_volume else 120)
             vm.command("echo $? > subst.rc", prompt=b"$ ")
         if job_control:
             offset = serial.stat().st_size
