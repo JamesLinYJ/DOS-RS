@@ -1814,8 +1814,8 @@ functions	sigpending	base	functions/sigpending.html#tag_17_554	partial	partial	p
 functions	sigqueue	base	functions/sigqueue.html#tag_17_555	open	open	
 functions	sigsetjmp	base	functions/sigsetjmp.html#tag_17_556	open	open	
 functions	sigsuspend	base	functions/sigsuspend.html#tag_17_557	open	open	
-functions	sigtimedwait	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c
-functions	sigwaitinfo	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c
+functions	sigtimedwait	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c
+functions	sigwaitinfo	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c
 functions	sigwait	base	functions/sigwait.html#tag_17_559	partial	partial	ports/musl/tests/sigwait.c
 functions	sin	base	functions/sin.html#tag_17_560	open	open	
 functions	sinf	base	functions/sin.html#tag_17_560	open	open	
@@ -1921,11 +1921,11 @@ functions	thrd_join	base	functions/thrd_join.html#tag_17_622	open	open
 functions	thrd_sleep	base	functions/thrd_sleep.html#tag_17_623	open	open	
 functions	thrd_yield	base	functions/thrd_yield.html#tag_17_624	open	open	
 functions	time	base	functions/time.html#tag_17_625	open	open	
-functions	timer_create	base	functions/timer_create.html#tag_17_626	open	open	
-functions	timer_delete	base	functions/timer_delete.html#tag_17_627	open	open	
-functions	timer_getoverrun	base	functions/timer_getoverrun.html#tag_17_628	open	open	
-functions	timer_gettime	base	functions/timer_getoverrun.html#tag_17_628	open	open	
-functions	timer_settime	base	functions/timer_getoverrun.html#tag_17_628	open	open	
+functions	timer_create	base	functions/timer_create.html#tag_17_626	partial	partial	ports/musl/tests/timers.c
+functions	timer_delete	base	functions/timer_delete.html#tag_17_627	partial	partial	ports/musl/tests/timers.c
+functions	timer_getoverrun	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
+functions	timer_gettime	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
+functions	timer_settime	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
 functions	times	base	functions/times.html#tag_17_629	open	open	
 functions	timespec_get	base	functions/timespec_get.html#tag_17_630	open	open	
 functions	tmpfile	base	functions/tmpfile.html#tag_17_631	open	open	
