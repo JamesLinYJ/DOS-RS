@@ -168,3 +168,10 @@ utilities/realpath.html#tag_20_102	realpath	partial	partial	scripts/qemu-coreuti
 utilities/pathchk.html#tag_20_93	pathchk	partial	partial	scripts/qemu-coreutils.py#283,284	Portable characters and complete operand diagnostic
 utilities/df.html#tag_20_33	df	partial	partial	scripts/qemu-df.py	List live mounted volumes and verify FAT fields and Btrfs total capacity on the same disk with Linux GNU df 9.12; verify each implementation against its raw statvfs counters
 functions/realpath.html#tag_17_481	realpath	partial	partial	tests/native-df/mounts.c	Canonicalize the virtual DOS mount directory, nested volume and regular file
+utilities/V3_chap02.html#tag_19_06_01	tag_19_06_01	partial	partial	tests/user-shell/expand.sh	Unquoted and quoted tilde, HOME with whitespace and wildcard, assignment and export operands
+utilities/V3_chap02.html#tag_19_06_02	tag_19_06_02	partial	partial	tests/user-shell/expand.sh	Set, unset and null operands, nested expansion, positional arguments, length and pattern removal
+utilities/V3_chap02.html#tag_19_06_05	tag_19_06_05	partial	partial	tests/user-shell/ifs.sh	IFS whitespace and nonwhite separators across adjacent quoted and unquoted expansions
+utilities/V3_chap02.html#tag_19_06_06	tag_19_06_06	partial	partial	tests/user-shell/expand.sh	Directory-relative glob, quoted patterns, unmatched patterns and the noglob option
+utilities/V3_chap02.html#tag_19_26	set	partial	partial	tests/user-shell/expand.sh	Replace positional arguments, set and clear noglob, enable nounset on invocation
+utilities/V3_chap02.html#tag_19_27	shift	partial	partial	tests/user-shell/expand.sh	Shift through two-digit positional arguments; default shift also covered by read.sh
+utilities/read.html#tag_20_100	read	partial	partial	tests/user-shell/read.sh	Read successive records from one descriptor, escaped IFS, continuation, raw input, delimiter, NUL, EOF and pipeline input

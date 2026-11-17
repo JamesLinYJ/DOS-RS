@@ -2082,12 +2082,12 @@ utilities	tag_19_05_01	chapter	utilities/V3_chap02.html#tag_19_05_01	open	open
 utilities	tag_19_05_02	chapter	utilities/V3_chap02.html#tag_19_05_02	open	open	
 utilities	tag_19_05_03	chapter	utilities/V3_chap02.html#tag_19_05_03	open	open	
 utilities	tag_19_06	chapter	utilities/V3_chap02.html#tag_19_06	open	open	
-utilities	tag_19_06_01	chapter	utilities/V3_chap02.html#tag_19_06_01	open	open	
-utilities	tag_19_06_02	chapter	utilities/V3_chap02.html#tag_19_06_02	open	open	
+utilities	tag_19_06_01	chapter	utilities/V3_chap02.html#tag_19_06_01	partial	partial	tests/user-shell/expand.sh
+utilities	tag_19_06_02	chapter	utilities/V3_chap02.html#tag_19_06_02	partial	partial	tests/user-shell/expand.sh
 utilities	tag_19_06_03	chapter	utilities/V3_chap02.html#tag_19_06_03	partial	partial	tests/user-shell/control.sh
 utilities	tag_19_06_04	chapter	utilities/V3_chap02.html#tag_19_06_04	partial	partial	tests/user-shell/control.sh
-utilities	tag_19_06_05	chapter	utilities/V3_chap02.html#tag_19_06_05	open	open	
-utilities	tag_19_06_06	chapter	utilities/V3_chap02.html#tag_19_06_06	open	open	
+utilities	tag_19_06_05	chapter	utilities/V3_chap02.html#tag_19_06_05	partial	partial	tests/user-shell/ifs.sh
+utilities	tag_19_06_06	chapter	utilities/V3_chap02.html#tag_19_06_06	partial	partial	tests/user-shell/expand.sh
 utilities	tag_19_06_07	chapter	utilities/V3_chap02.html#tag_19_06_07	open	open	
 utilities	tag_19_07	chapter	utilities/V3_chap02.html#tag_19_07	open	open	
 utilities	tag_19_07_01	chapter	utilities/V3_chap02.html#tag_19_07_01	open	open	
@@ -2155,8 +2155,8 @@ utilities	exit	base	utilities/V3_chap02.html#tag_19_22	open	open
 utilities	export	base	utilities/V3_chap02.html#tag_19_23	open	open	
 utilities	readonly	base	utilities/V3_chap02.html#tag_19_24	open	open	
 utilities	return	base	utilities/V3_chap02.html#tag_19_25	open	open	
-utilities	set	base	utilities/V3_chap02.html#tag_19_26	open	open	
-utilities	shift	base	utilities/V3_chap02.html#tag_19_27	open	open	
+utilities	set	base	utilities/V3_chap02.html#tag_19_26	partial	partial	tests/user-shell/expand.sh
+utilities	shift	base	utilities/V3_chap02.html#tag_19_27	partial	partial	tests/user-shell/expand.sh
 utilities	times	base	utilities/V3_chap02.html#tag_19_28	open	open	
 utilities	trap	base	utilities/V3_chap02.html#tag_19_29	open	open	
 utilities	unset	base	utilities/V3_chap02.html#tag_19_30	open	open	
@@ -2264,7 +2264,7 @@ utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qe
 utilities	prs	XSI	utilities/prs.html#tag_20_97	open	open	
 utilities	ps	base	utilities/ps.html#tag_20_98	open	open	
 utilities	pwd	base	utilities/pwd.html#tag_20_99	open	open	
-utilities	read	base	utilities/read.html#tag_20_100	open	open	
+utilities	read	base	utilities/read.html#tag_20_100	partial	partial	tests/user-shell/read.sh
 utilities	readlink	base	utilities/readlink.html#tag_20_101	partial	partial	scripts/qemu-coreutils.py#247
 utilities	realpath	base	utilities/realpath.html#tag_20_102	partial	partial	scripts/qemu-coreutils.py#280,281,282
 utilities	renice	base	utilities/renice.html#tag_20_103	open	open	
