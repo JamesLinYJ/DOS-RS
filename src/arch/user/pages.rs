@@ -38,13 +38,17 @@ impl AddressSpace {
     }
     pub(crate) fn prepare(&mut self) -> Result<(), &'static str> {
         if self.table.is_none() {
-            self.table = Some(UserPageTable::build(&self.image, 0..0)?);
+            self.table = Some(UserPageTable::build(&self.image, 0..0, None)?);
         }
         Ok(())
     }
     pub(crate) fn map_anonymous(&mut self, pages: usize) -> Result<usize, &'static str> {
+        self.map_protected(pages, 3)
+    }
+    pub(crate) fn map_protected(&mut self, pages: usize, prot: u8) -> Result<usize, &'static str> {
         let base = self.image.map_anonymous(pages)?;
-        match UserPageTable::build(&self.image, 0..0) {
+        self.image.set_protection(base, pages, prot)?;
+        match UserPageTable::build(&self.image, 0..0, None) {
             Ok(table) => {
                 self.invalidate();
                 self.table = Some(table);
@@ -66,12 +70,26 @@ impl AddressSpace {
         self.image.validate_unmap(base, pages)?;
         // Allocate the replacement while all old mappings and their backing
         // frames remain intact. A failed rebuild leaves the old root usable.
-        let next = UserPageTable::build(&self.image, base..base + pages * PAGE)?;
+        let next = UserPageTable::build(&self.image, base..base + pages * PAGE, None)?;
         self.invalidate();
         self.table = Some(next);
         self.image.unmap_anonymous(base, pages)
     }
 
+    pub(crate) fn protect(
+        &mut self,
+        base: usize,
+        pages: usize,
+        prot: u8,
+    ) -> Result<(), &'static str> {
+        self.image.validate_unmap(base, pages)?;
+        let next =
+            UserPageTable::build(&self.image, 0..0, Some((base..base + pages * PAGE, prot)))?;
+        self.invalidate();
+        self.image.set_protection(base, pages, prot)?;
+        self.table = Some(next);
+        Ok(())
+    }
     pub(crate) fn page_table(&self) -> Arc<UserPageTable> {
         self.table
             .as_ref()
@@ -110,7 +128,11 @@ impl UserPageTable {
         self.tables.as_ptr() as usize
     }
 
-    fn build(image: &Image, removed: Range<usize>) -> Result<Arc<Self>, &'static str> {
+    fn build(
+        image: &Image,
+        removed: Range<usize>,
+        protection: Option<(Range<usize>, u8)>,
+    ) -> Result<Arc<Self>, &'static str> {
         let retained = || {
             image
                 .pages()
@@ -184,9 +206,20 @@ impl UserPageTable {
             if !identity_mapped(frame) {
                 return Err("user frame outside the kernel identity map");
             }
-            let flags = 5
-                | if mapping.writable { 2 } else { 0 }
-                | if nx && !mapping.executable {
+            let prot = protection
+                .as_ref()
+                .filter(|(range, _)| range.contains(&address))
+                .map(|p| p.1);
+            if !prot.map_or(mapping.accessible, |v| v != 0) {
+                prev = addr;
+                continue;
+            }
+            let flags =
+                5 | if prot.map_or(mapping.writable, |v| v & 2 != 0) {
+                    2
+                } else {
+                    0
+                } | if nx && !prot.map_or(mapping.executable, |v| v & 4 != 0) {
                     1 << 63
                 } else {
                     0

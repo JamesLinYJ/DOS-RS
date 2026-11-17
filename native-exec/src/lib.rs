@@ -42,12 +42,14 @@ pub trait Frame: Sized {
 
 pub struct Mapping<F> {
     frame: F,
+    pub accessible: bool,
     pub writable: bool,
     pub executable: bool,
 }
 pub struct Image<F: Frame> {
     pages: Vec<(usize, Mapping<F>)>,
     pub entry: usize,
+    pub phdr: Option<(usize, usize, usize)>,
 }
 pub type Result<T> = core::result::Result<T, &'static str>;
 
@@ -77,14 +79,46 @@ impl<F: Frame> Image<F> {
         let mut image = Self {
             pages: Vec::new(),
             entry,
+            phdr: None,
         };
+        let table_at: u64 = h.e_phoff(le).into();
+        let table_bytes = size_of_val(headers) as u64;
+        let mut needs_tls = false;
         let mut prior_end = BASE;
         let mut executable_entry = false;
         for p in headers {
             match p.p_type(le) {
                 elf::PT_LOAD => (),
-                elf::PT_INTERP | elf::PT_DYNAMIC | elf::PT_TLS => {
-                    return Err("ELF requires a runtime linker or TLS");
+                elf::PT_TLS => {
+                    if needs_tls {
+                        return Err("duplicate TLS segment");
+                    }
+                    needs_tls = true;
+                    let (offset, filesz) = p.file_range(le);
+                    let addr: u64 = p.p_vaddr(le).into();
+                    let memsz: u64 = p.p_memsz(le).into();
+                    let align: u64 = p.p_align(le).into();
+                    if filesz > memsz
+                        || addr.checked_add(memsz).is_none()
+                        || (align > 1
+                            && (!align.is_power_of_two() || addr % align != offset % align))
+                        || (filesz > 0
+                            && !headers.iter().any(|q| {
+                                let (at, n) = q.file_range(le);
+                                let vaddr: u64 = q.p_vaddr(le).into();
+                                q.p_type(le) == elf::PT_LOAD
+                                    && offset.checked_sub(at).is_some_and(|delta| {
+                                        delta.checked_add(filesz).is_some_and(|end| end <= n)
+                                            && vaddr.checked_add(delta) == Some(addr)
+                                    })
+                            }))
+                    {
+                        return Err("invalid ELF TLS template");
+                    }
+                    continue;
+                }
+                elf::PT_INTERP | elf::PT_DYNAMIC => {
+                    return Err("ELF requires a runtime linker");
                 }
                 _ => continue,
             }
@@ -113,6 +147,15 @@ impl<F: Frame> Image<F> {
                 return Err("ELF segment is outside the process image");
             }
             prior_end = end;
+            if let Some(delta) = table_at.checked_sub(off)
+                && delta.checked_add(table_bytes).is_some_and(|n| n <= filesz)
+            {
+                image.phdr = Some((
+                    start + delta as usize,
+                    size_of::<E::ProgramHeader>(),
+                    headers.len(),
+                ));
+            }
             let flags = p.p_flags(le);
             let write = flags & elf::PF_W != 0;
             let exec = flags & elf::PF_X != 0;
@@ -132,6 +175,9 @@ impl<F: Frame> Image<F> {
                 }
             }
             executable_entry |= exec && (start..end).contains(&entry);
+        }
+        if needs_tls && image.phdr.is_none() {
+            return Err("static TLS requires mapped program headers");
         }
         if !executable_entry {
             return Err("entry is outside executable code");
@@ -160,6 +206,40 @@ impl<F: Frame> Image<F> {
             .binary_search_by_key(&base, |p| p.0)
             .map_err(|_| "unmapped user address")
     }
+    /// Copy private mappings while all threads of the source process are stopped.
+    /// A partially built image owns and releases every frame it has claimed.
+    pub fn fork(&self) -> Result<Self> {
+        if self.pages.len() > F::available() {
+            return Err("insufficient physical memory");
+        }
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(self.pages.len())
+            .map_err(|_| "insufficient page metadata")?;
+        let mut bytes = [0; 512];
+        for (address, source) in &self.pages {
+            let mut frame = F::allocate_zeroed()?;
+            for offset in (0..PAGE).step_by(bytes.len()) {
+                source.frame.read(offset, &mut bytes);
+                frame.write(offset, &bytes);
+            }
+            pages.push((
+                *address,
+                Mapping {
+                    frame,
+                    accessible: source.accessible,
+                    writable: source.writable,
+                    executable: source.executable,
+                },
+            ));
+        }
+        Ok(Self {
+            pages,
+            entry: self.entry,
+            phdr: self.phdr,
+        })
+    }
+
     pub fn pages(&self) -> impl Iterator<Item = (usize, &Mapping<F>)> {
         self.pages.iter().map(|(addr, mapping)| (*addr, mapping))
     }
@@ -174,7 +254,8 @@ impl<F: Frame> Image<F> {
         }
         let end = addr.checked_add(len).ok_or("invalid user address")?;
         for base in (addr / PAGE * PAGE..end).step_by(PAGE) {
-            if !self.pages[self.index(base)?].1.writable && write {
+            let mapping = &self.pages[self.index(base)?].1;
+            if !mapping.accessible || (!mapping.writable && write) {
                 return Err("unmapped or protected user address");
             }
         }
@@ -270,6 +351,15 @@ impl<F: Frame> Image<F> {
         Ok(i..end)
     }
 
+    pub fn set_protection(&mut self, base: usize, pages: usize, prot: u8) -> Result<()> {
+        let range = self.unmap_range(base, pages)?;
+        for (_, page) in &mut self.pages[range] {
+            page.accessible = prot != 0;
+            page.writable = prot & 2 != 0;
+            page.executable = prot & 4 != 0;
+        }
+        Ok(())
+    }
     pub fn validate_unmap(&self, base: usize, count: usize) -> Result<()> {
         self.unmap_range(base, count).map(|_| ())
     }
@@ -285,6 +375,7 @@ impl<F: Frame> Mapping<F> {
     fn zero() -> Result<Self> {
         Ok(Self {
             frame: F::allocate_zeroed()?,
+            accessible: true,
             writable: false,
             executable: false,
         })

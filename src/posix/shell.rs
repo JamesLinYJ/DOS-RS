@@ -52,6 +52,16 @@ fn tokenize(line: &str) -> Result<Vec<Token>, &'static str> {
     Ok(tokens)
 }
 
+pub(super) fn shell_args(line: &str) -> Result<Vec<String>, &'static str> {
+    tokenize(line)?
+        .into_iter()
+        .map(|token| match token {
+            Token::Word(word) => Ok(word),
+            _ => Err("pass the command to sh -c inside quotes"),
+        })
+        .collect()
+}
+
 pub(super) struct Stage {
     pub program: super::Native,
     pub argv: Vec<String>,

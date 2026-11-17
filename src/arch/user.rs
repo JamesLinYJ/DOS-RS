@@ -53,6 +53,7 @@ struct Frame {
     ss: usize,
 }
 #[repr(C, align(16))]
+#[derive(Clone)]
 struct Floating([u8; 512]);
 impl Floating {
     const INITIAL: Self = {
@@ -68,7 +69,7 @@ impl Floating {
 // user GS/FS refer to application selectors.
 #[repr(C, align(16))]
 struct Local {
-    gdt: [u64; 7],
+    gdt: [u64; 8],
     tss: [u8; 104],
     host_stack: usize,
     frame: *mut Frame,
@@ -77,7 +78,7 @@ struct Local {
 }
 impl Local {
     const EMPTY: Self = Self {
-        gdt: [0; 7],
+        gdt: [0; 8],
         tss: [0; 104],
         host_stack: 0,
         frame: ptr::null_mut(),
@@ -124,7 +125,7 @@ pub(super) fn init(slot: usize) {
         local.tss[102] = 104; // I/O bitmap beyond the segment limit
         lgdt(&DescriptorTablePointer {
             base: local.gdt.as_ptr(),
-            limit: 55,
+            limit: 63,
         });
         x86::dtables::load_ldtr(SegmentSelector::new(0, Ring::Ring0));
         seg::load_cs(SegmentSelector::new(1, Ring::Ring0));
@@ -143,6 +144,9 @@ pub(super) fn init(slot: usize) {
 #[repr(C, align(16))]
 struct StackChunk([u8; 16]);
 pub(crate) struct Thread {
+    tls: usize,
+    pub(crate) signal_mask: u64,
+    signals: Vec<(Frame, Floating, u64)>,
     regs: Frame,
     fp: Floating,
     kernel_stack: Vec<StackChunk>,
@@ -189,8 +193,76 @@ impl Thread {
         Ok(Self {
             regs,
             fp: Floating::INITIAL,
+            tls: 0,
+            signal_mask: 0,
+            signals: Vec::new(),
             kernel_stack,
         })
+    }
+    /// The child resumes at the return from the caller's syscall on its own kernel stack.
+    pub(crate) fn fork(&self) -> Result<Self, &'static str> {
+        let mut child = Self::try_new(self.regs.ip, self.regs.sp, 0, 0)?;
+        child.regs = self.regs;
+        child.tls = self.tls;
+        child.signal_mask = self.signal_mask;
+        child
+            .signals
+            .try_reserve_exact(self.signals.len())
+            .map_err(|_| "insufficient signal memory")?;
+        child.signals.extend_from_slice(&self.signals);
+        child.fp.0.copy_from_slice(&self.fp.0);
+        child.result(0);
+        Ok(child)
+    }
+    pub(crate) fn set_tls(&mut self, base: usize) {
+        self.tls = base;
+        #[cfg(target_arch = "x86")]
+        {
+            self.regs.regs[8] = if base == 0 { 0 } else { 7 * 8 + 3 };
+        }
+    }
+    pub(crate) fn start_handler(
+        &mut self,
+        image: &mut AddressSpace,
+        handler: usize,
+        restorer: usize,
+        signo: u8,
+    ) -> Result<(), &'static str> {
+        // Preserve the SysV red zone, including when a signal interrupts a leaf function.
+        let base = self
+            .regs
+            .sp
+            .checked_sub(128)
+            .ok_or("invalid signal stack")?
+            & !15;
+        let sp = base
+            .checked_sub(if cfg!(target_arch = "x86") { 20 } else { 8 })
+            .ok_or("invalid signal stack")?;
+        image.write(sp, &restorer.to_le_bytes())?;
+        #[cfg(target_arch = "x86")]
+        image.write(sp + 4, &u32::from(signo).to_le_bytes())?;
+        self.signals
+            .try_reserve(1)
+            .map_err(|_| "insufficient signal memory")?;
+        self.signals
+            .push((self.regs, self.fp.clone(), self.signal_mask));
+        self.regs.ip = handler;
+        self.regs.sp = sp;
+        self.regs.flags &= !(1 << 10); // C calls enter with DF clear
+        #[cfg(target_arch = "x86_64")]
+        {
+            self.regs.regs[6] = usize::from(signo);
+        }
+        Ok(())
+    }
+    pub(crate) fn end_handler(&mut self) -> bool {
+        let Some((frame, fp, mask)) = self.signals.pop() else {
+            return false;
+        };
+        self.regs = frame;
+        self.fp = fp;
+        self.signal_mask = mask;
+        true
     }
     pub fn result(&mut self, value: isize) {
         self.regs.regs[cpu::AX] = value as usize;
@@ -237,6 +309,22 @@ impl Thread {
         // (ESP0 on i686) names its kernel stack for every privilege transition.
         unsafe {
             let local = (&raw mut CPUS).cast::<Local>().add(slot);
+            #[cfg(target_arch = "x86")]
+            {
+                let base = self.tls as u64;
+                (*local).gdt[7] = 0x00cf_f200_0000_ffff
+                    | ((base & 0xff_ffff) << 16)
+                    | ((base & 0xff00_0000) << 32);
+            }
+            // Long mode takes FS.base from the MSR; a user-accessible FS
+            // selector keeps IRET from clearing the base on the CPL switch.
+            #[cfg(target_arch = "x86_64")]
+            let host_fs = (seg::fs(), x86::msr::rdmsr(0xc0000100));
+            #[cfg(target_arch = "x86_64")]
+            {
+                seg::load_fs(SegmentSelector::new(4, Ring::Ring3));
+                x86::msr::wrmsr(0xc0000100, self.tls as u64);
+            }
             let top = self.kernel_stack.as_mut_ptr().add(self.kernel_stack.len()) as usize;
             ptr::write_unaligned(
                 (&raw mut (*local).tss).cast::<u8>().add(4).cast::<usize>(),
@@ -256,6 +344,13 @@ impl Thread {
             cpu::save((&raw mut (*local).host_fp).cast());
             cpu::restore((*local).user_fp);
             cpu::swtch(&raw mut (*local).host_stack, context as usize);
+            #[cfg(target_arch = "x86_64")]
+            {
+                seg::load_fs(host_fs.0);
+                x86::msr::wrmsr(0xc0000100, host_fs.1);
+            }
+            #[cfg(target_arch = "x86")]
+            seg::load_gs(SegmentSelector::new(2, Ring::Ring0));
             super::platform::user_timer(false);
             super::traps::use_user_gates(false);
             (*local).frame = ptr::null_mut();

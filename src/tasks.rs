@@ -22,23 +22,29 @@ impl Wake for Ready {
 struct Child {
     ready: Arc<Ready>,
     main: Option<Pin<Box<dyn Future<Output = u8> + Send>>>,
-    status: u8,
+    provides_status: bool,
 }
 pub(crate) struct Group {
     children: Vec<Child>,
+    status: u8,
 }
 
 impl Group {
     pub fn new(capacity: usize) -> Self {
         Self {
             children: Vec::with_capacity(capacity),
+            status: 0,
         }
     }
-    pub fn spawn(&mut self, main: impl Future<Output = u8> + Send + 'static) {
+    pub fn spawn(
+        &mut self,
+        provides_status: bool,
+        main: impl Future<Output = u8> + Send + 'static,
+    ) {
         self.children.push(Child {
             ready: Arc::new(Ready(AtomicBool::new(true))),
             main: Some(Box::pin(main)),
-            status: 0,
+            provides_status,
         });
     }
     /// Poll a ready child at most once per scheduler round. Dropping a completed
@@ -52,18 +58,17 @@ impl Group {
             if child.ready.0.swap(false, Ordering::AcqRel) {
                 let waker = Waker::from(child.ready.clone());
                 if let Poll::Ready(code) = main.as_mut().poll(&mut Context::from_waker(&waker)) {
-                    child.status = code;
+                    if child.provides_status {
+                        self.status = code;
+                    }
                     child.main = None;
                     continue;
                 }
             }
             running = true;
         }
-        if running {
-            None
-        } else {
-            self.children.last().map(|c| c.status)
-        }
+        self.children.retain(|child| child.main.is_some());
+        if running { None } else { Some(self.status) }
     }
 }
 
@@ -94,6 +99,7 @@ pub(crate) fn launch(id: usize, scheduled: bool, line: &[u8], cwd: Directories) 
         return Command::Started;
     }
     loop {
+        crate::posix::poll_timers();
         user::run_one(0);
         if pc::key(false).is_some() {
             job.notify_input();
@@ -128,6 +134,7 @@ pub(crate) fn interactive() -> ! {
     pc::enable_terminals();
     let mut dos = crate::guest::run::Terminals::new();
     loop {
+        crate::posix::poll_timers();
         user::run_one(0);
         let events = pc::poll_keyboard(|id, code| dos.input(id, code));
         for id in 0..pc::TERMINALS {

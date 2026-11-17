@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <dos_thread.h>
 #include <dos_memory.h>
+#include <sys/stat.h>
+#include <stdarg.h>
 
 extern long sys_read(int, void *, size_t), sys_write(int, const void *, size_t);
 extern long sys_open(const char *, int), sys_unlink(const char *), sys_close(int);
@@ -27,9 +29,29 @@ static long result(long value) {
     }
     return value;
 }
+extern long sys_fork(void), sys_getppid(void), sys_getpgid(int), sys_getsid(int), sys_setsid(void);
+extern long sys_waitpid(int, int *, int), sys_execve(const char *, char *const [], char *const []);
+extern long sys_setpgid(int, int);
+pid_t fork(void) { return (pid_t)result(sys_fork()); }
+pid_t waitpid(pid_t pid, int *status, int flags) { return (pid_t)result(sys_waitpid(pid, status, flags)); }
+pid_t wait(int *status) { return waitpid(-1, status, 0); }
+int execve(const char *path, char *const argv[], char *const envp[]) { return (int)result(sys_execve(path, argv, envp)); }
+pid_t getppid(void) { return (pid_t)result(sys_getppid()); }
+pid_t getpgid(pid_t pid) { return (pid_t)result(sys_getpgid(pid)); }
+int setpgid(pid_t pid, pid_t group) { return (int)result(sys_setpgid(pid, group)); }
+pid_t getsid(pid_t pid) { return (pid_t)result(sys_getsid(pid)); }
+pid_t setsid(void) { return (pid_t)result(sys_setsid()); }
 ssize_t read(int fd, void *p, size_t n) { return result(sys_read(fd, p, n)); }
 ssize_t write(int fd, const void *p, size_t n) { return result(sys_write(fd, p, n)); }
-int open(const char *p, int flags, ...) { return (int)result(sys_open(p, flags)); }
+extern long sys_openmode(const char *, int, unsigned int);
+int open(const char *p, int flags, ...) {
+    if (!(flags & O_CREAT)) return (int)result(sys_open(p, flags));
+    va_list ap;
+    va_start(ap, flags);
+    unsigned int mode = va_arg(ap, unsigned int);
+    va_end(ap);
+    return (int)result(sys_openmode(p, flags, mode));
+}
 int unlink(const char *p) { return (int)result(sys_unlink(p)); }
 int close(int fd) { return (int)result(sys_close(fd)); }
 int dup(int fd) { return (int)result(sys_dup(fd)); }
@@ -76,3 +98,30 @@ void *dos_map_pages(size_t pages) {
 }
 int dos_unmap_pages(void *base, size_t pages) { return (int)result(sys_unmapmem(base, pages)); }
 int dos_meminfo(struct dos_meminfo *info) { return (int)result(sys_meminfo(info)); }
+
+
+extern long sys_chdir(const char *), sys_getcwd(char *, size_t);
+extern long sys_stat(const char *, struct stat *, int), sys_fstat(int, struct stat *);
+extern long sys_mkdir(const char *, mode_t), sys_rmdir(const char *);
+extern long sys_link(const char *, const char *), sys_symlink(const char *, const char *);
+extern long sys_readlink(const char *, char *, size_t);
+extern long sys_rename(const char *, const char *), sys_chmod(const char *, mode_t), sys_umask(mode_t);
+
+int chdir(const char *p) { return (int)result(sys_chdir(p)); }
+char *getcwd(char *buf, size_t size) { return result(sys_getcwd(buf, size)) < 0 ? NULL : buf; }
+int stat(const char *p, struct stat *s) { return (int)result(sys_stat(p,s,0)); }
+int lstat(const char *p, struct stat *s) { return (int)result(sys_stat(p,s,1)); }
+int fstat(int fd, struct stat *s) { return (int)result(sys_fstat(fd,s)); }
+int mkdir(const char *p, mode_t mode) { return (int)result(sys_mkdir(p,mode)); }
+int rmdir(const char *p) { return (int)result(sys_rmdir(p)); }
+int link(const char *old, const char *new_name) { return (int)result(sys_link(old,new_name)); }
+int symlink(const char *to, const char *p) { return (int)result(sys_symlink(to,p)); }
+ssize_t readlink(const char *p, char *buf, size_t len) { return result(sys_readlink(p,buf,len)); }
+int rename(const char *old, const char *new_name) { return (int)result(sys_rename(old,new_name)); }
+int chmod(const char *p, mode_t mode) { return (int)result(sys_chmod(p,mode)); }
+mode_t umask(mode_t mode) { return (mode_t)sys_umask(mode); }
+
+extern long sys_setuid(unsigned int), sys_setgid(unsigned int), sys_chown(const char *,unsigned int,unsigned int);
+int setuid(unsigned int id) { return (int)result(sys_setuid(id)); }
+int setgid(unsigned int id) { return (int)result(sys_setgid(id)); }
+int chown(const char *p, unsigned int uid, unsigned int gid) { return (int)result(sys_chown(p,uid,gid)); }

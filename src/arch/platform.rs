@@ -87,7 +87,6 @@ pub(crate) fn session_nonce() -> u32 {
         ^ SEQUENCE.fetch_add(0x9e3779b9, Ordering::Relaxed)
 }
 
-#[cfg(feature = "thread-trace")]
 pub(crate) fn timestamp() -> u64 {
     // CPUID orders earlier work before the timestamp on both supported x86 ABIs.
     __cpuid(0);
