@@ -10,6 +10,7 @@ pub mod cli;
 pub mod stat;
 
 pub mod ffi {
+    pub use __errno_location as __dos_errno_location;
     unsafe extern "C" {
         pub fn read(fd: i32, p: *mut u8, count: usize) -> isize;
         pub fn write(fd: i32, p: *const u8, count: usize) -> isize;
