@@ -183,7 +183,7 @@ type count.txt
 
 BIOS 从 E820、UEFI 从退出启动服务时的内存图交付空闲物理页。帧分配器使用 4 GiB 以下可由内核直接访问的物理内存，扣除固件、内核及保留区。程序可以按 4 KiB 页申请匿名内存，物理页耗尽时收到 `ENOMEM`。未映射页访问触发进程异常，进程退出后释放其页帧。双架构在单核及四核 QEMU 上都测试了耗尽、重新分配和跨线程撤销映射。[内存接口](native-exec/libc/include/dos_memory.h) · [内存盘回归](scripts/qemu-native-frames.py)
 
-原生 ELF 主线程的栈启动时占用 64 KiB，可按需增长到 8 MiB。两个架构均验证了 256 KiB 局部缓冲区、`fork` 后的栈数据隔离，以及子进程耗尽栈后父进程继续运行。[双架构进程回归](scripts/qemu-native-process.py)
+原生 ELF 主线程的栈默认映射 64 KiB，可按需增长到 8 MiB。`getrlimit`、`setrlimit` 和本进程的 `prlimit` 支持 `RLIMIT_STACK`，`fork` 继承限额，`exec` 按继承的限额装载参数和栈。硬限额上界为 8 MiB，栈页增长按 4 KiB 向下取整后的软限额执行。双架构验证了 100 KiB 限额下的 80 KiB 局部缓冲区、120 KiB 超限子进程隔离、系统调用入口扩栈检查、非管理员权限，以及 `exec` 参数过大失败后原进程继续运行。其他资源类型仍待实现。[进程回归](scripts/qemu-native-process.py) · [限额探针](ports/musl/tests/limits.c)
 
 C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。静态 musl 1.2.6 程序支持 ELF TLS、pthread、`fork`、`execve` 和 `waitpid`。动态链接和完整 POSIX 验收仍待完成。[musl 复测](ports/musl/test.py) [独立 ELF 多核回归](scripts/qemu-native-threads.py)
 

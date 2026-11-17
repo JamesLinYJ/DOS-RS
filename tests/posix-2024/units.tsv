@@ -1280,8 +1280,8 @@ functions	getpwuid	base	functions/getpwuid.html#tag_17_229	open	open
 functions	getpwuid_r	base	functions/getpwuid.html#tag_17_229	open	open	
 functions	getresgid	XSI	functions/getresgid.html#tag_17_230	open	open	
 functions	getresuid	XSI	functions/getresuid.html#tag_17_231	open	open	
-functions	getrlimit	base	functions/getrlimit.html#tag_17_232	open	open	
-functions	setrlimit	base	functions/getrlimit.html#tag_17_232	open	open	
+functions	getrlimit	base	functions/getrlimit.html#tag_17_232	partial	partial	ports/musl/tests/limits.c
+functions	setrlimit	base	functions/getrlimit.html#tag_17_232	partial	partial	ports/musl/tests/limits.c
 functions	getrusage	XSI	functions/getrusage.html#tag_17_233	open	open	
 functions	getsid	base	functions/getsid.html#tag_17_234	partial	partial	native-exec/examples/family.c
 functions	getsockname	base	functions/getsockname.html#tag_17_235	open	open	
