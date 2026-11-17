@@ -216,7 +216,7 @@ fn service(ss: u16, sp: u16, psp: u16) -> u32 {
         return UNHANDLED - 1;
     }
     let ioctl = ax >> 8 == 0x44;
-    if ioctl && !matches!(ax, 0x4400 | 0x4402 | 0x4403 | 0x4406 | 0x4407) {
+    if ioctl && !matches!(ax, 0x4400..=0x4403 | 0x4406 | 0x4407) {
         return UNHANDLED;
     }
     let sys = handle(psp, fd);
@@ -227,6 +227,17 @@ fn service(ss: u16, sp: u16, psp: u16) -> u32 {
     let flags = w(SEG, s + 5);
     let device = flags & 0x80 != 0;
     let h = dw(SEG, s + 7);
+    if ax == 0x4401 {
+        if !device {
+            return ERROR + 1;
+        }
+        if off > 255 {
+            return ERROR + 13;
+        }
+        // The low device flags belong to the open SFT and are shared by duplicates.
+        store(SEG, s + 5, off | 0x80);
+        return u32::from(0x4400 | (flags & 255));
+    }
     if ax == 0x4400 {
         let high = if device && sys >= 5 {
             if !valid(h) {
