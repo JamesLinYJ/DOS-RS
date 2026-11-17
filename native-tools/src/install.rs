@@ -82,7 +82,7 @@ impl Layout {
         if self.wide { self.data } else { self.root }
     }
 }
-const SYSTEM_COUNT: u16 = 17;
+const SYSTEM_COUNT: u16 = 18;
 const MANIFEST_SIZE: u16 = 4 + 19 * (SYSTEM_COUNT - 1);
 const FILE_COUNT: u16 = SYSTEM_COUNT + 2;
 const EXTENTS: u16 = 1024;
@@ -104,9 +104,10 @@ pub(crate) fn name(i: u16) -> &'static [u8] {
         13 => b"NOTICE  TXT",
         14 => b"EDIT    EXE",
         15 => b"EMM386  SYS",
-        16 => b"CHECKSUMDAT",
-        17 => b"CONFIG  SYS",
-        18 => b"AUTOEXECBAT",
+        16 => b"MEMSTAT EXE",
+        17 => b"CHECKSUMDAT",
+        18 => b"CONFIG  SYS",
+        19 => b"AUTOEXECBAT",
         _ => b"",
     }
 }

@@ -25,6 +25,7 @@ fn matches(at: u16, end: u16, s: &[u8]) -> bool {
 }
 pub fn apply(media: &Media) {
     pc::store(pc::COMMAND, 270, 1);
+    pc::store(pc::COMMAND, 272, 0);
     pc::language::set(pc::language::ENGLISH);
     let Some(f) = media.lookup(b"CONFIG  SYS") else {
         return;
@@ -58,6 +59,11 @@ pub fn apply(media: &Media) {
                 }
                 id += 1;
             }
+        } else if matches(start, p, b"DOS=UMB")
+            || matches(start, p, b"DOS=HIGH,UMB")
+            || matches(start, p, b"DOS=LOW,UMB")
+        {
+            pc::store(pc::COMMAND, 272, 1)
         } else if matches(start, p, b"SMARTDRV=OFF") {
             pc::cache::enable(false)
         } else if matches(start, p, b"SMARTDRV=ON") {

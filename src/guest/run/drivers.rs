@@ -433,7 +433,7 @@ pub(super) fn ioctl(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Sessio
         }
         2 if matches!(device, Device::ExpandedMemory) => session
             .ems
-            .import(cpu, ram)
+            .import(cpu, ram, &mut session.import_map)
             .map(|n| cpu.set_wide(Slot::Accumulator, n)),
         2 | 3 => {
             let result = header

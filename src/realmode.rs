@@ -293,6 +293,8 @@ fn run(res: u16, vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original:
     }
 }
 
+#[path = "realmode_arena.rs"]
+mod arena;
 fn psp(split: u16, n: u16) {
     let mut i = 0;
     while i < 256 {
@@ -325,6 +327,7 @@ fn extension(a: u16, b: u16, c: u16) {
 
 #[unsafe(no_mangle)]
 pub fn main16() {
+    arena::init();
     let res = pc::reserved();
     let boot_hd = pc::byte(0x6000, 0) >= 128;
     let mut vol = Volume::EMPTY;

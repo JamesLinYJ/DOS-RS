@@ -8,3 +8,5 @@ x86 = { version = "0.52.0", default-features = false }
 [profile.release]
 panic = "abort"
 opt-level = "s"
+lto = true
+codegen-units = 1

@@ -5,7 +5,7 @@ use dosrs_realmode::{
 };
 pub const FILE: u16 = 0x2000;
 const IMAGE: u16 = PROGRAM + 16;
-const END: u16 = 0x6000;
+use super::arena::END;
 const REQUEST: u16 = 0x35e0;
 const MEMORY: u16 = 0xffff;
 struct Source {

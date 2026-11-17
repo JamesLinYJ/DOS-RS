@@ -27,6 +27,7 @@ fn slot(fd: u16) -> u16 {
     32 + (fd - FIRST) * 32
 }
 pub fn begin(hard: bool) {
+    super::arena::begin();
     set(TABLE, 0, hard as u16);
     set(TABLE, 2, 0);
     let mut f = FIRST;
@@ -56,6 +57,7 @@ fn close(vol: &mut Volume, fd: u16) -> bool {
     true
 }
 pub fn finish(vol: &mut Volume) {
+    super::arena::release();
     let f = w(TABLE, 2);
     if f != 0 && !close(vol, f) {
         pc::print("File close failed\r\n");
@@ -353,6 +355,29 @@ pub fn dos16_service(vol: &mut Volume, ss: u16, sp: u16) {
     }
     let current = vol.directory();
     let result = match ah {
+        0x25 => {
+            set(0, al * 4, dx);
+            set(0, al * 4 + 2, ds);
+            0
+        }
+        0x35 => {
+            set(ss, sp + 2, w(0, al * 4));
+            set(ss, sp + 14, w(0, al * 4 + 2));
+            u32::from(ax)
+        }
+        0x48..=0x4a | 0x58 => {
+            let mut room = 0;
+            let result = super::arena::request(
+                if ah == 0x58 { ax } else { ah << 8 },
+                bx,
+                w(ss, sp + 14),
+                &mut room,
+            );
+            if result == 0x10008 {
+                set(ss, sp + 2, room);
+            }
+            result
+        }
         0x3c | 0x3d => opened(vol, ds, dx, ah, al),
         0x3e => {
             if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {

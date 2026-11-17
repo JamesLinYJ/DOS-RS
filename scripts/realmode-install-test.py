@@ -53,6 +53,7 @@ class Session:
             ":": "shift-semicolon",
             ".": "dot",
             "/": "slash",
+            "-": "minus",
         }
         for c in text:
             self.key(keys.get(c, c))
@@ -313,7 +314,7 @@ def main():
         copy("::CONFIG.SYS", config)
         assert (
             config.read_bytes()
-            == b"LANG=zh-Hans\r\nDISPLAY=AUTO\r\nSMARTDRV=OFF\r\nCDROM=OFF\r\nDEVICE=EMM386.SYS\r\n"
+            == b"LANG=zh-Hans\r\nDISPLAY=AUTO\r\nSMARTDRV=OFF\r\nCDROM=OFF\r\nDEVICE=EMM386.SYS\r\nDOS=UMB\r\n"
         )
         auto = d / "installed-autoexec"
         copy("::AUTOEXEC.BAT", auto)

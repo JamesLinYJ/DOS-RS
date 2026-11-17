@@ -6,7 +6,7 @@ DOS 是用 Rust 实现的操作系统。80286 和 80386 可以从同一张 BIOS 
 
 ## 在 286 或 386 上原生启动
 
-从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/5550c631a5069e5ead029b31b619fcc9a7ec1da7)
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/6310a99f258282efc77d27ded3169083caef9023)
 
 在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
 
@@ -48,15 +48,22 @@ python3 scripts/realmode-boot-time.py --image "$RAM_DISK/install.img" --ram-dir 
 
 ### 原生 386 的扩展内存
 
-安装软盘和 SETUP 生成的 C 盘都通过 `CONFIG.SYS` 的 `DEVICE=EMM386.SYS` 加载驱动。80386 进入虚拟 8086 模式，DOS 程序通过 `INT 67h` 分配扩展内存、切页、保存和恢复映射。段地址 `D000h` 有四个 16 KiB 窗口。每次切页更新 386 的硬件页表，四个窗口可以映射同一逻辑页。80286 使用同一张安装盘，驱动在初始化时返回零驻留长度，系统继续启动。[Rust 驱动](boot/emm386/src/main.rs)
+在安装软盘或安装后的 C 盘启动，输入 `MEMSTAT` 可查看 EMS、XMS、VCPI 版本和当前空闲容量。`MEMSTAT /TEST` 同时持有三种内存块和一个 VCPI 页，写入不同数据，检查切页、读回、DOS 高端内存扩容及释放后的记账。[DOS 诊断工具](native-tools/src/bin/memstat.rs)
 
-当前驱动提供 LIM EMS 3.2 的基本接口，最多 4 MiB、31 个同时分配的句柄。它使用 HMA 以上的连续扩展内存，要求独占该内存区域和 D000h 页框。与其他 XMS 管理器共存、UMB、VCPI、EMS 4.0 和物理设备直接 DMA 到页框尚未验证或实现。
+| 接口 | 原生 386 实现 | 已运行的独立 DOS 程序 |
+| --- | --- | --- |
+| LIM EMS 4.0 | D000h 的四个 16 KiB 硬件窗口，多页映射、句柄、保存和恢复映射、映射调用、区域移动及交换 | Borland `EMSTEST.COM` 写入并读回 128 页。Jemm `EMS4E`、`EMS56`、`EMS57` 验证整幅映射、跨映射调用返回和双向复制 |
+| XMS 3.0 与 UMB | XMS 块、锁定、移动、调整大小、HMA 和 A20 管理。XMS 与 DOS 共用 UMB 分配器，按安装机器的 ROM 布局确定可用窗口 | `XMSTEST` 通过四种源、目标重叠关系。`XMSSTAT` 查询容量并申请、释放最大的 UMB |
+| VCPI 1.0 | V86 和保护模式之间切换，换入客户端 CR3、描述符表和任务状态，保护模式入口支持查询、分配和释放 4 KiB 页 | `TESTVCPI` 在保护模式中输出 `hello from pm` 并返回 DOS。`VCPI` 在保护模式查询并分配内存，再按实际返回的物理地址释放 |
 
-回归使用 Borland C++ 的 `EMSTEST.COM` 2.0（1991）。把已有的程序传给 `--client`，脚本会核对 SHA-256。DOSBox-X 的 386 型号和 QEMU 安装后的 C 盘均须通过 128 页写入与读回、恢复映射和释放。286 以及去掉配置的 386 都须由同一程序报告找不到 EMS，并返回 Shell。测试程序只复制到临时内存盘。[QEMU 安装后读回 128 页的屏幕截图](docs/assets/native-386-ems.png)
+`CONFIG.SYS` 中的 `DEVICE=EMM386.SYS` 加载驱动，`DOS=UMB` 将可用高端段接入 DOS 的 MCB 链。286 使用同一张盘，跳过驱动后继续启动。物理扩展内存池上限为 32 MiB，实际容量受 BIOS 报告的内存和常驻结构占用影响。新分配的内存会清零，VCPI 只接受本接口分配的页进行释放。本次验收覆盖 DOSBox-X 和 QEMU。物理 ISA DMA 到页框、第三方 XMS 管理器共存及非标准的 XMS 句柄表查询 `INT 2Fh/4309h` 均在已验证范围之外。[Rust 驱动](boot/emm386/src/main.rs) · [安装后运行画面](docs/assets/native-386-ems.png)
+
+回归脚本会核对 Borland EMSTEST 2.0 的 SHA-256。传入上游 Jemm 源码时，脚本用宿主机 JWasm 直接编译独立测试程序，也可以用 `--clients` 指定已编译程序的目录。全部可写虚拟磁盘放在 `--ram-dir` 所指的内存卷。[验收使用的 Jemm 源码](https://github.com/Baron-von-Riedesel/Jemm/tree/89cd461f539120cbb4c37f677987e64823930cc7)
 
 ```sh
 python3 scripts/realmode-ems-test.py --image "$RAM_DISK/install.img" \
   --disk1 "$RAM_DISK/DISKS/DISK1.IMG" --client /path/to/EMSTEST.COM \
+  --jemm /path/to/Jemm --jwasm /path/to/jwasm \
   --ram-dir "$RAM_DISK" --proof target/native-ems
 ```
 

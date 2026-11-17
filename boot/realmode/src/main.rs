@@ -87,7 +87,15 @@ fn boot() -> Option<()> {
         if pos > file.size {
             return None;
         }
-        let length = file.size - pos;
+        let end = if entry == 4 {
+            dw(seg, 10) & 0x7fffffff
+        } else {
+            file.size
+        };
+        if end < pos || end > file.size {
+            return None;
+        }
+        let length = end - pos;
         if length == 0
             || length > 0xfff0
             || !media.fetch(&file, pos, length as u16, kernel_image::STAGE, 0)

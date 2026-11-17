@@ -1,4 +1,4 @@
-"""Cold boot the native install media and exercise Borland EMSTEST 2.0 on RAM disks."""
+"""Cold boot the native install media and run Borland, Jemm and DOS-RS memory clients on RAM disks."""
 import argparse
 import hashlib
 import importlib.util
@@ -21,12 +21,19 @@ def read_dos(image, name):
 def check_pages(log):
     # EMSTEST overwrites the on-screen counter with backspaces. Verify the last
     # logical page as well as the client's own success marker for both loops.
+    pages = None
     for operation in (b"Initializing", b"Checking"):
-        row = re.search(operation + rb" 128 pages:[^\r\n]+", log)
-        if not row or not row[0].endswith(b"127\b\b\bOK."):
-            raise ValueError(f"missing complete {operation!r} pass")
+        row = re.search(operation + rb" (\d+) pages:([^\r\n]+)", log)
+        if not row:
+            raise ValueError(f"missing {operation!r} pass")
+        n = int(row[1])
+        if n < 2 or (pages is not None and n != pages):
+            raise ValueError("inconsistent EMSTEST page counts")
+        if not re.search(str(n - 1).encode() + rb"\x08+OK\.$", row[2]):
+            raise ValueError(f"incomplete {operation!r} pass")
+        pages = n
     for marker in (b"Window Segment Address: D000", b"Restoring page map: OK.",
-                   b"De-allocating 128 pages EMS memory: OK."):
+                   f"De-allocating {pages} pages EMS memory: OK.".encode()):
         if marker not in log:
             raise ValueError(f"missing {marker!r}")
     if b"corrupted" in log.lower() or b"Program halted" in log:
@@ -45,12 +52,55 @@ def check_display(picture):
         raise ValueError("the EMS result appeared on serial but the display is empty")
 
 
+# Unmodified clients from Jemm Test/, Tools/XMSSTAT and Tools/VCPI.
+CASES = (
+    ("EMS4E", "", (b"size to save all pages: 16", b"Ok")),
+    ("EMS56", "", (b"ax=5600h ok",)),
+    ("EMS57", "", (b"move to expanded memory ok", b"move from expanded memory ok")),
+    ("XMSSTAT", "", (b"XMS version: 3.0", b"segment of largest UMB:", b"size of largest UMB")),
+    ("XMSTEST", "", (b"src+len < dest, ok", b"src+len > dest, ok", b"src > dest+len, ok", b"src < dest+len, ok")),
+    ("VCPI", " -q", (b"VCPI version: 1.0", b"free pages in pm, status ah=00")),
+    ("TESTVCPI", "", (b"hello from pm",)),
+    ("MEMSTAT", " /TEST", (b"XMS + EMS + UMB data verified", b"DOS high allocation, resize and free verified",
+                          b"PASS: page reuse, VCPI ownership and pool balance")),
+)
+
+
+def add_clients(args, image):
+    for name, _, _ in CASES:
+        if name != "MEMSTAT":
+            subprocess.run(["mcopy", "-o", "-i", image, args.clients / (name + ".EXE"),
+                            "::" + name + ".EXE"], check=True)
+
+
+def check_clients(log):
+    for name, _, markers in CASES:
+        start, end = ("BEGIN-" + name + "\r\n").encode(), ("END-" + name + "\r\n").encode()
+        if start not in log or end not in log:
+            raise ValueError(f"{name} did not return to DOS")
+        output = log.split(start, 1)[1].split(end, 1)[0]
+        for marker in markers:
+            if marker not in output:
+                raise ValueError(f"{name} missing {marker!r} in {output!r}")
+        if name == "EMS56":
+            stack = re.search(rb"SP=([0-9a-f]+).*?SP after call=([0-9a-f]+)", output, re.S)
+            if not stack or stack[1] != stack[2]:
+                raise ValueError("EMS mapped call returned on a different stack")
+        if name == "XMSSTAT" and not re.search(rb"paragraphs\): [1-9a-f][0-9a-f]*", output):
+            raise ValueError("no UMB reported")
+
+
 def dosbox(args, work, cpu, enabled):
     boot = work / "boot.img"
     shutil.copyfile(args.disk1, boot)
     subprocess.run(["mcopy", "-o", "-i", boot, args.client, "::EMSTEST.COM"], check=True)
+    commands = ["EMSTEST.COM"]
+    if cpu == 386 and enabled:
+        add_clients(args, boot)
+        for name, tail, _ in CASES:
+            commands.extend(["ECHO BEGIN-" + name, name + ".EXE" + tail, "ECHO END-" + name])
     subprocess.run(["mcopy", "-o", "-i", boot, "-", "::AUTOEXEC.BAT"],
-                   input=b"EMSTEST.COM\r\n", check=True)
+                   input=("\r\n".join(commands) + "\r\n").encode(), check=True)
     if not enabled:
         subprocess.run(["mdel", "-i", boot, "::CONFIG.SYS"], check=True)
     tag = f"dosbox-{cpu}" + ("" if enabled else "-without-device")
@@ -61,7 +111,7 @@ def dosbox(args, work, cpu, enabled):
         f"[cpu]\ncore=normal\ncputype={cpu}\ncycles=fixed 30000\n"
         "[mixer]\nnosound=true\n[dos]\nems=false\nxms=false\n"
         f"[serial]\nserial1=file file:{log} timeout:0\n[autoexec]\n"
-        + ("autotype -w 12 -p 6 space esc\n" if cpu == 386 and enabled else "")
+        + ("autotype -w 14 -p 8 space esc esc esc\n" if cpu == 386 and enabled else "")
         + "boot boot.img\n"
     )
     env = dict(os.environ, TMPDIR=str(work), SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
@@ -87,6 +137,7 @@ def dosbox(args, work, cpu, enabled):
         raise ValueError("wrong native kernel")
     if cpu == 386 and enabled:
         check_pages(data)
+        check_clients(data)
     elif b"Expanded Memory Manager Interrupt (INT 67H) not installed." not in data:
         raise ValueError("EMSTEST failed to demonstrate absence of the driver")
     print(f"PASS {tag}", flush=True)
@@ -102,8 +153,10 @@ def installed(args, work):
         session.key("ret")
         session.expect("Installation complete")
     partition = str(disk) + "@@1048576"
-    if read_dos(partition, "EMM386.SYS") != read_dos(args.image, "EMM386.SYS"):
-        raise ValueError("installed driver bytes differ from the installation floppy")
+    for name in ("EMM386.SYS", "MEMSTAT.EXE"):
+        if read_dos(partition, name) != read_dos(args.image, name):
+            raise ValueError(f"installed {name} differs from the installation floppy")
+    add_clients(args, partition)
     if b"DEVICE=EMM386.SYS" not in read_dos(partition, "CONFIG.SYS").splitlines():
         raise ValueError("installed CONFIG.SYS does not load the driver")
     subprocess.run(["mcopy", "-i", partition, args.client, "::EMSTEST.COM"], check=True)
@@ -111,20 +164,40 @@ def installed(args, work):
         session.type("emstest.com\n")
         session.expect("Press Esc")
         session.key("spc")
-        session.expect("De-allocating 128 pages EMS memory: OK.")
+        session.expect("pages EMS memory: OK.")
         session.expect("Press Esc")
         session.picture("ems-pages")
         session.key("esc")
         session.expect("C:\\> ")
+        for name, tail, markers in CASES:
+            session.type((name + ".exe" + tail + "\n").lower())
+            for marker in markers:
+                session.expect(marker.decode())
+            session.expect("C:\\> ")
+        session.picture("memory-services")
+        session.type("vcpi -a 1\n")
+        session.expect("alloced 1 page(s) in pm, last status ah=00")
+        session.expect("C:\\> ")
+        allocation = re.findall(rb"\(first\) page=([a-fA-F0-9]{8})", session.log.read_bytes())
+        if not allocation:
+            raise ValueError("VCPI client did not report the physical page it allocated")
+        session.type("vcpi -f " + allocation[-1].decode().lower() + "\n")
+        session.expect("freed 1 page(s) in pm, last status ah=00")
+        session.expect("C:\\> ")
     check_pages((args.proof / "qemu-hard-boot.txt").read_bytes())
+    check_display(args.proof / "memory-services.ppm")
     check_display(args.proof / "ems-pages.ppm")
-    print("PASS QEMU installed C: cold boot and EMS page readback", flush=True)
+    print("PASS QEMU installed C: cold boot, EMS, XMS, UMB and protected-mode VCPI", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("image", "disk1", "client", "ram-dir", "proof"):
         parser.add_argument("--" + name, type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--clients", type=Path, help="directory of prebuilt Jemm test executables")
+    source.add_argument("--jemm", type=Path, help="build the clients from an upstream Jemm checkout")
+    parser.add_argument("--jwasm", default="jwasm", help="host JWasm executable")
     parser.add_argument("--dosbox-x", default="dosbox-x")
     args = parser.parse_args()
     args.proof = args.proof.resolve()
@@ -133,6 +206,19 @@ def main():
         parser.error("expected Borland C++ EMSTEST.COM 2.0 (1991), SHA-256 " + CLIENT_SHA256)
     with tempfile.TemporaryDirectory(dir=args.ram_dir) as tmp:
         work = Path(tmp).resolve()
+        if args.jemm:
+            args.clients = work / "clients"
+            args.clients.mkdir()
+            assembler = shutil.which(args.jwasm)
+            if not assembler:
+                parser.error("cannot find host JWasm")
+            for name, _, _ in CASES:
+                if name == "MEMSTAT":
+                    continue
+                directory = ("Tools/" + name) if name in ("VCPI", "XMSSTAT") else "Test"
+                subprocess.run([str(Path(assembler).resolve()), "-mz", "-nologo",
+                                "-Fo" + str(args.clients / (name + ".EXE")), name + ".ASM"],
+                               cwd=args.jemm / directory, check=True)
         for cpu, enabled in ((386, True), (286, True), (386, False)):
             dosbox(args, work, cpu, enabled)
         installed(args, work)

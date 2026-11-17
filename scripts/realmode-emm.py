@@ -16,6 +16,8 @@ def build(tools, target):
     ], check=True)
     adapter = target / "host/release/rust16-device"
     subprocess.run([adapter, "caller", target / "device.obj"], check=True)
+    subprocess.run([adapter, "client", target / "client.obj"], check=True)
+    subprocess.run([adapter, "upper", target / "upper.obj"], check=True)
     subprocess.run([adapter, "header", target / "device.hdr"], check=True)
 
     spec = json.loads((ROOT / "target/bios-cpu/i686-stage-3.json").read_text())

@@ -6,6 +6,10 @@
 pub const RAM_BYTES: usize = include!(concat!(env!("OUT_DIR"), "/guest-ram-bytes.rs"));
 #[cfg(test)]
 pub const RAM_BYTES: usize = 9 * 1024 * 1024;
+pub(super) const EMS_ENTRY: (u16, u16) = (0xf100, 0);
+pub(super) const EMS_RETURN: (u16, u16) = (EMS_ENTRY.0, 0x20);
+pub(super) const XMS_ENTRY: (u16, u16) = (0xf000, 0x0100);
+pub(super) const XMS_CONTROL: (u16, u16) = (XMS_ENTRY.0, XMS_ENTRY.1 + 5);
 const EMS_MASK: u64 = (1 << (EMS_PAGE / KIB)) - 1;
 
 pub(super) const EXT_START: usize = 0x110000;
@@ -176,6 +180,9 @@ impl GuestRam {
             }
         }
     }
+    pub(super) fn zero_ext(&mut self, at: usize, len: usize) {
+        self.bytes[at..at + len].fill(0);
+    }
     pub(super) fn allocate_ext(&mut self, len: usize) -> Option<usize> {
         if len == 0 {
             return Some(EXT_START);
@@ -189,6 +196,15 @@ impl GuestRam {
         let start = first?;
         self.mark(start, len, true);
         Some(start)
+    }
+    pub(super) fn ems_return(&self) -> (u16, u16) {
+        EMS_RETURN
+    }
+    pub(super) fn highest_address(&self) -> usize {
+        RAM_BYTES - 1
+    }
+    pub(super) fn total_ems(&self) -> usize {
+        (RAM_BYTES - EXT_START) / EMS_PAGE
     }
     pub(super) fn free_ems(&self) -> usize {
         self.units
@@ -212,7 +228,10 @@ impl GuestRam {
                 let mask = EMS_MASK << (group * 16);
                 if *word & mask == 0 {
                     *word |= mask;
-                    assign(w * 4 + group, n);
+                    let page = w * 4 + group;
+                    let start = EXT_START + page * EMS_PAGE;
+                    self.bytes[start..start + EMS_PAGE].fill(0);
+                    assign(page, n);
                     n += 1;
                 }
             }

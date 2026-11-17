@@ -125,7 +125,7 @@ def main():
             env=dict(
                 os.environ,
                 RUST16_CPU=cpu,
-                RUST16_OBJECTS=str(ems / "device.obj") if cpu == "8086" else "",
+                RUST16_OBJECTS=str(ems / "device.obj") if cpu == "8086" else str(ems / "upper.obj"),
                 RUST16_PLATFORM="bios-loader" if cpu == "8086" else "bios-kernel",
             ),
         )
@@ -140,12 +140,13 @@ def main():
         compile(cpu, ROOT / "Cargo.toml", "dos.exe", 0x1000) for cpu in ("286", "386")
     ]
     first = 512
-    second = (first + len(kernels[0]) + 511) & ~511
+    packed286 = lz4_block(kernels[0])
+    second = first + len(packed286)
     header = struct.pack(
-        "<4sIHIH", b"DOSK", first, len(kernels[0]), second | 0x80000000, len(kernels[1])
+        "<4sIHIH", b"DOSK", first | 0x80000000, len(kernels[0]),
+        second | 0x80000000, len(kernels[1])
     )
-    system = header.ljust(first, b"\0") + kernels[0]
-    system = system.ljust(second, b"\0") + lz4_block(kernels[1])
+    system = header.ljust(first, b"\0") + packed286 + lz4_block(kernels[1])
     util = target / "util"
     util.mkdir(exist_ok=True)
     obj = util / "io.obj"
@@ -159,7 +160,7 @@ def main():
         "--target-dir",
         util,
         env=dict(
-            os.environ, RUST16_OBJECTS=str(obj), RUST16_CPU="286", RUST16_PLATFORM="dos"
+            os.environ, RUST16_OBJECTS=os.pathsep.join(map(str, [obj, ems / "client.obj"])), RUST16_CPU="286", RUST16_PLATFORM="dos"
         ),
     )
     with tempfile.TemporaryDirectory(dir=output.parent if output else disk_set) as tmp:
@@ -171,6 +172,7 @@ def main():
             ("setup", "EXE"),
             ("fdisk", "EXE"),
             ("smartdrv", "EXE"),
+            ("memstat", "EXE"),
             ("edit", "EXE"),
         ]:
             shutil.copyfile(
@@ -214,7 +216,7 @@ def main():
             (ROOT / "NOTICE").read_text().replace("\n", "\r\n").encode()
         )
         shutil.copyfile(ems / "EMM386.SYS", d / "EMM386.SYS")
-        (d / "CONFIG.SYS").write_bytes(b"DEVICE=EMM386.SYS\r\n")
+        (d / "CONFIG.SYS").write_bytes(b"DEVICE=EMM386.SYS\r\nDOS=UMB\r\n")
         files = [
             d / n
             for n in [
@@ -234,6 +236,7 @@ def main():
                 "NOTICE.TXT",
                 "EDIT.EXE",
                 "EMM386.SYS",
+                "MEMSTAT.EXE",
             ]
         ]
         # File identities, lengths and Fletcher-32 over little-endian words.

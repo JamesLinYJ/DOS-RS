@@ -1,9 +1,7 @@
 //! Session-local XMS 3.0 manager. Addresses and handles are always guest values.
+use super::{Arena, MemoryError, XMS_OWNER};
 use super::{CpuState, GuestRam, Segment, Slot};
-use crate::guest::arena::{Arena, MemoryError, XMS_OWNER};
 const BLOCKS: usize = 32;
-pub(in crate::guest) const ENTRY: (u16, u16) = (0xf000, 0x0100);
-pub(in crate::guest) const CONTROL: (u16, u16) = (ENTRY.0, ENTRY.1 + 5);
 #[derive(Clone, Copy)]
 struct Block {
     start: usize,
@@ -17,7 +15,7 @@ pub(super) struct Xms {
     local: u16,
 }
 impl Xms {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             blocks: [None; BLOCKS],
             hma: false,
@@ -101,7 +99,7 @@ impl Xms {
                     if function == 0x88 {
                         cpu.set_dword(Slot::Accumulator, (max / 1024) as u32);
                         cpu.set_dword(Slot::Data, (total / 1024) as u32);
-                        cpu.set_dword(Slot::Count, (super::super::memory::RAM_BYTES - 1) as u32);
+                        cpu.set_dword(Slot::Count, (ram.highest_address()) as u32);
                     } else {
                         cpu.set_wide(
                             Slot::Accumulator,
@@ -120,9 +118,10 @@ impl Xms {
                         u32::from(dx)
                     };
                     let len = (size as usize).checked_mul(1024).ok_or(0xa0)?;
-                    let pos = ram.allocate_ext(len);
+                    let pos = ram.allocate_ext(len).ok_or(0xa0)?;
+                    ram.zero_ext(pos, len);
                     self.blocks[i] = Some(Block {
-                        start: pos.ok_or(0xa0)?,
+                        start: pos,
                         len,
                         locks: 0,
                     });
@@ -206,6 +205,9 @@ impl Xms {
                         return Err(0xa0);
                     };
                     ram.move_physical(b.start, start, b.len.min(len)).unwrap();
+                    if len > b.len {
+                        ram.zero_ext(start + b.len, len - b.len);
+                    }
                     self.blocks[i] = Some(Block {
                         start,
                         len,

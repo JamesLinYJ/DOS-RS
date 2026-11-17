@@ -117,13 +117,13 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         if let Some(v) = firmware(cpu.selector(Segment::Code), start as u16) {
             return Outcome::Firmware(v);
         }
-        if (cpu.selector(Segment::Code), start as u16) == super::run::xms::CONTROL {
+        if (cpu.selector(Segment::Code), start as u16) == super::memory::XMS_CONTROL {
             return Outcome::Xms;
         }
-        if (cpu.selector(Segment::Code), start as u16) == super::run::ems::ENTRY {
+        if (cpu.selector(Segment::Code), start as u16) == super::memory::EMS_ENTRY {
             return Outcome::Ems;
         }
-        if (cpu.selector(Segment::Code), start as u16) == super::run::ems::RETURN {
+        if (cpu.selector(Segment::Code), start as u16) == super::memory::EMS_RETURN {
             return Outcome::EmsReturn;
         }
     }

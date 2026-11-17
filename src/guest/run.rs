@@ -1,11 +1,13 @@
 //! Synchronous guest execution, DOS services and modeled BIOS interrupts.
 //! Boot fixtures live in the smoke submodule.
 
-use super::arena::{Arena, MemoryError};
+use super::arena::{Arena, MemoryError, XMS_OWNER};
+use super::memory::{EMS_FRAME, EMS_PAGE, EXT_START, RAM_BYTES};
 use super::memory::{GuestRam, read_word};
 use super::process::{CommandTail, Program};
 use super::state::{CpuState, Segment, Slot};
 use super::step::{self, Outcome};
+use crate::arch::platform::session_nonce;
 
 use crate::kernel_cell::KernelCell;
 
@@ -17,6 +19,7 @@ mod locks;
 mod runtime;
 mod sda;
 mod termination;
+#[path = "../dos_memory/xms.rs"]
 pub(super) mod xms;
 
 mod bios;
@@ -264,13 +267,13 @@ fn multiplex(cpu: &mut CpuState, ram: &mut GuestRam, session: &mut Session) {
         0x1605 => sda::startup(cpu, ram, session),
         0x1606 => {
             session.instancing = false;
-            session.ems.finish_import(ram);
+            ems::Ems::finish_import(&mut session.import_map, ram);
         }
         0x1607 if cpu.wide(Slot::Base) == 0x15 => sda::dosmgr(cpu, session),
         0x4300 => cpu.set_low(Slot::Accumulator, 0x80),
         0x4310 => {
-            cpu.set_selector(Segment::Extra, xms::ENTRY.0);
-            cpu.set_wide(Slot::Base, xms::ENTRY.1);
+            cpu.set_selector(Segment::Extra, super::memory::XMS_ENTRY.0);
+            cpu.set_wide(Slot::Base, super::memory::XMS_ENTRY.1);
         }
         _ => {}
     }
@@ -309,6 +312,7 @@ pub(super) struct Session {
     fcbs: crate::vfs::fcb::Table,
     xms: xms::Xms,
     ems: ems::Ems,
+    import_map: (usize, usize),
     pub(super) last_code: u16,
     dta_segment: u16,
     dta_offset: u16,
@@ -359,6 +363,7 @@ impl Session {
             fcbs: crate::vfs::fcb::Table::new(),
             xms: xms::Xms::new(),
             ems: ems::Ems::new(),
+            import_map: (0, 0),
             last_code: 0,
             dta_segment: 0,
             dta_offset: 0,

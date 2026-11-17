@@ -1,7 +1,7 @@
 ENTRY(monitor_start)
 trap = 0x270; /* rust16 device ABI: clear DF before entering Rust */
 SECTIONS {
-    . = 0x400;
+    . = 0x800;
     .text : { KEEP(*(.entry)) *(.text .text.*) }
     .rodata : { *(.rodata .rodata.*) }
     .data : { *(.data .data.*) *(.got*) }
