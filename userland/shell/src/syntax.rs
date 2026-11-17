@@ -1,5 +1,9 @@
 //! Quote recognition and list parsing precede expansion and redirection.
+use alloc::rc::Rc;
 use alloc::{string::String, vec::Vec};
+#[path = "here.rs"]
+mod here;
+pub use here::HereDocument;
 #[path = "grammar.rs"]
 mod grammar;
 pub use grammar::parse;
@@ -82,8 +86,11 @@ impl Error {
 
 pub struct Redirect {
     pub fd: i32,
-    pub mode: Mode,
-    pub target: Word,
+    pub target: Target,
+}
+pub enum Target {
+    File(Mode, Word),
+    Here(Rc<HereDocument>),
 }
 #[derive(Default)]
 pub struct Command {
@@ -111,6 +118,7 @@ enum Token {
     LeftParen,
     RightParen,
     Redirect(i32, Mode),
+    Here(i32, Rc<HereDocument>),
     Pipe,
     End(Condition),
     Background,
@@ -409,6 +417,12 @@ fn token(it: &mut Input<'_>, depth: u16) -> Result<Option<Token>, Error> {
                             .parse()
                             .map_err(|_| Error::Invalid("invalid redirection descriptor"))?
                     };
+                    if op == '<' && digits.next_if_eq(&'<').is_some() {
+                        let strip_tabs = digits.next_if_eq(&'-').is_some();
+                        let document = HereDocument::delimiter(&mut digits, strip_tabs, depth)?;
+                        *it = digits;
+                        return Ok(Some(Token::Here(fd, Rc::new(document))));
+                    }
                     let mode = if digits.next_if_eq(&'&').is_some() {
                         Mode::Duplicate
                     } else if op == '<' && digits.next_if_eq(&'>').is_some() {

@@ -2,9 +2,9 @@
 //! outside the command's descriptor operands and close on exec.
 use super::{
     Shell, close, diagnostic, dup2, error, open,
-    syntax::{Mode, Redirect},
+    syntax::{Mode, Redirect, Target},
 };
-use alloc::{ffi::CString, format, string::String, vec::Vec};
+use alloc::{ffi::CString, format, vec::Vec};
 
 unsafe extern "C" {
     fn fcntl(fd: i32, cmd: i32, ...) -> i32;
@@ -19,7 +19,7 @@ pub(super) fn script_descriptor(fd: i32) -> Result<i32, i32> {
     result
 }
 
-fn redirect(fd: i32, mode: Mode, value: &str) -> Result<(), i32> {
+fn redirect(fd: i32, mode: Mode, value: &str, saved: &[(i32, i32)]) -> Result<(), i32> {
     if mode == Mode::Duplicate {
         if value == "-" {
             return match close(fd) {
@@ -28,6 +28,9 @@ fn redirect(fd: i32, mode: Mode, value: &str) -> Result<(), i32> {
             };
         }
         let source = value.parse::<i32>().ok().filter(|v| *v >= 0).ok_or(9)?;
+        if saved.iter().any(|&(_, backup)| backup == source) {
+            return Err(9);
+        }
         return if unsafe { dup2(source, fd) } < 0 {
             Err(error())
         } else {
@@ -42,7 +45,10 @@ fn redirect(fd: i32, mode: Mode, value: &str) -> Result<(), i32> {
         Mode::Duplicate => unreachable!(),
     };
     let path = CString::new(value).map_err(|_| 22)?;
-    let opened = open(&path, flags)?;
+    install(fd, open(&path, flags)?)
+}
+
+fn install(fd: i32, opened: i32) -> Result<(), i32> {
     if opened != fd {
         let result = if unsafe { dup2(opened, fd) } < 0 {
             Err(error())
@@ -60,21 +66,11 @@ pub(super) fn apply(
     redirects: &[Redirect],
     preserve: bool,
 ) -> Result<Vec<(i32, i32)>, ()> {
-    let targets: Vec<String> = redirects
+    let first_free = redirects
         .iter()
-        .map(|r| sh.expand(&r.target, false).map(|s| s.concat()))
-        .collect::<Result<_, _>>()?;
-    let mut first_free: i32 = 10;
-    for (r, value) in redirects.iter().zip(&targets) {
-        let source = if r.mode == Mode::Duplicate {
-            value.parse::<i32>().unwrap_or(-1)
-        } else {
-            -1
-        };
-        first_free = first_free.max(r.fd.max(source).saturating_add(1));
-    }
+        .fold(10, |n, r| n.max(r.fd.saturating_add(1)));
     let mut saved = Vec::new();
-    for (r, value) in redirects.iter().zip(targets) {
+    for r in redirects {
         if preserve && !saved.iter().any(|(fd, _)| *fd == r.fd) {
             let old = unsafe { fcntl(r.fd, F_DUPFD_CLOEXEC, first_free) };
             if old < 0 && error() != 9 {
@@ -84,8 +80,23 @@ pub(super) fn apply(
             }
             saved.push((r.fd, old));
         }
-        if let Err(e) = redirect(r.fd, r.mode, &value) {
-            diagnostic(&format!("{value}: redirection error {e}"));
+        let result = match &r.target {
+            Target::Here(doc) => doc
+                .word()
+                .map_err(|e| diagnostic(e.message()))
+                .and_then(|word| sh.expand(&word, false))
+                .and_then(|parts| {
+                    super::here_input::open(parts.concat().as_bytes(), sh.get("TMPDIR"))
+                        .and_then(|fd| install(r.fd, fd))
+                        .map_err(|e| diagnostic(&format!("here-document: redirection error {e}")))
+                }),
+            Target::File(mode, word) => sh.expand(word, false).and_then(|parts| {
+                let value = parts.concat();
+                redirect(r.fd, *mode, &value, &saved)
+                    .map_err(|e| diagnostic(&format!("{value}: redirection error {e}")))
+            }),
+        };
+        if result.is_err() {
             finish(saved, true);
             return Err(());
         }

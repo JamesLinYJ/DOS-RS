@@ -3,6 +3,7 @@ extern crate alloc;
 mod arithmetic;
 mod compound;
 mod expansion;
+mod here_input;
 mod input;
 mod jobs;
 mod options;
@@ -610,19 +611,6 @@ fn cwd() -> Option<String> {
     bytes.truncate(len as usize - 1);
     String::from_utf8(bytes).ok()
 }
-fn read_line(fd: i32) -> Result<Option<String>, i32> {
-    let mut bytes = Vec::new();
-    let mut ch = [0];
-    loop {
-        match read(fd, &mut ch)? {
-            0 if bytes.is_empty() => return Ok(None),
-            0 => break,
-            _ if ch[0] == b'\n' => break,
-            _ => bytes.push(ch[0]),
-        }
-    }
-    String::from_utf8(bytes).map(Some).map_err(|_| 22)
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
@@ -694,11 +682,13 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         jobs::ignore_keyboard();
     }
     let mut pending = String::new();
+    // Reading ahead on stdin can consume bytes needed by the next command.
+    let mut source = input::Lines::new(fd, script.is_some());
     while !sh.exiting {
         if interactive {
             let _ = write_all(2, if pending.is_empty() { b"$ " } else { b"> " });
         }
-        match read_line(fd) {
+        match source.next() {
             Ok(Some(line)) => {
                 pending.push_str(&line);
                 match syntax::parse(&pending) {

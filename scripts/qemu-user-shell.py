@@ -13,6 +13,7 @@ import qemu
 from qemu_shell import Shell
 
 DATA = bytes(range(256)) * 83 + b"DOS-RS"
+HERE_DATA = b"0123456789abcdef" * 1025 + b"\n"
 READ_DATA = (b"   alpha  beta  gamma  \n" b"  x\\ y:z\\:q:  end \n"
              b"left\\\nright tail\n" b"a\\b c\\ d\n"
              b"field1:field2::field4:|two words|abc\0last fragment")
@@ -47,6 +48,8 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $? > ifs.rc", prompt=b"$ ")
             vm.command("sh read.sh > read.out", prompt=b"$ ", timeout=120)
             vm.command("echo $? > read.rc", prompt=b"$ ")
+            vm.command("sh here.sh > here.out", prompt=b"$ ", timeout=300 if dual_volume else 180)
+            vm.command("echo $? > here.rc", prompt=b"$ ")
         if job_control:
             offset = serial.stat().st_size
             vm.enter("cat")
@@ -84,18 +87,21 @@ def script_fixture(fixture, work):
     (fixture / "SUB/ONE.TX").write_bytes(b"one")
     (fixture / "SUB/TWO.TX").write_bytes(b"two")
     (fixture / "read.dat").write_bytes(READ_DATA)
-    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "plain"):
+    (fixture / "large.sh").write_bytes(b"cat <<'END'\n" + HERE_DATA + b"END\n")
+    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "here.sh", "plain"):
         shutil.copyfile(qemu.ROOT / "tests/user-shell" / name, fixture / name)
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
     with tempfile.TemporaryDirectory(dir=work) as temporary:
         refdir = Path(temporary)
         shutil.copy2(fixture / "plain", refdir / "plain")
+        shutil.copy2(fixture / "large.sh", refdir / "large.sh")
         shutil.copytree(fixture / "SUB", refdir / "SUB")
         expected = {}
         for script, args, output, status, code in [
             ("control.sh", ["one", "two words"], "subst.out", "subst.rc", 13),
             ("expand.sh", [], "exp.out", "exp.rc", 17),
+            ("here.sh", [], "here.out", "here.rc", 37),
         ]:
             ref = subprocess.run([reference_shell, fixture / script, *args], cwd=refdir,
                                  env=dict(os.environ, LC_ALL="C"), capture_output=True)
@@ -103,6 +109,9 @@ def script_fixture(fixture, work):
                 raise RuntimeError(f"host shell reference failed: {ref!r}")
             expected[output] = ref.stdout
             expected[status] = f"{code}\n".encode()
+        if (refdir / "here.bin").read_bytes() != HERE_DATA:
+            raise RuntimeError("host shell truncated the large here-document")
+        expected["here.bin"] = HERE_DATA
     # dash and bash disagree about adjacent IFS bytes from separate expansions.
     # Keep the Issue 8 examples independent of the chosen host interpreter.
     expected["ifs.out"] = b"2:[x]:[y]\n3:[x]:[:]:[y]\n"
@@ -137,7 +146,7 @@ def check(arch, root, proof):
     for name in PROBES:
         build_probe(arch, fixture / name)
     subprocess.run(["mcopy", "-s", "-i", disk, fixture / "SUB", "::"], check=True)
-    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "read.dat", "plain", *PROBES):
+    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "read.dat", "here.sh", "large.sh", "plain", *PROBES):
         subprocess.run(["mcopy", "-i", disk, fixture / name, "::" + name], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)

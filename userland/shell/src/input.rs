@@ -4,6 +4,51 @@ use super::{Shell, diagnostic, read, syntax, write_all};
 use alloc::{format, string::String, vec::Vec};
 use core::ffi::c_int;
 
+pub(super) struct Lines {
+    fd: i32,
+    buffer: Vec<u8>,
+    pos: usize,
+    end: usize,
+}
+
+impl Lines {
+    pub(super) fn new(fd: i32, script: bool) -> Self {
+        Self {
+            fd,
+            buffer: alloc::vec![0; if script { 4096 } else { 1 }],
+            pos: 0,
+            end: 0,
+        }
+    }
+
+    pub(super) fn next(&mut self) -> Result<Option<String>, i32> {
+        let mut line = Vec::new();
+        loop {
+            if self.pos == self.end {
+                match read(self.fd, &mut self.buffer) {
+                    Ok(0) if line.is_empty() => return Ok(None),
+                    Ok(0) => break,
+                    Ok(n) => {
+                        self.pos = 0;
+                        self.end = n;
+                    }
+                    Err(4) => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            let unread = &self.buffer[self.pos..self.end];
+            if let Some(n) = unread.iter().position(|&b| b == b'\n') {
+                line.extend_from_slice(&unread[..n]);
+                self.pos += n + 1;
+                break;
+            }
+            line.extend_from_slice(unread);
+            self.pos = self.end;
+        }
+        String::from_utf8(line).map(Some).map_err(|_| 22)
+    }
+}
+
 unsafe extern "C" {
     fn isatty(fd: c_int) -> c_int;
 }

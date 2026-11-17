@@ -1,8 +1,9 @@
 //! Recursive parsing of POSIX lists, pipelines and grouped commands.
 use super::{
-    Command, Compound, Condition, Error, Part, Pipeline, Redirect, Token, Word, identifier,
+    Command, Compound, Condition, Error, HereDocument, Part, Pipeline, Redirect, Target, Token,
+    Word, identifier,
 };
-use alloc::{collections::VecDeque, string::String, vec::Vec};
+use alloc::{collections::VecDeque, rc::Rc, string::String, vec::Vec};
 
 #[derive(Clone, Copy, PartialEq)]
 enum End {
@@ -17,19 +18,36 @@ enum End {
 struct Tokens<'a, 's> {
     source: &'a mut super::Input<'s>,
     ready: VecDeque<Token>,
+    pending: Vec<Rc<HereDocument>>,
     depth: u16,
     error: Option<Error>,
 }
 impl Tokens<'_, '_> {
     fn get(&mut self, index: usize) -> Option<&Token> {
         while self.ready.len() <= index && self.error.is_none() {
-            match super::token(self.source, self.depth) {
+            match self.next_token() {
                 Ok(Some(t)) => self.ready.push_back(t),
                 Ok(None) => break,
                 Err(e) => self.error = Some(e),
             }
         }
         self.ready.get(index)
+    }
+    fn next_token(&mut self) -> Result<Option<Token>, Error> {
+        let token = super::token(self.source, self.depth)?;
+        match &token {
+            Some(Token::Here(_, doc)) => self.pending.push(Rc::clone(doc)),
+            Some(Token::Newline) => {
+                for doc in self.pending.drain(..) {
+                    doc.read(self.source)?;
+                }
+            }
+            None if !self.pending.is_empty() => {
+                return Err(Error::Incomplete("expected here-document body"));
+            }
+            _ => {}
+        }
+        Ok(token)
     }
     fn front(&mut self) -> Option<&Token> {
         self.get(0)
@@ -257,14 +275,25 @@ impl Parser<'_, '_> {
             None
         };
         loop {
-            if let Some(Token::Redirect(..)) = self.0.front() {
+            if let Some(Token::Here(..)) = self.0.front() {
+                let Some(Token::Here(fd, doc)) = self.0.pop_front() else {
+                    unreachable!()
+                };
+                cmd.redirects.push(Redirect {
+                    fd,
+                    target: Target::Here(doc),
+                });
+            } else if let Some(Token::Redirect(..)) = self.0.front() {
                 let Some(Token::Redirect(fd, mode)) = self.0.pop_front() else {
                     unreachable!()
                 };
                 let target = self
                     .word()
                     .ok_or_else(|| self.expected("expected redirection path"))?;
-                cmd.redirects.push(Redirect { fd, mode, target });
+                cmd.redirects.push(Redirect {
+                    fd,
+                    target: Target::File(mode, target),
+                });
             } else if cmd.compound.is_none()
                 && let Some(word) = self.word()
             {
@@ -337,6 +366,7 @@ fn parse_until(input: &mut super::Input<'_>, end: End, depth: u16) -> Result<Vec
     let mut parser = Parser(Tokens {
         source: input,
         ready: VecDeque::new(),
+        pending: Vec::new(),
         depth,
         error: None,
     });
@@ -345,6 +375,9 @@ fn parse_until(input: &mut super::Input<'_>, end: End, depth: u16) -> Result<Vec
         return Err(error);
     }
     let commands = result?;
+    if !parser.0.pending.is_empty() {
+        return Err(Error::Incomplete("expected here-document body"));
+    }
     if end == End::Substitution && !matches!(parser.0.pop_front(), Some(Token::RightParen)) {
         return Err(Error::Incomplete("unterminated command substitution"));
     }
