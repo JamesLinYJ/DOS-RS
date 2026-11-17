@@ -53,7 +53,7 @@ def check_display(picture):
         raise ValueError("the EMS result appeared on serial but the display is empty")
 
 
-def check_import(session, work):
+def check_import(session):
     session.type("memstat /gemmis\n")
     session.expect("GEMMIS 1.0 physical address ")
     session.expect("C:\\> ")
@@ -62,7 +62,8 @@ def check_import(session, work):
         raise ValueError("missing DOS device IOCTL result")
     physical = int(match[1])
     def physical_bytes(address, size, name):
-        dump = work / name
+        dump = session.proof / name
+        dump.unlink(missing_ok=True)
         session.monitor(f'pmemsave {address:#x} {size} "{dump}"')
         until = time.monotonic() + 5
         while (not dump.is_file() or dump.stat().st_size != size) and time.monotonic() < until:
@@ -131,20 +132,31 @@ def check_clients(log):
             raise ValueError("no UMB reported")
 
 
-def dosbox(args, work, cpu, enabled):
+def dosbox(args, work, cpu, enabled, jemm=False):
     boot = work / "boot.img"
     shutil.copyfile(args.disk1, boot)
-    subprocess.run(["mcopy", "-o", "-i", boot, args.client, "::EMSTEST.COM"], check=True)
-    commands = ["EMSTEST.COM"]
-    if cpu == 386 and enabled:
-        add_clients(args, boot)
+    clients = work / "clients.img"
+    subprocess.run(["mformat", "-C", "-f", "1440", "-i", clients, "::"], check=True)
+    commands = ["@ECHO OFF"]
+    # Only Borland reads the keyboard. Its scheduled Escape keys must not
+    # reach the shell or another client in the unattended Jemm run.
+    if jemm:
+        add_clients(args, clients)
         for name, tail, _ in CASES:
-            commands.extend(["ECHO BEGIN-" + name, name + ".EXE" + tail, "ECHO END-" + name])
+            drive = "A:" if name == "MEMSTAT" else "B:"
+            commands.extend(["ECHO BEGIN-" + name, drive + "\\" + name + ".EXE" + tail, "ECHO END-" + name])
+    else:
+        subprocess.run(["mcopy", "-i", clients, args.client, "::EMSTEST.COM"], check=True)
+        commands.append(r"B:\EMSTEST.COM")
     subprocess.run(["mcopy", "-o", "-i", boot, "-", "::AUTOEXEC.BAT"],
-                   input=("\r\n".join(commands) + "\r\n").encode(), check=True)
+                   input=("\r\n".join([*commands, "ECHO EMS-BATCH-END", ""])).encode(), check=True)
     if not enabled:
         subprocess.run(["mdel", "-i", boot, "::CONFIG.SYS"], check=True)
-    tag = f"dosbox-{cpu}" + ("" if enabled else "-without-device")
+    tag = f"dosbox-{cpu}"
+    if jemm:
+        tag += "-jemm"
+    elif not enabled:
+        tag += "-without-device"
     log = args.proof / (tag + ".txt")
     log.unlink(missing_ok=True)
     (work / "machine.conf").write_text(
@@ -152,21 +164,26 @@ def dosbox(args, work, cpu, enabled):
         f"[cpu]\ncore=normal\ncputype={cpu}\ncycles=fixed 30000\n"
         "[mixer]\nnosound=true\n[dos]\nems=false\nxms=false\n"
         f"[serial]\nserial1=file file:{log} timeout:0\n[autoexec]\n"
-        + ("autotype -w 14 -p 8 space esc esc esc\n" if cpu == 386 and enabled else "")
-        + "boot boot.img\n"
+        + ("autotype -w 14 -p 8 space esc esc esc\n" if cpu == 386 and enabled and not jemm else "")
+        + "imgmount 1 clients.img -t floppy -fs none\nboot boot.img\n"
     )
     env = dict(os.environ, TMPDIR=str(work), SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     with subprocess.Popen([args.dosbox_x, "-conf", "machine.conf", "-nogui", "-nomenu"],
                           cwd=work, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as guest:
         try:
-            until = time.monotonic() + 90
-            while time.monotonic() < until and guest.poll() is None:
+            started = last_output = time.monotonic()
+            length = 0
+            while time.monotonic() - started < 300 and time.monotonic() - last_output < 90 and guest.poll() is None:
                 data = log.read_bytes() if log.exists() else b""
-                if b"A:\\> " in data:
+                if len(data) != length:
+                    length, last_output = len(data), time.monotonic()
+                if b"\nEMS-BATCH-END\r\nA:\\> " in data:
                     break
                 time.sleep(0.1)
             else:
-                raise RuntimeError(f"{tag} failed to return to the prompt, see {log}")
+                elapsed = round(time.monotonic() - started)
+                idle = round(time.monotonic() - last_output)
+                raise RuntimeError(f"{tag} did not finish in {elapsed}s ({idle}s since serial output), see {log}")
         finally:
             if guest.poll() is None:
                 guest.terminate()
@@ -176,9 +193,10 @@ def dosbox(args, work, cpu, enabled):
                     guest.kill()
     if f"DOS / 80{cpu}".encode() not in data:
         raise ValueError("wrong native kernel")
-    if cpu == 386 and enabled:
-        check_pages(data)
+    if jemm:
         check_clients(data)
+    elif cpu == 386 and enabled:
+        check_pages(data)
     elif b"Expanded Memory Manager Interrupt (INT 67H) not installed." not in data:
         raise ValueError("EMSTEST failed to demonstrate absence of the driver")
     print(f"PASS {tag}", flush=True)
@@ -216,7 +234,7 @@ def installed(args, work):
                 session.expect(marker.decode())
             session.expect("C:\\> ")
         session.picture("memory-services")
-        check_import(session, work)
+        check_import(session)
         session.type("vcpi -a 1\n")
         session.expect("alloced 1 page(s) in pm, last status ah=00")
         session.expect("C:\\> ")
@@ -263,6 +281,7 @@ def main():
                                cwd=args.jemm / directory, check=True)
         for cpu, enabled in ((386, True), (286, True), (386, False)):
             dosbox(args, work, cpu, enabled)
+        dosbox(args, work, 386, True, jemm=True)
         installed(args, work)
 
 
