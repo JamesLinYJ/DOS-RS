@@ -1,6 +1,6 @@
 //! POSIX paths use byte names and inode-valued working directories.
 use super::{File, Mount, err, mounted};
-use crate::vfs::posix::{Credentials, DirEntry, Metadata, PosixDir, ROOT};
+use crate::vfs::posix::{Attribute, Credentials, DirEntry, Metadata, PosixDir, ROOT, Times};
 use alloc::{collections::VecDeque, vec::Vec};
 use dosrs_btrfs::{Error, inode::Inode};
 use dosrs_native_posix::{Errno, Open, Result};
@@ -151,6 +151,9 @@ fn parent<'a>(
     if !dir.is_dir() {
         return Err(Errno::NotDirectory);
     }
+    if dir.nlink == 0 {
+        return Err(Errno::NoEntry);
+    }
     access(&dir, who, 3)?;
     Ok((dir, name))
 }
@@ -193,6 +196,15 @@ pub(crate) fn chdir(cwd: PosixDir, path: &[u8], who: Credentials) -> Result<Posi
         }
         access(&n, who, 1)?;
         Ok(PosixDir(n.ino))
+    })
+}
+pub(crate) fn pin_directory(dir: PosixDir) -> Result<super::super::File> {
+    mounted(|m| {
+        if !m.fs.read_inode(dir.0).map_err(err)?.is_dir() {
+            return Err(Errno::NotDirectory);
+        }
+        *m.opens.entry(dir.0).or_default() += 1;
+        Ok(alloc::boxed::Box::new(File(dir.0, false)) as super::super::File)
     })
 }
 pub(crate) fn getcwd(cwd: PosixDir) -> Result<Vec<u8>> {
@@ -282,6 +294,9 @@ pub(crate) fn open(
             }
             Lookup::Missing(dir, name) => {
                 let parent = m.fs.read_inode(dir).map_err(err)?;
+                if parent.nlink == 0 {
+                    return Err(Errno::NoEntry);
+                }
                 access(&parent, who, 3)?;
                 let gid = if parent.mode & 0o2000 != 0 {
                     parent.gid
@@ -375,23 +390,59 @@ pub(crate) fn rmdir(cwd: PosixDir, path: &[u8], who: Credentials) -> Result<()> 
         if !m.fs.read_dir(n.ino).map_err(err)?.is_empty() {
             return Err(Errno::NotEmpty);
         }
-        m.fs.rmdir(dir.ino, name).map_err(err)?;
-        m.dirs.remove(n.ino);
+        m.remove_directory(dir.ino, name, n.ino)?;
         Ok(())
     })
 }
 pub(crate) fn check_access(cwd: PosixDir, path: &[u8], mask: u32, who: Credentials) -> Result<()> {
-    if mask & !7 != 0 {
-        return Err(Errno::Invalid);
-    }
+    change_at(cwd, path, who, true, Attribute::Access(mask))
+}
+
+pub(crate) fn change_at(
+    cwd: PosixDir,
+    path: &[u8],
+    who: Credentials,
+    follow: bool,
+    attr: Attribute,
+) -> Result<()> {
     mounted(|m| {
-        let n = resolve(m, cwd, path, who, true)?;
-        if mask & 2 != 0 && !m.fs.is_writable() {
-            return Err(Errno::ReadOnly);
+        let n = resolve(m, cwd, path, who, follow)?;
+        match attr {
+            Attribute::Access(mask) => {
+                if mask & !7 != 0 {
+                    return Err(Errno::Invalid);
+                }
+                if mask & 2 != 0 && !m.fs.is_writable() {
+                    return Err(Errno::ReadOnly);
+                }
+                access(&n, who, mask)
+            }
+            Attribute::Mode(mode) => permissions(m, &n, mode, who),
+            Attribute::Owner(uid, gid) => owner(m, &n, uid, gid, who),
+            Attribute::Times(times) => change_times(m, &n, times, who),
         }
-        access(&n, who, mask)
     })
 }
+fn change_times(m: &mut Mount, n: &Inode, times: Times, who: Credentials) -> Result<()> {
+    let [atime, mtime] = times.value;
+    if atime.is_none() && mtime.is_none() {
+        return Ok(());
+    }
+    if who.uid != 0 && who.uid != n.uid {
+        if !times.both_now {
+            return Err(Errno::Permission);
+        }
+        access(n, who, 2)?;
+    }
+    m.fs.set_times(n.ino, atime, mtime).map_err(err)
+}
+pub(super) fn futimens(ino: u64, times: Times, who: Credentials) -> Result<()> {
+    mounted(|m| {
+        let n = m.fs.read_inode(ino).map_err(err)?;
+        change_times(m, &n, times, who)
+    })
+}
+
 fn owner(m: &mut Mount, n: &Inode, uid: u32, gid: u32, who: Credentials) -> Result<()> {
     if who.uid != 0
         && (who.uid != n.uid
@@ -425,10 +476,7 @@ pub(crate) fn chown(
     gid: u32,
     who: Credentials,
 ) -> Result<()> {
-    mounted(|m| {
-        let n = resolve(m, cwd, path, who, true)?;
-        owner(m, &n, uid, gid, who)
-    })
+    change_at(cwd, path, who, true, Attribute::Owner(uid, gid))
 }
 pub(super) fn fchown(ino: u64, uid: u32, gid: u32, who: Credentials) -> Result<()> {
     mounted(|m| {
@@ -437,10 +485,7 @@ pub(super) fn fchown(ino: u64, uid: u32, gid: u32, who: Credentials) -> Result<(
     })
 }
 pub(crate) fn chmod(cwd: PosixDir, path: &[u8], mode: u32, who: Credentials) -> Result<()> {
-    mounted(|m| {
-        let n = resolve(m, cwd, path, who, true)?;
-        permissions(m, &n, mode, who)
-    })
+    change_at(cwd, path, who, true, Attribute::Mode(mode))
 }
 pub(super) fn fchmod(ino: u64, mode: u32, who: Credentials) -> Result<()> {
     mounted(|m| {
@@ -475,8 +520,10 @@ pub(crate) fn rename_at(
                 if node.is_dir() && !m.fs.read_dir(node.ino).map_err(err)?.is_empty() {
                     return Err(Errno::NotEmpty);
                 }
-                (node.nlink == 1 && m.opens.contains_key(&node.ino) && node.is_regular_file())
-                    .then_some(node.ino)
+                (node.nlink == 1
+                    && m.opens.contains_key(&node.ino)
+                    && (node.is_regular_file() || node.is_dir()))
+                .then_some(node.ino)
             }
             Err(Error::NotFound) => None,
             Err(e) => return Err(err(e)),
@@ -494,6 +541,9 @@ pub(crate) fn dirent(ino: u64, index: u64) -> Result<Option<DirEntry>> {
         let n = m.fs.read_inode(ino).map_err(err)?;
         if !n.is_dir() {
             return Err(Errno::NotDirectory);
+        }
+        if n.nlink == 0 {
+            return Ok(None);
         }
         if index <= 1 {
             let (child, name) = if index == 0 {

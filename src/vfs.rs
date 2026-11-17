@@ -43,6 +43,9 @@ pub(crate) trait Node: Send {
     fn chown(&self, _uid: u32, _gid: u32, _who: posix::Credentials) -> Result<()> {
         Err(Errno::NotSupported)
     }
+    fn set_times(&self, _times: posix::Times, _who: posix::Credentials) -> Result<()> {
+        Err(Errno::NotSupported)
+    }
     fn resize(&self, length: u64) -> Result<()> {
         self.write(length, &[])
     }

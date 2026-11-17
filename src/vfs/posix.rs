@@ -12,9 +12,21 @@ pub(crate) struct Credentials {
     pub gid: u32,
 }
 pub(crate) const ADMIN: Credentials = Credentials { uid: 0, gid: 0 };
+#[derive(Clone, Copy)]
+pub(crate) struct Times {
+    pub value: [Option<(i64, u32)>; 2],
+    pub both_now: bool,
+}
+
+pub(crate) enum Attribute {
+    Access(u32),
+    Mode(u32),
+    Owner(u32, u32),
+    Times(Times),
+}
 pub(crate) use btrfs::posix::{
-    chdir, check_access, chmod, chown, getcwd, link, link_at, mkdir, readlink, rename, rename_at,
-    rmdir, stat, symlink, unlink,
+    change_at, chdir, check_access, chmod, chown, getcwd, link, link_at, mkdir, pin_directory,
+    readlink, rename, rename_at, rmdir, stat, symlink, unlink,
 };
 pub(crate) fn native(path: &[u8]) -> bool {
     btrfs::is_mounted()

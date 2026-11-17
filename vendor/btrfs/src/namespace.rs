@@ -250,6 +250,19 @@ impl Filesystem {
         if !child.is_regular_file() || child.nlink != 1 {
             return self.unlink(parent, name);
         }
+        self.detach_open(parent, name, child)
+    }
+
+    /// Detach an empty open directory and keep its inode until its last reference closes.
+    pub fn rmdir_open(&mut self, parent: u64, name: &[u8]) -> Result<()> {
+        self.require_writable_top_level()?;
+        let dir = self.named_inode(parent, name)?;
+        if !dir.is_dir() { return Err(Error::NotADirectory); }
+        self.refuse_non_empty(&dir, name)?;
+        self.detach_open(parent, name, dir)
+    }
+
+    fn detach_open(&mut self, parent: u64, name: &[u8], child: Inode) -> Result<()> {
         crate::verity::refuse_mutation(child.ino, child.flags)?;
         let mut pending = Pending::default();
         self.drop_entry(&mut pending, parent, name, child.ino)?;
@@ -285,9 +298,10 @@ impl Filesystem {
             return Err(Error::NotFound);
         }
         let inode = self.read_inode(ino)?;
-        if !inode.is_regular_file() || inode.nlink != 0 || ino <= FIRST_FREE_OBJECTID {
+        if !(inode.is_regular_file() || inode.is_dir()) || inode.nlink != 0 || ino <= FIRST_FREE_OBJECTID {
             return Err(Error::UnsupportedFeature("orphan requires Linux recovery".into()));
         }
+        if inode.is_dir() { self.refuse_non_empty(&inode, b"")?; }
         pending.set(orphan, None);
         self.release_name(pending, &inode, b"")
     }
@@ -451,7 +465,7 @@ impl Filesystem {
                     (false, false) => {}
                 }
                 self.drop_entry(&mut p, new_parent, new_name, target.ino)?;
-                if Some(target.ino) == pinned && target.nlink == 1 && target.is_regular_file() {
+                if Some(target.ino) == pinned && target.nlink == 1 && (target.is_regular_file() || target.is_dir()) {
                     self.orphan_last_link(&mut p, target.ino)?;
                 } else {
                     let (releases, unrefs) = self.drop_link(&mut p, &target, new_name)?;

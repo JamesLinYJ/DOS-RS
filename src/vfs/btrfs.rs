@@ -82,6 +82,16 @@ fn mounted<T>(action: impl FnOnce(&mut Mount) -> Result<T>) -> Result<T> {
     action(guard.as_mut().ok_or(Errno::NoEntry)?)
 }
 impl Mount {
+    fn remove_directory(&mut self, parent: u64, name: &[u8], ino: u64) -> Result<()> {
+        if self.opens.contains_key(&ino) {
+            self.fs.rmdir_open(parent, name).map_err(err)?;
+            self.orphans.insert(ino);
+        } else {
+            self.fs.rmdir(parent, name).map_err(err)?;
+        }
+        self.dirs.remove(ino);
+        Ok(())
+    }
     fn by_name(&self, parent: u64, name: &[u8], dos: bool) -> Result<(Inode, Vec<u8>)> {
         match self.fs.lookup(parent, name) {
             Ok(node) => Ok((node, name.to_vec())),
@@ -322,9 +332,7 @@ pub fn rmdir(dir: u32, name: &[u8; 11]) -> bool {
     mounted(|m| {
         let parent = m.dirs.get(dir)?.id;
         let (node, name) = m.by_name(parent, &short_name(name), true)?;
-        m.fs.rmdir(parent, &name).map_err(err)?;
-        m.dirs.remove(node.ino);
-        Ok(())
+        m.remove_directory(parent, &name, node.ino)
     })
     .is_ok()
 }
@@ -512,6 +520,9 @@ impl super::Node for File {
     }
     fn chown(&self, uid: u32, gid: u32, who: super::posix::Credentials) -> Result<()> {
         posix::fchown(self.0, uid, gid, who)
+    }
+    fn set_times(&self, times: super::posix::Times, who: super::posix::Credentials) -> Result<()> {
+        posix::futimens(self.0, times, who)
     }
     fn metadata(&self) -> Result<super::posix::Metadata> {
         mounted(|m| Ok(posix::metadata(&m.fs.read_inode(self.0).map_err(err)?)))
