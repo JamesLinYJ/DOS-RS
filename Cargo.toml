@@ -9,6 +9,7 @@ kernel-selftest = []
 native-gate-test = []
 tlb-selftest = []
 pc386 = []
+thread-trace = []
 
 [profile.dev]
 panic = "abort"

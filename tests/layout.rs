@@ -322,6 +322,26 @@ fn kernel_storage_rejects_a_second_borrow_and_releases_on_unwind() {
 }
 
 #[test]
+fn kernel_storage_hands_off_to_a_competing_cpu() {
+    let cell = kernel_cell::KernelCell::new(0u32);
+    std::thread::scope(|scope| {
+        let mut owner = cell.borrow();
+        let (send, receive) = std::sync::mpsc::channel();
+        let shared = &cell;
+        let peer = scope.spawn(move || {
+            assert!(shared.try_borrow().is_none());
+            send.send(()).unwrap();
+            *shared.borrow() += 1;
+        });
+        receive.recv().unwrap();
+        *owner = 41;
+        drop(owner);
+        peer.join().unwrap();
+    });
+    assert_eq!(*cell.borrow(), 42);
+}
+
+#[test]
 fn color_status_reports_display_blank_and_vertical_retrace() {
     let _guard = RAM_LOCK.lock().unwrap();
     let mut ram = memory::storage();

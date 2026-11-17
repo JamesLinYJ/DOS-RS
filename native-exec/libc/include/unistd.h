@@ -18,6 +18,8 @@ int dup(int);
 int dup2(int, int);
 int pipe(int[2]);
 int getpid(void);
+unsigned int getuid(void);
+unsigned int getgid(void);
 off_t lseek(int, off_t, int);
 _Noreturn void _exit(int status);
 #endif

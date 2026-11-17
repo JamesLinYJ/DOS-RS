@@ -1,6 +1,7 @@
 //! Boot-CPU native task groups, wakeups and per-terminal foreground ownership.
 #![forbid(unsafe_code)]
 use crate::{bios::pc, kernel_cell::KernelCell, posix::Job, vfs::Directories};
+pub(crate) mod user;
 use alloc::{boxed::Box, sync::Arc, task::Wake, vec::Vec};
 use core::{
     future::Future,
@@ -93,6 +94,7 @@ pub(crate) fn launch(id: usize, scheduled: bool, line: &[u8], cwd: Directories) 
         return Command::Started;
     }
     loop {
+        user::run_one(0);
         if pc::key(false).is_some() {
             job.notify_input();
         }
@@ -126,6 +128,7 @@ pub(crate) fn interactive() -> ! {
     pc::enable_terminals();
     let mut dos = crate::guest::run::Terminals::new();
     loop {
+        user::run_one(0);
         let events = pc::poll_keyboard(|id, code| dos.input(id, code));
         for id in 0..pc::TERMINALS {
             match poll_terminal(id, events.input[id]) {

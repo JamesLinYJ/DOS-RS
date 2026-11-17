@@ -52,8 +52,9 @@ def check(arch, firmware, work, proof):
             shell.command("highlow.elf send | highva.elf receive", expect=b"high VA exec, private data and syscall buffers OK")
             shell.command("highlow.elf hole", expect=b"user exception 0e")
             shell.command("hello.elf 7", expect=b"hello from native C")
-        shell.command("large.elf | large.elf > keep.txt", expect=b"native process memory limit reached")
-        shell.command("large.elf", expect=b"large image loaded")
+        shell.command("large.elf | large.elf", expect=b"large image loaded")
+        # Failure to load a later stage must leave the original redirection target intact.
+        shell.command("large.elf | missing.elf > keep.txt", expect=b"no such file or directory")
         shell.command("divide.elf", expect=b"user exception 00")
         shell.command("echo $?", expect=b"\r\n128\r\n")
         start = log.stat().st_size

@@ -1,5 +1,6 @@
 //! Scoped exclusive access to storage that must live outside the boot stack.
-//! Kernel services run synchronously. A second borrower is a programming error.
+//! Wait for other CPUs to finish short critical sections. Callers which can
+//! make progress elsewhere use `try_borrow` and leave the owner running.
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -32,7 +33,14 @@ impl<T> KernelCell<T> {
     }
 
     pub(crate) fn borrow(&self) -> Guard<'_, T> {
-        self.try_borrow().expect("kernel storage already borrowed")
+        loop {
+            if let Some(guard) = self.try_borrow() {
+                return guard;
+            }
+            while self.borrowed.load(Ordering::Relaxed) {
+                core::hint::spin_loop();
+            }
+        }
     }
 }
 

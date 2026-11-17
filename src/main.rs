@@ -4,6 +4,7 @@
 
 #![no_std]
 #![no_main]
+#![cfg_attr(not(target_pointer_width = "16"), feature(allocator_ext))]
 
 mod version;
 

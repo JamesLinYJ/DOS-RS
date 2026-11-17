@@ -1,19 +1,22 @@
 //! Native executable loading and checked copies between process and kernel memory.
-use super::io::ProcessContext;
+use super::{io::ProcessContext, threads::Threads};
 use crate::{
-    arch::user::{AddressSpace, Stop, Thread},
+    arch::frames::UserImage as Image,
+    arch::user::{AddressSpace, Thread},
     vfs::{self, Directories},
 };
 use alloc::{string::String, vec::Vec};
-use core::{future::poll_fn, task::Poll};
-use dosrs_native_exec::{Call, END, Image, Machine, STACK};
+use core::{
+    future::poll_fn,
+    task::{Context, Poll},
+};
+use dosrs_native_exec::{Call, END, Machine, STACK};
 use dosrs_native_posix::{Access, Errno, Open, Process, Whence};
 
 pub(super) struct Executable {
     image: AddressSpace,
-    cpu: Thread,
+    threads: Threads,
 }
-const MAX_FILE: usize = 2 << 20;
 fn push_stack(image: &mut Image, sp: &mut usize, data: &[u8]) -> Result<(), &'static str> {
     *sp = sp
         .checked_sub(data.len())
@@ -25,9 +28,7 @@ impl Executable {
     pub fn load(cwd: Directories, path: &str, argv: &[String]) -> Result<Self, &'static str> {
         let (file, _) = vfs::open(cwd, path, Open::READ).map_err(|e| e.message())?;
         let length = usize::try_from(file.len().map_err(|e| e.message())?)
-            .ok()
-            .filter(|&n| n <= MAX_FILE)
-            .ok_or("ELF file too large")?;
+            .map_err(|_| "ELF file too large")?;
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(length)
@@ -72,158 +73,155 @@ impl Executable {
             push_stack(&mut image, &mut sp, &argv.len().to_le_bytes())?;
         }
         push_stack(&mut image, &mut sp, &0usize.to_le_bytes())?;
-        let cpu = Thread::new(image.entry, sp, argv.len(), vector);
+        let cpu = Thread::try_new(image.entry, sp, argv.len(), vector)?;
+        let mut image: AddressSpace = image.into();
+        image.prepare()?;
         Ok(Self {
-            image: image.into(),
-            cpu,
+            image,
+            threads: Threads::new(cpu)?,
         })
     }
     pub async fn run(mut self, process: &mut ProcessContext) -> u8 {
-        loop {
-            let stop = match self.cpu.step(&mut self.image) {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = process.write_all(2, e.as_bytes()).await;
-                    return 126;
-                }
-            };
-            match stop {
-                Stop::Fault(vector) => {
-                    let message = alloc::format!(
-                        "native process {}: user exception {:02x}\n",
-                        process.getpid(),
-                        vector
-                    );
-                    let _ = process.write_all(2, message.as_bytes()).await;
-                    return 128 + (vector.min(127) as u8);
-                }
-                Stop::Slice => (),
-                Stop::Call(number) => {
-                    if let Some((call, count)) = Call::decode(number) {
-                        let Some(args) = self.cpu.args(&self.image, count) else {
-                            return 139;
-                        };
-                        if call == Call::Exit {
-                            return args[0] as u8;
-                        }
-                        let result = self.call(process, call, args).await;
-                        self.cpu.result(result);
-                    } else {
-                        self.cpu.result(-38);
-                    }
-                }
+        match poll_fn(|cx| self.threads.poll(&mut self.image, process, cx)).await {
+            Ok(code) => code,
+            Err((code, message)) => {
+                let _ = process.write_all(2, message.as_bytes()).await;
+                code
             }
-            // Even a series of nonblocking system calls yields to other stages.
-            let mut first = true;
-            poll_fn(|cx| {
-                if first {
-                    first = false;
-                    cx.waker().wake_by_ref();
-                    Poll::Pending
-                } else {
-                    Poll::Ready(())
-                }
-            })
-            .await;
         }
     }
-    fn path(&self, address: usize) -> Result<String, isize> {
+}
+
+fn path(image: &Image, address: usize) -> Result<String, isize> {
+    let mut bytes = Vec::new();
+    for i in 0..256 {
+        let mut b = [0];
+        image
+            .read(address.checked_add(i).ok_or(-14isize)?, &mut b)
+            .map_err(|_| -14isize)?;
+        if b[0] == 0 {
+            return String::from_utf8(bytes).map_err(|_| -22);
+        }
+        bytes.push(b[0]);
+    }
+    Err(-36)
+}
+
+pub(super) fn file_call(
+    image: &mut AddressSpace,
+    p: &mut ProcessContext,
+    cx: &Context,
+    call: Call,
+    args: [usize; 3],
+) -> Poll<Result<usize, isize>> {
+    let [fd, address, length] = args;
+    if matches!(call, Call::Read | Call::Write) {
+        let length = length.min(4096);
+        image
+            .check(address, length, call == Call::Read)
+            .map_err(|_| -14isize)?;
         let mut bytes = Vec::new();
-        for i in 0..256 {
-            let mut b = [0];
-            self.image
-                .read(address.checked_add(i).ok_or(-14isize)?, &mut b)
-                .map_err(|_| -14isize)?;
-            if b[0] == 0 {
-                return String::from_utf8(bytes).map_err(|_| -22);
-            }
-            bytes.push(b[0]);
+        bytes.try_reserve_exact(length).map_err(|_| -12isize)?;
+        bytes.resize(length, 0);
+        if call == Call::Write {
+            image.read(address, &mut bytes).map_err(|_| -14isize)?;
+            return p.poll_write(fd, cx, &bytes).map(|r| r.map_err(errno));
         }
-        Err(-36)
+        let count = core::task::ready!(p.poll_read(fd, cx, &mut bytes)).map_err(errno)?;
+        image
+            .write(address, &bytes[..count])
+            .map_err(|_| -14isize)?;
+        return Poll::Ready(Ok(count));
     }
-    async fn call(&mut self, p: &mut ProcessContext, call: Call, args: [usize; 3]) -> isize {
-        let [a, b, c] = args;
-        let result: Result<usize, isize> = async {
-            match call {
-                Call::Pipe => {
-                    self.image.check(a, 8, true).map_err(|_| -14isize)?;
-                    let (r, w) = p.pipe().map_err(errno)?;
-                    self.image
-                        .write(a, &(r as i32).to_le_bytes())
-                        .map_err(|_| -14isize)?;
-                    self.image
-                        .write(a + 4, &(w as i32).to_le_bytes())
-                        .map_err(|_| -14isize)?;
-                    Ok(0)
-                }
-                Call::Read | Call::Write => {
-                    let len = c.min(4096);
-                    self.image
-                        .check(b, len, call == Call::Read)
-                        .map_err(|_| -14isize)?;
-                    let mut buf = alloc::vec![0;len];
-                    if call == Call::Write {
-                        self.image.read(b, &mut buf).map_err(|_| -14isize)?;
-                        p.write(a, &buf).await.map_err(errno)
-                    } else {
-                        let count = p.read(a, &mut buf).await.map_err(errno)?;
-                        self.image.write(b, &buf[..count]).map_err(|_| -14isize)?;
-                        Ok(count)
-                    }
-                }
-                Call::Dup => p.dup(a).map_err(errno),
-                Call::Getpid => Ok(p.getpid() as usize),
-                Call::Open => {
-                    let access = match b & 3 {
-                        0 => Access::Read,
-                        1 => Access::Write,
-                        2 => Access::ReadWrite,
-                        _ => return Err(-22),
-                    };
-                    if b & !0x6c3 != 0 {
-                        return Err(-22);
-                    }
-                    p.open(
-                        &self.path(a)?,
-                        Open {
-                            access,
-                            create: b & 64 != 0,
-                            exclusive: b & 128 != 0,
-                            truncate: b & 512 != 0,
-                            append: b & 1024 != 0,
-                        },
-                    )
-                    .map_err(errno)
-                }
-                Call::Unlink => p.unlink(&self.path(a)?).map(|_| 0).map_err(errno),
-                Call::Close => p.close(a).map(|_| 0).map_err(errno),
-                Call::Dup2 => p.dup2(a, b).map_err(errno),
-                Call::Lseek => {
-                    let mut bytes = [0; 8];
-                    self.image.check(b, 8, true).map_err(|_| -14isize)?;
-                    self.image.read(b, &mut bytes).map_err(|_| -14isize)?;
-                    let whence = match c {
-                        0 => Whence::Start,
-                        1 => Whence::Current,
-                        2 => Whence::End,
-                        _ => return Err(-22),
-                    };
-                    let pos = p
-                        .lseek(a, i64::from_le_bytes(bytes), whence)
-                        .map_err(errno)?;
-                    self.image
-                        .write(b, &pos.to_le_bytes())
-                        .map_err(|_| -14isize)?;
-                    Ok(0)
-                }
-                Call::Exit => unreachable!(),
+    Poll::Ready(immediate(image, p, call, args))
+}
+
+fn immediate(
+    image: &mut AddressSpace,
+    p: &mut ProcessContext,
+    call: Call,
+    args: [usize; 3],
+) -> Result<usize, isize> {
+    let [a, b, c] = args;
+    match call {
+        Call::Pipe => {
+            image.check(a, 8, true).map_err(|_| -14isize)?;
+            let (r, w) = p.pipe().map_err(errno)?;
+            image
+                .write(a, &(r as i32).to_le_bytes())
+                .map_err(|_| -14isize)?;
+            image
+                .write(a + 4, &(w as i32).to_le_bytes())
+                .map_err(|_| -14isize)?;
+            Ok(0)
+        }
+        Call::Dup => p.dup(a).map_err(errno),
+        Call::Getpid => Ok(p.getpid() as usize),
+        Call::Getuid => Ok(p.uid as usize),
+        Call::Getgid => Ok(p.gid as usize),
+        Call::Mapmem => image.map_anonymous(a).map_err(memory_error),
+        Call::Unmapmem => image.unmap_anonymous(a, b).map(|_| 0).map_err(memory_error),
+        Call::Meminfo => {
+            let (total, free) = crate::arch::frames::counts();
+            let values = [total, free, image.pages().count()];
+            image
+                .check(a, size_of_val(&values), true)
+                .map_err(|_| -14isize)?;
+            for (i, value) in values.into_iter().enumerate() {
+                image
+                    .write(a + i * size_of::<usize>(), &value.to_le_bytes())
+                    .map_err(|_| -14isize)?;
             }
+            Ok(0)
         }
-        .await;
-        match result {
-            Ok(v) => v as isize,
-            Err(e) => e,
+        Call::Open => {
+            let access = match b & 3 {
+                0 => Access::Read,
+                1 => Access::Write,
+                2 => Access::ReadWrite,
+                _ => return Err(-22),
+            };
+            if b & !0x6c3 != 0 {
+                return Err(-22);
+            }
+            p.open(
+                &path(image, a)?,
+                Open {
+                    access,
+                    create: b & 64 != 0,
+                    exclusive: b & 128 != 0,
+                    truncate: b & 512 != 0,
+                    append: b & 1024 != 0,
+                },
+            )
+            .map_err(errno)
         }
+        Call::Unlink => p.unlink(&path(image, a)?).map(|_| 0).map_err(errno),
+        Call::Close => p.close(a).map(|_| 0).map_err(errno),
+        Call::Dup2 => p.dup2(a, b).map_err(errno),
+        Call::Lseek => {
+            let mut bytes = [0; 8];
+            image.check(b, 8, true).map_err(|_| -14isize)?;
+            image.read(b, &mut bytes).map_err(|_| -14isize)?;
+            let whence = match c {
+                0 => Whence::Start,
+                1 => Whence::Current,
+                2 => Whence::End,
+                _ => return Err(-22),
+            };
+            let pos = p
+                .lseek(a, i64::from_le_bytes(bytes), whence)
+                .map_err(errno)?;
+            image.write(b, &pos.to_le_bytes()).map_err(|_| -14isize)?;
+            Ok(0)
+        }
+        _ => Err(-38),
+    }
+}
+fn memory_error(error: &'static str) -> isize {
+    match error {
+        "invalid anonymous mapping" | "unmapped user address" => -22,
+        _ => -12,
     }
 }
 fn errno(error: Errno) -> isize {

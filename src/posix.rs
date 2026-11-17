@@ -6,6 +6,7 @@ mod executable;
 mod io;
 mod pipe;
 mod shell;
+mod threads;
 
 use crate::kernel_cell::KernelCell;
 use crate::{tasks::Group, vfs::Directories};

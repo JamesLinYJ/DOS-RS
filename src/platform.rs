@@ -46,18 +46,29 @@ fn online(slot: usize) -> bool {
     ONLINE.load(Acquire) & (1 << slot) != 0
 }
 pub(crate) extern "efiapi" fn ap_entry(_context: usize, slot: usize) -> ! {
-    crate::arch::load_interrupts();
     let (id, _) = arch::boot_cpu();
     if slot == 0 || slot >= MAX_CPUS || IDS[slot].load(Acquire) != usize::from(id) {
         crate::arch::halt();
     }
+    crate::arch::load_interrupts(slot);
     ONLINE.fetch_or(1 << slot, Release);
     loop {
+        crate::tasks::user::run_one(slot);
         if crate::guest::run::worker_tick(slot) {
             WORK[slot].fetch_add(1, Relaxed);
         } else {
             core::hint::spin_loop();
         }
+    }
+}
+pub(crate) fn cpu_count() -> usize {
+    WORKERS.load(Acquire)
+}
+pub(crate) fn wake_cpu(slot: usize) {
+    // Idle workers already poll their queues. An IPI lets a busy worker
+    // return to the scheduler before its current user quantum expires.
+    if slot != 0 && crate::tasks::user::executing(slot) {
+        arch::reschedule(IDS[slot].load(Acquire) as u8);
     }
 }
 pub(crate) fn worker(terminal: usize) -> usize {

@@ -151,8 +151,19 @@ fn handle(desc: Description) -> Handle {
 
 const OPEN_MAX: usize = 32;
 static NEXT_PID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1);
+pub(super) fn allocate_id() -> Result<u32> {
+    NEXT_PID
+        .try_update(
+            core::sync::atomic::Ordering::Relaxed,
+            core::sync::atomic::Ordering::Relaxed,
+            |n| (n < i32::MAX as u32).then_some(n + 1),
+        )
+        .map_err(|_| Errno::TooManyFiles)
+}
 pub(super) struct ProcessContext {
     pid: u32,
+    pub(super) uid: u32,
+    pub(super) gid: u32,
     cwd: Directories,
     io_budget: u8,
     fds: Vec<Option<Handle>>,
@@ -162,6 +173,8 @@ impl ProcessContext {
         let output = handle(Description::Output);
         Self {
             pid: 0,
+            uid: 0,
+            gid: 0,
             cwd,
             io_budget: IO_QUANTUM,
             fds: vec![
@@ -172,15 +185,11 @@ impl ProcessContext {
         }
     }
     pub fn inherit(&self) -> Result<Self> {
-        let pid = NEXT_PID
-            .try_update(
-                core::sync::atomic::Ordering::Relaxed,
-                core::sync::atomic::Ordering::Relaxed,
-                |n| n.checked_add(1),
-            )
-            .map_err(|_| Errno::TooManyFiles)?;
+        let pid = allocate_id()?;
         Ok(Self {
             pid,
+            uid: self.uid,
+            gid: self.gid,
             cwd: self.cwd,
             io_budget: IO_QUANTUM,
             fds: self.fds.clone(),
@@ -219,6 +228,12 @@ impl ProcessContext {
             .get(fd)
             .and_then(Option::as_ref)
             .ok_or(Errno::BadFd)
+    }
+    pub(super) fn poll_read(&self, fd: Fd, cx: &Context, out: &mut [u8]) -> Poll<Result<usize>> {
+        self.get(fd)?.borrow().read(cx, out)
+    }
+    pub(super) fn poll_write(&self, fd: Fd, cx: &Context, bytes: &[u8]) -> Poll<Result<usize>> {
+        self.get(fd)?.borrow().write(cx, bytes)
     }
     pub fn redirect(&mut self, target: Fd, path: &str, flags: Open) -> Result<()> {
         let fd = self.open(path, flags)?;
@@ -334,12 +349,10 @@ impl Process for ProcessContext {
     }
     async fn read(&mut self, fd: Fd, out: &mut [u8]) -> Result<usize> {
         timeslice(&mut self.io_budget).await;
-        let h = self.get(fd)?;
-        poll_fn(|cx| h.borrow().read(cx, out)).await
+        poll_fn(|cx| self.poll_read(fd, cx, out)).await
     }
     async fn write(&mut self, fd: Fd, bytes: &[u8]) -> Result<usize> {
         timeslice(&mut self.io_budget).await;
-        let h = self.get(fd)?;
-        poll_fn(|cx| h.borrow().write(cx, bytes)).await
+        poll_fn(|cx| self.poll_write(fd, cx, bytes)).await
     }
 }

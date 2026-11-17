@@ -1,7 +1,11 @@
 #ifndef DOSRS_ERRNO_H
 #define DOSRS_ERRNO_H
-extern int errno;
+int *__dos_errno_location(void);
+#define errno (*__dos_errno_location())
 #define ENOENT 2
+#define ESRCH 3
+#define EAGAIN 11
+#define ENOMEM 12
 #define EIO 5
 #define EBADF 9
 #define EACCES 13
@@ -16,6 +20,7 @@ extern int errno;
 #define ESPIPE 29
 #define EROFS 30
 #define EPIPE 32
+#define EDEADLK 35
 #define ENAMETOOLONG 36
 #define ENOSYS 38
 #define ENOTSUP 95

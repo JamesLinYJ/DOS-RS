@@ -9,3 +9,15 @@ unlink 18   1
 close  21   1
 dup2   22   2
 lseek  23   3
+thrspawn 24 3
+threxit 25 1
+thrjoin 26 1
+gettid 27 0
+futexwait 28 2
+futexwake 29 2
+threrrno 30 0
+getuid 31 0
+getgid 32 0
+mapmem 33 1
+unmapmem 34 2
+meminfo 35 1
