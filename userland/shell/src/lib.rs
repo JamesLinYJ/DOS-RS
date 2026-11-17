@@ -9,6 +9,7 @@ mod input;
 mod jobs;
 mod options;
 mod redirection;
+mod source;
 mod substitution;
 mod syntax;
 mod variables;
@@ -85,6 +86,8 @@ struct Shell {
     vars: BTreeMap<String, Variable>,
     functions: BTreeMap<String, alloc::rc::Rc<syntax::Command>>,
     function_depth: usize,
+    source_depth: usize,
+    eval_depth: usize,
     returning: bool,
     args: Vec<String>,
     last: i32,
@@ -133,6 +136,8 @@ impl Shell {
             vars,
             functions: BTreeMap::new(),
             function_depth: 0,
+            source_depth: 0,
+            eval_depth: 0,
             returning: false,
             args,
             last: 0,
@@ -240,8 +245,8 @@ impl Shell {
     }
     fn command_kind(&self, name: &str) -> CommandKind {
         match name {
-            ":" | "break" | "continue" | "exec" | "exit" | "export" | "readonly" | "return"
-            | "set" | "shift" | "unset" => CommandKind::Special,
+            "." | ":" | "break" | "continue" | "eval" | "exec" | "exit" | "export" | "readonly"
+            | "return" | "set" | "shift" | "unset" => CommandKind::Special,
             _ if self.functions.contains_key(name) => CommandKind::Function,
             "true" | "false" | "cd" | "pwd" | "read" | "getopts" | "wait" | "jobs" | "fg"
             | "bg" => CommandKind::Builtin,
@@ -288,13 +293,15 @@ impl Shell {
         let code = match name {
             ":" | "true" => 0,
             "false" => 1,
+            "." => self.dot(args),
+            "eval" => self.eval(args),
             "read" => self.read_variables(args),
             "getopts" => self.get_options(args),
             "set" => self.set_arguments(args),
             "shift" => self.shift(args),
             "return" => {
-                if self.function_depth == 0 || args.len() > 1 {
-                    diagnostic("return: expected a function and at most one status");
+                if self.function_depth + self.source_depth == 0 || args.len() > 1 {
+                    diagnostic("return: expected a function or dot script and at most one status");
                     return Some(2);
                 }
                 let code = match args.first() {
@@ -440,7 +447,15 @@ impl Shell {
         let permanent = words.as_slice() == ["exec"];
         let saved = match redirection::apply(self, &command.redirects, !child) {
             Ok(saved) => saved,
-            Err(()) => return 1,
+            Err(()) => {
+                if words
+                    .first()
+                    .is_some_and(|name| self.command_kind(name) == CommandKind::Special)
+                {
+                    self.exiting = !self.interactive;
+                }
+                return 1;
+            }
         };
         let result = if let Some(compound) = &command.compound {
             self.compound(compound)
@@ -603,7 +618,7 @@ impl Shell {
                 continue;
             }
             let status = self.pipeline(p);
-            self.last = if p.negate && !self.exiting {
+            self.last = if p.negate && !self.exiting && !self.returning {
                 i32::from(status == 0)
             } else {
                 status
@@ -614,12 +629,14 @@ impl Shell {
 
     fn run(&mut self, text: &str) {
         match syntax::parse(text) {
+            Ok(list) if list.is_empty() => self.last = 0,
             Ok(list) => {
                 self.run_list(&list);
             }
             Err(e) => {
                 diagnostic(e.message());
                 self.last = 2;
+                self.exiting = !self.interactive;
             }
         }
     }
@@ -704,44 +721,7 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
     if sh.monitor {
         jobs::ignore_keyboard();
     }
-    let mut pending = String::new();
-    // Reading ahead on stdin can consume bytes needed by the next command.
-    let mut source = input::Lines::new(fd, script.is_some());
-    while !sh.exiting {
-        if interactive {
-            let _ = write_all(2, if pending.is_empty() { b"$ " } else { b"> " });
-        }
-        match source.next() {
-            Ok(Some(line)) => {
-                pending.push_str(&line);
-                match syntax::parse(&pending) {
-                    Ok(list) => {
-                        sh.run_list(&list);
-                        pending.clear();
-                    }
-                    Err(syntax::Error::Incomplete(_)) => pending.push('\n'),
-                    Err(e) => {
-                        diagnostic(e.message());
-                        sh.last = 2;
-                        pending.clear();
-                        if !interactive {
-                            break;
-                        }
-                    }
-                }
-            }
-            Ok(None) => {
-                if !pending.is_empty() {
-                    sh.run(&pending);
-                }
-                break;
-            }
-            Err(e) => {
-                diagnostic(&format!("read error {e}"));
-                return 1;
-            }
-        }
-    }
+    sh.last = sh.run_input(fd, script.is_some(), interactive);
     if fd != 0 {
         let _ = close(fd);
     }

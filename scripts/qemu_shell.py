@@ -6,7 +6,8 @@ import time
 
 KEYS = {" ": "spc", ".": "dot", "-": "minus", "=": "equal", ":": "shift-semicolon",
         "$": "shift-4", "?": "shift-slash", "|": "shift-backslash",
-        ">": "shift-dot", "<": "shift-comma", "/": "slash", '"': "shift-apostrophe"}
+        ">": "shift-dot", "<": "shift-comma", "/": "slash", '"': "shift-apostrophe",
+        "'": "apostrophe", ";": "semicolon"}
 
 class Shell:
     def __init__(self, cmd, log: Path, work: Path):

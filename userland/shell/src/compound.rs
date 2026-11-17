@@ -16,7 +16,7 @@ impl Shell {
         words: &[String],
         assignments: Vec<(String, String)>,
     ) -> i32 {
-        if self.function_depth >= 64 {
+        if self.function_depth + self.source_depth + self.eval_depth >= 64 {
             diagnostic("function call nesting limit");
             return 2;
         }

@@ -55,6 +55,21 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $? > opts.rc", prompt=b"$ ")
             vm.command("sh vars.sh > vars.out", prompt=b"$ ", timeout=300 if dual_volume else 180)
             vm.command("echo $? > vars.rc", prompt=b"$ ")
+            vm.command("sh source.sh > source.out", prompt=b"$ ", timeout=300)
+            vm.command("echo $? > source.rc", prompt=b"$ ")
+            vm.command("sh srcargs.sh > srcargs.out", prompt=b"$ ", timeout=180)
+            vm.command("echo $? > srcargs.rc", prompt=b"$ ")
+            vm.command("sh srcerr.sh > srcerr.out", prompt=b"$ ", timeout=180)
+            vm.command("echo $? > srcerr.rc", prompt=b"$ ")
+            vm.command(". ./large.sh > dotlarge.bin", prompt=b"$ ", timeout=180)
+            vm.command("eval : < ./absent", prompt=b"$ ", expect=b"redirection error")
+            vm.command("echo $?", prompt=b"$ ", expect=b"1\r\n")
+            vm.command(". ./missing.sh", prompt=b"$ ", expect=b"open error")
+            vm.command("echo $?", prompt=b"$ ", expect=b"2\r\n")
+            vm.command("eval 'if ;'", prompt=b"$ ", expect=b"sh:")
+            vm.command("echo $?", prompt=b"$ ", expect=b"2\r\n")
+            vm.command(". ./broken.sh", prompt=b"$ ", expect=b"sh:")
+            vm.command("echo $?", prompt=b"$ ", expect=b"2\r\n")
             vm.command("readonly retained=original", prompt=b"$ ")
             vm.command("retained=changed", prompt=b"$ ", expect=b"retained: readonly variable")
             vm.command("echo $?", prompt=b"$ ", expect=b"1\r\n")
@@ -82,6 +97,8 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
         vm.close()
     qemu.check_native_boot(serial, arch, mode)
     trace = serial.read_bytes()
+    if grammar and b"$ eval 'if ;'\r\n" not in trace:
+        raise RuntimeError(f"{arch}: interactive eval input lost its quote or semicolon")
     for path in (b"/bin/sh", b"/bin/cat", b"/bin/wc", b"/bin/echo"):
         if b"path=" + path + b"\r\n" not in trace:
             raise RuntimeError(f"{arch}: missing executed path {path!r}")
@@ -100,11 +117,20 @@ def script_fixture(fixture, work):
     (fixture / "SUB").mkdir()
     (fixture / "SUB/ONE.TX").write_bytes(b"one")
     (fixture / "SUB/TWO.TX").write_bytes(b"two")
+    (fixture / "SUB/pick.sh").mkdir()
+    (fixture / "empty.sh").write_bytes(b"")
+    (fixture / "comment.sh").write_bytes(b"# no commands\n\n")
+    (fixture / "noend.sh").write_bytes(b"echo no-final-newline")
+    (fixture / "broken.sh").write_bytes(b"if ;\n")
+    (fixture / "exitdot.sh").write_bytes(b"exit 39\necho BAD\n")
     (fixture / "read.dat").write_bytes(READ_DATA)
     (fixture / "large.sh").write_bytes(b"cat <<'END'\n" + HERE_DATA + b"END\n")
     for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "here.sh", "getopts.sh", "plain"):
         shutil.copyfile(qemu.ROOT / "tests/user-shell" / name, fixture / name)
     shutil.copyfile(qemu.ROOT / "tests/user-shell/variables.sh", fixture / "vars.sh")
+    shutil.copyfile(qemu.ROOT / "tests/user-shell/source.sh", fixture / "source.sh")
+    shutil.copyfile(qemu.ROOT / "tests/user-shell/source-args.sh", fixture / "srcargs.sh")
+    shutil.copyfile(qemu.ROOT / "tests/user-shell/source-errors.sh", fixture / "srcerr.sh")
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
     with tempfile.TemporaryDirectory(dir=work) as temporary:
@@ -144,10 +170,17 @@ def script_fixture(fixture, work):
     expected["opts.rc"] = b"43\n"
     expected["vars.out"] = (qemu.ROOT / "tests/user-shell/variables.expected").read_bytes()
     expected["vars.rc"] = b"47\n"
+    expected["source.out"] = (qemu.ROOT / "tests/user-shell/source.expected").read_bytes()
+    expected["source.rc"] = b"53\n"
+    expected["srcargs.out"] = (qemu.ROOT / "tests/user-shell/source-args.expected").read_bytes()
+    expected["srcargs.rc"] = b"59\n"
+    expected["srcerr.out"] = (qemu.ROOT / "tests/user-shell/source-errors.expected").read_bytes()
+    expected["srcerr.rc"] = b"61\n"
+    expected["dotlarge.bin"] = HERE_DATA
     return expected
 
 
-def check(arch, root, proof, kernel=None, programs=None):
+def check(arch, root, proof, kernel=None, programs=None, probes=None):
     mode = "bios" if arch == "i686" else "uefi"
     source_kernel = kernel or qemu.build(arch, qemu.ROOT / "target", features="exec-trace")
     kernel = root / "kernel.efi"
@@ -173,7 +206,10 @@ def check(arch, root, proof, kernel=None, programs=None):
     reference = script_fixture(fixture, root)
     (fixture / "a.txt").write_bytes(DATA)
     for name in PROBES:
-        build_probe(arch, fixture / name)
+        if probes is None:
+            build_probe(arch, fixture / name)
+        else:
+            shutil.copyfile(probes / name, fixture / name)
     subprocess.run(["mcopy", "-s", "-i", disk, *sorted(fixture.iterdir()), "::"], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)
@@ -181,6 +217,7 @@ def check(arch, root, proof, kernel=None, programs=None):
     with (proof / (arch+"-fsck.log")).open("wb") as log:
         subprocess.run(["fsck.fat", "-n", disk], stdout=log, stderr=subprocess.STDOUT, check=True)
     files = {}
+    mismatches = []
     expected_files = {"count.txt": f"{len(DATA)}\n".encode(), "copy.bin": DATA, **reference}
     recovered = root / "recovered"
     recovered.mkdir()
@@ -191,15 +228,20 @@ def check(arch, root, proof, kernel=None, programs=None):
         (proof/(arch+"-"+name)).write_bytes(result)
         if result != expected:
             (proof/(arch+"-"+name+".expected")).write_bytes(expected)
-            raise RuntimeError(f"{arch}: stopped {name} differs")
+            mismatches.append(name)
         digest = hashlib.sha256(result).hexdigest()
-        files[name] = {"bytes": len(result), "sha256": digest}
+        files[name] = {"bytes": len(result), "sha256": digest, "matches": result == expected}
         print(f"{arch}/{mode} {name}: {len(result)} bytes sha256 {digest}")
     manifest = {"arch": arch, "kernel_bits": 32 if arch == "i686" else 64, "firmware": mode,
                 "kernel_sha256": hashlib.sha256(kernel.read_bytes()).hexdigest(),
                 "programs": {name: hashlib.sha256((programs/name).read_bytes()).hexdigest()
-                             for name in ("sh", "cat", "wc", "echo")}, "files": files}
+                             for name in ("sh", "cat", "wc", "echo")}, "files": files,
+                "probes": {name: hashlib.sha256((fixture/name).read_bytes()).hexdigest()
+                           for name in PROBES},
+                "passed": not mismatches, "mismatches": mismatches}
     (proof / (arch+".json")).write_text(json.dumps(manifest, indent=2)+"\n")
+    if mismatches:
+        raise RuntimeError(f"{arch}: stopped files differ: {', '.join(mismatches)}")
 
 
 if __name__ == "__main__":
@@ -209,10 +251,11 @@ if __name__ == "__main__":
     parser.add_argument("--arch", choices=qemu.ARCH, action="append")
     parser.add_argument("--kernel", type=Path, help="use this kernel for exactly one --arch")
     parser.add_argument("--programs", type=Path, help="directory containing that architecture's sh, cat, wc and echo")
+    parser.add_argument("--probes", type=Path, help="directory containing that architecture's fixed execprog and dirprobe ELF probes")
     options=parser.parse_args()
-    if (options.kernel or options.programs) and len(options.arch or ()) != 1:
+    if (options.kernel or options.programs or options.probes) and len(options.arch or ()) != 1:
         parser.error("prebuilt inputs require exactly one --arch")
     options.proof.mkdir(parents=True, exist_ok=True)
     for arch in options.arch or qemu.ARCH:
         with tempfile.TemporaryDirectory(dir=options.ram_dir) as tmp:
-            check(arch,Path(tmp),options.proof,options.kernel,options.programs)
+            check(arch,Path(tmp),options.proof,options.kernel,options.programs,options.probes)
