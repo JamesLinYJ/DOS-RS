@@ -5,10 +5,12 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 import qemu
 from qemu_shell import Shell
@@ -152,41 +154,156 @@ def catalog():
     return cases
 
 
+def namespace_cases():
+    cases = []
+
+    def add(name, args):
+        cases.append((name, args, "z.txt", "C"))
+
+    for args in [
+        [],
+        ["a.txt"],
+        ["missing", "absent"],
+        ["a.txt", "a.txt"],
+        ["b.txt", "linked.txt"],
+    ]:
+        add("link", args)
+    add("cat", ["linked.txt"])
+    add("unlink", ["linked.txt"])
+    add("cat", ["linked.txt"])
+    for args in [[], ["a.txt", "b.txt"], ["missing"]]:
+        add("unlink", args)
+    for args in [
+        [],
+        ["-m"],
+        ["-m", "bad", "absent"],
+        ["-m", "0711", "dirmode"],
+        ["-m", "a=rx,u+w", "symbolic"],
+        ["-pv", "nest/inner"],
+        ["-pv", "nest/inner"],
+        ["--", "a.txt"],
+        ["-p", "a.txt"],
+        ["foo", "bar"],
+    ]:
+        add("mkdir", args)
+    for args in [
+        [],
+        ["nest"],
+        ["--ignore-fail-on-non-empty", "nest"],
+        ["-pv", "nest/inner"],
+        ["a.txt"],
+        ["foo", "bar"],
+        ["missing"],
+    ]:
+        add("rmdir", args)
+    return cases
+
+
+NAMESPACE_PATHS = [
+    "absent",
+    "linked.txt",
+    "dirmode",
+    "symbolic",
+    "nest",
+    "nest/inner",
+    "foo",
+    "bar",
+]
+
+
+def namespace_state(tree, archive=None):
+    # btrfs restore -m records Linux permission bits in the capture archive.
+    # Host extraction need not apply guest directory modes to a macOS RAM disk.
+    modes = {}
+    if archive is not None:
+        modes = {row["path"]: row["mode"] for row in json.loads(archive.read_text())}
+    result = {}
+    for name in NAMESPACE_PATHS:
+        path = tree / name
+        if not path.exists():
+            result[name] = None
+        else:
+            result[name] = dict(
+                kind="directory" if path.is_dir() else "file",
+                mode=oct((modes["files/" + name] if archive is not None else path.stat().st_mode) & 0o7777),
+            )
+            if path.is_file():
+                result[name]["sha256"] = digest(path.read_bytes())
+    return result
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def on_disk(disk, name):
-    return subprocess.check_output(["mcopy", "-i", disk, "::" + name, "-"])
+def btrfs(command, disk, options, helper_args, log):
+    helper = qemu.ROOT / "scripts/linux-btrfs.py"
+    with log.open("wb") as output:
+        subprocess.run(
+            [sys.executable, helper, command, "--image", disk, *options, *helper_args],
+            check=True,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        )
 
 
-def stage(disk, name, data):
-    subprocess.run(["mcopy", "-i", disk, "-", "::" + name], input=data, check=True)
+def format_image(disk, tree, fs, helper_args, log):
+    if fs == "btrfs":
+        btrfs("create", disk, ["--root", tree], helper_args, log)
+        return
+    with disk.open("xb") as out:
+        total = sum(entry.stat().st_size for entry in tree.rglob("*") if entry.is_file())
+        out.truncate((16 << 20) + total * 2)
+    subprocess.run(["mformat", "-i", disk, "::"], check=True)
+    subprocess.run(
+        ["mcopy", "-i", disk, "-s", *sorted(tree.iterdir()), "::"], check=True
+    )
 
 
-def run(arch, root, proof, gnubin):
-    root.mkdir(parents=True, exist_ok=True)
+def stopped_files(disk, fs, destination, helper_args, log):
+    if fs == "btrfs":
+        btrfs("check", disk, ["--output", destination], helper_args, log)
+        shutil.copyfile(destination / "check.log", log.with_suffix(".check"))
+        return lambda name: (destination / "files" / name).read_bytes()
+    with log.open("wb") as out:
+        subprocess.run(
+            [os.environ.get("FSCK_FAT", "fsck.fat"), "-n", disk], check=True, stdout=out
+        )
+    return lambda name: subprocess.check_output(["mcopy", "-i", disk, "::" + name, "-"])
+
+
+def run_cases(vm):
+    start = vm.log.stat().st_size
+    vm.enter("probe.elf")
+    previous = b""
+    last_event = time.monotonic()
+    while vm.vm.poll() is None:
+        progress = vm.log.read_bytes()[start:]
+        if progress != previous:
+            previous = progress
+            last_event = time.monotonic()
+        if b"C:\\> " in progress:
+            if b"coreutils cases finished" not in progress:
+                raise RuntimeError(f"guest returned early: {progress[-300:]!r}")
+            return
+        if time.monotonic() - last_event > 90:
+            raise RuntimeError(f"no guest progress in 90 s: {progress[-300:]!r}")
+        time.sleep(0.15)
+    raise RuntimeError("QEMU exited before the differential suite finished")
+
+
+def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
     proof.mkdir(parents=True, exist_ok=True)
-    root = root.resolve()
+    tree = root / "seed"
+    (tree / "bin").mkdir(parents=True)
     disk = root / "tools.img"
     mode = "bios" if arch == "i686" else "uefi"
-    kernel = qemu.build(arch, qemu.ROOT / "target", features="exec-trace")
-    with disk.open("wb") as f:
-        f.truncate(16 << 20)
-    subprocess.run(["mformat", "-i", disk, "::"], check=True)
-    subprocess.run(["mmd", "-i", disk, "::bin"], check=True)
-    subprocess.run(
-        [
-            sys.executable,
-            qemu.ROOT / "scripts/build-rust-tools.py",
-            "--tools-only",
-            "--arch",
-            arch,
-            "--output",
-            root / "bin",
-        ],
-        check=True,
-    )
+    kernel = root / "kernel.efi"
+    shutil.copyfile(qemu.build(arch, qemu.ROOT / "target", features="exec-trace"), kernel)
+    subprocess.run([
+        sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--tools-only",
+        "--arch", arch, "--output", root / "bin",
+    ], check=True)
     driver = root / "probe.elf"
     subprocess.run(
         [
@@ -200,8 +317,14 @@ def run(arch, root, proof, gnubin):
         ],
         check=True,
     )
-    subprocess.run(["mcopy", "-i", disk, driver, "::"], check=True)
-    suite = catalog()
+    shutil.copy2(driver, tree / "probe.elf")
+    base = catalog()
+    if namespace_only:
+        suite = namespace_cases()
+        id_offset = len(base)
+    else:
+        suite = base + (namespace_cases() if fs == "btrfs" else [])
+        id_offset = 0
     tools = sorted(set(name for name, _, _, _ in suite))
     env = {"LC_ALL": "C", "LANG": "C", "TZ": "UTC", "PATH": str(gnubin)}
     build_info = {}
@@ -220,16 +343,17 @@ def run(arch, root, proof, gnubin):
             "reference": digest(reference.read_bytes()),
             "dosrs": digest((root / "bin" / name).read_bytes()),
         }
-        subprocess.run(
-            ["mcopy", "-i", disk, root / "bin" / name, "::bin/" + name], check=True
-        )
-    for name, data in FIXTURES.items():
-        stage(disk, name, data)
+        shutil.copy2(root / "bin" / name, tree / "bin" / name)
+    fixtures = dict(FIXTURES)
+    for name, data in fixtures.items():
+        (tree / name).write_bytes(data)
     config = bytearray()
     expected = []
+    expected_effects = {}
+    guest_bin = "/bin/" if fs == "btrfs" else "C:/bin/"
     with tempfile.TemporaryDirectory(dir=root) as sandbox:
         temp = Path(sandbox)
-        for name, data in FIXTURES.items():
+        for name, data in fixtures.items():
             (temp / name).write_bytes(data)
         for i, (name, args, stdin, locale) in enumerate(suite):
             stdout_name = f"q{i:03}.out"
@@ -237,7 +361,7 @@ def run(arch, root, proof, gnubin):
             args = [stdout_name if a == "@stdout" else a for a in args]
             if append:
                 seed = b"preserve the shared input and append target\n"
-                stage(disk, stdout_name, seed)
+                (tree / stdout_name).write_bytes(seed)
                 (temp / stdout_name).write_bytes(seed)
             with (
                 (temp / stdin).open("rb") as input_file,
@@ -248,6 +372,7 @@ def run(arch, root, proof, gnubin):
                     executable=gnubin / name,
                     stdin=input_file,
                     env=dict(env, LC_ALL=locale),
+                    umask=0o022,
                     cwd=temp,
                     stdout=output_file,
                     stderr=subprocess.PIPE,
@@ -255,12 +380,15 @@ def run(arch, root, proof, gnubin):
             result.stdout = (temp / stdout_name).read_bytes()
             expected.append(result)
             config.extend((len(args) + 1, int(append)))
-            for field in [stdin, "LC_ALL=" + locale, "C:/bin/" + name, name, *args]:
+            for field in [stdin, "LC_ALL=" + locale, guest_bin + name, name, *args]:
                 config.extend(os.fsencode(field) + b"\0")
-        for name, data in FIXTURES.items():
+        if fs == "btrfs":
+            expected_effects = namespace_state(temp)
+        for name, data in fixtures.items():
             if (temp / name).read_bytes() != data:
                 raise RuntimeError("reference modified " + name)
-    stage(disk, "cases.bin", config + b"\0")
+    (tree / "cases.bin").write_bytes(config + b"\0")
+    format_image(disk, tree, fs, helper_args, proof / (arch + "-format.log"))
     serial = proof / (arch + ".serial")
     vm = Shell(
         qemu.boot_args(kernel, arch, root / "boot", 2, mode, esp_mib=36)
@@ -271,21 +399,24 @@ def run(arch, root, proof, gnubin):
     try:
         vm.wait(b"A:\\> ")
         vm.command("c:")
-        vm.command("probe.elf", expect=b"coreutils cases finished")
+        run_cases(vm)
     finally:
         vm.close()
-    statuses = on_disk(disk, "status.bin")
+    read_file = stopped_files(
+        disk, fs, root / "restored", helper_args, proof / (arch + "-fsck.txt")
+    )
+    statuses = read_file("status.bin")
     if len(statuses) != len(suite):
         raise RuntimeError(
             f"{arch}: only {len(statuses)} wait statuses, expected {len(suite)}"
         )
     checks = []
     for i, ((tool, args, stdin, locale), ref) in enumerate(zip(suite, expected)):
-        out, err = [on_disk(disk, f"q{i:03}.{ext}") for ext in ("out", "err")]
+        out, err = [read_file(f"q{i:03}.{ext}") for ext in ("out", "err")]
         passed = (out, err, statuses[i]) == (ref.stdout, ref.stderr, ref.returncode)
         checks.append(
             dict(
-                id=i,
+                id=i + id_offset,
                 tool=tool,
                 argv=[f"q{i:03}.out" if a == "@stdout" else a for a in args],
                 append_existing="@stdout" in args,
@@ -309,25 +440,31 @@ def run(arch, root, proof, gnubin):
                 f"{arch} case {i}: {tool} {args!r}: exit {statuses[i]} expected {ref.returncode}",
                 flush=True,
             )
-    for name, data in FIXTURES.items():
-        if on_disk(disk, name) != data:
+    for name, data in fixtures.items():
+        if read_file(name) != data:
             raise RuntimeError("guest modified " + name)
     traces = serial.read_bytes()
     for name in tools:
-        if (b"path=C:/bin/" + name.encode() + b"\r\n") not in traces:
+        if (b"path=" + guest_bin.encode() + name.encode() + b"\r\n") not in traces:
             raise RuntimeError("missing guest execve trace for " + name)
-    with (proof / (arch + "-fsck.txt")).open("wb") as log:
-        subprocess.run(
-            [os.environ.get("FSCK_FAT", "fsck.fat"), "-n", disk], check=True, stdout=log
-        )
+    if fs == "btrfs":
+        capture = root / "restored"
+        effects = namespace_state(capture / "files", capture / "archive.json")
+        (proof / (arch + "-namespace.json")).write_text(json.dumps(effects, indent=2) + "\n")
+        if effects != expected_effects:
+            raise RuntimeError(
+                f"namespace effects differ: {effects} != {expected_effects}"
+            )
     result = dict(
+        namespace=expected_effects,
         arch=arch,
         firmware=mode,
+        filesystem=fs,
         tools=build_info,
         locales=sorted({case[3] for case in suite}),
         timezone="UTC",
         kernel=digest(kernel.read_bytes()),
-        fixtures={n: digest(d) for n, d in FIXTURES.items()},
+        fixtures={n: digest(d) for n, d in fixtures.items()},
         cases=checks,
     )
     (proof / (arch + ".json")).write_text(json.dumps(result, indent=2) + "\n")
@@ -358,6 +495,40 @@ if __name__ == "__main__":
         required=True,
         help="GNU 9.12 binaries under their unprefixed names",
     )
+    cli.add_argument("--filesystem", choices=["fat", "btrfs"], default="fat")
+    cli.add_argument(
+        "--linux-kernel",
+        type=Path,
+        help="Linux ARM64 kernel for offline Btrfs utilities",
+    )
+    cli.add_argument(
+        "--linux-cache",
+        type=Path,
+        help="cache for verified Linux Btrfs utility archives",
+    )
+    cli.add_argument(
+        "--namespace-only",
+        action="store_true",
+        help="run the Btrfs link/directory cases in isolation",
+    )
     args = cli.parse_args()
+    if args.namespace_only and args.filesystem != "btrfs":
+        cli.error("namespace tests require the Btrfs root")
+    helper_args = []
+    if args.linux_kernel:
+        helper_args += ["--kernel", args.linux_kernel]
+    if args.linux_cache:
+        helper_args += ["--cache", args.linux_cache]
     for arch in args.arch or qemu.ARCH:
-        run(arch, args.ram_dir / arch, args.proof, args.gnu_bin.resolve())
+        with tempfile.TemporaryDirectory(
+            prefix="coreutils-" + arch + "-", dir=args.ram_dir
+        ) as tmp:
+            run(
+                arch,
+                Path(tmp),
+                args.proof,
+                args.gnu_bin.resolve(),
+                args.filesystem,
+                helper_args,
+                args.namespace_only,
+            )

@@ -75,3 +75,14 @@ path = "tools/unlink.rs"
 required-features = ["alloc"]
 crate-type = ["staticlib"]
 
+[[example]]
+name = "mkdir"
+path = "tools/mkdir.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "rmdir"
+path = "tools/rmdir.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]

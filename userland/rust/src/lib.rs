@@ -8,6 +8,8 @@ use core::slice;
 mod allocator;
 pub mod cli;
 #[cfg(feature = "alloc")]
+pub mod directories;
+#[cfg(feature = "alloc")]
 pub mod ends;
 #[cfg(feature = "alloc")]
 pub mod links;

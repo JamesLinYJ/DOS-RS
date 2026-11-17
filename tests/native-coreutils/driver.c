@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static int exact(int fd, char *p, int n) {
@@ -27,6 +28,7 @@ static int redirect_to(const char *name, int dst, int append) {
     return fd == dst ? 0 : close(fd);
 }
 int main(void) {
+    umask(022);
     int cfg = open("cases.bin", O_RDONLY);
     int results = open("status.bin", O_CREAT | O_TRUNC | O_WRONLY, 0600);
     if (cfg < 0 || results < 0) return 101;
@@ -62,6 +64,12 @@ int main(void) {
         int status;
         if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 110;
         unsigned char code = WEXITSTATUS(status);
+        if (code == 0 && count == 3 && values[0][0] == 'l' && values[0][1] == 'i' &&
+            values[0][2] == 'n' && values[0][3] == 'k' && !values[0][4]) {
+            struct stat a, b;
+            if (stat(values[1], &a) || stat(values[2], &b) || a.st_nlink < 2 ||
+                a.st_dev != b.st_dev || a.st_ino != b.st_ino || a.st_nlink != b.st_nlink) return 113;
+        }
         if (write(results, &code, 1) != 1) return 111;
     }
     return 112;
