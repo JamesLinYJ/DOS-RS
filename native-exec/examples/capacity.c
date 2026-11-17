@@ -24,6 +24,8 @@ int main(int argc, char **argv) {
     struct stat st;
     int ro = argc > 1 && argv[1][0] == 'r';
     int cold = argc > 1 && argv[1][0] == 'c';
+    int metadata = argc > 2 && argv[2][0] == 'm';
+    unsigned writes = metadata ? 1 : WRITES;
     int fd = open("/large.bin", ro ? O_RDONLY : O_RDWR);
     int dos = open("C:/CAPACITY.ELF", O_RDONLY);
     CHECK(1,
@@ -49,26 +51,32 @@ int main(int argc, char **argv) {
     CHECK(8, !(fat.f_flag & ST_RDONLY) && fat.f_bavail == fat.f_bfree && fat.f_bavail > 0);
     CHECK(9, fstat(fd, &st) == 0);
     if (cold) {
-        CHECK(10, st.st_size == SEED + WRITES * CHUNK && st.st_blocks * 512 >= st.st_size &&
-                      pread(fd, block, CHUNK, SEED + (WRITES - 1) * CHUNK) == CHUNK);
+        CHECK(10, st.st_size == SEED + writes * CHUNK && st.st_blocks * 512 >= st.st_size &&
+                      pread(fd, block, CHUNK, SEED + (writes - 1) * CHUNK) == CHUNK);
         for (unsigned i = 0; i < sizeof block; i++)
-            CHECK(11, (unsigned char)block[i] == (unsigned char)(i * 7 + (WRITES - 1) * 31));
+            CHECK(11, (unsigned char)block[i] == (unsigned char)(i * 7 + (writes - 1) * 31));
         const char s[] = "cold block group file OK\n";
         write(1, s, sizeof s - 1);
         return 0;
     }
     CHECK(12, st.st_size == SEED && lseek(fd, 0, SEEK_END) == SEED);
-    for (unsigned j = 0; j < WRITES; j++) {
+    for (unsigned j = 0; j < writes; j++) {
         for (unsigned i = 0; i < sizeof block; i++)
             block[i] = (unsigned char)(i * 7 + j * 31);
         CHECK(13, write(fd, block, sizeof block) == sizeof block);
     }
-    CHECK(14, fsync(fd) == 0 && fstat(fd, &st) == 0 && st.st_size == SEED + WRITES * CHUNK &&
+    CHECK(14, fsync(fd) == 0 && fstat(fd, &st) == 0 && st.st_size == SEED + writes * CHUNK &&
                   st.st_blocks * 512 >= st.st_size);
     CHECK(15, fstatvfs(fd, &again) == 0 && again.f_bavail < root.f_bavail &&
                   again.f_blocks == root.f_blocks);
+    CHECK(17, !metadata || (root.f_bavail - again.f_bavail) * root.f_frsize == CHUNK);
     CHECK(16, close(dos) == 0 && close(fd) == 0);
-    const char s[] = "allocated data across original block group OK\n";
-    write(1, s, sizeof s - 1);
+    if (metadata) {
+        const char s[] = "metadata pressure write OK\n";
+        write(1, s, sizeof s - 1);
+    } else {
+        const char s[] = "allocated data across original block group OK\n";
+        write(1, s, sizeof s - 1);
+    }
     return 0;
 }

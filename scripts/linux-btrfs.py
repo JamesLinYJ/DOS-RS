@@ -86,7 +86,8 @@ def unpack(tar_path, output):
                 raise ValueError(f"duplicate archive path {dest}")
             names.add(dest)
             manifest.append(dict(path=str(dest), size=member.size, mode=member.mode,
-                                 uid=member.uid, gid=member.gid, target=member.linkname))
+                                 uid=member.uid, gid=member.gid, mtime=int(member.mtime),
+                                 target=member.linkname))
         for m in records:
             target = output / relative(m.name)
             if m.isdir():
@@ -151,13 +152,14 @@ test -n "$disk"
             mode = path.lstat().st_mode
             data = os.fsencode(os.readlink(path)) if path.is_symlink() else path.read_bytes() if path.is_file() else b""
             entries[name] = (mode, data)
-        script += 'mkfs.btrfs -f -m single -d single -L DOSRSROOT -r /seed "$disk"\n'
+        script += f'mkfs.btrfs -f -n {args.nodesize} -m single -d single -L DOSRSROOT -r /seed "$disk"\n'
     else:
         if not disk.is_file():
             raise FileNotFoundError(disk)
         args.output.mkdir(parents=True,exist_ok=True)
         script += """btrfs check --readonly --check-data-csum "$disk" >/captured/check.log 2>&1 || { cat /captured/check.log; exit 1; }
 btrfs inspect-internal dump-tree -t 5 "$disk" >/captured/tree.txt
+btrfs inspect-internal dump-tree -t chunk "$disk" >/captured/chunks.txt
 mkdir /captured/files
 btrfs restore -S -m "$disk" /captured/files
 tar cf "$capture" -C /captured .
@@ -200,6 +202,7 @@ if __name__ == "__main__":
     cli.add_argument("--modules",type=Path)
     cli.add_argument("--cache",type=Path,default=ROOT/"target/vfs-linux-tools")
     cli.add_argument("--mib",type=int,default=128)
+    cli.add_argument("--nodesize", type=int, choices=[4096, 8192, 16384, 32768, 65536], default=16384)
     args = cli.parse_args()
     if args.command == "create" and not (args.root and args.root.is_dir()):
         cli.error("create needs an existing --root directory")

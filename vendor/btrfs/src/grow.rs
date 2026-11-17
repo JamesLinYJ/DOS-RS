@@ -38,16 +38,7 @@ impl Filesystem {
     // Keep enough old metadata blocks free for publishing a replacement chunk tree.
     // A chunk becomes allocatable only after its superblock commit and remount.
     pub(crate) fn ensure_metadata_reserve(&mut self) -> Result<()> {
-        if !self.can_grow() {
-            return Ok(());
-        }
-        let groups = self.block_groups()?;
-        let free: u64 = groups
-            .iter()
-            .filter(|g| g.holds_metadata() && self.block_group_is_writable(g))
-            .map(|g| g.free())
-            .sum();
-        if free >= u64::from(self.sb.nodesize) * 96 {
+        if !self.can_grow() || !self.metadata_needs_chunk()? {
             return Ok(());
         }
         match self.grow_kind(bg::METADATA, MIB) {
@@ -55,6 +46,17 @@ impl Filesystem {
             other => other,
         }
     }
+
+    fn metadata_needs_chunk(&self) -> Result<bool> {
+        let free: u64 = self
+            .block_groups()?
+            .iter()
+            .filter(|g| g.holds_metadata() && self.block_group_is_writable(g))
+            .map(|g| g.free())
+            .sum();
+        Ok(free < u64::from(self.sb.nodesize) * 96)
+    }
+
     fn can_grow(&self) -> bool {
         self.is_writable()
             && self.sb.num_devices == 1
@@ -91,15 +93,16 @@ impl Filesystem {
             .max(1)
             .checked_next_multiple_of(MIB)
             .ok_or(Error::NoSpace)?;
-        let mut size = minimum.max(if kind == bg::DATA { 16 * MIB } else { 8 * MIB });
-        loop {
+        for size in chunk_sizes(kind, minimum) {
             match self.allocate_chunk(flags, size) {
                 Ok(_) => return Ok(()),
-                Err(Error::NoSpace) if size > minimum => size = (size / 2 / MIB * MIB).max(minimum),
+                Err(Error::NoSpace) => continue,
                 Err(e) => return Err(e),
             }
         }
+        Err(Error::NoSpace)
     }
+
     // Only the allocator's MiB-aligned, unoccupied ranges (after reserving each superblock
     // stripe row) can be contributed to a new data block group.
     pub(crate) fn expandable_data_bytes(&self) -> Result<u64> {
@@ -111,7 +114,7 @@ impl Filesystem {
             Err(Error::NoSpace) => return Ok(0),
             Err(e) => return Err(e),
         };
-        let copies = if flags & bg::DUP != 0 { 2 } else { 1 };
+        let copies = copies_on_device(flags);
         let devid = self.sb.dev_item.devid;
         let (_, item) = self.dev_item(devid)?;
         let total = le64(&item, DEV_ITEM_TOTAL_BYTES);
@@ -121,11 +124,26 @@ impl Filesystem {
             .filter(|e| e.devid == devid)
             .map(|e| (e.physical, e.length))
             .collect();
-        let free = physical_gaps(&used, total)
-            .into_iter()
-            .map(|(a, b)| (b - a) / MIB)
-            .sum::<u64>();
-        Ok(free / copies * MIB)
+        let gaps = physical_gaps(&used, total);
+        let free: u64 = gaps.iter().map(|(a, b)| b - a).sum();
+        // The next write allocates its metadata chunk first. Those stripes cannot
+        // also be reported as space for new file data, even before the commit.
+        let mut reserved = 0;
+        if self.metadata_needs_chunk()? {
+            match self.growth_profile(bg::METADATA) {
+                Ok(profile) => {
+                    let copies = copies_on_device(profile);
+                    if let Some(size) = chunk_sizes(bg::METADATA, MIB).find(|&size| {
+                        gaps.iter().map(|(a, b)| (b - a) / size).sum::<u64>() >= copies
+                    }) {
+                        reserved = copies * size;
+                    }
+                }
+                Err(Error::NoSpace) => (),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(free.saturating_sub(reserved) / MIB / copies * MIB)
     }
 
     /// Allocate a single or DUP chunk of `length` logical bytes and
@@ -384,6 +402,21 @@ impl Filesystem {
         Ok(out)
     }
 }
+fn copies_on_device(flags: u64) -> u64 {
+    if flags & bg::DUP != 0 {
+        2
+    } else {
+        1
+    }
+}
+
+fn chunk_sizes(kind: u64, minimum: u64) -> impl Iterator<Item = u64> {
+    let preferred = if kind == bg::DATA { 16 * MIB } else { 8 * MIB };
+    core::iter::successors(Some(preferred.max(minimum)), move |&size| {
+        (size > minimum).then(|| (size / 2 / MIB * MIB).max(minimum))
+    })
+}
+
 fn le64(b: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(b[at..at + 8].try_into().expect("8 bytes"))
 }
