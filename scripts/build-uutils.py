@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build standalone upstream Rust utilities against the native DOS-RS musl port."""
 import argparse
+import fcntl
 import hashlib
 import os
 from pathlib import Path
@@ -29,7 +30,8 @@ FILE_TOOLS = (
 TREE_TOOLS = ("dd", "df", "pathchk", "realpath", "shred")
 IDENTITY_TOOLS = ("chgrp", "chown", "groups", "id", "whoami")
 POSIX_TOOLS = ("csplit", "env", "join", "pr", "printenv", "test")
-DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS + POSIX_TOOLS + IDENTITY_TOOLS
+TIME_TOOLS = ("nohup", "sleep", "timeout")
+DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS + POSIX_TOOLS + IDENTITY_TOOLS + TIME_TOOLS
 
 
 def digest(path):
@@ -45,17 +47,15 @@ def source(archive):
     work.mkdir(parents=True, exist_ok=True)
     package = "coreutils-" + VERSION
     src = work / package
-    if not src.exists():
-        with tempfile.TemporaryDirectory(dir=work) as temporary:
-            subprocess.run(["tar", "xzf", archive], cwd=temporary, check=True)
-            extracted = Path(temporary) / package
-            for patch in patches:
-                subprocess.run(["patch", "-p1", "-i", patch], cwd=extracted, check=True)
-            try:
+    with (work / "source.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not src.exists():
+            with tempfile.TemporaryDirectory(dir=work) as temporary:
+                subprocess.run(["tar", "xzf", archive], cwd=temporary, check=True)
+                extracted = Path(temporary) / package
+                for patch in patches:
+                    subprocess.run(["patch", "-p1", "-i", patch], cwd=extracted, check=True)
                 extracted.rename(src)
-            except OSError:
-                if not (src / "Cargo.lock").is_file():
-                    raise
     return src
 
 

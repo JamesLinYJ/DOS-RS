@@ -43,6 +43,8 @@ Run `--filesystem btrfs --tree-tools` for 20 comparisons across nested directori
 
 Run `--filesystem btrfs --posix-tools` for the 34 GNU comparisons for csplit, env, join, pr, printenv and test. The pr port preserves raw input bytes and aligns multi-column output using tab stops. The stopped Btrfs image retains the csplit pieces and evidence of cleanup after a failed match.
 
+Run `--filesystem btrfs --timing-tools` for 17 comparisons of sleep, nohup and timeout. Both native ELF targets match GNU 9.12 output streams and exit status for the recorded zero and fractional sleeps, input errors, successful and failed commands, SIGTERM timeouts, preserved status and foreground execution. The guest also records monotonic durations. Timeout uses the kernel's POSIX timers and signal waits. The runner loads separate Rust true, false and echo executables as children and checks every output after shutdown with Linux btrfs-progs. These three utilities join the default build selection. `--replay-elf-dir` accepts retained `ARCH/TOOL` binaries, and `--kernel` freezes a kernel for one `--arch`.
+
 The identity and file ownership tests use genuine GNU 9.12 binaries in a Linux AArch64 guest. Both DOS-RS targets use the same editable account and group fixtures, including IDs greater than 65535. The test checks process-wide groups across threads, fork and exec, then compares each command's output streams, exit status and the ownership of files recovered from Btrfs.
 
 ```sh

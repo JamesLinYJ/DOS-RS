@@ -11,7 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build(arch, output, include_shell=True, uutils_archive=None):
+def build(arch, output, include_shell=True, uutils_archive=None, tools=None):
     sysroot = ROOT / "target/musl" / arch / "sysroot"
     archive = os.environ.get("DOSRS_MUSL_ARCHIVE")
     tarball = Path(archive) if archive else ROOT / "target/upstream/musl-1.2.6.tar.gz"
@@ -39,6 +39,7 @@ def build(arch, output, include_shell=True, uutils_archive=None):
     shell = ROOT / "userland/shell"
     if include_shell:
         projects.append((shell, "--lib"))
+    pending = set(tools or ())
     for directory, selection in projects:
         manifest = directory / "Cargo.toml"
         cmd = [
@@ -69,6 +70,9 @@ def build(arch, output, include_shell=True, uutils_archive=None):
             if "staticlib" not in message["target"]["crate_types"]:
                 continue
             name = message["target"]["name"]
+            if tools is not None and name != "sh" and name not in tools:
+                continue
+            pending.discard(name)
             archive = next(path for path in message["filenames"] if path.endswith(".a"))
             subprocess.run(
                 [
@@ -87,6 +91,8 @@ def build(arch, output, include_shell=True, uutils_archive=None):
                 check=True,
             )
         built.check_returncode()
+    if pending:
+        raise ValueError("unknown bundled Rust tools: " + ", ".join(sorted(pending)))
     if uutils_archive:
         subprocess.run([
             sys.executable, ROOT / "scripts/build-uutils.py", "--arch", arch,
@@ -99,7 +105,8 @@ if __name__ == "__main__":
     cli.add_argument("--arch", choices=["i686", "x86_64"], required=True)
     cli.add_argument("--output", type=Path, required=True)
     cli.add_argument("--tools-only", action="store_true")
+    cli.add_argument("--tool", action="append", help="link only this bundled Rust tool (repeatable)")
     cli.add_argument("--uutils-archive", type=Path, default=os.environ.get("DOSRS_UUTILS_ARCHIVE"),
                      help="also install standalone std utilities from the pinned uutils release")
     args = cli.parse_args()
-    build(args.arch, args.output, not args.tools_only, args.uutils_archive)
+    build(args.arch, args.output, not args.tools_only, args.uutils_archive, args.tool)

@@ -1,6 +1,9 @@
 /* Read a bounded argv fixture and execute each tool with isolated stdio files.
  * The host checks the files on the stopped image using the recorded wait status. */
+#define _POSIX_C_SOURCE 200809L
 #include <errno.h>
+#include <stdint.h>
+#include <time.h>
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -33,10 +36,17 @@ int main(void) {
     int results = open("status.bin", O_CREAT | O_TRUNC | O_WRONLY, 0600);
     int signals = open("signals.bin", O_CREAT | O_TRUNC | O_WRONLY, 0600);
     if (cfg < 0 || results < 0 || signals < 0) return 101;
+#ifdef CLOCK_MONOTONIC
+    int timing = open("timing.bin", O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0600);
+    if (timing < 0) return 114;
+#endif
     for (int idx = 0; idx < 1000; idx++) {
         unsigned char count;
         if (exact(cfg, (char *)&count, 1) || count > 24) return 102;
         if (!count) {
+#ifdef CLOCK_MONOTONIC
+            if (close(timing)) return 114;
+#endif
             if (close(signals) || close(results) || close(cfg)) return 103;
             return write(1, "coreutils cases finished\n", 25) == 25 ? 0 : 104;
         }
@@ -53,6 +63,10 @@ int main(void) {
         out[1] = err[1] = '0' + idx / 100;
         out[2] = err[2] = '0' + idx / 10 % 10;
         out[3] = err[3] = '0' + idx % 10;
+#ifdef CLOCK_MONOTONIC
+        struct timespec before, after;
+        if (clock_gettime(CLOCK_MONOTONIC, &before)) return 114;
+#endif
         int child = fork();
         if (child < 0) return 107;
         if (!child) {
@@ -64,6 +78,12 @@ int main(void) {
         }
         int status;
         if (waitpid(child, &status, 0) != child) return 110;
+#ifdef CLOCK_MONOTONIC
+        if (clock_gettime(CLOCK_MONOTONIC, &after)) return 114;
+        int64_t elapsed = (after.tv_sec - before.tv_sec) * INT64_C(1000000000)
+                        + after.tv_nsec - before.tv_nsec;
+        if (elapsed < 0 || write(timing, &elapsed, sizeof elapsed) != sizeof elapsed) return 114;
+#endif
         unsigned char signal = 0;
         unsigned char code;
         if (WIFEXITED(status)) {

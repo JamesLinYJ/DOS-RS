@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 from pathlib import Path
 import subprocess
 import sys
@@ -179,11 +180,22 @@ def upstream_posix_cases():
     return [(tool, argv, source, "C") for tool, pairs in groups.items() for argv, source in pairs]
 
 
+def upstream_time_cases():
+    groups = {
+        "sleep": [["0"], ["0.02"], ["0.01s", "0.01"], ["0m", "0h", "0d"], ["-2"], ["bad"]],
+        "timeout": [["2", "true"], ["2", "false"], ["2", "echo", "two words"],
+                    ["0.25", "sleep", "5"], ["--preserve-status", "0.25", "sleep", "5"],
+                    ["--foreground", "0.25", "sleep", "5"], ["2", "missing-executable"]],
+        "nohup": [["true"], ["false"], ["echo", "hello"], ["missing-executable"]],
+    }
+    return [(tool, argv, "z.txt", "C") for tool, cases in groups.items() for argv in cases]
+
+
 def file_paths(tree):
     return sorted(path.relative_to(tree).as_posix() for path in (tree / "ops").rglob("*"))
 
 
-UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases, "trees": upstream_tree_cases, "posix": upstream_posix_cases}
+UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases, "trees": upstream_tree_cases, "posix": upstream_posix_cases, "timing": upstream_time_cases}
 
 
 def catalog():
@@ -453,14 +465,14 @@ def run_cases(vm):
     raise RuntimeError("QEMU exited before the differential suite finished")
 
 
-def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, upstream_set, replay):
+def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, upstream_set, replay, kernel_override=None):
     proof.mkdir(parents=True, exist_ok=True)
     tree = root / "seed"
     (tree / "bin").mkdir(parents=True)
     disk = root / "tools.img"
     mode = "bios" if arch == "i686" else "uefi"
     kernel = root / "kernel.efi"
-    shutil.copyfile(qemu.build(arch, qemu.ROOT / "target", features="exec-trace"), kernel)
+    shutil.copyfile(kernel_override or qemu.build(arch, qemu.ROOT / "target", features="exec-trace"), kernel)
     if upstream:
         upstream_suite = UPSTREAM_CASES[upstream_set]()
         requested_tools = sorted({case[0] for case in upstream_suite})
@@ -480,11 +492,26 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
             sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--tools-only",
             "--arch", arch, "--output", root / "bin",
         ], check=True)
+    child_info = {}
+    if upstream_set == "timing":
+        children = root / "children"
+        names = ("true", "false", "echo")
+        retained = {name: replay / arch / name for name in names
+                    if replay is not None and (replay / arch / name).is_file()}
+        missing = [name for name in names if name not in retained]
+        if missing:
+            selected = [arg for name in missing for arg in ("--tool", name)]
+            subprocess.run([sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--tools-only",
+                            "--arch", arch, "--output", children, *selected], check=True)
+        for name in names:
+            source = retained.get(name, children / name)
+            shutil.copy2(source, tree / "bin" / name)
+            child_info[name] = digest(source.read_bytes())
     driver = root / "probe.elf"
     subprocess.run(
         [
             sys.executable,
-            qemu.ROOT / "scripts/native-cc.py",
+            qemu.ROOT / ("ports/musl/cc.py" if upstream_set == "timing" else "scripts/native-cc.py"),
             "--arch",
             arch,
             "-o",
@@ -617,8 +644,8 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
         root,
     )
     try:
-        vm.wait(b"A:\\> ")
-        vm.command("c:")
+        vm.wait(b"A:\\> ", timeout=240)
+        vm.command("c:", timeout=120)
         run_cases(vm)
     finally:
         vm.close()
@@ -630,6 +657,12 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     if len(statuses) != len(suite) or len(signals) != len(suite):
         raise RuntimeError(f"{arch}: incomplete wait records for {len(suite)} guest processes")
     statuses = [-signal if signal else code for code, signal in zip(statuses, signals)]
+    elapsed = None
+    if upstream_set == "timing":
+        raw = read_file("timing.bin")
+        if len(raw) != 8 * len(suite):
+            raise RuntimeError(f"{arch}: missing guest CLOCK_MONOTONIC intervals")
+        elapsed = [x for (x,) in struct.iter_unpack("<q", raw)]
     checks = []
     for i, ((tool, args, stdin, locale), ref) in enumerate(zip(suite, expected)):
         out, err = [read_file(f"q{i:03}.{ext}") for ext in ("out", "err")]
@@ -648,6 +681,13 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
                 passed=passed,
             )
         )
+        if elapsed is not None:
+            checks[-1]["guest_elapsed_ns"] = elapsed[i]
+            if tool == "timeout" and "0.25" in args:
+                passed &= 250_000_000 <= elapsed[i] < 5_000_000_000
+            elif tool == "sleep" and ("0.02" in args or "0.01s" in args):
+                passed &= elapsed[i] >= 20_000_000
+            checks[-1]["passed"] = passed
         if not passed:
             for side, data in [
                 ("actual.out", out),
@@ -663,6 +703,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     for name, data in fixtures.items():
         if read_file(name) != data:
             raise RuntimeError("guest modified " + name)
+    qemu.check_native_boot(serial, arch, mode)
     traces = serial.read_bytes()
     for name in tools:
         if (b"path=" + guest_bin.encode() + name.encode() + b"\r\n") not in traces:
@@ -680,9 +721,11 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     result = dict(
         namespace=expected_effects,
         arch=arch,
+        kernel_bits=32 if arch == "i686" else 64,
         firmware=mode,
         filesystem=fs,
         tools=build_info,
+        child_elf=child_info,
         upstream_archive=digest(upstream.read_bytes()) if upstream else None,
         locales=sorted({case[3] for case in suite}),
         timezone="UTC",
@@ -737,14 +780,17 @@ if __name__ == "__main__":
         help="run the Btrfs link/directory cases in isolation",
     )
     selection = cli.add_mutually_exclusive_group()
-    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files"), ("--tree-tools","trees"), ("--posix-tools","posix")]:
+    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files"), ("--tree-tools","trees"), ("--posix-tools","posix"), ("--timing-tools","timing")]:
         selection.add_argument(flag, action="store_const", const=name, dest="upstream_set")
     cli.add_argument("--upstream-archive", type=Path, help="test Rust std utilities built from the pinned uutils archive")
+    cli.add_argument("--kernel", type=Path, help="run a frozen exec-trace kernel for a single --arch")
     cli.add_argument("--replay-elf-dir", type=Path, help="reuse retained ARCH/TOOL ELFs to test another kernel with identical user code")
     args = cli.parse_args()
+    if args.kernel and len(args.arch or ()) != 1:
+        cli.error("--kernel requires exactly one --arch")
     if args.upstream_set and not args.upstream_archive:
         cli.error("upstream test groups require --upstream-archive")
-    if args.upstream_set in ("data", "files", "trees", "posix") and args.filesystem != "btrfs":
+    if args.upstream_set in ("data", "files", "trees", "posix", "timing") and args.filesystem != "btrfs":
         cli.error("this utility group needs the POSIX Btrfs root")
     if args.upstream_archive and args.namespace_only:
         cli.error("select either upstream encoders or namespace tools")
@@ -770,4 +816,5 @@ if __name__ == "__main__":
                 args.upstream_archive,
                 args.upstream_set or "encoding",
                 args.replay_elf_dir,
+                args.kernel,
             )
