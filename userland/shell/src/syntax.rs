@@ -1,5 +1,8 @@
 //! Quote recognition and list parsing precede expansion and redirection.
 use alloc::{string::String, vec::Vec};
+#[path = "grammar.rs"]
+mod grammar;
+pub use grammar::parse;
 
 #[derive(PartialEq, Debug)]
 pub enum Part {
@@ -13,6 +16,42 @@ pub enum Mode {
     Write,
     Append,
 }
+pub enum Compound {
+    Function {
+        name: String,
+        body: alloc::rc::Rc<Command>,
+    },
+    Group(Vec<Pipeline>),
+    Subshell(Vec<Pipeline>),
+    If {
+        arms: Vec<(Vec<Pipeline>, Vec<Pipeline>)>,
+        otherwise: Vec<Pipeline>,
+    },
+    While {
+        until: bool,
+        test: Vec<Pipeline>,
+        body: Vec<Pipeline>,
+    },
+    For {
+        name: String,
+        words: Option<Vec<Word>>,
+        body: Vec<Pipeline>,
+    },
+}
+
+#[derive(Debug)]
+pub enum Error {
+    Incomplete(&'static str),
+    Invalid(&'static str),
+}
+impl Error {
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::Incomplete(s) | Self::Invalid(s) => s,
+        }
+    }
+}
+
 pub struct Redirect {
     pub fd: i32,
     pub mode: Mode,
@@ -20,6 +59,7 @@ pub struct Redirect {
 }
 #[derive(Default)]
 pub struct Command {
+    pub compound: Option<Compound>,
     pub words: Vec<Word>,
     pub redirects: Vec<Redirect>,
 }
@@ -33,10 +73,14 @@ pub struct Pipeline {
     pub commands: Vec<Command>,
     pub when: Condition,
     pub background: bool,
+    pub negate: bool,
 }
 
 enum Token {
-    Word(Word),
+    Word(Word, bool),
+    Newline,
+    LeftParen,
+    RightParen,
     Redirect(i32, Mode),
     Pipe,
     End(Condition),
@@ -58,24 +102,27 @@ pub fn identifier(s: &str) -> bool {
         && bytes.all(|c| c == b'_' || c.is_ascii_alphanumeric())
 }
 
-fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<Word, &'static str> {
+fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<(Word, bool), Error> {
     let mut parts = Vec::new();
+    let mut quoted = false;
     let mut quote = None;
     while let Some(&c) = input.peek() {
-        if quote.is_none() && (c.is_ascii_whitespace() || "|&;<>".contains(c)) {
+        if quote.is_none() && (c.is_ascii_whitespace() || "|&;<>()".contains(c)) {
             break;
         }
         input.next();
         match c {
             '\'' | '"' if quote == Some(c) => quote = None,
             '\'' | '"' if quote.is_none() => {
+                quoted = true;
                 quote = Some(c);
-                if !matches!(parts.last(), Some(Part::Literal(_))) {
+                if input.peek() == Some(&c) && !matches!(parts.last(), Some(Part::Literal(_))) {
                     parts.push(Part::Literal(String::new()));
                 }
             }
             '\\' if quote != Some('\'') => {
-                let escaped = input.next().ok_or("unfinished escape")?;
+                quoted = true;
+                let escaped = input.next().ok_or(Error::Incomplete("unfinished escape"))?;
                 if quote == Some('"') && !"$`\"\\\n".contains(escaped) {
                     literal(&mut parts, '\\');
                 }
@@ -84,13 +131,14 @@ fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<Word, 
                 }
             }
             '$' if quote != Some('\'') => {
+                quoted = true;
                 let mut name = String::new();
                 if input.next_if_eq(&'{').is_some() {
                     loop {
                         match input.next() {
                             Some('}') => break,
                             Some(ch) => name.push(ch),
-                            None => return Err("unterminated parameter"),
+                            None => return Err(Error::Incomplete("unterminated parameter")),
                         }
                     }
                 } else if let Some(&ch) = input.peek() {
@@ -114,17 +162,29 @@ fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<Word, 
         }
     }
     if quote.is_some() {
-        return Err("unterminated quote");
+        return Err(Error::Incomplete("unterminated quote"));
     }
-    Ok(parts)
+    Ok((parts, quoted))
 }
 
-fn tokens(line: &str) -> Result<Vec<Token>, &'static str> {
+fn tokens(line: &str) -> Result<Vec<Token>, Error> {
     let mut tokens = Vec::new();
     let mut it = line.chars().peekable();
     while let Some(&c) = it.peek() {
         match c {
-            '\n' | ';' => {
+            '\n' => {
+                it.next();
+                tokens.push(Token::Newline);
+            }
+            '(' => {
+                it.next();
+                tokens.push(Token::LeftParen);
+            }
+            ')' => {
+                it.next();
+                tokens.push(Token::RightParen);
+            }
+            ';' => {
                 it.next();
                 tokens.push(Token::End(Condition::Always));
             }
@@ -158,7 +218,7 @@ fn tokens(line: &str) -> Result<Vec<Token>, &'static str> {
                     } else {
                         numeral
                             .parse()
-                            .map_err(|_| "invalid redirection descriptor")?
+                            .map_err(|_| Error::Invalid("invalid redirection descriptor"))?
                     };
                     let mode = if op == '<' {
                         Mode::Read
@@ -170,70 +230,11 @@ fn tokens(line: &str) -> Result<Vec<Token>, &'static str> {
                     it = digits;
                     tokens.push(Token::Redirect(fd, mode));
                 } else {
-                    tokens.push(Token::Word(word(&mut it)?));
+                    let (parts, quoted) = word(&mut it)?;
+                    tokens.push(Token::Word(parts, quoted));
                 }
             }
         }
     }
     Ok(tokens)
-}
-
-pub fn parse(line: &str) -> Result<Vec<Pipeline>, &'static str> {
-    let mut list = Vec::new();
-    let mut commands = Vec::new();
-    let mut cmd = Command::default();
-    let mut when = Condition::Always;
-    let mut tokens = tokens(line)?.into_iter().peekable();
-    while let Some(t) = tokens.next() {
-        match t {
-            Token::Word(w) => cmd.words.push(w),
-            Token::Redirect(fd, mode) => {
-                let Some(Token::Word(target)) = tokens.next() else {
-                    return Err("expected redirection path");
-                };
-                cmd.redirects.push(Redirect { fd, mode, target });
-            }
-            t => {
-                if cmd.words.is_empty() && cmd.redirects.is_empty() {
-                    if commands.is_empty()
-                        && when == Condition::Always
-                        && matches!(t, Token::End(Condition::Always))
-                    {
-                        continue;
-                    }
-                    return Err("expected command");
-                }
-                commands.push(core::mem::take(&mut cmd));
-                let background = matches!(t, Token::Background);
-                let next = match t {
-                    Token::Pipe => {
-                        if tokens.peek().is_none() {
-                            return Err("unfinished pipeline");
-                        }
-                        continue;
-                    }
-                    Token::End(cond) => cond,
-                    Token::Background => Condition::Always,
-                    _ => unreachable!(),
-                };
-                list.push(Pipeline {
-                    commands: core::mem::take(&mut commands),
-                    when,
-                    background,
-                });
-                when = next;
-            }
-        }
-    }
-    if !cmd.words.is_empty() || !cmd.redirects.is_empty() {
-        commands.push(cmd);
-        list.push(Pipeline {
-            commands,
-            when,
-            background: false,
-        });
-    } else if when != Condition::Always {
-        return Err("missing conditional command");
-    }
-    Ok(list)
 }

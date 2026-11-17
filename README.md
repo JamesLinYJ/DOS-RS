@@ -152,6 +152,8 @@ python3 scripts/posix-install-image.py --arch i686 --ram-dir "$RAM_DISK" --outpu
 python3 scripts/posix-install-image.py --arch x86_64 --ram-dir "$RAM_DISK" --output "$RAM_DISK/dos64.img"
 ```
 
+双架构用户态 Shell 已通过多行脚本回归，覆盖 `if/elif/else`、`for`、`while/until`、函数参数和返回值、分组、子 Shell 以及多层 `break/continue`。测试将输出和退出码写入磁盘，关机后与宿主 `/bin/sh` 的结果比较。[脚本用例](tests/user-shell/control.sh) [QEMU 验收](scripts/qemu-user-shell.py)
+
 原生 16 位 DOS 的安装与命令解释器见上面的 286/386 章节。POSIX.1-2024 逐项验收仍在进行，GNU 工具的差分用例按架构记录。[规范清单与验证范围](tests/posix-2024/README.md)
 
 ### DOS 提示符下的原生文件和管道

@@ -1,5 +1,6 @@
 #![no_std]
 extern crate alloc;
+mod compound;
 mod jobs;
 mod syntax;
 
@@ -58,10 +59,15 @@ struct Variable {
 
 struct Shell {
     vars: BTreeMap<String, Variable>,
+    functions: BTreeMap<String, alloc::rc::Rc<syntax::Command>>,
+    function_depth: usize,
+    returning: bool,
     args: Vec<String>,
     last: i32,
     background: Vec<i32>,
     jobs: Vec<jobs::Job>,
+    loop_depth: usize,
+    flow: Option<compound::LoopControl>,
     monitor: bool,
     exiting: bool,
 }
@@ -85,10 +91,15 @@ impl Shell {
         });
         Self {
             vars,
+            functions: BTreeMap::new(),
+            function_depth: 0,
+            returning: false,
             args,
             last: 0,
             background: Vec::new(),
             jobs: Vec::new(),
+            loop_depth: 0,
+            flow: None,
             monitor: false,
             exiting: false,
         }
@@ -248,6 +259,19 @@ impl Shell {
         let code = match name {
             ":" | "true" => 0,
             "false" => 1,
+            "return" => {
+                if self.function_depth == 0 || args.len() > 1 {
+                    diagnostic("return: expected a function and at most one status");
+                    return Some(2);
+                }
+                let code = match args.first() {
+                    Some(v) => v.parse::<i64>().map_or(2, |n| (n & 255) as i32),
+                    None => self.last,
+                };
+                self.returning = true;
+                code
+            }
+            "break" | "continue" => self.loop_control(name == "break", args),
             "exit" => {
                 if args.len() > 1 {
                     diagnostic("exit: too many arguments");
@@ -412,10 +436,14 @@ impl Shell {
             }
         }
         if result == 0 {
-            if words.is_empty() {
+            if let Some(compound) = &command.compound {
+                result = self.compound(compound);
+            } else if words.is_empty() {
                 for (k, v) in &assignments {
                     self.set(k, v);
                 }
+            } else if let Some(body) = self.functions.get(&words[0]).cloned() {
+                result = self.call_function(&body, &words, assignments);
             } else if let Some(code) = self.builtin(&words) {
                 result = code;
             } else {
@@ -439,23 +467,29 @@ impl Shell {
                 !s.split_once('=')
                     .is_some_and(|(k, _)| syntax::identifier(k))
             });
-            if name.as_deref().is_none_or(|name| {
-                matches!(
-                    name,
-                    ":" | "true"
-                        | "false"
-                        | "exit"
-                        | "export"
-                        | "unset"
-                        | "cd"
-                        | "pwd"
-                        | "wait"
-                        | "exec"
-                        | "fg"
-                        | "bg"
-                        | "jobs"
-                )
-            }) {
+            if !matches!(p.commands[0].compound, Some(syntax::Compound::Subshell(_)))
+                && name.as_deref().is_none_or(|name| {
+                    self.functions.contains_key(name)
+                        || matches!(
+                            name,
+                            ":" | "true"
+                                | "false"
+                                | "break"
+                                | "continue"
+                                | "return"
+                                | "exit"
+                                | "export"
+                                | "unset"
+                                | "cd"
+                                | "pwd"
+                                | "wait"
+                                | "exec"
+                                | "fg"
+                                | "bg"
+                                | "jobs"
+                        )
+                })
+            {
                 return self.command(&p.commands[0], false);
             }
         }
@@ -473,6 +507,7 @@ impl Shell {
             if pid == 0 {
                 if self.monitor {
                     jobs::child_group(group);
+                    self.monitor = false;
                 }
                 if input >= 0 {
                     if unsafe { dup2(input, 0) } < 0 {
@@ -547,23 +582,33 @@ impl Shell {
             status
         }
     }
+    fn run_list(&mut self, list: &[Pipeline]) -> i32 {
+        for p in list {
+            if self.exiting || self.returning || self.flow.is_some() {
+                break;
+            }
+            if p.when == Condition::Success && self.last != 0
+                || p.when == Condition::Failure && self.last == 0
+            {
+                continue;
+            }
+            let status = self.pipeline(p);
+            self.last = if p.negate {
+                i32::from(status == 0)
+            } else {
+                status
+            };
+        }
+        self.last
+    }
+
     fn run(&mut self, text: &str) {
         match syntax::parse(text) {
             Ok(list) => {
-                for p in list {
-                    if self.exiting {
-                        break;
-                    }
-                    if p.when == Condition::Success && self.last != 0
-                        || p.when == Condition::Failure && self.last == 0
-                    {
-                        continue;
-                    }
-                    self.last = self.pipeline(&p);
-                }
+                self.run_list(&list);
             }
             Err(e) => {
-                diagnostic(e);
+                diagnostic(e.message());
                 self.last = 2;
             }
         }
@@ -655,13 +700,36 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
     if sh.monitor {
         jobs::ignore_keyboard();
     }
+    let mut pending = String::new();
     while !sh.exiting {
         if interactive {
-            let _ = write_all(2, b"$ ");
+            let _ = write_all(2, if pending.is_empty() { b"$ " } else { b"> " });
         }
         match read_line(fd) {
-            Ok(Some(line)) => sh.run(&line),
-            Ok(None) => break,
+            Ok(Some(line)) => {
+                pending.push_str(&line);
+                match syntax::parse(&pending) {
+                    Ok(list) => {
+                        sh.run_list(&list);
+                        pending.clear();
+                    }
+                    Err(syntax::Error::Incomplete(_)) => pending.push('\n'),
+                    Err(e) => {
+                        diagnostic(e.message());
+                        sh.last = 2;
+                        pending.clear();
+                        if !interactive {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(None) => {
+                if !pending.is_empty() {
+                    sh.run(&pending);
+                }
+                break;
+            }
             Err(e) => {
                 diagnostic(&format!("read error {e}"));
                 return 1;
