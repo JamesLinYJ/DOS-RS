@@ -16,7 +16,7 @@ def measure(args, work, run):
     if args.welcome:
         welcome = subprocess.check_output(["mtype", "-i", boot, "::WELCOME.TXT"])
         subprocess.run(["mcopy", "-o", "-i", boot, "-", "::AUTOEXEC.BAT"],
-                       input=b"VER\r\nTYPE WELCOME.TXT\r\n", check=True)
+                       input=b"@ECHO OFF\r\nVER\r\nTYPE WELCOME.TXT\r\n", check=True)
     env = dict(os.environ, TMPDIR=str(work), SDL_AUDIODRIVER="dummy")
     if not args.window:
         env["SDL_VIDEODRIVER"] = "dummy"
@@ -65,7 +65,7 @@ def measure(args, work, run):
                         elapsed = round(time.monotonic() - start, 3)
                         if b"DOS / 80" in data:
                             times.setdefault("banner_seconds", elapsed)
-                        if b"A:\\> " in data:
+                        if data.endswith(b"A:\\> ") and (welcome is None or welcome in data):
                             times["prompt_seconds"] = elapsed
                             break
             finally:

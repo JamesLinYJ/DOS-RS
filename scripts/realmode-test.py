@@ -5,6 +5,7 @@ import hashlib
 import mmap
 import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -83,7 +84,7 @@ def high_clusters(image):
             set_dword(lba * 512 + 492, 68002)
 
 
-def prepare(d, tools):
+def prepare(d, tools, image):
     fixtures = ROOT / "tests/native16"
     check = d / "FATCHK.EXE"
     run(
@@ -105,24 +106,18 @@ def prepare(d, tools):
     note.write_bytes(b"Subdirectory read OK\r\n")
     batch = d / "AUTOEXEC.BAT"
     batch.write_bytes(
-        b"FATCHK A\r\nC:\r\nDIR\r\nFATCHK A\r\nCOPY CHAIN.TXT CLONE.TXT\r\n"
-        b"COPY BIG.BIN BIGCOPY.BIN\r\nCOPY DATA\\INNER.TXT CROSS.TXT\r\nA:\\FILES.COM\r\nCD DATA\r\nTYPE INNER.TXT\r\nCD ..\r\nVER\r\n"
+        b"@ECHO OFF\r\nFATCHK A\r\nC:\r\nDIR\r\nFATCHK A\r\nCOPY CHAIN.TXT CLONE.TXT\r\n"
+        b"COPY BIG.BIN BIGCOPY.BIN\r\nCOPY DATA\\INNER.TXT CROSS.TXT\r\nA:\\FILES.COM\r\nCD DATA\r\nTYPE INNER.TXT\r\nCD ..\r\nVER\r\nECHO FAT-TEST-END\r\n"
     )
     boot = d / "boot.img"
-    run(
-        sys.executable,
-        ROOT / "scripts/realmode-image.py",
-        "--toolchain",
-        tools,
-        "--output",
-        boot,
-        "--file",
-        batch,
-        "--file",
-        check,
-        "--file",
-        ROOT / "tests/fixtures/dos/FILES.COM",
-    )
+    fixture_files = (batch, check, ROOT / "tests/fixtures/dos/FILES.COM")
+    if image is None:
+        run(sys.executable, ROOT / "scripts/realmode-image.py", "--toolchain", tools,
+            "--output", boot, *(arg for path in fixture_files for arg in ("--file", path)))
+    else:
+        shutil.copyfile(image, boot)
+        for path in fixture_files:
+            run("mcopy", "-o", "-i", boot, path, "::" + path.name)
     disk = d / "drive.img"
     with disk.open("wb") as out:
         out.truncate(80 * 16 * 63 * 512)
@@ -163,7 +158,7 @@ def check_log(log, cpu, filesystem="FAT32"):
     ):
         if text not in data:
             raise RuntimeError(f"missing {text!r} in {log}")
-    if data.count(b"FAT ABI OK\r\n") != 2 or data.count(b"File copied\r\n") != 3:
+    if data.count(b"FAT ABI OK\r\n") != 2 or data.count(b"1 file(s) copied\r\n") != 3:
         raise RuntimeError(f"failed executable or COPY in {log}")
 
 
@@ -199,7 +194,7 @@ def dosbox(d, proof, emu, cpu):
             env=dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy"),
         )
         try:
-            wait(log, b"\\> ", 0, vm, 45)
+            wait(log, b"\nFAT-TEST-END\r\nC:\\> ", 0, vm, 120)
         finally:
             if vm.poll() is None:
                 vm.terminate()
@@ -250,12 +245,12 @@ def qemu(d, proof, machine, image="drive.img", filesystem="FAT32"):
         vm.stdin.flush()
 
     try:
-        wait(log, b"C:\\> ", 0, vm, 30)
+        wait(log, b"\nFAT-TEST-END\r\nC:\\> ", 0, vm, 45)
         offset = log.stat().st_size
         for key in ("v", "e", "r", "ret"):
             command("sendkey " + key + " 30")
             time.sleep(0.08)
-        wait(log, b"ver\r\nDOS / 80386\r\nC:\\> ", offset, vm, 10)
+        wait(log, b"ver\r\n\r\nDOS Version 7.10\r\n\r\nC:\\> ", offset, vm, 10)
     finally:
         if vm.poll() is None:
             command("quit")
@@ -314,6 +309,7 @@ def fat16_test(d, proof, fsck):
 def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--toolchain", required=True, type=Path)
+    cli.add_argument("--image", type=Path, help="Test a copy of an existing boot/install disk")
     cli.add_argument("--ram-dir", required=True, type=Path)
     cli.add_argument("--dosbox-x", default="dosbox-x")
     cli.add_argument("--fsck", default="fsck.fat")
@@ -323,7 +319,7 @@ def main():
     proof.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=args.ram_dir) as temp:
         d = Path(temp).resolve()
-        _, disk = prepare(d, args.toolchain.resolve())
+        _, disk = prepare(d, args.toolchain.resolve(), args.image)
         for kind in ("286", "386", "i386", "x86_64"):
             if kind in ("286", "386"):
                 dosbox(d, proof, args.dosbox_x, kind)
