@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <poll.h>
+#include <stdatomic.h>
 #include <signal.h>
 #include <time.h>
 #include <sys/wait.h>
@@ -42,6 +43,21 @@ static void *worker(void *p)
     sum += initialized;
     pthread_mutex_unlock(&lock);
     return errno == (i ? EINVAL : EBADF) && zeroed[111] == initialized ? p : 0;
+}
+
+static int blocked_pipe[2];
+static atomic_int cancel_ready;
+static int cleaned;
+static void cleanup(void *data) { *(int *)data = 1; }
+static void *cancel_worker(void *unused)
+{
+    (void)unused;
+    pthread_cleanup_push(cleanup, &cleaned);
+    atomic_store(&cancel_ready, 1);
+    char byte;
+    read(blocked_pipe[0], &byte, 1);
+    pthread_cleanup_pop(0);
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -155,6 +171,15 @@ int main(int argc, char **argv)
     if (pid < 0 || nanosleep(&sec, &rem) != -1 || errno != EINTR || rem.tv_sec != 1 ||
         signals != 2 || waitpid(pid, &status, 0) != pid || status != 0)
         return 16;
+    pthread_t cancelled;
+    void *result;
+    if (pipe(blocked_pipe) || pthread_create(&cancelled, 0, cancel_worker, 0))
+        return 24;
+    while (!atomic_load(&cancel_ready)) {
+    }
+    if (pthread_cancel(cancelled) || pthread_join(cancelled, &result) ||
+        result != PTHREAD_CANCELED || !cleaned || close(blocked_pipe[0]) || close(blocked_pipe[1]))
+        return 25;
     puts("musl static TLS pthreads condvar malloc stdio fork exec wait sleep signal OK");
 
     return 0;

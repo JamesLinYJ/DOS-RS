@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 
 PORT = Path(__file__).resolve().parent
 ROOT = PORT.parents[1]
@@ -24,7 +25,7 @@ def copy(source, dest):
         shutil.copyfile(source, dest)
 
 
-def prepare(src, target, cpu):
+def prepare(src, target, cpu, archive):
     overlay = PORT / "overlay"
     copy(overlay / "syscall_arch.h", src / "arch" / target / "syscall_arch.h")
     for port, upstream in (
@@ -45,14 +46,20 @@ def prepare(src, target, cpu):
     ):
         (src / path.format(target)).unlink(missing_ok=True)
 
-    # The native kernel saves the user IP and interrupts pending syscalls.
-    # Linux's cancellation frame adjustment references its removed assembly stub.
-    cancel = src / "src/thread/pthread_cancel.c"
-    body = cancel.read_text()
-    begin = body.find("\tif (pc >= (uintptr_t)__cp_begin")
-    if begin >= 0:
-        end = body.index("\t__syscall(SYS_tkill", begin)
-        cancel.write_text(body[:begin] + body[end:])
+    # Keep musl's public cancellation state machine and cleanup handling.
+    # Its Linux signal handler normally rewrites ucontext to reenter an assembly
+    # stub. DOS-RS interrupts the thread in the kernel and calls a user handler.
+    with tarfile.open(archive) as release:
+        member = release.extractfile("musl-1.2.6/src/thread/pthread_cancel.c")
+        body = member.read().decode()
+    begin = body.index("static void _sigaddset(")
+    end = body.index("void __testcancel()", begin)
+    body = body[:begin] + "hidden void __dos_cancel_signal(int);\n\n" + body[end:]
+    body = body.replace(".sa_flags = SA_SIGINFO | SA_RESTART | SA_ONSTACK,",
+                        ".sa_flags = 0,")
+    body = body.replace(".sa_sigaction = cancel_handler",
+                        ".sa_handler = __dos_cancel_signal")
+    generated(src / "src/thread/pthread_cancel.c", body)
 
     table = ROOT / "native-exec/libc/syscalls.def"
     declarations = []
@@ -86,7 +93,7 @@ def install(arch, archive, work):
         with tempfile.TemporaryDirectory(dir=work) as tmp:
             subprocess.run(["tar", "-xzf", archive], cwd=tmp, check=True)
             (Path(tmp) / src.name).rename(src)
-    prepare(src, target, cpu)
+    prepare(src, target, cpu, archive)
     obj = work / "obj"
     obj.mkdir(exist_ok=True)
     sysroot = work / "sysroot"

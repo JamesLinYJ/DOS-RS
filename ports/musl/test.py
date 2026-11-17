@@ -21,6 +21,8 @@ def check(arch, archive, ram, proof):
     with tempfile.TemporaryDirectory(dir=ram) as temporary:
         work = Path(temporary)
         binary = work / "libtest.elf"
+        poll_test = work / "polltest.elf"
+        compile(arch, [ROOT / "tests/native-poll/poll.c"], poll_test)
         compile(arch, [PORT / "tests/libc.c"], binary)
         headers = subprocess.check_output([arch + "-elf-readelf", "-lW", binary])
         if b" TLS " not in headers or b"INTERP" in headers:
@@ -30,7 +32,7 @@ def check(arch, archive, ram, proof):
         with disk.open("wb") as f:
             f.truncate(4 << 20)
         subprocess.run(["mformat", "-i", disk, "::"], check=True)
-        subprocess.run(["mcopy", "-i", disk, binary, "::"], check=True)
+        subprocess.run(["mcopy", "-i", disk, binary, poll_test, "::"], check=True)
         mode = "bios" if arch == "i686" else "uefi"
         launch = qemu.boot_args(kernel, arch, work / "boot", 4, mode, esp_mib=36)
         launch += ["-accel", "tcg,thread=multi", "-drive", "if=ide,format=raw,file=" + str(disk)]
@@ -43,12 +45,17 @@ def check(arch, archive, ram, proof):
             report = shell.log.read_bytes()
             if PASSED not in report or b"echo $?\r\n0\r\n" not in report:
                 raise RuntimeError("libc assertions failed: " + repr(report[-500:]))
+            shell.command("polltest.elf > poll.out")
+            shell.command("echo $?", expect=b"\r\n0\r\n")
         finally:
             shell.close()
         expected = b"argc=2 sum=21 tls=37\n"
         data = subprocess.check_output(["mcopy", "-i", disk, "::musl.txt", "-"])
         if data != expected:
             raise RuntimeError("stopped disk differs: " + repr(data))
+        poll = subprocess.check_output(["mcopy", "-i", disk, "::poll.out", "-"])
+        if poll != b"poll: descriptors, blocking pipe, peer close, timeout and signal mask passed\n":
+            raise RuntimeError("unexpected poll/ppoll result: " + repr(poll))
         print(f"{arch}/{mode} musl-1.2.6: {sysroot}; {len(data)} stdio bytes matched")
 
 

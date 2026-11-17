@@ -8,9 +8,11 @@ from build import PORT, ROOT
 
 def compile(arch, sources, out):
     root = ROOT / "target/musl" / arch / "sysroot"
+    gcc = arch + "-elf-gcc"
+    builtin = subprocess.check_output([gcc, "-print-file-name=include"], text=True).strip()
     flags = ["-mno-red-zone"] if arch == "x86_64" else []
     subprocess.run([
-        arch + "-elf-gcc", "-O2", "-fno-pie", "-nostdinc", "-isystem", root / "include",
+        gcc, "-O2", "-fno-pie", "-nostdinc", "-isystem", root / "include", "-isystem", builtin,
         *flags, "-static", "-nostdlib", "-Wl,-z,max-page-size=4096", "-Wl,-z,noexecstack",
         "-Wl,-T," + str(PORT / "user.ld"), root / "lib/crt1.o", *sources,
         "-Wl,--start-group", root / "lib/libc.a", "-lgcc", "-Wl,--end-group", "-o", out,
