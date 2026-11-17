@@ -542,7 +542,7 @@ impl ProcessContext {
             _ => return Poll::Ready(Err(-25)),
         };
         let mut t = tty.borrow();
-        if matches!(request,0x5402..=0x5404 | 0x5409..=0x540b | 0x5414)
+        if matches!(request,0x5402..=0x5404 | 0x5409..=0x540b | 0x5410 | 0x5414)
             && self.background_output(&t)?
         {
             return t.waiting.wait(cx);
@@ -551,6 +551,26 @@ impl ProcessContext {
             && !t.pending_echo.is_empty()
         {
             return t.waiting_output.wait(cx);
+        }
+        if matches!(request, 0x540f | 0x5410 | 0x5429) {
+            use dosrs_native_exec::Call;
+            drop(t);
+            drop(desc);
+            if request == 0x5410 {
+                let mut pgid = [0; 4];
+                image.read(arg, &mut pgid).map_err(|_| -14isize)?;
+                return Poll::Ready(self.tty_group(fd, Call::Tcsetpgrp, i32::from_le_bytes(pgid)));
+            }
+            let call = if request == 0x540f {
+                Call::Tcgetpgrp
+            } else {
+                Call::Tcgetsid
+            };
+            let pgid = self.tty_group(fd, call, 0)? as u32;
+            image
+                .write(arg, &pgid.to_le_bytes())
+                .map_err(|_| -14isize)?;
+            return Poll::Ready(Ok(0));
         }
         // Writes to the screen complete synchronously. Only keyboard echo can queue
         // while output is stopped; application writes wait for flow to resume.

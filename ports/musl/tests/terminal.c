@@ -45,6 +45,10 @@ int main(void)
     CHECK(tcgetattr(fds[0], &actual) < 0 && errno == ENOTTY);
     CHECK(!isatty(-1) && errno == EBADF);
     CHECK(close(fds[0]) == 0 && close(fds[1]) == 0);
+    CHECK(tcgetpgrp(0) == getpgrp() && tcgetsid(0) == getsid(0));
+    CHECK(tcsetpgrp(1, getpgrp()) == 0);
+    CHECK(ioctl(1, TIOCGPGRP, (void *)0) == -1 && errno == EFAULT);
+    CHECK(ioctl(1, TIOCSPGRP, (void *)0) == -1 && errno == EFAULT);
     CHECK(ioctl(1, TIOCGWINSZ, &win) == 0 && win.ws_row == 25 && win.ws_col == 80);
     CHECK(ioctl(0, TIOCSWINSZ, &win) == 0);
     CHECK(tcdrain(1) == 0 && tcflush(0, TCIFLUSH) == 0);

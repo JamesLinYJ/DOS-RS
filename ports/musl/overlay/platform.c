@@ -151,14 +151,6 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
     case SYS_kill:
         return sys_kill(a, b);
     case SYS_ioctl:
-        if (b == TIOCGPGRP || b == TIOCGSID) {
-            long value = b == TIOCGPGRP ? sys_tcgetpgrp(a) : sys_tcgetsid(a);
-            if (value >= 0)
-                *(int *)c = (int)value;
-            return value >= 0 ? 0 : value;
-        }
-        if (b == TIOCSPGRP)
-            return sys_tcsetpgrp(a, *(int *)c);
         return sys_ttyio(a, b, c);
     case SYS_fcntl: {
         int ofd = b == F_OFD_GETLK || b == F_OFD_SETLK || b == F_OFD_SETLKW;
