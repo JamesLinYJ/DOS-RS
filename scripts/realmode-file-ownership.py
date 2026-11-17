@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -50,7 +51,7 @@ def mcopy(image, src, dest, data=None):
 
 def boot(work, proof, name, cpu, cyl, commands, image, dosbox):
     floppy = work / "boot.img"
-    shutil.copyfile(image, floppy)
+    floppy.write_bytes(image)
     batch = "\r\n".join(["C:", *commands, ""]).encode("ascii")
     mcopy(floppy, "-", "::AUTOEXEC.BAT", batch)
     serial = proof / (name + ".serial")
@@ -99,6 +100,23 @@ def boot(work, proof, name, cpu, cyl, commands, image, dosbox):
     return data
 
 
+def free_bytes(disk):
+    listing = subprocess.check_output(["mdir", "-i", disk, "::"], env=dict(os.environ, LC_ALL="C"))
+    match = re.search(rb"([\d ]+) bytes free", listing)
+    if match is None:
+        raise RuntimeError(f"cannot determine free space from mdir: {listing!r}")
+    return int(match.group(1).replace(b" ", b""))
+
+
+def fill_volume(disk):
+    # The sparse host file and the virtual disk both live in the private RAM directory.
+    with tempfile.TemporaryFile(dir=disk.parent) as padding:
+        padding.truncate(free_bytes(disk) - 512)
+        subprocess.run(["mcopy", "-i", disk, "-", "::FILLER.BIN"], stdin=padding, check=True)
+    if free_bytes(disk) != 512:
+        raise RuntimeError("expected exactly one free 512-byte cluster before the near-full write")
+
+
 def matrix(args, exe, cpu, fat):
     # Full cylinders allow DOSBox-X and QEMU to expose identical sector counts.
     cyl = 16 if fat == 16 else 68
@@ -110,22 +128,61 @@ def matrix(args, exe, cpu, fat):
         with disk.open("wb") as stream:
             stream.truncate(cyl * 16 * 63 * 512)
         subprocess.run([fat_tool("mkfs.fat"), "-F", str(fat), "-s", "1", disk], check=True)
-        mcopy(disk, exe, "::OWNER.EXE")
+        mcopy(disk, "-", "::OWNER.EXE", exe)
         mcopy(disk, ROOT / "tests/fixtures/dos/FILES.COM", "::FILES.COM")
+        if args.suite == "all":
+            # Input for the historical COM child, which also creates its own API.TXT.
+            mcopy(disk, "-", "::BIG.BIN", bytes(65538) + b"ABCD")
+            mcopy(disk, "-", "::SEQ.BIN", b"0123456789")
+            mcopy(disk, "-", "::GUARD.BIN", bytes(range(256)) * 4)
+
         def run(phase, commands):
             return boot(work, args.proof, prefix + "-" + phase, cpu, cyl, commands,
                         args.image, args.dosbox)
         write = run("write", ["OWNER N", "OWNER A", "OWNER B"])
         if f"C: FAT{fat}".encode() not in write or write.count(b"OWN: OK") != 3 or b"OWN: child ran" not in write:
             failures.append(f"DOS API or EXEC failed: {write!r}")
-        read = run("reboot", ["OWNER READ"])
-        if b"OWN: OK" not in read:
+        if args.suite == "all":
+            if b"INT21 7.10 FILE API OK" not in write:
+                failures.append("the COM child failed its DOS file API check")
+            advanced = run("handles-stream", ["OWNER HANDLES", "OWNER STREAM", "OWNER SHORT"])
+            if advanced.count(b"OWN: OK") != 3 or b"OWN: child closed inherited handles" not in advanced:
+                failures.append(f"handle/stream DOS checks: {advanced!r}")
+            fill_volume(disk)
+            full = run("full", ["OWNER FULL"])
+            if b"OWN: OK" not in full:
+                failures.append(f"near-full DOS writes: {full!r}")
+        read = run("reboot", ["OWNER READ", "OWNER LARGE"] if args.suite == "all" else ["OWNER READ"])
+        if read.count(b"OWN: OK") != (2 if args.suite == "all" else 1):
             failures.append(f"DOS read after reboot: {read!r}")
-        for filename, test in TRIALS.items():
-            value = mcopy(disk, "::" + filename, "-")
-            print(f"{prefix} {test}: {value.hex()}", flush=True)
-            if value != PAYLOAD:
-                failures.append(f"{test} expected {PAYLOAD.hex()}, got {value.hex()}")
+        expected = {name: PAYLOAD for name in TRIALS}
+        if args.suite == "all":
+            expected["API.TXT"] = b"ABCD"
+            expected["GUARD.BIN"] = bytes(range(256)) * 4 + b"\xac" * 512
+            expected["SEQ.BIN"] = b"0123456789"
+            expected["STREAM.BIN"] = bytes(
+                (block ^ (block >> 8) ^ i ^ (i >> 8)) & 255
+                for block in range(257) for i in range(512)
+            )[:0x20017]
+        # mtools 4.0.49 rejects a valid FAT16 link to the very last data
+        # cluster when the volume is full. Extract with an independent FAT reader.
+        unzip = shutil.which("7zz") or shutil.which("7z")
+        if unzip is None:
+            raise FileNotFoundError("7zz or 7z is required for raw FAT extraction")
+        report = [f"boot-image sha256 {hashlib.sha256(args.image).hexdigest()}"]
+        for filename, want in expected.items():
+            try:
+                value = subprocess.check_output([unzip, "x", "-tFAT", "-so", disk, filename])
+            except subprocess.CalledProcessError:
+                failures.append(f"{filename} unavailable after reboot")
+                continue
+            digest = hashlib.sha256(value).hexdigest()
+            summary = value.hex() if len(value) <= 16 else digest
+            print(f"{prefix} {filename}: {len(value)} bytes {summary}", flush=True)
+            report.append(f"{filename} {len(value)} bytes sha256 {digest} match={value == want}")
+            if value != want:
+                failures.append(f"{filename} expected {hashlib.sha256(want).hexdigest()}, got {digest}")
+        (args.proof / (prefix + "-bytes.txt")).write_text("\n".join(report) + "\n")
         fsck = subprocess.run([fat_tool("fsck.fat"), "-n", disk], capture_output=True)
         (args.proof / (prefix + "-fsck.txt")).write_bytes(fsck.stdout + fsck.stderr)
         if fsck.returncode:
@@ -137,15 +194,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for option in ("toolchain", "image", "ram-dir", "proof"):
         parser.add_argument("--" + option, type=Path, required=True)
+    parser.add_argument("--suite", choices=("regression", "all"), default="all")
     parser.add_argument("--cpu", choices=("286", "386", "both"), default="both")
     parser.add_argument("--fat", choices=("16", "32", "both"), default="both")
     parser.add_argument("--dosbox", default=shutil.which("dosbox-x") or "dosbox-x")
     args = parser.parse_args()
     args.proof = args.proof.resolve()
     args.proof.mkdir(parents=True, exist_ok=True)
-    args.image = args.image.resolve()
-    print("Boot image SHA-256", hashlib.sha256(args.image.read_bytes()).hexdigest(), flush=True)
-    exe = client(args.toolchain.resolve())
+    args.image = args.image.read_bytes()
+    print("Boot image SHA-256", hashlib.sha256(args.image).hexdigest(), flush=True)
+    exe = client(args.toolchain.resolve()).read_bytes()
     failures = []
     for cpu in (("286", "386") if args.cpu == "both" else (args.cpu,)):
         for fat in ((16, 32) if args.fat == "both" else (int(args.fat),)):
