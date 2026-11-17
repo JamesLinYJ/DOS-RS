@@ -1,6 +1,7 @@
 //! Native VFS syscall boundary. Paths are NUL-terminated byte strings.
 #[path = "paths/at.rs"]
 mod at;
+pub(super) use at::words;
 #[path = "paths/attributes.rs"]
 mod attributes;
 use super::{executable::errno, io::ProcessContext};

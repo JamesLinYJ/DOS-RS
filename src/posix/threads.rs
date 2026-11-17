@@ -375,6 +375,7 @@ impl Threads {
             };
             let [a, b, c] = args;
             p.caller_mask = self.0[i].registers.as_ref().unwrap().signal_mask;
+            let mut sigpipe = matches!(call, Call::Write | Call::Writev);
             let result = match call {
                 Call::Exit => return Poll::Ready(Ok(a as u8)),
                 Call::Fork => Poll::Ready((|| {
@@ -509,10 +510,18 @@ impl Threads {
                 Call::Fcntl if matches!(b, 5..=7 | 36..=38) => {
                     super::io::record::call(&mut self.0[i].lock_request, p, image, args, cx)
                 }
+                Call::Socketpair => Poll::Ready(super::io::socket::socketpair(p, image, args)),
+                Call::Send | Call::Recv => {
+                    super::io::socket::transfer(p, image, call, args, cx, &mut sigpipe)
+                }
                 Call::Ttyio => p.tty_ioctl(image, a, b, c, cx),
                 _ => file_call(image, p, cx, call, args, &mut self.0[i].tty_read),
             };
             if let Poll::Ready(value) = result {
+                if value == Err(-32) && sigpipe {
+                    let tid = self.0[i].tid;
+                    let _ = self.thread_signal(p.getpid(), p.uid, tid as i32, 13);
+                }
                 self.0[i].reply(value.map(|n| n as isize).unwrap_or_else(|e| e));
             }
         }

@@ -10,6 +10,8 @@ use core::{
 };
 use dosrs_native_posix::{Access, Errno, Fd, Open, Process, Result, Whence};
 
+#[path = "io/socket.rs"]
+pub(super) mod socket;
 #[path = "io/terminal.rs"]
 mod terminal;
 pub(super) use terminal::{ReadClock, Terminal};
@@ -23,6 +25,7 @@ pub(super) enum Description {
     Input(Arc<KernelCell<Terminal>>),
     Output(Arc<KernelCell<Terminal>>),
     Pipe(pipe::End),
+    Socket(socket::End),
     File {
         object: File,
         access: Access,
@@ -52,6 +55,8 @@ impl Description {
         match self {
             Self::Input(terminal) => terminal.borrow().read(cx, out, timer, nonblock),
             Self::Pipe(end) => end.read(cx, out),
+            Self::Socket(_) if out.is_empty() => Poll::Ready(Ok(0)),
+            Self::Socket(end) => end.recv(cx, out, 0, nonblock),
             Self::File {
                 object,
                 access,
@@ -65,10 +70,11 @@ impl Description {
             _ => Poll::Ready(Err(Errno::BadFd)),
         }
     }
-    fn write(&mut self, cx: &Context, data: &[u8]) -> Poll<Result<usize>> {
+    fn write(&mut self, cx: &Context, data: &[u8], nonblock: bool) -> Poll<Result<usize>> {
         match self {
             Self::Output(tty) => tty.borrow().write(cx, data),
             Self::Pipe(end) => end.write(cx, data),
+            Self::Socket(end) => end.send(cx, data, nonblock),
             Self::File {
                 object,
                 access,
@@ -367,6 +373,7 @@ impl ProcessContext {
         let mode = match &*desc {
             Description::File { object, .. } => return object.metadata(),
             Description::Pipe(_) => 0o010600,
+            Description::Socket(_) => 0o140777,
             _ => 0o020666,
         };
         Ok(vfs::posix::Metadata {
@@ -402,6 +409,17 @@ impl ProcessContext {
             }
         }
         result
+    }
+    fn set_pair(&mut self, (left, right): (Handle, Handle)) -> Result<(Fd, Fd)> {
+        let mut free = (0..OPEN_MAX).filter(|&fd| self.fds.get(fd).is_none_or(Option::is_none));
+        let first = free.next().ok_or(Errno::TooManyFiles)?;
+        let second = free.next().ok_or(Errno::TooManyFiles)?;
+        self.fds
+            .try_reserve((second + 1).saturating_sub(self.fds.len()))
+            .map_err(|_| Errno::NoMemory)?;
+        self.set(first, left);
+        self.set(second, right);
+        Ok((first, second))
     }
     fn available(&self) -> Result<Fd> {
         let fd = self
@@ -442,6 +460,7 @@ impl ProcessContext {
             Description::Input(tty) => tty.borrow().readiness(events, false, waker),
             Description::Output(tty) => tty.borrow().readiness(events, true, waker),
             Description::Pipe(end) => end.readiness(events, waker),
+            Description::Socket(end) => end.readiness(events, waker),
             Description::File { .. } => Ok(events & (poll::READ | poll::WRITE)),
         }
     }
@@ -481,7 +500,7 @@ impl ProcessContext {
                 return tty.waiting.wait(cx);
             }
         }
-        handle.blocking(handle.borrow().write(cx, bytes))
+        handle.blocking(handle.borrow().write(cx, bytes, handle.nonblock()))
     }
     pub fn redirect(&mut self, target: Fd, path: &str, flags: Open) -> Result<()> {
         let fd = self.open(path, flags)?;
@@ -589,19 +608,7 @@ impl Process for ProcessContext {
         Ok(target)
     }
     fn pipe(&mut self) -> Result<(Fd, Fd)> {
-        let first = self.available()?;
-        let (r, w) = pipe_handles();
-        self.set(first, r);
-        match self.available() {
-            Ok(second) => {
-                self.set(second, w);
-                Ok((first, second))
-            }
-            Err(e) => {
-                self.fds[first] = None;
-                Err(e)
-            }
-        }
+        self.set_pair(pipe_handles())
     }
     async fn read(&mut self, fd: Fd, out: &mut [u8]) -> Result<usize> {
         timeslice(&mut self.io_budget).await;

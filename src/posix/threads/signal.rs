@@ -95,7 +95,7 @@ impl Member {
                 State::Ready
             }
             State::Call(
-                Call::Read | Call::Write | Call::Readv | Call::Writev | Call::Waitpid,
+                Call::Read | Call::Write | Call::Readv | Call::Writev | Call::Recv | Call::Send | Call::Waitpid,
                 _,
             ) if a.flags & 0x1000_0000 != 0 => self.state,
             State::Ready => State::Ready,

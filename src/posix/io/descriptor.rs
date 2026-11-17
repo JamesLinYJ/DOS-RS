@@ -28,6 +28,7 @@ impl Shared {
             Description::Input(_) => 0,
             Description::Output(_) => 1,
             Description::Pipe(end) => u32::from(!end.read_end),
+            Description::Socket(_) => 2,
             Description::File { access, append, .. } => {
                 (match access {
                     Access::Read => 0,

@@ -7,7 +7,7 @@ const REMOVEDIR: usize = 0x200;
 const FOLLOW: usize = 0x400;
 const EMPTY: usize = 0x1000;
 
-pub(super) fn words<const N: usize>(image: &AddressSpace, address: usize) -> Result<[usize; N]> {
+pub(in crate::posix) fn words<const N: usize>(image: &AddressSpace, address: usize) -> Result<[usize; N]> {
     let mut result = [0; N];
     for (i, v) in result.iter_mut().enumerate() {
         let mut bytes = [0; size_of::<usize>()];

@@ -432,6 +432,18 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
         return sys_readv(a, b, c);
     case SYS_close:
         return sys_close(a);
+    case SYS_socketpair: {
+        long options[2] = {c, d};
+        return sys_socketpair(a, b, (long)options);
+    }
+    case SYS_sendto:
+    case SYS_recvfrom: {
+        /* Connected local sockets have no destination address. */
+        if (e || f) return -EOPNOTSUPP;
+        long options[2] = {c, d};
+        return n == SYS_sendto ? sys_send(a, b, (long)options)
+                               : sys_recv(a, b, (long)options);
+    }
     case SYS_pipe:
         return sys_pipe(a);
     case SYS_pipe2:

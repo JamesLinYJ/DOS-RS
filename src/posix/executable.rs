@@ -185,6 +185,9 @@ pub(super) fn file_call(
         return Poll::Ready(Ok(count));
     }
     if matches!(call, Call::Read | Call::Write) {
+        if call == Call::Write {
+            p.check_record_size(fd, length)?;
+        }
         let length = length.min(p.transfer_limit(fd));
         image
             .check(address, length, call == Call::Read)
@@ -302,6 +305,8 @@ pub(super) fn errno(error: Errno) -> isize {
         Errno::NoSpace => 28,
         Errno::TooManyFiles => 24,
         Errno::Io => 5,
+        Errno::NoMemory => 12,
+        Errno::MessageSize => 90,
         Errno::BrokenPipe => 32,
         Errno::NotDirectory => 20,
         Errno::ReadOnly => 30,

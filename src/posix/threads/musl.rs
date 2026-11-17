@@ -221,6 +221,9 @@ pub(super) fn vectors(
     }
     // Transfer one kernel I/O block atomically, even when multiple iovecs
     // contribute to a single PIPE_BUF-sized write.
+    if !reading {
+        p.check_record_size(fd, size)?;
+    }
     let mut bytes = [0; 4096];
     let buf = &mut bytes[..size.min(4096)];
     let transfer = if reading {

@@ -29,6 +29,15 @@ def prepare_exec(src, archive):
     copy(PORT / "overlay/exec_script.c", src / "src/process/exec_script.c")
     with tarfile.open(archive) as release:
         original = release.extractfile("musl-1.2.6/src/process/execvp.c").read().decode()
+        spawn = release.extractfile("musl-1.2.6/src/process/posix_spawn.c").read().decode()
+    # DOS-RS gives the child a private address space and copies the calling
+    # thread. Keep musl's file actions, errno pipe and signal-mask protocol.
+    clone = "pid = __clone(child, stack+sizeof stack,\n\t\tCLONE_VM|CLONE_VFORK|SIGCHLD, &args);"
+    if spawn.count(clone) != 1:
+        raise ValueError("unexpected upstream posix_spawn implementation")
+    spawn = spawn.replace("\tchar stack[1024+PATH_MAX];\n", "").replace(
+        clone, "pid = __syscall(SYS_fork);\n\tif (!pid) child(&args);")
+    generated(src / "src/process/posix_spawn.c", spawn)
     declaration = "hidden int __dos_exec_script(const char *, char *const [], char *const []);"
     original = original.replace("extern char **__environ;", "extern char **__environ;\n" + declaration)
     original = original.replace(

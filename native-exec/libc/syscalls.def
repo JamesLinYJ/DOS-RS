@@ -106,3 +106,6 @@ getaffinity 163 3
 mountinfo 164 3
 getgroups 165 2
 setgroups 166 2
+socketpair 167 3
+recv 168 3
+send 169 3
