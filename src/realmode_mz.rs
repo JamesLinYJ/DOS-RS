@@ -3,11 +3,11 @@ use dosrs_realmode::{
     self as pc, PROGRAM,
     system::{dw, sd, sw, w},
 };
-pub const FILE: u16 = 0x2000;
+// The boot handoff's 512-byte scratch page becomes the EXEC header buffer.
+const HEADER: u16 = 0x3280;
 
 use super::arena;
 const REQUEST: u16 = 0x35e0;
-const MEMORY: u16 = 0xffff;
 struct Source {
     unit: u16,
     first: u32,
@@ -18,12 +18,6 @@ impl Source {
         if pos > self.size || count as u32 > self.size - pos {
             return false;
         }
-        if self.unit == MEMORY {
-            if dest != FILE {
-                pc::copy_bytes(FILE, pos as u16, dest, 0, count)
-            }
-            return true;
-        }
         sd(REQUEST, 0, self.first);
         sd(REQUEST, 4, self.size);
         sd(REQUEST, 8, pos);
@@ -33,45 +27,44 @@ impl Source {
         pc::control(24, self.unit, 0, 0) != 0
     }
     fn run(&self, volume: &mut pc::disk::Volume, psp: u16, paragraphs: u16) -> bool {
-        if !self.read(0, 28, FILE) || w(FILE, 0) != 0x5a4d {
+        if !self.read(0, 28, HEADER) || w(HEADER, 0) != 0x5a4d {
             return false;
         }
-        let pages = w(FILE, 4);
-        let tail = w(FILE, 2);
+        let pages = w(HEADER, 4);
+        let tail = w(HEADER, 2);
         if pages == 0 || tail > 511 {
             return false;
         }
         // NE and LE files append sections beyond the DOS load module. EXEC
         // loads only the bytes declared by the MZ header, including its relocs.
         let declared = ((pages as u32 - 1) << 9) + if tail == 0 { 512 } else { tail as u32 };
-        let header = (w(FILE, 8) as u32) << 4;
-        let table = w(FILE, 24);
-        let count = w(FILE, 6);
+        let header = (w(HEADER, 8) as u32) << 4;
+        let table = w(HEADER, 24);
+        let count = w(HEADER, 6);
         if declared > self.size
             || header < 28
             || header > declared
-            || header > 65520
             || (count != 0 && (table < 28 || table as u32 + count as u32 * 4 > header))
         {
             return false;
         }
         let size = declared - header;
         let load_paras = (size + 15) >> 4;
-        let min = w(FILE, 10);
+        let min = w(HEADER, 10);
         let mut available = paragraphs - 16;
         if load_paras + u32::from(min) > u32::from(available) {
             return false;
         }
         // MZ min=max=0 places the module at the top of its allocation. The
         // PSP remains at the bottom; loaders use the space between PSP and CS.
-        if min == 0 && w(FILE, 12) == 0 {
+        if min == 0 && w(HEADER, 12) == 0 {
             available = load_paras as u16;
         }
         let image = psp + paragraphs - available;
-        let cs = w(FILE, 22);
-        let ip = w(FILE, 20);
-        let ss = w(FILE, 14);
-        let sp = w(FILE, 16);
+        let cs = w(HEADER, 22);
+        let ip = w(HEADER, 20);
+        let ss = w(HEADER, 14);
+        let sp = w(HEADER, 16);
         let stack = ((ss as u32) << 4) + if sp == 0 { 65536 } else { sp as u32 };
         if ((cs as u32) << 4) + ip as u32 >= size
             || ss >= available
@@ -79,9 +72,6 @@ impl Source {
             || stack > (available as u32) << 4
             || sp == 1
         {
-            return false;
-        }
-        if !self.read(0, header as u16, FILE) {
             return false;
         }
         let mut done = 0;
@@ -98,10 +88,19 @@ impl Source {
         }
         let mut i = 0;
         while i < count {
-            let rec = table + i * 4;
-            let off = w(FILE, rec);
-            let seg = w(FILE, rec + 2);
-            let linear = seg as u32 * 16 + off as u32;
+            // Each relocation occupies four bytes. The table may span more
+            // than one near segment; only the current sector is resident.
+            let rec = (i & 127) * 4;
+            if rec == 0 {
+                let remaining = count - i;
+                let entries = if remaining < 128 { remaining } else { 128 };
+                if !self.read(u32::from(table) + u32::from(i) * 4, entries * 4, HEADER) {
+                    return false;
+                }
+            }
+            let off = w(HEADER, rec);
+            let seg = w(HEADER, rec + 2);
+            let linear = u32::from(seg) * 16 + u32::from(off);
             if linear + 1 >= size {
                 return false;
             }
@@ -113,14 +112,6 @@ impl Source {
         pc::start_exe(volume, psp, image + cs, ip, image + ss, sp);
         true
     }
-}
-pub fn run(volume: &mut pc::disk::Volume, size: u16) -> bool {
-    Source {
-        unit: MEMORY,
-        first: 0,
-        size: size as u32,
-    }
-    .run(volume, PROGRAM, arena::end() - PROGRAM)
 }
 pub fn open(volume: &mut pc::disk::Volume, drive: u16, original: u32, split: u16, n: u16) -> bool {
     let mut first = 0;
@@ -189,9 +180,9 @@ pub fn child(volume: &mut pc::disk::Volume, parent: u16, ss: u16, sp: u16) -> u3
     let saved_dta = dw(data, dta);
     sw(data, dta, 0x80);
     sw(data, dta + 2, child);
-    let ok = if !source.read(0, 2, FILE) {
+    let ok = if !source.read(0, 2, HEADER) {
         false
-    } else if w(FILE, 0) == 0x5a4d {
+    } else if w(HEADER, 0) == 0x5a4d {
         source.run(volume, child, paragraphs)
     } else if size > 0xff00 || size + 0x102 > u32::from(paragraphs) * 16 {
         false
@@ -208,7 +199,7 @@ pub fn child(volume: &mut pc::disk::Volume, parent: u16, ss: u16, sp: u16) -> u3
         false
     };
     sd(data, dta, saved_dta);
-    super::files::reap(volume, child);
+    super::files::reap(child);
     pc::copy_bytes(child, 0x0a, 0, 0x22 * 4, 12);
     arena::select(parent);
     arena::discard(child);

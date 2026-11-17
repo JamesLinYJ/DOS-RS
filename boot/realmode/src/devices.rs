@@ -44,13 +44,7 @@ impl Devices {
         if !pc::filename(CONFIG, at, stop - at) {
             return false;
         }
-        let mut name = [0u8; 11];
-        let mut i = 0;
-        while i < 11 {
-            name[i as usize] = pc::byte(pc::COMMAND, 128 + i) as u8;
-            i += 1;
-        }
-        let Some(file) = media.lookup(&name) else {
+        let Some(file) = super::named_file(media) else {
             return false;
         };
         let seg = self.next;
@@ -71,7 +65,7 @@ impl Devices {
         {
             return false;
         }
-        i = 0;
+        let mut i = 0;
         while i < 24 {
             pc::store(REQUEST, i, 0);
             i += 1;
@@ -111,7 +105,11 @@ impl Devices {
             sw(self.last, 0, 0);
             sw(self.last, 2, seg);
         } else {
-            sd(pc::dos_tables::LIST_SEG, pc::dos_tables::LIST + 0x22, u32::from(seg) << 16);
+            sd(
+                pc::dos_tables::LIST_SEG,
+                pc::dos_tables::LIST + 0x22,
+                u32::from(seg) << 16,
+            );
         }
         self.last = seg;
         self.next = (((top + 4095) >> 12) << 8) as u16;

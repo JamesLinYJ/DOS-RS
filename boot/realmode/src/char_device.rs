@@ -2,7 +2,7 @@
 use super::devices::{REQUEST, device_call};
 use dosrs_realmode::{
     self as pc, byte,
-    dos_tables::{LIST, LIST_SEG, SEG, entry},
+    dos_tables::{LIST, LIST_SEG, SEG, entry, handle, set_handle},
     store,
     system::{dw, sd, sw, w},
 };
@@ -11,7 +11,6 @@ const NUL: u32 = ((LIST_SEG as u32) << 16) | (LIST as u32 + 0x22);
 const REGISTRY: u16 = 0xa00;
 const ERROR: u32 = 0x10000;
 const UNHANDLED: u32 = u32::MAX;
-const END: u16 = 20;
 
 pub fn reset() {
     sw(SEG, REGISTRY, 0);
@@ -183,16 +182,17 @@ fn release(psp: u16, fd: u16, s: u16) -> u32 {
             return rc;
         }
     }
-    store(psp, 0x18 + fd, 255);
+    set_handle(psp, fd, 255);
     sw(SEG, s, refs - 1);
     0
 }
 
 pub fn close(psp: u16, fd: u16) -> u16 {
-    if fd < 5 || fd >= END || byte(psp, 0x18 + fd) != fd {
+    let sys = handle(psp, fd);
+    if sys < 5 || sys >= pc::dos_tables::COUNT {
         return 0;
     }
-    let s = entry(fd);
+    let s = entry(sys);
     if w(SEG, s) == 0 || w(SEG, s + 5) & 0x80 == 0 {
         return 0;
     }
@@ -219,15 +219,16 @@ fn service(ss: u16, sp: u16, psp: u16) -> u32 {
     if ioctl && !matches!(ax, 0x4400 | 0x4402 | 0x4403 | 0x4406 | 0x4407) {
         return UNHANDLED;
     }
-    if fd >= END || byte(psp, 0x18 + fd) != fd || w(SEG, entry(fd)) == 0 {
+    let sys = handle(psp, fd);
+    if sys >= pc::dos_tables::COUNT || w(SEG, entry(sys)) == 0 {
         return if ioctl { ERROR + 6 } else { UNHANDLED };
     }
-    let s = entry(fd);
+    let s = entry(sys);
     let flags = w(SEG, s + 5);
     let device = flags & 0x80 != 0;
     let h = dw(SEG, s + 7);
     if ax == 0x4400 {
-        let high = if device && fd >= 5 {
+        let high = if device && sys >= 5 {
             if !valid(h) {
                 return ERROR + 6;
             }
@@ -241,13 +242,13 @@ fn service(ss: u16, sp: u16, psp: u16) -> u32 {
         sw(ss, sp + 6, value);
         return u32::from(value);
     }
-    if !device || (fd < 5 && h != pc::dos_tables::CON) {
+    if !device || (sys < 5 && h != pc::dos_tables::CON) {
         if ax == 0x4407 {
             return if device { 255 } else { 0 };
         }
         return if ioctl { ERROR + 1 } else { UNHANDLED };
     }
-    if fd < 5 && (ax >> 8 == 0x3e || (ax >> 8 == 0x40 && (fd == 1 || fd == 2))) {
+    if sys < 5 && (ax >> 8 == 0x3e || (ax >> 8 == 0x40 && (sys == 1 || sys == 2))) {
         return UNHANDLED;
     }
     if !valid(h) {

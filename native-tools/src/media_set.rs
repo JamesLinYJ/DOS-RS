@@ -1,10 +1,15 @@
-//! The installer stages disk 2 in the DOS file I/O arena while it owns the CPU.
-//! No DOS file handles are open during setup. BIOS FAT buffers start at 3000h.
+//! Disk 2 stays in the installer's own PSP allocation, after its data and stack.
 use dosrs_realmode::{
     byte, copy_bytes,
     system::{File, Media},
 };
-const ARENA: u16 = 0x2000;
+unsafe extern "Rust" {
+    fn edit_heap() -> u16;
+}
+fn arena() -> u16 {
+    // The rust16 DOS runtime reserves 16 KiB above SS for its stack/near data.
+    unsafe { edit_heap() }
+}
 pub const CONFIG_BUFFER: u16 = 0x30c0;
 const ID_BUFFER: u16 = 0x31e0;
 const APP_FILES: [u16; 2] = [14, 9]; // EDIT.EXE, WELCOME.TXT in the installation manifest
@@ -26,10 +31,6 @@ impl Package {
             _ => None,
         }
     }
-    // The optional fast BIOS range probe borrows this same 64 KiB arena.
-    pub fn probe_buffer_free(&self) -> bool {
-        self.sizes[0] == 0
-    }
     pub fn lookup(&self, index: u16) -> Option<File> {
         if let Some(i) = Self::slot(index) {
             if self.sizes[i] != 0 {
@@ -50,7 +51,7 @@ impl Package {
                 if offset > f.size || n as u32 > f.size - offset {
                     return false;
                 }
-                copy_bytes(ARENA, (f.first + offset) as u16, seg, 0, n);
+                copy_bytes(arena(), (f.first + offset) as u16, seg, 0, n);
                 return true;
             }
         }
@@ -59,16 +60,24 @@ impl Package {
     pub fn stage(&mut self, disk: &Media) -> bool {
         let mut sizes = [0u16; 2];
         let mut next = 0u32;
+        let dest = arena();
+        let psp =
+            dosrs_realmode::system::w(dosrs_realmode::COMMAND, dosrs_realmode::layout::CURRENT_PSP);
+        let end = dosrs_realmode::system::w(psp, 2);
+        if dest >= end {
+            return false;
+        }
+        let available = u32::from(end - dest) * 16;
         let mut i = 0;
         while i < 2 {
             let Some(mut f) = disk.lookup(crate::install::name(APP_FILES[i])) else {
                 return false;
             };
-            if f.size == 0 || f.size > 65520 - next {
+            if f.size == 0 || f.size > 65520 - next || next + f.size > available {
                 return false;
             }
             disk.check_extent(&mut f);
-            if !disk.fetch(&f, 0, f.size as u16, ARENA, next as u16) {
+            if !disk.fetch(&f, 0, f.size as u16, dest, next as u16) {
                 return false;
             }
             sizes[i] = f.size as u16;

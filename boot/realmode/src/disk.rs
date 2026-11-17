@@ -18,6 +18,9 @@ fn set_dw(at: u16, x: u32) {
 }
 const EOC: u32 = 0x0fff_fff8;
 
+#[path = "disk_file.rs"]
+mod file;
+
 pub struct Volume {
     start: u32,
     total: u32,
@@ -242,28 +245,52 @@ impl Volume {
         }
         self.value(c)
     }
-    fn change(&self, c: u32, n: u32) -> bool {
+    fn store_fat(&self, at: u16, value: u32) {
+        if self.is32() {
+            set_dw(at, (dw(at) & 0xf000_0000) | (value & 0x0fff_ffff));
+        } else {
+            set_word(at, value as u16);
+        }
+    }
+    fn change(&self, c: u32, value: u32) -> bool {
         if !self.valid(c) {
             return false;
         }
         let mut table = self.first_table;
+        let at = self.slot(c);
+        let mut old = 0;
         while table < self.last_table {
             let lba = self.table(table, c);
             if !sector(lba, false) {
-                return false;
+                break;
             }
-            let at = self.slot(c);
-            if self.is32() {
-                set_dw(at, (dw(at) & 0xf000_0000) | (n & 0x0fff_ffff));
-            } else {
-                set_word(at, n as u16);
+            if table == self.first_table {
+                old = if self.is32() {
+                    dw(at) & 0x0fff_ffff
+                } else {
+                    u32::from(word(at))
+                };
             }
+            self.store_fat(at, value);
             if !sector(lba, true) {
-                return false;
+                break;
             }
             table += 1;
         }
-        true
+        if table == self.last_table {
+            return true;
+        }
+        // A fault on a later mirror must not leave the earlier FAT copies
+        // claiming an allocation that the caller has been told failed.
+        while table > self.first_table {
+            table -= 1;
+            let lba = self.table(table, c);
+            if sector(lba, false) {
+                self.store_fat(at, old);
+                sector(lba, true);
+            }
+        }
+        false
     }
     fn entry(&self, out: &mut Entry, lba: u32, at: u16) {
         out.lba = lba;
@@ -595,6 +622,11 @@ impl Volume {
         u32::MAX
     }
     fn allocate(&mut self) -> u32 {
+        let mut error = 0;
+        self.allocate_checked(&mut error)
+    }
+    fn allocate_checked(&mut self, error: &mut u16) -> u32 {
+        *error = 30;
         let mut c = self.hint;
         let mut checked = 0;
         let mut cached = u32::MAX;
@@ -609,6 +641,7 @@ impl Volume {
             let after = if c == self.limit { 2 } else { c + 1 };
             if self.value(c) == 0 {
                 if !self.change(c, 0x0fff_ffff) {
+                    *error = 29;
                     return 0;
                 }
                 self.hint = after;
@@ -617,6 +650,7 @@ impl Volume {
             c = after;
             checked += 1;
         }
+        *error = 39;
         0
     }
     fn release(&self, mut c: u32) -> u32 {

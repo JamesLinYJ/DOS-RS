@@ -1,13 +1,12 @@
-//! File handles for a native DOS process. Read positions use full 32-bit
-//! offsets; a single near-segment write staging area is shared by the process.
+//! Process-local JFT handles reference system file descriptions. FAT file data
+//! travels directly between guest buffers and sectors, including during EXEC.
 #[path = "realmode_char.rs"]
 mod char_device;
 use dosrs_realmode::{self as pc, disk::Volume};
-use pc::dos_tables::{LIST, LIST_SEG, SEG as TABLE, entry as slot};
-const STAGE: u16 = super::mz::FILE;
+use pc::dos_tables::{LIST, LIST_SEG, SEG as TABLE, entry as slot, handle, jft_len, set_handle};
 const FIRST: u16 = 5;
-const END: u16 = 20;
-const LIMIT: u16 = 0xfe00;
+const SLOTS: u16 = pc::dos_tables::COUNT;
+const CLOSED: u16 = 255;
 use pc::{
     byte as b,
     system::{dw, sd, sw as set, w},
@@ -21,79 +20,96 @@ fn set_d(at: u16, value: u32) {
 pub fn begin(hard: bool) {
     super::arena::begin();
     set(TABLE, 0, hard as u16);
-    set(TABLE, 2, 0);
-    let mut f = FIRST;
-    while f < END {
-        set(TABLE, slot(f), 0);
-        f += 1;
+    let mut sys = 0;
+    while sys < SLOTS {
+        set(TABLE, slot(sys), u16::from(sys < FIRST));
+        sys += 1;
     }
 }
-fn close(vol: &mut Volume, fd: u16) -> bool {
-    let psp = super::arena::current();
-    let device = pc::control(27, psp, fd, 0);
-    if device != 0 {
-        return device == 1;
+fn free_handle(psp: u16) -> u16 {
+    let limit = jft_len(psp);
+    let mut fd = 0;
+    while fd < limit {
+        if handle(psp, fd) == CLOSED {
+            return fd;
+        }
+        fd += 1;
     }
-    let sys = b(psp, 0x18 + fd);
-    if sys != fd {
+    CLOSED
+}
+fn free_slot() -> u16 {
+    let mut sys = FIRST;
+    while sys < SLOTS && w(TABLE, slot(sys)) != 0 {
+        sys += 1;
+    }
+    sys
+}
+fn close(psp: u16, fd: u16) -> bool {
+    let sys = handle(psp, fd);
+    if sys >= SLOTS {
         return false;
     }
-    let s = slot(fd);
+    let s = slot(sys);
     let refs = w(TABLE, s);
-    if refs > 1 {
-        set(TABLE, s, refs - 1);
-        pc::store(psp, 0x18 + fd, 255);
-        return true;
+    if refs == 0 {
+        return false;
     }
-    if w(TABLE, 2) == fd {
-        let mut i = 0;
-        while i < 11 {
-            pc::store(pc::COMMAND, 128 + i, b(TABLE, s + 0x20 + i));
-            i += 1;
-        }
-        let current = vol.directory();
-        vol.restore(d(0x900 + fd * 4));
-        let saved = vol.save(STAGE, d(s + 0x11) as u16);
-        vol.restore(current);
-        if !saved {
-            return false;
-        }
-        set(TABLE, 2, 0);
+    if sys >= FIRST && w(TABLE, s + 5) & 0x80 != 0 {
+        return pc::control(27, psp, fd, 0) == 1;
     }
-    set(TABLE, s, 0);
-    pc::store(super::arena::current(), 0x18 + fd, 255);
+    set(TABLE, s, refs - 1);
+    set_handle(psp, fd, CLOSED);
     true
 }
 pub fn inherit(psp: u16) {
-    let mut fd = FIRST;
-    while fd < END {
-        if b(psp, 0x18 + fd) == fd {
-            let s = slot(fd);
-            set(TABLE, s, w(TABLE, s) + 1);
+    let mut fd = 0;
+    let limit = jft_len(psp);
+    while fd < limit {
+        let sys = handle(psp, fd);
+        if sys < SLOTS {
+            let s = slot(sys);
+            let refs = w(TABLE, s);
+            if refs != 0 && w(TABLE, s + 2) & 0x80 == 0 {
+                set(TABLE, s, refs + 1);
+            } else {
+                set_handle(psp, fd, CLOSED);
+            }
         }
         fd += 1;
     }
 }
-pub fn reap(vol: &mut Volume, psp: u16) {
-    let mut fd = FIRST;
-    while fd < END {
-        if b(psp, 0x18 + fd) == fd {
-            close(vol, fd);
+pub fn reap(psp: u16) {
+    let mut fd = 0;
+    let limit = jft_len(psp);
+    while fd < limit {
+        if handle(psp, fd) != CLOSED {
+            close(psp, fd);
         }
         fd += 1;
     }
 }
-pub fn finish(vol: &mut Volume) {
-    let mut fd = FIRST;
-    while fd < END {
-        pc::control(27, super::arena::current(), fd, 0);
-        fd += 1;
-    }
+pub fn finish() {
+    reap(super::arena::current());
     super::arena::release();
-    let f = w(TABLE, 2);
-    if f != 0 && !close(vol, f) {
-        pc::print("File close failed\r\n");
+}
+fn duplicate(psp: u16, fd: u16, dest: u16, force: bool) -> u32 {
+    let sys = handle(psp, fd);
+    if sys >= SLOTS || w(TABLE, slot(sys)) == 0 {
+        return failure(6);
     }
+    let target = if force { dest } else { free_handle(psp) };
+    if target >= jft_len(psp) {
+        return failure(if force { 6 } else { 4 });
+    }
+    if target != fd {
+        if handle(psp, target) != CLOSED && !close(psp, target) {
+            return failure(6);
+        }
+        let s = slot(sys);
+        set(TABLE, s, w(TABLE, s) + 1);
+        set_handle(psp, target, sys);
+    }
+    u32::from(if force { 0 } else { target })
 }
 pub(super) fn name(vol: &mut Volume, seg: u16, addr: u16) -> bool {
     let mut at = addr;
@@ -112,47 +128,63 @@ pub(super) fn name(vol: &mut Volume, seg: u16, addr: u16) -> bool {
     }
     n < 128 && vol.path(seg, at, n, false)
 }
-fn open(vol: &mut Volume, creating: bool, access: u16) -> u32 {
-    let mut fd = FIRST;
-    while fd < END && w(TABLE, slot(fd)) != 0 {
-        fd += 1;
+// FAT identities are the sector and offset of the live directory entry.
+// Refresh from that entry so independent opens see writes and truncation.
+fn metadata(vol: &Volume, sys: u16) -> u16 {
+    let s = slot(sys);
+    let mut first = 0;
+    let mut size = 0;
+    let mut attr = 0;
+    let error = vol.file_stat(
+        d(s + 0x1b),
+        b(TABLE, s + 0x1f) << 5,
+        &mut first,
+        &mut size,
+        &mut attr,
+    );
+    if error == 0 {
+        set_d(s + 0x11, size);
+        set_d(s + 0x2b, first);
+        pc::store(TABLE, s + 4, attr);
     }
-    if fd == END {
+    error
+}
+fn open(vol: &mut Volume, creating: bool, mode: u16, attributes: u16) -> u32 {
+    let psp = super::arena::current();
+    let fd = free_handle(psp);
+    let sys = free_slot();
+    if fd == CLOSED || sys >= SLOTS {
         return failure(4);
     }
-    if access > 2 || (access != 0 && w(TABLE, 2) != 0) {
+    if mode & 7 > 2 {
+        return failure(12);
+    }
+    let mut lba = 0;
+    let mut at = 0;
+    let error = vol.file_open(creating, attributes, &mut lba, &mut at);
+    if error != 0 {
+        return failure(error);
+    }
+    let s = slot(sys);
+    set_d(s + 0x1b, lba);
+    pc::store(TABLE, s + 0x1f, at >> 5);
+    let error = metadata(vol, sys);
+    if error != 0 {
+        return failure(error);
+    }
+    if !creating && mode & 7 != 0 && b(TABLE, s + 4) & 1 != 0 {
         return failure(5);
     }
-    let mut head = 0;
-    let mut size = 0;
-    if creating {
-        if !vol.save(STAGE, 0) {
-            return failure(5);
-        }
-    } else if !vol.describe(&mut head, &mut size) {
-        return failure(2);
-    }
-    let s = slot(fd);
-    set_d(0x900 + fd * 4, vol.directory());
-    if access != 0 {
-        if size > LIMIT as u32 || vol.read_at(head, size, 0, size as u16, STAGE, 0) != size {
-            return failure(8);
-        }
-
-        set(TABLE, 2, fd);
-    }
+    set(TABLE, s + 2, mode);
     set(TABLE, s + 5, 2);
-    set(TABLE, s + 2, access);
-    set(TABLE, s, 1);
     pc::copy_bytes(pc::COMMAND, 128, TABLE, s + 0x20, 11);
-    pc::store(super::arena::current(), 0x18 + fd, fd);
-    set_d(s + 0x2b, head);
-    set_d(s + 0x11, size);
     set_d(s + 0x15, 0);
-    fd as u32
+    set(TABLE, s, 1);
+    set_handle(psp, fd, sys);
+    u32::from(fd)
 }
-fn removable(seg: u16, at: u16, n: u16, drive: u16, write: bool) -> u32 {
-    if write {
+fn removable(seg: u16, at: u16, n: u16, drive: u16, mode: u16) -> u32 {
+    if mode & 7 != 0 {
         return failure(19);
     }
     let head;
@@ -178,25 +210,23 @@ fn removable(seg: u16, at: u16, n: u16, drive: u16, write: bool) -> u32 {
     } else {
         return failure(15);
     }
-    let mut fd = FIRST;
-    while fd < END && w(TABLE, slot(fd)) != 0 {
-        fd += 1;
-    }
-    if fd == END {
+    let fd = free_handle(super::arena::current());
+    let sys = free_slot();
+    if fd == CLOSED || sys >= SLOTS {
         return failure(4);
     }
-    let s = slot(fd);
+    let s = slot(sys);
     set(TABLE, s, 1);
-    set(TABLE, s + 2, 0);
+    set(TABLE, s + 2, mode);
     set(TABLE, s + 5, drive);
     pc::copy_bytes(pc::COMMAND, 128, TABLE, s + 0x20, 11);
-    pc::store(super::arena::current(), 0x18 + fd, fd);
+    set_handle(super::arena::current(), fd, sys);
     set_d(s + 0x2b, head);
     set_d(s + 0x11, size);
     set_d(s + 0x15, 0);
     fd as u32
 }
-fn opened(vol: &mut Volume, ds: u16, dx: u16, ah: u16, al: u16) -> u32 {
+fn opened(vol: &mut Volume, ds: u16, dx: u16, ah: u16, al: u16, attr: u16) -> u32 {
     let mut at = dx;
     let drive = if b(ds, at.wrapping_add(1)) == 58 {
         let c = b(ds, at) & 0xdf;
@@ -212,7 +242,7 @@ fn opened(vol: &mut Volume, ds: u16, dx: u16, ah: u16, al: u16) -> u32 {
         if !vol.mounted() || !name(vol, ds, dx) {
             failure(3)
         } else {
-            open(vol, ah == 0x3c, if ah == 0x3c { 2 } else { al & 7 })
+            open(vol, ah == 0x3c, if ah == 0x3c { 2 } else { al }, attr)
         }
     } else {
         let mut n = 0;
@@ -222,119 +252,119 @@ fn opened(vol: &mut Volume, ds: u16, dx: u16, ah: u16, al: u16) -> u32 {
         if n == 127 || n > u16::MAX - at {
             return failure(3);
         }
-        removable(ds, at, n, drive, ah == 0x3c || al & 7 != 0)
+        removable(ds, at, n, drive, if ah == 0x3c { 2 } else { al })
     }
 }
 fn failure(error: u16) -> u32 {
     0x10000 | error as u32
 }
-fn transfer(vol: &mut Volume, fd: u16, count: u16, seg: u16, at: u16, write: bool) -> u32 {
-    if write && at as u32 + count as u32 > 65536 {
+fn transfer(vol: &mut Volume, sys: u16, count: u16, seg: u16, at: u16, write: bool) -> u32 {
+    if write && u32::from(at) + u32::from(count) > 65536 {
         return failure(5);
     }
-    if write && (fd == 1 || fd == 2) {
+    if write && (sys == 1 || sys == 2) {
         let mut i = 0;
         while i < count {
             pc::put(b(seg, at + i));
             i += 1;
         }
-        return count as u32;
+        return u32::from(count);
     }
-    if fd < FIRST || fd >= END {
+    if sys < FIRST || sys >= SLOTS {
         return failure(6);
     }
-    let s = slot(fd);
-    let access = w(TABLE, s + 2);
-    if w(TABLE, s) == 0 {
-        return failure(6);
-    }
-    let pos = d(s + 0x15);
-    let size = d(s + 0x11);
-    let count = if !write && pos >= size {
-        0
-    } else if !write && size - pos < u32::from(count) {
-        (size - pos) as u16
-    } else {
-        count
-    };
-    if u32::from(at) + u32::from(count) > 65536 {
+    let s = slot(sys);
+    let access = w(TABLE, s + 2) & 7;
+    if (write && access == 0) || (!write && access == 1) {
         return failure(5);
     }
-    let n = if write {
-        if access == 0 {
-            return failure(5);
+    let drive = w(TABLE, s + 5);
+    let pos = d(s + 0x15);
+    let result = if write {
+        if drive != 2 {
+            return failure(19);
         }
-        if pos > LIMIT as u32 || count as u32 > LIMIT as u32 - pos {
-            return failure(39);
-        }
-        let mut gap = size;
-        while gap < pos {
-            pc::store(STAGE, gap as u16, 0);
-            gap += 1;
-        }
-        let mut i = 0;
-        while i < count {
-            pc::store(STAGE, pos as u16 + i, b(seg, at + i));
-            i += 1;
-        }
-        let end = pos + count as u32;
-        if end > size || count == 0 {
-            set_d(s + 0x11, end);
-        }
-        count as u32
+        vol.file_write(d(s + 0x1b), b(TABLE, s + 0x1f) << 5, pos, count, seg, at)
     } else {
-        if access == 1 {
+        if drive == 2 {
+            let error = metadata(vol, sys);
+            if error != 0 {
+                return failure(error);
+            }
+        }
+        let head = d(s + 0x2b);
+        let size = d(s + 0x11);
+        if pos >= size || count == 0 {
+            return 0;
+        }
+        let n = if size - pos < u32::from(count) {
+            (size - pos) as u16
+        } else {
+            count
+        };
+        // A caller can request the rest of a file with CX=FFFFh. Only bytes
+        // actually read before EOF must fit in its segment.
+        if u32::from(at) + u32::from(n) > 65536 {
             return failure(5);
         }
-        if w(TABLE, 2) == fd {
-            let n = if pos >= size {
-                0
-            } else if size - pos < count as u32 {
-                (size - pos) as u16
+        let read = if drive == 2 {
+            vol.read_at(head, size, pos, n, seg, at)
+        } else if drive < 2 {
+            let r = 0x35e0;
+            sd(r, 0, head);
+            sd(r, 4, size);
+            sd(r, 8, pos);
+            set(r, 12, n);
+            set(r, 14, seg);
+            set(r, 16, at);
+            if pc::control(24, drive, 0, 0) != 0 {
+                u32::from(n)
             } else {
-                count
-            };
-            let mut i = 0;
-            while i < n {
-                pc::store(seg, at + i, b(STAGE, pos as u16 + i));
-                i += 1;
+                u32::MAX
             }
-            n as u32
         } else {
-            let drive = w(TABLE, s + 5);
-            let n = if drive == 2 {
-                vol.read_at(d(s + 0x2b), size, pos, count, seg, at)
-            } else if drive < 2 {
-                let n = if pos >= size {
-                    0
-                } else if size - pos < count as u32 {
-                    (size - pos) as u16
-                } else {
-                    count
-                };
-                let r = 0x35e0;
-                pc::system::sd(r, 0, d(s + 0x2b));
-                pc::system::sd(r, 4, size);
-                pc::system::sd(r, 8, pos);
-                pc::system::sw(r, 12, n);
-                pc::system::sw(r, 14, seg);
-                pc::system::sw(r, 16, at);
-                if n == 0 || pc::control(24, drive, 0, 0) != 0 {
-                    n as u32
-                } else {
-                    u32::MAX
-                }
-            } else {
-                pc::cdrom::fetch(d(s + 0x2b), size, pos, count, seg, at)
-            };
-            if n == u32::MAX {
-                return failure(23);
-            }
-            n
+            pc::cdrom::fetch(head, size, pos, n, seg, at)
+        };
+        if read == u32::MAX {
+            return failure(23);
         }
+        read
     };
-    set_d(s + 0x15, pos + n);
-    n
+    if result < 0x10000 {
+        set_d(s + 0x15, pos + result);
+        if write {
+            let _ = metadata(vol, sys);
+        }
+    }
+    result
+}
+fn seek(vol: &Volume, sys: u16, origin: u16, hi: u16, lo: u16, ss: u16, sp: u16) -> u32 {
+    let s = slot(sys);
+    if sys < FIRST {
+        return failure(6);
+    }
+    let base = match origin {
+        0 => 0,
+        1 => d(s + 0x15),
+        2 => {
+            if w(TABLE, s + 5) == 2 {
+                let error = metadata(vol, sys);
+                if error != 0 {
+                    return failure(error);
+                }
+            }
+            d(s + 0x11)
+        }
+        _ => return failure(1),
+    };
+    let delta = (u32::from(hi) << 16) | u32::from(lo);
+    let pos = base.wrapping_add(delta);
+    if origin != 0 && ((hi & 0x8000 == 0 && pos < base) || (hi & 0x8000 != 0 && pos > base)) {
+        return failure(1);
+    }
+    set_d(s + 0x15, pos);
+    set(ss, sp + 6, (pos >> 16) as u16);
+    u32::from(pos as u16)
 }
 
 /// SS:SP identifies nine saved registers followed by the real INT frame.
@@ -421,7 +451,9 @@ fn service(vol: &mut Volume, ss: u16, sp: u16) {
     let current = vol.directory();
     let invalid = (0x3e..=0x40).contains(&ah) || ah == 0x42;
     let mut keep_directory = false;
-    let result = if invalid && (bx >= END || b(super::arena::current(), 0x18 + bx) != bx) {
+    let psp = super::arena::current();
+    let sys = handle(psp, bx);
+    let result = if invalid && (sys >= SLOTS || w(TABLE, slot(sys)) == 0) {
         failure(6)
     } else {
         match ah {
@@ -489,6 +521,20 @@ fn service(vol: &mut Volume, ss: u16, sp: u16) {
                 set(ss, sp + 6, 32);
                 u32::from(ax)
             }
+            0x55 => {
+                // Create a child PSP without loading an image. Windows uses this
+                // for tasks created after it has installed its own larger JFT.
+                if dx == psp || dx < pc::PROGRAM {
+                    failure(9)
+                } else {
+                    pc::control(25, dx, psp, w(ss, sp + 8));
+                    pc::copy_bytes(psp, 0x80, dx, 0x80, 128);
+                    sd(dx, 0x38, u32::from(psp) << 16);
+                    inherit(dx);
+                    super::arena::select(dx);
+                    0xf0
+                }
+            }
             0x50 => {
                 super::arena::select(bx);
                 u32::from(ax)
@@ -521,42 +567,17 @@ fn service(vol: &mut Volume, ss: u16, sp: u16) {
                 }
                 result
             }
-            0x3c | 0x3d => opened(vol, ds, dx, ah, al),
+            0x3c | 0x3d => opened(vol, ds, dx, ah, al, cx),
             0x3e => {
-                if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {
-                    failure(6)
-                } else if close(vol, bx) {
+                if close(psp, bx) {
                     0
                 } else {
-                    failure(39)
-                }
-            }
-            0x3f | 0x40 => transfer(vol, bx, cx, ds, dx, ah == 0x40),
-            0x42 => {
-                if bx < FIRST || bx >= END || w(TABLE, slot(bx)) == 0 {
                     failure(6)
-                } else if al > 2 {
-                    failure(1)
-                } else {
-                    let s = slot(bx);
-                    let base = if al == 0 {
-                        0
-                    } else if al == 1 {
-                        d(s + 0x15)
-                    } else {
-                        d(s + 0x11)
-                    };
-                    let delta = ((cx as u32) << 16) | dx as u32;
-                    let pos = base.wrapping_add(delta);
-                    if (cx & 0x8000 == 0 && pos < base) || (cx & 0x8000 != 0 && pos > base) {
-                        failure(1)
-                    } else {
-                        set_d(s + 0x15, pos);
-                        set(ss, sp + 6, (pos >> 16) as u16);
-                        pos as u16 as u32
-                    }
                 }
             }
+            0x45 | 0x46 => duplicate(psp, bx, cx, ah == 0x46),
+            0x3f | 0x40 => transfer(vol, sys, cx, ds, dx, ah == 0x40),
+            0x42 => seek(vol, sys, al, cx, dx, ss, sp),
             _ => failure(1),
         }
     };

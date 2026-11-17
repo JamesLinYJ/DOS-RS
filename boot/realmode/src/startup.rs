@@ -23,6 +23,29 @@ fn matches(at: u16, end: u16, s: &[u8]) -> bool {
     }
     true
 }
+fn setting(start: u16, end: u16) -> u16 {
+    let names: [&[u8]; 11] = [
+        b"DOS=UMB",
+        b"DOS=HIGH,UMB",
+        b"DOS=LOW,UMB",
+        b"SMARTDRV=OFF",
+        b"SMARTDRV=ON",
+        b"CDROM=OFF",
+        b"CDROM=ON",
+        b"DISPLAY=CGA",
+        b"DISPLAY=EGA",
+        b"DISPLAY=VGA",
+        b"DISPLAY=MONO",
+    ];
+    let mut key = 0;
+    while key < names.len() {
+        if matches(start, end, names[key]) {
+            return key as u16;
+        }
+        key += 1;
+    }
+    u16::MAX
+}
 pub fn apply(media: &Media) {
     pc::store(pc::COMMAND, 270, 1);
     pc::store(pc::COMMAND, 272, 0);
@@ -59,27 +82,19 @@ pub fn apply(media: &Media) {
                 }
                 id += 1;
             }
-        } else if matches(start, p, b"DOS=UMB")
-            || matches(start, p, b"DOS=HIGH,UMB")
-            || matches(start, p, b"DOS=LOW,UMB")
-        {
-            pc::store(pc::COMMAND, 272, 1)
-        } else if matches(start, p, b"SMARTDRV=OFF") {
-            pc::cache::enable(false)
-        } else if matches(start, p, b"SMARTDRV=ON") {
-            pc::cache::init()
-        } else if matches(start, p, b"CDROM=OFF") {
-            pc::store(pc::COMMAND, 270, 0)
-        } else if matches(start, p, b"CDROM=ON") {
-            pc::store(pc::COMMAND, 270, 1)
-        } else if matches(start, p, b"DISPLAY=CGA") {
-            console::mode_set(6)
-        } else if matches(start, p, b"DISPLAY=EGA") {
-            console::mode_set(16)
-        } else if matches(start, p, b"DISPLAY=VGA") {
-            console::mode_set(18)
-        } else if matches(start, p, b"DISPLAY=MONO") {
-            console::mode_set(7)
+        } else {
+            match setting(start, p) {
+                0..=2 => pc::store(pc::COMMAND, 272, 1),
+                3 => pc::cache::enable(false),
+                4 => pc::cache::init(),
+                5 => pc::store(pc::COMMAND, 270, 0),
+                6 => pc::store(pc::COMMAND, 270, 1),
+                7 => console::mode_set(6),
+                8 => console::mode_set(16),
+                9 => console::mode_set(18),
+                10 => console::mode_set(7),
+                _ => (),
+            }
         }
         if p < f.size as u16 {
             p += 1

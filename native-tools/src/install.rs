@@ -207,7 +207,7 @@ pub fn partition(src: &Package, t: &Target) -> bool {
     }
     // Keep existing boot records on shared disks. On a new disk check the gap before the partition too.
     let first = if t.shared { t.first } else { 1 };
-    if !partition::is_blank(first, t.first + t.size - first, src.probe_buffer_free())
+    if !partition::is_blank(first, t.first + t.size - first)
         || !template(&src.boot, 0)
     {
         return false;

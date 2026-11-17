@@ -26,12 +26,6 @@ pub fn init(unit: u16, pages: u16) {
     set(0, unit);
     set(2, pages);
     set(4, 0xffff);
-    set(6, 0);
-    set(8, 0);
-    set(10, 0);
-    set(12, 0);
-    set(14, 15);
-    set(16, 0);
     let card = unsafe { video_detect() };
     let mode = if card == 7 || card == 8 || card == 11 || card == 12 {
         18
@@ -269,17 +263,20 @@ fn theme() {
         return;
     }
     // Logical palette indices are shared with EGA; the VGA DAC supplies the installation palette.
-    let rgb: [u32; 16] = [
-        0x18282c, 0x19323a, 0x086453, 0x087567, 0x9f3a2d, 0x654b68, 0x976819, 0xe6eae1, 0x495d60,
-        0x899a93, 0xbfe5d1, 0x64d8bc, 0xe8b4a1, 0xc6bfad, 0xf3d98d, 0xfafbf5,
+    // Components are stored in the DAC's six-bit format.
+    const RGB: &[u8; 48] = &[
+        0x06, 0x0a, 0x0b, 0x06, 0x0c, 0x0e, 0x02, 0x19, 0x14, 0x02, 0x1d, 0x19, 0x27, 0x0e, 0x0b,
+        0x19, 0x12, 0x1a, 0x25, 0x1a, 0x06, 0x39, 0x3a, 0x38, 0x12, 0x17, 0x18, 0x22, 0x26, 0x24,
+        0x2f, 0x39, 0x34, 0x19, 0x36, 0x2f, 0x3a, 0x2d, 0x28, 0x31, 0x2f, 0x2b, 0x3c, 0x36, 0x23,
+        0x3e, 0x3e, 0x3d,
     ];
     let mut i = 0;
     while i < 16 {
         video(0x1000, (i << 8) | i, 0, 0);
-        let c = rgb[i as usize];
-        let r = (c >> 18) as u16 & 63;
-        let g = (c >> 10) as u16 & 63;
-        let b = (c >> 2) as u16 & 63;
+        let p = i as usize * 3;
+        let r = u16::from(RGB[p]);
+        let g = u16::from(RGB[p + 1]);
+        let b = u16::from(RGB[p + 2]);
         video(0x1010, i, (g << 8) | b, r << 8);
         i += 1;
     }

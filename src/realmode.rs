@@ -193,14 +193,14 @@ fn run(vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original: u32) {
             if let Some(from) = path(vol, src, sep, *hard) {
                 let copied = if from == 2 {
                     vol.duplicate(destination)
-                } else if let Some(size) = load_file(vol, from, mz::FILE, 0xfe00) {
+                } else if let Some(size) = load_file(vol, from, pc::PROGRAM, 0xfe00) {
                     i = 0;
                     while i < 11 {
                         pc::store(pc::COMMAND, 128 + i, pc::byte(pc::COMMAND, 160 + i));
                         i += 1;
                     }
                     vol.restore(destination);
-                    vol.save(mz::FILE, size)
+                    vol.save(pc::PROGRAM, size)
                 } else {
                     false
                 };
@@ -286,7 +286,7 @@ fn run(vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original: u32) {
                             vol.restore(original);
                             pc::start_com(vol);
                         }
-                        files::finish(vol);
+                        files::finish();
                         return;
                     }
                 }
@@ -298,7 +298,7 @@ fn run(vol: &mut Volume, hard: &mut u16, n: u16, split: u16, original: u32) {
                 pc::store(pc::COMMAND, 256, *hard);
                 files::begin(*hard == 2);
                 if mz::open(vol, from, original, split, n) {
-                    files::finish(vol);
+                    files::finish();
                     return;
                 }
             }
@@ -381,27 +381,18 @@ pub fn main16() {
         }
     }
     loop {
-        // Reload the transient shell into the file staging area. Keeping a
-        // second copy permanently used the space now occupied by the DOS stack.
         pc::command("COMMAND.COM");
         pc::filename(pc::COMMAND, 0, 11);
         let cwd = vol.directory();
         vol.root();
-        let saved = load_file(&vol, boot, mz::FILE, 0xfe00);
-        vol.restore(cwd);
-        let Some(n) = saved else {
-            pc::print("Missing COMMAND.COM\r\n");
-            return;
-        };
-        psp(0, 0);
         files::begin(hard == 2);
         pc::store(pc::COMMAND, 256, hard);
         pc::store(pc::COMMAND, 257, 0);
-        if !mz::run(&mut vol, n) {
-            pc::print("Invalid COMMAND.COM\r\n");
+        if !mz::open(&mut vol, boot, cwd, 0, 0) {
+            pc::print("Missing or invalid COMMAND.COM\r\n");
             return;
         }
-        files::finish(&mut vol);
+        files::finish();
         let count = pc::byte(pc::COMMAND, 257);
         execute(&mut vol, &mut hard, count);
     }

@@ -47,7 +47,6 @@ impl Target {
     }
 }
 unsafe extern "Rust" {
-    fn blank_edd(first: u32, count: u16, unit: u16) -> u16;
     fn zero_sector(segment: u16) -> u16;
 }
 fn empty(seg: u16) -> bool {
@@ -245,25 +244,10 @@ pub fn inspect() -> Target {
         shared: true,
     }
 }
-pub fn is_blank(first: u32, count: u32, mut bulk: bool) -> bool {
+pub fn is_blank(first: u32, count: u32) -> bool {
     let mut done = 0;
     let unit = pc::hard_unit();
     while done < count {
-        let n = if count - done < 64 {
-            (count - done) as u16
-        } else {
-            64
-        };
-        if bulk {
-            match unsafe { blank_edd(first + done, n, unit) } {
-                0 => return false,
-                1 => {
-                    done += n as u32;
-                    continue;
-                }
-                _ => bulk = false,
-            }
-        }
         if !raw_hd(unit, first + done, SECTOR, false) || !empty(SECTOR) {
             return false;
         }

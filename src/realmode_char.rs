@@ -1,7 +1,7 @@
 //! Install an already resolved resident character device into this DOS PSP.
 use dosrs_realmode::{
-    self as pc, byte,
-    dos_tables::{SEG, entry},
+    self as pc,
+    dos_tables::{SEG, entry, set_handle},
     store,
     system::{dw, sd, sw, w},
 };
@@ -12,13 +12,11 @@ pub(super) fn open(ss: u16, sp: u16, psp: u16) {
     let header = dw(0x34a0, 32);
     let seg = (header >> 16) as u16;
     let off = header as u16;
-    let mut fd = 5;
-    while fd < 20 && (byte(psp, 0x18 + fd) != 255 || w(SEG, entry(fd)) != 0) {
-        fd += 1;
-    }
+    let fd = super::free_handle(psp);
+    let sys = super::free_slot();
     let err = if mode & 7 > 2 {
         12
-    } else if fd == 20 {
+    } else if fd == super::CLOSED || sys == super::SLOTS {
         4
     } else if w(seg, off + 4) & 0x0800 != 0 {
         pc::control(28, seg, off, 0)
@@ -31,7 +29,7 @@ pub(super) fn open(ss: u16, sp: u16, psp: u16) {
         sw(ss, sp + 22, flags | 1);
         return;
     }
-    let s = entry(fd);
+    let s = entry(sys);
     let mut i = 0;
     while i < 0x3b {
         store(SEG, s + i, 0);
@@ -45,7 +43,7 @@ pub(super) fn open(ss: u16, sp: u16, psp: u16) {
     pc::copy_bytes(seg, off + 10, SEG, s + 0x20, 8);
     sw(SEG, s + 0x28, 0x2020);
     store(SEG, s + 0x2a, 32);
-    store(psp, 0x18 + fd, fd);
+    set_handle(psp, fd, sys);
     sw(ss, sp, fd);
     sw(ss, sp + 22, flags & !1);
 }

@@ -52,6 +52,28 @@ pub fn init() {
     }
 }
 
+/// DOS programs may relocate the JFT and publish its far pointer in the PSP.
+pub fn jft_len(psp: u16) -> u16 {
+    let count = pc::system::w(psp, 0x32);
+    let off = pc::system::w(psp, 0x34);
+    let limit = if off > 0xff00 { 0xffff - off + 1 } else { 255 };
+    if count < limit { count } else { limit }
+}
+pub fn handle(psp: u16, fd: u16) -> u16 {
+    if fd >= jft_len(psp) {
+        return 255;
+    }
+    pc::byte(pc::system::w(psp, 0x36), pc::system::w(psp, 0x34) + fd)
+}
+// Callers have already checked the descriptor against jft_len.
+pub fn set_handle(psp: u16, fd: u16, value: u16) {
+    pc::store(
+        pc::system::w(psp, 0x36),
+        pc::system::w(psp, 0x34) + fd,
+        value,
+    );
+}
+
 pub fn psp(segment: u16, parent: u16, top: u16) {
     let mut i = 0;
     while i < 256 {
@@ -65,7 +87,7 @@ pub fn psp(segment: u16, parent: u16, top: u16) {
     i = 0;
     while i < 20 {
         let fd = if segment != parent {
-            pc::byte(parent, 0x18 + i)
+            handle(parent, i)
         } else if i < 5 {
             i
         } else {

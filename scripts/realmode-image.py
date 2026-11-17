@@ -102,14 +102,22 @@ def main():
     kernels = [
         compile(cpu, ROOT / "Cargo.toml", "dos.exe", 0x1000) for cpu in ("286", "386")
     ]
-    first = 512
-    packed286 = compress(kernels[0])
-    second = first + len(packed286)
-    header = struct.pack(
-        "<4sIHIH", b"DOSK", first | 0x80000000, len(kernels[0]),
-        second | 0x80000000, len(kernels[1])
-    )
-    system = header.ljust(first, b"\0") + packed286 + compress(kernels[1])
+    # DOSK uses ordinary relocated far calls. Each independent LZ4 block fits
+    # a near transfer; the whole kernel can span several 16-bit code segments.
+    def blocks(image):
+        if len(image) % 16 or not 0 < len(image) <= 0x1e000:
+            raise ValueError("MSDOS.SYS exceeds its contiguous 120 KiB code region")
+        result = bytearray()
+        for at in range(0, len(image), 32768):
+            part = compress(image[at:at + 32768])
+            result.extend(struct.pack("<H", len(part)))
+            result.extend(part)
+        return result
+
+    parts = [blocks(image) for image in kernels]
+    header = struct.pack("<4sIHIH", b"DOSK", 16 | 0xc0000000, len(kernels[0]) // 16,
+                         (16 + len(parts[0])) | 0xc0000000, len(kernels[1]) // 16)
+    system = header + parts[0] + parts[1]
     util = target / "util"
     util.mkdir(exist_ok=True)
     obj = util / "io.obj"

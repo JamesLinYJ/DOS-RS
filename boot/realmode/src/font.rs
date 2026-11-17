@@ -15,6 +15,10 @@ fn header() -> u16 {
     map() + 0x680
 }
 const HEADER_BYTES: u16 = 6144;
+// The largest literal-only encoding of a 4 KiB glyph page uses 4114 bytes.
+// Keep a paragraph-aligned input buffer within the existing font workspace.
+const INPUT_BYTES: u16 = 4160;
+const HEADER_PREFIX: u16 = HEADER_BYTES - INPUT_BYTES;
 pub fn init(unit: u16, pages: u16) -> bool {
     sw(META, 0, unit);
     sw(META, 2, pages);
@@ -108,24 +112,6 @@ fn phys32(at: u32) -> u32 {
         | (phys(at + 2) as u32) << 16
         | (phys(at + 3) as u32) << 24
 }
-fn extended(count: u16, pos: &mut u32, end: u32) -> u16 {
-    if count != 15 {
-        return count;
-    }
-    let mut n = 15;
-    while *pos < end {
-        let c = phys(*pos);
-        *pos += 1;
-        if n > 4096 - c {
-            return 65535;
-        }
-        n += c;
-        if c != 255 {
-            return n;
-        }
-    }
-    65535
-}
 fn unpack(id: u16, seg: u16) -> bool {
     let tab = 12 + (id as u32) * 4;
     let (mut p, end) = if tab + 8 <= w(META, 24) as u32 {
@@ -136,52 +122,39 @@ fn unpack(id: u16, seg: u16) -> bool {
     if p >= end || end > w(META, 2) as u32 * 512 {
         return false;
     }
-    let mut used = 0;
-    while p < end {
-        let token = phys(p);
-        p += 1;
-        let n = extended(token >> 4, &mut p, end);
-        if n > 4096 - used || n as u32 > end - p {
-            return false;
-        }
-        let mut left = n;
-        while left > 0 {
-            if !page((p >> 9) as u16) {
-                return false;
-            }
-            let at = (p & 511) as u16;
-            let room = 512 - at;
-            let take = if left < room { left } else { room };
-            copy_bytes(RAW, at, seg, used, take);
-            used += take;
-            p += take as u32;
-            left -= take;
-        }
-        if p == end {
-            break;
-        }
-        if end - p < 2 {
-            return false;
-        }
-        let back = phys(p) | (phys(p + 1) << 8);
-        p += 2;
-        let add = extended(token & 15, &mut p, end);
-        if back == 0 || back > used || add > 4092 || add + 4 > 4096 - used {
-            return false;
-        }
-        let n = add + 4;
-        copy_bytes(seg, used - back, seg, used, n);
-        used += n;
+    if end - p > u32::from(INPUT_BYTES) {
+        return false;
     }
-    let rem = dw(META, 8) - ((id as u32) << 12);
-    used == if rem >= 4096 { 4096 } else { rem as u16 }
+    // Large legacy directories occupy the whole header cache. For those fonts
+    // retain two decoded pages and borrow the other two slots for the input.
+    let input = if w(META, 24) > HEADER_PREFIX {
+        cache() + 0x200
+    } else {
+        header() + HEADER_PREFIX / 16
+    };
+    let mut buffered = 0;
+    while p < end {
+        if !page((p >> 9) as u16) {
+            return false;
+        }
+        let at = (p & 511) as u16;
+        let room = 512 - at;
+        let left = (end - p) as u16;
+        let take = if left < room { left } else { room };
+        copy_bytes(RAW, at, input, buffered, take);
+        buffered += take;
+        p += u32::from(take);
+    }
+    let rem = dw(META, 8) - (u32::from(id) << 12);
+    let size = if rem >= 4096 { 4096 } else { rem as u16 };
+    super::kernel_image::unpack(input, buffered, size, seg).is_some()
 }
 pub fn rb(at: u32) -> u16 {
     if at >= dw(META, 8) {
         return 0;
     }
     let id = (at >> 12) as u16;
-    let slot = id & 3;
+    let slot = id & if w(META, 24) > HEADER_PREFIX { 1 } else { 3 };
     let tag = 16 + slot * 2;
     let seg = cache() + (slot << 8);
     if w(META, tag) != id {

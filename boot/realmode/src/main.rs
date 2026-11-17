@@ -32,13 +32,7 @@ pub fn io_dispatch(op: u16, a: u16, b: u16, _c: u16) -> u16 {
         21 => bios::optical::display() as u16,
         23 => {
             let Some(m) = Media::device(a) else { return 0 };
-            let mut name = [0u8; 11];
-            let mut i = 0;
-            while i < 11 {
-                name[i] = bios::byte(bios::COMMAND, 128 + i as u16) as u8;
-                i += 1;
-            }
-            let Some(f) = m.lookup(&name) else { return 0 };
+            let Some(f) = named_file(&m) else { return 0 };
             bios::system::sd(0x35e0, 0, f.first);
             bios::system::sd(0x35e0, 4, f.size);
             1
@@ -62,6 +56,16 @@ pub fn io_dispatch(op: u16, a: u16, b: u16, _c: u16) -> u16 {
         }
         _ => console::control(op, a, b),
     }
+}
+// DOS filename parsing leaves the padded 8.3 name in the resident command area.
+fn named_file(media: &Media) -> Option<bios::system::File> {
+    let mut name = [0u8; 11];
+    let mut i = 0;
+    while i < 11 {
+        name[i] = bios::byte(bios::COMMAND, 128 + i as u16) as u8;
+        i += 1;
+    }
+    media.lookup(&name)
 }
 fn boot() -> Option<()> {
     let unit = bios::boot_unit();
@@ -103,32 +107,55 @@ fn boot() -> Option<()> {
     let entry = if cpu == 286 { 4 } else { 10 };
     let n = w(seg, entry + 4);
     let offset = dw(seg, entry);
-    if n == 0 || n > 0xfff0 {
+    let mut pos = offset & 0x3fff_ffff;
+    let end = if entry == 4 {
+        dw(seg, 10) & 0x3fff_ffff
+    } else {
+        file.size
+    };
+    if n == 0 || pos < 16 || pos >= end || end > file.size {
         return None;
     }
-    if offset & 0x80000000 != 0 {
-        let pos = offset & 0x7fffffff;
-        if pos > file.size {
+    if offset & 0x8000_0000 == 0 {
+        if u32::from(n) > end - pos || !media.fetch(&file, pos, n, bios::KERNEL, 0) {
             return None;
         }
-        let end = if entry == 4 {
-            dw(seg, 10) & 0x7fffffff
-        } else {
-            file.size
-        };
-        if end < pos || end > file.size {
+    } else {
+        let banked = offset & 0x4000_0000 != 0;
+        if banked && n > 0x1e00 || !banked && end - pos > u32::from(u16::MAX) {
             return None;
         }
-        let length = end - pos;
-        if length == 0
-            || length > 0xfff0
-            || !media.fetch(&file, pos, length as u16, kernel_image::STAGE, 0)
-        {
+        let mut remaining = n;
+        let mut dest = bios::KERNEL;
+        while remaining != 0 {
+            let length;
+            let size;
+            if banked {
+                if end - pos < 2 || !media.fetch(&file, pos, 2, seg, 0) {
+                    return None;
+                }
+                pos += 2;
+                length = w(seg, 0);
+                let paras = if remaining < 2048 { remaining } else { 2048 };
+                size = paras * 16;
+                remaining -= paras;
+            } else {
+                length = (end - pos) as u16;
+                size = n;
+                remaining = 0;
+            }
+            if u32::from(length) > end - pos
+                || !media.fetch(&file, pos, length, kernel_image::STAGE, 0)
+            {
+                return None;
+            }
+            kernel_image::unpack(kernel_image::STAGE, length, size, dest)?;
+            dest += size / 16;
+            pos += u32::from(length);
+        }
+        if pos != end {
             return None;
         }
-        kernel_image::unpack(length as u16, n)?;
-    } else if !media.fetch(&file, offset, n, bios::KERNEL, 0) {
-        return None;
     }
     bios::start_kernel()
 }

@@ -24,6 +24,9 @@ ABOUT = (
     ((282, 82, 415, 100), "84367ff197937ace1bd654a9174985360df014c68cd270ccadabd5a0e4eb0710"),
     ((197, 149, 257, 166), "904820b585ceefa9f6d7c5990328976685c1c74899cdc4b37f2f87dbdb016cd2"),
     ((197, 370, 299, 389), "53988a098b4508076329f465196763b2b35cc029f571f83a5bbb3f371e3a2a57"),
+    # Wait for the resource label and OK button to finish painting.
+    ((197, 409, 265, 430), "f1a9732780b91810d3a0d62158f8143232f779fd24b91bbc8c21c3ea2740a87b"),
+    ((480, 109, 566, 141), "bd206bad2485c7321b2801aba85c9433ea3dcad3766a2668d01a510ad52baa76"),
 )
 
 
@@ -91,7 +94,8 @@ def boot(disk, ram_dir, proof, arch, cpu):
             pixels = wait_screen(vm, work, ABOUT, "Windows 3.2 enhanced-mode About box")
             dest = proof / f"native-windows32-enhanced-{arch}.png"
             png(dest, pixels)
-            print(f"{arch} ({cpu}) WIN /3: {dest} {hashlib.sha256(dest.read_bytes()).hexdigest()}", flush=True)
+            print(f"16-bit DOS / 80386 on {binary} -cpu {cpu}: WIN /3, 386 enhanced mode; "
+                  f"{dest} {hashlib.sha256(dest.read_bytes()).hexdigest()}", flush=True)
         finally:
             vm.close()
 
