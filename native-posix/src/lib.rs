@@ -28,6 +28,12 @@ pub enum Errno {
     NotSupported,
     IllegalSeek,
     FileTooLarge,
+    Permission,
+    Loop,
+    NotEmpty,
+    CrossDevice,
+    Range,
+    Busy,
 }
 impl Errno {
     pub fn message(self) -> &'static str {
@@ -48,6 +54,12 @@ impl Errno {
             Self::NotSupported => "operation not supported",
             Self::IllegalSeek => "illegal seek",
             Self::FileTooLarge => "file too large",
+            Self::Permission => "operation not permitted",
+            Self::Loop => "too many symbolic links",
+            Self::NotEmpty => "directory not empty",
+            Self::CrossDevice => "cross-device link",
+            Self::Range => "buffer too small",
+            Self::Busy => "resource busy",
         }
     }
 }

@@ -17,6 +17,8 @@ pub(crate) mod locks;
 #[cfg(not(test))]
 #[path = "vfs/ntfs.rs"]
 mod ntfs;
+#[path = "vfs/posix.rs"]
+pub(crate) mod posix;
 #[cfg(not(test))]
 #[path = "vfs/readonly.rs"]
 mod readonly;
@@ -32,11 +34,39 @@ pub(crate) trait Node: Send {
     fn write(&self, offset: u64, data: &[u8]) -> Result<()>;
     fn sync(&self) -> Result<()>;
     fn identity(&self) -> (u32, u64);
+    fn metadata(&self) -> Result<posix::Metadata> {
+        let (volume, ino) = self.identity();
+        Ok(posix::Metadata {
+            dev: u64::from(volume),
+            ino,
+            mode: 0o100666,
+            nlink: 1,
+            size: self.len()?,
+            ..Default::default()
+        })
+    }
+    fn dirent(&self, _offset: u64) -> Result<Option<posix::DirEntry>> {
+        Err(Errno::NotDirectory)
+    }
     fn stamp(&self) -> Result<(u16, u16)>;
     fn set_stamp(&self, time: u16, date: u16) -> Result<()>;
 }
 
 pub(crate) fn open(cwd: Directories, path: &str, flags: Open) -> Result<(File, bool)> {
+    if path.starts_with('/') && posix::native(path.as_bytes()) {
+        return posix::open(
+            cwd,
+            posix::ROOT,
+            path.as_bytes(),
+            flags,
+            0o644,
+            posix::ADMIN,
+            false,
+        );
+    }
+    open_dos(cwd, path, flags)
+}
+fn open_dos(cwd: Directories, path: &str, flags: Open) -> Result<(File, bool)> {
     if flags.truncate && !flags.access.writable() {
         return Err(Errno::Invalid);
     }

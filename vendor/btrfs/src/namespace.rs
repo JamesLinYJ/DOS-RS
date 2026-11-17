@@ -253,21 +253,26 @@ impl Filesystem {
         crate::verity::refuse_mutation(child.ino, child.flags)?;
         let mut pending = Pending::default();
         self.drop_entry(&mut pending, parent, name, child.ino)?;
-        let inode_key = key(child.ino, INODE_ITEM_KEY, 0);
-        let mut inode = pending.get(self, inode_key)?.ok_or(Error::NotFound)?;
-        inode[io::NLINK..io::NLINK + 4].fill(0);
-        pending.set(inode_key, Some(inode));
-        pending.touch(child.ino, &[io::CTIME]);
+        self.orphan_last_link(&mut pending, child.ino)?;
         pending.touch(parent, &[io::CTIME, io::MTIME]);
-        let orphan = key(crate::subvol::ORPHAN_OBJECTID, crate::subvol::ORPHAN_ITEM_KEY, child.ino);
-        if pending.get(self, orphan)?.is_some() {
-            return Err(Error::BadSuperblock("duplicate file orphan".into()));
-        }
-        pending.set(orphan, Some(Vec::new()));
         let generation = self.next_generation()?;
         let time = now();
         let edits = pending.into_edits(self, generation, time)?;
         self.commit_edits_in(self.written_tree(), child.ino, edits, generation, time)
+    }
+
+    fn orphan_last_link(&self, pending: &mut Pending, ino: u64) -> Result<()> {
+        let inode_key = key(ino, INODE_ITEM_KEY, 0);
+        let mut inode = pending.get(self, inode_key)?.ok_or(Error::NotFound)?;
+        inode[io::NLINK..io::NLINK + 4].fill(0);
+        pending.set(inode_key, Some(inode));
+        pending.touch(ino, &[io::CTIME]);
+        let orphan = key(crate::subvol::ORPHAN_OBJECTID, crate::subvol::ORPHAN_ITEM_KEY, ino);
+        if pending.get(self, orphan)?.is_some() {
+            return Err(Error::BadSuperblock("duplicate file orphan".into()));
+        }
+        pending.set(orphan, Some(Vec::new()));
+        Ok(())
     }
 
     /// Reclaim a pinned inode on last close, or after reopening a volume whose
@@ -397,9 +402,17 @@ impl Filesystem {
         new_parent: u64,
         new_name: &[u8],
     ) -> Result<()> {
+        self.rename_pinned(old_parent, old_name, new_parent, new_name, None)
+    }
+
+    /// Preserve an open destination inode in the same transaction as rename.
+    pub fn rename_pinned(
+        &mut self, old_parent: u64, old_name: &[u8], new_parent: u64, new_name: &[u8],
+        pinned: Option<u64>,
+    ) -> Result<()> {
         if self.writable.is_none() && self.subvolume_writes.is_some() {
             return self
-                .writing_subvolume(|fs| fs.rename(old_parent, old_name, new_parent, new_name));
+                .writing_subvolume(|fs| fs.rename_pinned(old_parent, old_name, new_parent, new_name, pinned));
         }
         self.require_writable()?;
         let root = self.written_tree();
@@ -438,9 +451,13 @@ impl Filesystem {
                     (false, false) => {}
                 }
                 self.drop_entry(&mut p, new_parent, new_name, target.ino)?;
-                let (releases, unrefs) = self.drop_link(&mut p, &target, new_name)?;
-                if !releases.is_empty() || !unrefs.is_empty() {
-                    replaced = Some((target.ino, releases, unrefs));
+                if Some(target.ino) == pinned && target.nlink == 1 && target.is_regular_file() {
+                    self.orphan_last_link(&mut p, target.ino)?;
+                } else {
+                    let (releases, unrefs) = self.drop_link(&mut p, &target, new_name)?;
+                    if !releases.is_empty() || !unrefs.is_empty() {
+                        replaced = Some((target.ino, releases, unrefs));
+                    }
                 }
             }
             Err(Error::NotFound) => {}
@@ -516,6 +533,34 @@ impl Filesystem {
             )));
         }
         Ok(())
+    }
+
+    /// The current name and parent of a directory, read from its inode reference.
+    /// A working directory keeps its inode even when a different process renames it.
+    pub fn directory_parent(&self, ino: u64) -> Result<(u64, Vec<u8>)> {
+        if !self.read_inode(ino)?.is_dir() {
+            return Err(Error::NotADirectory);
+        }
+        if ino == self.root_inode()?.ino {
+            return Ok((ino, Vec::new()));
+        }
+        let mut parent = None;
+        self.pool_reader().tree().for_each_from(
+            self.fs_tree_root,
+            &key(ino, INODE_REF_KEY, 0),
+            &mut |k, record| {
+                if k.objectid == ino && k.key_type == INODE_REF_KEY {
+                    let n = record.get(8..10)
+                        .map(|b| usize::from(u16::from_le_bytes([b[0], b[1]])))
+                        .ok_or_else(|| Error::BadSuperblock("short directory inode reference".into()))?;
+                    let name = record.get(10..10 + n)
+                        .ok_or_else(|| Error::BadSuperblock("truncated directory inode name".into()))?;
+                    parent = Some((k.offset, name.to_vec()));
+                }
+                Ok(false)
+            },
+        )?;
+        parent.ok_or(Error::NotFound)
     }
 
     /// Whether directory `dir` is `ancestor` or lies below it, walking

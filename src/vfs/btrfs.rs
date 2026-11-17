@@ -13,6 +13,9 @@ use dosrs_block::{BlockDevice, BlockRead};
 use dosrs_btrfs::{Error, Filesystem, inode::Inode};
 use dosrs_native_posix::{Errno, Open, Result};
 
+#[path = "btrfs/posix.rs"]
+pub(super) mod posix;
+
 static VOLUME: KernelCell<Option<Mount>> = KernelCell::new(None);
 use super::folders::Folders;
 struct Mount {
@@ -51,11 +54,18 @@ pub fn mount(device: BlockWindow) -> bool {
         orphans: Default::default(),
     });
     crate::puts(if writable {
-        "Mounted Btrfs C:\\ (read/write).\n"
+        "Mounted Btrfs / (read/write).\n"
     } else {
-        "Mounted Btrfs C:\\ (read-only).\n"
+        "Mounted Btrfs / (read-only).\n"
     });
     true
+}
+pub(super) fn is_mounted() -> bool {
+    VOLUME.borrow().is_some()
+}
+#[cfg(not(test))]
+pub(super) fn is_writable() -> bool {
+    mounted(|m| Ok(m.fs.is_writable())).unwrap_or(false)
 }
 fn err(e: Error) -> Errno {
     match e {
@@ -131,7 +141,7 @@ impl Mount {
         Err(Errno::NoEntry)
     }
 }
-pub struct File(u64);
+pub struct File(u64, bool); // DOS attributes apply to legacy writes, POSIX permissions are checked at open.
 impl File {
     pub fn open(dir: u32, path: &[u8], flags: Open, dos: bool) -> Result<Self> {
         mounted(|m| {
@@ -158,7 +168,7 @@ impl File {
                 Err(e) => return Err(e),
             };
             *m.opens.entry(ino).or_default() += 1;
-            Ok(Self(ino))
+            Ok(Self(ino, true))
         })
     }
     pub fn read(&self, pos: u64, out: &mut [u8]) -> Result<usize> {
@@ -166,7 +176,7 @@ impl File {
     }
     pub fn write(&self, pos: u64, data: &[u8]) -> Result<()> {
         mounted(|m| {
-            if m.fs.read_inode(self.0).map_err(err)?.mode & 0o222 == 0 {
+            if self.1 && m.fs.read_inode(self.0).map_err(err)?.mode & 0o222 == 0 {
                 return Err(Errno::Access);
             }
             if data.is_empty() {
@@ -488,6 +498,12 @@ impl super::Node for File {
     fn sync(&self) -> Result<()> {
         Ok(())
     } // Every mutating operation commits and flushes.
+    fn metadata(&self) -> Result<super::posix::Metadata> {
+        mounted(|m| Ok(posix::metadata(&m.fs.read_inode(self.0).map_err(err)?)))
+    }
+    fn dirent(&self, offset: u64) -> Result<Option<super::posix::DirEntry>> {
+        posix::dirent(self.0, offset)
+    }
     fn identity(&self) -> (u32, u64) {
         (HARD, self.ino())
     }

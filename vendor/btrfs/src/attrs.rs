@@ -137,6 +137,13 @@ impl Filesystem {
     /// As [`Filesystem::set_xattr`].
     pub fn set_owner(&mut self, ino: u64, uid: Option<u32>, gid: Option<u32>) -> Result<()> {
         self.change_inode(ino, |raw| {
+            if uid.is_some_and(|id| id != le32(raw, io::UID))
+                || gid.is_some_and(|id| id != le32(raw, io::GID)) {
+                let mode = le32(raw, io::MODE);
+                if crate::inode::FileType::from_mode(mode) == Some(crate::inode::FileType::Regular) {
+                    put32(raw, io::MODE, mode & !0o6000);
+                }
+            }
             if let Some(uid) = uid {
                 put32(raw, io::UID, uid);
             }

@@ -7,5 +7,7 @@
 #define O_EXCL 128
 #define O_TRUNC 512
 #define O_APPEND 1024
+#define O_DIRECTORY 65536
+#define O_CLOEXEC 524288
 int open(const char *, int flags, ...);
 #endif
