@@ -3,6 +3,7 @@ extern crate alloc;
 mod compound;
 mod jobs;
 mod redirection;
+mod substitution;
 mod syntax;
 
 use alloc::{
@@ -57,7 +58,14 @@ struct Variable {
     exported: bool,
 }
 
+struct Invocation {
+    words: Vec<String>,
+    assignments: Vec<(String, String)>,
+}
+
 struct Shell {
+    shell_pid: i32,
+    substitution_status: Option<i32>,
     vars: BTreeMap<String, Variable>,
     functions: BTreeMap<String, alloc::rc::Rc<syntax::Command>>,
     function_depth: usize,
@@ -90,6 +98,8 @@ impl Shell {
             exported: true,
         });
         Self {
+            shell_pid: unsafe { getpid() },
+            substitution_status: None,
             vars,
             functions: BTreeMap::new(),
             function_depth: 0,
@@ -110,7 +120,7 @@ impl Shell {
     fn parameter(&self, key: &str) -> String {
         match key {
             "?" => self.last.to_string(),
-            "$" => unsafe { getpid() }.to_string(),
+            "$" => self.shell_pid.to_string(),
             "#" => self.args.len().saturating_sub(1).to_string(),
             "!" => self
                 .jobs
@@ -128,7 +138,7 @@ impl Shell {
             }
         }
     }
-    fn expand(&self, word: &Word, split: bool) -> Vec<String> {
+    fn expand(&mut self, word: &Word, split: bool) -> Result<Vec<String>, ()> {
         let mut fields = Vec::new();
         let mut field = String::new();
         let mut present = false;
@@ -147,8 +157,12 @@ impl Shell {
                         present = true;
                     }
                 }
-                Part::Parameter(name, quoted) => {
-                    let text = self.parameter(name);
+                Part::Parameter(_, quoted) | Part::Substitution(_, quoted) => {
+                    let text = match part {
+                        Part::Parameter(name, _) => self.parameter(name),
+                        Part::Substitution(body, _) => self.capture(body)?,
+                        _ => unreachable!(),
+                    };
                     if *quoted || !split {
                         field.push_str(&text);
                         present = true;
@@ -172,7 +186,7 @@ impl Shell {
         if present {
             fields.push(field);
         }
-        fields
+        Ok(fields)
     }
     fn set(&mut self, name: &str, value: &str) {
         self.vars.entry(name.into()).or_default().value = value.into();
@@ -380,7 +394,8 @@ impl Shell {
         Some(code)
     }
 
-    fn command(&mut self, command: &syntax::Command, child: bool) -> i32 {
+    fn invocation(&mut self, command: &syntax::Command) -> Result<Invocation, ()> {
+        self.substitution_status = None;
         let mut assignments: Vec<(String, String)> = Vec::new();
         let mut words = Vec::new();
         for word in &command.words {
@@ -389,14 +404,24 @@ impl Shell {
                 && let Some((key, _)) = first.split_once('=')
                 && syntax::identifier(key)
             {
-                let s = self.expand(word, false).concat();
+                let s = self.expand(word, false)?.concat();
                 if let Some((k, v)) = s.split_once('=') {
                     assignments.push((k.into(), v.into()));
                     continue;
                 }
             }
-            words.extend(self.expand(word, true));
+            words.extend(self.expand(word, true)?);
         }
+        Ok(Invocation { words, assignments })
+    }
+    fn command(&mut self, command: &syntax::Command, child: bool) -> i32 {
+        match self.invocation(command) {
+            Ok(invocation) => self.invoke(command, child, invocation),
+            Err(()) => 1,
+        }
+    }
+    fn invoke(&mut self, command: &syntax::Command, child: bool, invocation: Invocation) -> i32 {
+        let Invocation { words, assignments } = invocation;
         let permanent = words.as_slice() == ["exec"];
         let saved = match redirection::apply(self, &command.redirects, !child) {
             Ok(saved) => saved,
@@ -408,7 +433,7 @@ impl Shell {
             for (k, v) in &assignments {
                 self.set(k, v);
             }
-            0
+            self.substitution_status.unwrap_or(0)
         } else if let Some(body) = self.functions.get(&words[0]).cloned() {
             self.call_function(&body, &words, assignments)
         } else if let Some(code) = self.builtin(&words) {
@@ -420,14 +445,14 @@ impl Shell {
         result
     }
     fn pipeline(&mut self, p: &Pipeline) -> i32 {
+        let mut prepared = None;
         if p.commands.len() == 1 && !p.background {
-            let words = &p.commands[0].words;
-            let name = words.iter().flat_map(|w| self.expand(w, true)).find(|s| {
-                !s.split_once('=')
-                    .is_some_and(|(k, _)| syntax::identifier(k))
-            });
+            let Ok(call) = self.invocation(&p.commands[0]) else {
+                return 1;
+            };
+            let name = call.words.first().map(String::as_str);
             if !matches!(p.commands[0].compound, Some(syntax::Compound::Subshell(_)))
-                && name.as_deref().is_none_or(|name| {
+                && name.is_none_or(|name| {
                     self.functions.contains_key(name)
                         || matches!(
                             name,
@@ -449,8 +474,9 @@ impl Shell {
                         )
                 })
             {
-                return self.command(&p.commands[0], false);
+                return self.invoke(&p.commands[0], false, call);
             }
+            prepared = Some(call);
         }
         let mut children = Vec::new();
         let mut group = 0;
@@ -481,7 +507,10 @@ impl Shell {
                     let _ = close(next[0]);
                     let _ = close(next[1]);
                 }
-                exit(self.command(cmd, true));
+                exit(match prepared.take() {
+                    Some(call) => self.invoke(cmd, true, call),
+                    None => self.command(cmd, true),
+                });
             }
             if input >= 0 {
                 let _ = close(input);
@@ -510,7 +539,11 @@ impl Shell {
                 .commands
                 .first()
                 .and_then(|c| c.words.first())
-                .map(|w| self.expand(w, false).concat())
+                .and_then(|word| word.first())
+                .map(|part| match part {
+                    Part::Literal(s) | Part::Quoted(s) | Part::Parameter(s, _) => s.clone(),
+                    Part::Substitution(..) => "$(…)".into(),
+                })
                 .unwrap_or_default();
             let Some(mut job) = jobs::Job::new(group, children, name) else {
                 return 1;

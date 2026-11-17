@@ -106,7 +106,11 @@ impl Shell {
         }
     }
 
-    fn matches_pattern(&self, word: &super::Word, subject: &core::ffi::CStr) -> bool {
+    fn matches_pattern(
+        &mut self,
+        word: &super::Word,
+        subject: &core::ffi::CStr,
+    ) -> Result<bool, ()> {
         use super::Part;
         let mut pattern = String::new();
         for part in word {
@@ -114,6 +118,7 @@ impl Shell {
                 Part::Literal(text) => (text.clone(), false),
                 Part::Quoted(text) => (text.clone(), true),
                 Part::Parameter(key, quoted) => (self.parameter(key), *quoted),
+                Part::Substitution(body, quoted) => (self.capture(body)?, *quoted),
             };
             for ch in text.chars() {
                 if quoted {
@@ -122,27 +127,37 @@ impl Shell {
                 pattern.push(ch);
             }
         }
-        alloc::ffi::CString::new(pattern)
-            .is_ok_and(|p| unsafe { fnmatch(p.as_ptr(), subject.as_ptr(), 0) == 0 })
+        Ok(alloc::ffi::CString::new(pattern)
+            .is_ok_and(|p| unsafe { fnmatch(p.as_ptr(), subject.as_ptr(), 0) == 0 }))
     }
 
     pub(super) fn compound(&mut self, command: &Compound) -> i32 {
         match command {
             Compound::Case { value, arms } => {
-                let Ok(subject) = alloc::ffi::CString::new(self.expand(value, false).concat())
-                else {
+                let Ok(value) = self.expand(value, false) else {
+                    return 1;
+                };
+                let Ok(subject) = alloc::ffi::CString::new(value.concat()) else {
                     return 1;
                 };
                 let mut fall = false;
                 let mut status = 0;
                 for arm in arms {
-                    if !fall
-                        && !arm
-                            .patterns
-                            .iter()
-                            .any(|p| self.matches_pattern(p, &subject))
-                    {
-                        continue;
+                    if !fall {
+                        let mut matched = false;
+                        for pattern in &arm.patterns {
+                            match self.matches_pattern(pattern, &subject) {
+                                Ok(true) => {
+                                    matched = true;
+                                    break;
+                                }
+                                Ok(false) => (),
+                                Err(()) => return 1,
+                            }
+                        }
+                        if !matched {
+                            continue;
+                        }
                     }
                     status = if arm.body.is_empty() {
                         0
@@ -202,7 +217,16 @@ impl Shell {
             }
             Compound::For { name, words, body } => {
                 let values: Vec<String> = match words {
-                    Some(words) => words.iter().flat_map(|w| self.expand(w, true)).collect(),
+                    Some(words) => {
+                        let mut fields = Vec::new();
+                        for word in words {
+                            let Ok(values) = self.expand(word, true) else {
+                                return 1;
+                            };
+                            fields.extend(values);
+                        }
+                        fields
+                    }
                     None => self.args.get(1..).unwrap_or_default().to_vec(),
                 };
                 self.loop_depth += 1;

@@ -4,11 +4,11 @@ use alloc::{string::String, vec::Vec};
 mod grammar;
 pub use grammar::parse;
 
-#[derive(PartialEq, Debug)]
 pub enum Part {
     Literal(String),
     Quoted(String),
     Parameter(String, bool),
+    Substitution(Vec<Pipeline>, bool),
 }
 pub type Word = Vec<Part>;
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -116,7 +116,9 @@ pub fn identifier(s: &str) -> bool {
         && bytes.all(|c| c == b'_' || c.is_ascii_alphanumeric())
 }
 
-fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<(Word, bool), Error> {
+type Input<'s> = core::iter::Peekable<core::str::Chars<'s>>;
+
+fn word(input: &mut Input<'_>, depth: u16) -> Result<(Word, bool), Error> {
     let mut parts = Vec::new();
     let mut quoted = false;
     let mut quote = None;
@@ -144,8 +146,39 @@ fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<(Word,
                     literal(&mut parts, escaped, true);
                 }
             }
+            '`' if quote != Some('\'') => {
+                quoted = true;
+                let mut source = String::new();
+                loop {
+                    match input.next() {
+                        Some('`') => break,
+                        Some('\\') => {
+                            let ch = input
+                                .next()
+                                .ok_or(Error::Incomplete("unfinished backquote"))?;
+                            if !matches!(ch, '$' | '`' | '\\' | '\n')
+                                && !(quote == Some('"') && ch == '"')
+                            {
+                                source.push('\\');
+                            }
+                            if ch != '\n' {
+                                source.push(ch);
+                            }
+                        }
+                        Some(c) => source.push(c),
+                        None => return Err(Error::Incomplete("unterminated backquote")),
+                    }
+                }
+                let body = grammar::parse_input(&mut source.chars().peekable(), depth + 1)?;
+                parts.push(Part::Substitution(body, quote.is_some()));
+            }
             '$' if quote != Some('\'') => {
                 quoted = true;
+                if input.next_if_eq(&'(').is_some() {
+                    let body = grammar::substitution(input, depth + 1)?;
+                    parts.push(Part::Substitution(body, quote.is_some()));
+                    continue;
+                }
                 let mut name = String::new();
                 if input.next_if_eq(&'{').is_some() {
                     loop {
@@ -181,52 +214,54 @@ fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<(Word,
     Ok((parts, quoted))
 }
 
-fn tokens(line: &str) -> Result<Vec<Token>, Error> {
-    let mut tokens = Vec::new();
-    let mut it = line.chars().peekable();
+fn token(it: &mut Input<'_>, depth: u16) -> Result<Option<Token>, Error> {
     while let Some(&c) = it.peek() {
-        match c {
+        let token = match c {
             '\n' => {
                 it.next();
-                tokens.push(Token::Newline);
+                Token::Newline
             }
             '(' => {
                 it.next();
-                tokens.push(Token::LeftParen);
+                Token::LeftParen
             }
             ')' => {
                 it.next();
-                tokens.push(Token::RightParen);
+                Token::RightParen
             }
             ';' => {
                 it.next();
-                tokens.push(if it.next_if_eq(&';').is_some() {
+                if it.next_if_eq(&';').is_some() {
                     Token::CaseEnd(false)
                 } else if it.next_if_eq(&'&').is_some() {
                     Token::CaseEnd(true)
                 } else {
                     Token::End(Condition::Always)
-                });
+                }
             }
             c if c.is_ascii_whitespace() => {
                 it.next();
+                continue;
             }
-            '#' => while it.next_if(|v| *v != '\n').is_some() {},
+            '#' => {
+                while it.next_if(|v| *v != '\n').is_some() {}
+                continue;
+            }
             '|' => {
                 it.next();
-                tokens.push(if it.next_if_eq(&'|').is_some() {
+                if it.next_if_eq(&'|').is_some() {
                     Token::End(Condition::Failure)
                 } else {
                     Token::Pipe
-                });
+                }
             }
             '&' => {
                 it.next();
-                tokens.push(if it.next_if_eq(&'&').is_some() {
+                if it.next_if_eq(&'&').is_some() {
                     Token::End(Condition::Success)
                 } else {
                     Token::Background
-                });
+                }
             }
             _ => {
                 let mut digits = it.clone();
@@ -252,14 +287,15 @@ fn tokens(line: &str) -> Result<Vec<Token>, Error> {
                         digits.next_if_eq(&'|');
                         Mode::Write
                     };
-                    it = digits;
-                    tokens.push(Token::Redirect(fd, mode));
+                    *it = digits;
+                    Token::Redirect(fd, mode)
                 } else {
-                    let (parts, quoted) = word(&mut it)?;
-                    tokens.push(Token::Word(parts, quoted));
+                    let (parts, quoted) = word(it, depth)?;
+                    Token::Word(parts, quoted)
                 }
             }
-        }
+        };
+        return Ok(Some(token));
     }
-    Ok(tokens)
+    Ok(None)
 }

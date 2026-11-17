@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -72,7 +73,8 @@ def check(arch, root, proof):
     subprocess.run(["mcopy", "-i", disk, "-", "::a.txt"], input=DATA, check=True)
     source = qemu.ROOT / "tests/user-shell/control.sh"
     subprocess.run(["mcopy", "-i", disk, source, "::control.sh"], check=True)
-    reference = subprocess.run(["/bin/sh", source, "one", "two words"],
+    reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
+    reference = subprocess.run([reference_shell, source, "one", "two words"],
                                cwd=root, env=dict(os.environ, LC_ALL="C"), capture_output=True)
     if reference.returncode != 13 or reference.stderr:
         raise RuntimeError(f"host shell reference failed: {reference!r}")

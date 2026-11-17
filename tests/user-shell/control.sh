@@ -87,4 +87,26 @@ case miss in hit) echo wrong; esac
 echo "no-match:$?"
 case x in x) ;; esac
 echo "empty:$?"
+hold=outer
+capture=$(hold=inner; echo "$hold"; echo; echo; exit 27)
+echo "capture:$?:$capture:$hold"
+echo "nested:$(echo "$(echo nested)")"
+echo "case:$(case x in x) echo yes ;; esac)"
+legacy=`echo older`
+echo "legacy:$legacy"
+origin=$$
+case "$(echo $$)" in "$origin") echo same-dollar ;; *) echo wrong-dollar ;; esac
+mark() { echo mark >> mark.tmp; echo echo; }
+: > mark.tmp
+$(mark) once
+for rows in $(wc -l < mark.tmp); do echo "marks:$rows"; done
+marker=$(echo first; echo second)
+for part in $marker; do echo "field:$part"; done
+echo "quoted:$marker"
+echo via > "$(echo path.tmp)"
+cat path.tmp
+bulk=x
+for k in a b c d e f g h i j k l m; do bulk="$bulk$bulk"; done
+result=$(echo "$bulk")
+for bytes in $(echo "$result" | wc -c); do echo "bytes:$bytes"; done
 exit 13

@@ -8,13 +8,45 @@ use alloc::{collections::VecDeque, string::String, vec::Vec};
 enum End {
     List,
     Group,
+    Substitution,
     Case,
 }
 
-struct Parser(VecDeque<Token>);
+// Reading only as far as the grammar needs lets the closing parenthesis
+// return directly to the outer word, even inside a double-quoted string.
+struct Tokens<'a, 's> {
+    source: &'a mut super::Input<'s>,
+    ready: VecDeque<Token>,
+    depth: u16,
+    error: Option<Error>,
+}
+impl Tokens<'_, '_> {
+    fn get(&mut self, index: usize) -> Option<&Token> {
+        while self.ready.len() <= index && self.error.is_none() {
+            match super::token(self.source, self.depth) {
+                Ok(Some(t)) => self.ready.push_back(t),
+                Ok(None) => break,
+                Err(e) => self.error = Some(e),
+            }
+        }
+        self.ready.get(index)
+    }
+    fn front(&mut self) -> Option<&Token> {
+        self.get(0)
+    }
+    fn is_empty(&mut self) -> bool {
+        self.front().is_none()
+    }
+    fn pop_front(&mut self) -> Option<Token> {
+        self.front()?;
+        self.ready.pop_front()
+    }
+}
 
-impl Parser {
-    fn keyword(&self) -> Option<&str> {
+struct Parser<'a, 's>(Tokens<'a, 's>);
+
+impl Parser<'_, '_> {
+    fn keyword(&mut self) -> Option<&str> {
         match self.0.front()? {
             Token::Word(parts, false) => match parts.as_slice() {
                 [Part::Literal(word)] => Some(word),
@@ -37,7 +69,7 @@ impl Parser {
             Err(self.expected(name))
         }
     }
-    fn expected(&self, text: &'static str) -> Error {
+    fn expected(&mut self, text: &'static str) -> Error {
         if self.0.is_empty() {
             Error::Incomplete(text)
         } else {
@@ -68,7 +100,8 @@ impl Parser {
             self.newlines();
             let stop = self.0.is_empty()
                 || self.keyword().is_some_and(|s| ends.contains(&s))
-                || end == End::Group && matches!(self.0.front(), Some(Token::RightParen))
+                || matches!(end, End::Group | End::Substitution)
+                    && matches!(self.0.front(), Some(Token::RightParen))
                 || end == End::Case && matches!(self.0.front(), Some(Token::CaseEnd(_)));
             if stop {
                 if when != Condition::Always
@@ -97,7 +130,9 @@ impl Parser {
             });
             when = match self.0.front() {
                 None => Condition::Always,
-                Some(Token::RightParen) if end == End::Group => Condition::Always,
+                Some(Token::RightParen) if matches!(end, End::Group | End::Substitution) => {
+                    Condition::Always
+                }
                 Some(Token::CaseEnd(_)) if end == End::Case => Condition::Always,
                 Some(Token::Newline | Token::Background) => {
                     self.0.pop_front();
@@ -182,11 +217,13 @@ impl Parser {
             let body = self.do_group(nested)?;
             Some(Compound::While { until, test, body })
         } else if self.take("for") {
-            let name = String::from(
-                self.keyword()
-                    .filter(|name| identifier(name))
-                    .ok_or_else(|| self.expected("expected for variable"))?,
-            );
+            let Some(name) = self
+                .keyword()
+                .filter(|name| identifier(name))
+                .map(String::from)
+            else {
+                return Err(self.expected("expected for variable"));
+            };
             self.0.pop_front();
             self.newlines();
             let words = if self.take("in") {
@@ -296,6 +333,38 @@ impl Parser {
     }
 }
 
+fn parse_until(input: &mut super::Input<'_>, end: End, depth: u16) -> Result<Vec<Pipeline>, Error> {
+    let mut parser = Parser(Tokens {
+        source: input,
+        ready: VecDeque::new(),
+        depth,
+        error: None,
+    });
+    let result = parser.list(&[], end, depth);
+    if let Some(error) = parser.0.error.take() {
+        return Err(error);
+    }
+    let commands = result?;
+    if end == End::Substitution && !matches!(parser.0.pop_front(), Some(Token::RightParen)) {
+        return Err(Error::Incomplete("unterminated command substitution"));
+    }
+    Ok(commands)
+}
+
+pub(super) fn substitution(
+    input: &mut super::Input<'_>,
+    depth: u16,
+) -> Result<Vec<Pipeline>, Error> {
+    parse_until(input, End::Substitution, depth)
+}
+
+pub(super) fn parse_input(
+    input: &mut super::Input<'_>,
+    depth: u16,
+) -> Result<Vec<Pipeline>, Error> {
+    parse_until(input, End::List, depth)
+}
+
 pub fn parse(line: &str) -> Result<Vec<Pipeline>, Error> {
-    Parser(super::tokens(line)?.into()).list(&[], End::List, 0)
+    parse_input(&mut line.chars().peekable(), 0)
 }

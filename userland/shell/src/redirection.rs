@@ -56,14 +56,14 @@ fn redirect(fd: i32, mode: Mode, value: &str) -> Result<(), i32> {
 }
 
 pub(super) fn apply(
-    sh: &Shell,
+    sh: &mut Shell,
     redirects: &[Redirect],
     preserve: bool,
 ) -> Result<Vec<(i32, i32)>, ()> {
     let targets: Vec<String> = redirects
         .iter()
-        .map(|r| sh.expand(&r.target, false).concat())
-        .collect();
+        .map(|r| sh.expand(&r.target, false).map(|s| s.concat()))
+        .collect::<Result<_, _>>()?;
     let mut first_free: i32 = 10;
     for (r, value) in redirects.iter().zip(&targets) {
         let source = if r.mode == Mode::Duplicate {
