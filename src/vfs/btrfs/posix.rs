@@ -18,7 +18,7 @@ fn access(n: &Inode, who: Credentials, mask: u32) -> Result<()> {
     }
     let shift = if who.uid == n.uid {
         6
-    } else if who.gid == n.gid {
+    } else if who.in_group(n.gid) {
         3
     } else {
         0
@@ -474,7 +474,7 @@ fn owner(m: &mut Mount, n: &Inode, uid: u32, gid: u32, who: Credentials) -> Resu
     if who.uid != 0
         && (who.uid != n.uid
             || uid != u32::MAX && uid != n.uid
-            || gid != u32::MAX && gid != who.gid && gid != n.gid)
+            || gid != u32::MAX && !who.in_group(gid) && gid != n.gid)
     {
         return Err(Errno::Permission);
     }
@@ -489,7 +489,7 @@ fn permissions(m: &mut Mount, n: &Inode, mode: u32, who: Credentials) -> Result<
     if who.uid != 0 && who.uid != n.uid {
         return Err(Errno::Permission);
     }
-    let mask = if who.uid != 0 && who.gid != n.gid {
+    let mask = if who.uid != 0 && !who.in_group(n.gid) {
         0o5777
     } else {
         0o7777

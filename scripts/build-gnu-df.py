@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-build the unmodified GNU 9.12 df oracle for the AArch64 Linux RAM guest."""
+"""Cross-build an unmodified GNU 9.12 utility oracle for the AArch64 Linux RAM guest."""
 
 import argparse
 import hashlib
@@ -58,15 +58,16 @@ def main(args):
         input=b"dosrs-headers: $(BUILT_SOURCES)\n",
         check=True,
     )
-    subprocess.run([*cmd, "src/df"], cwd=source, env=env, check=True)
+    subprocess.run([*cmd, "src/" + args.tool], cwd=source, env=env, check=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source / "src/df", args.output)
+    shutil.copy2(source / "src" / args.tool, args.output)
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--archive", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--tool", choices=["df", "id", "groups", "whoami", "chgrp", "chown"], default="df")
     p.add_argument("--build-dir", type=Path, default=ROOT / "target/gnu-linux-df")
     p.add_argument("--ar", default=os.environ.get("LLVM_AR", "llvm-ar"))
     p.add_argument("--ranlib", default=os.environ.get("LLVM_RANLIB", "llvm-ranlib"))

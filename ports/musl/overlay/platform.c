@@ -323,6 +323,10 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
         return sys_symlinkat(a, b, c);
     case SYS_setuid:
         return sys_setuid(a);
+    case SYS_getgroups:
+        return sys_getgroups(a, b);
+    case SYS_setgroups:
+        return sys_setgroups(a, b);
     case SYS_setgid:
         return sys_setgid(a);
     case SYS_chown:

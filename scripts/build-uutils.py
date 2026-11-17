@@ -27,8 +27,9 @@ FILE_TOOLS = (
     "stat", "tee", "touch", "truncate",
 )
 TREE_TOOLS = ("dd", "df", "pathchk", "realpath", "shred")
+IDENTITY_TOOLS = ("chgrp", "chown", "groups", "id", "whoami")
 POSIX_TOOLS = ("csplit", "env", "join", "pr", "printenv", "test")
-DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS + POSIX_TOOLS
+DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS + POSIX_TOOLS + IDENTITY_TOOLS
 
 
 def digest(path):

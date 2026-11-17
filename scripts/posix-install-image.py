@@ -22,6 +22,17 @@ def make_root(arch, work, extra):
         shutil.copytree(extra, tree, symlinks=True)
     for name in ("bin", "dev", "etc", "tmp", "usr", "home"):
         (tree / name).mkdir(parents=True, exist_ok=True)
+    (tree / "root").mkdir(mode=0o700, exist_ok=True)
+    accounts = tree / "etc"
+    if not accounts.is_symlink():
+        for source in (qemu.ROOT / "userland/etc").iterdir():
+            dest = accounts / source.name
+            try:
+                with dest.open("xb") as stream:
+                    stream.write(source.read_bytes())
+            except FileExistsError:
+                continue
+            dest.chmod(0o644)
     (tree/"tmp").chmod(0o1777)
     subprocess.run([sys.executable, qemu.ROOT/"scripts/build-rust-tools.py", "--arch", arch,
                     "--output", tree/"bin"], check=True)

@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 mod executable;
 mod io;
+mod groups;
 mod paths;
 mod pipe;
 mod poll;

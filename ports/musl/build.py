@@ -54,6 +54,7 @@ def prepare(src, target, cpu, archive):
         ("cancel.c", "src/thread/dos_cancel.c"),
         ("sigwait.c", "src/signal/sigwait.c"),
         ("setxid.c", "src/unistd/setxid.c"),
+        ("setgroups.c", "src/linux/setgroups.c"),
         ("pwrite.c", "src/unistd/pwrite.c"),
     ):
         copy(overlay / port, src / upstream)
@@ -75,6 +76,12 @@ def prepare(src, target, cpu, archive):
         body = member.read().decode()
         header = release.extractfile("musl-1.2.6/include/fcntl.h").read().decode()
         timed_wait = release.extractfile("musl-1.2.6/src/signal/sigtimedwait.c").read().decode()
+        nscd = release.extractfile("musl-1.2.6/src/passwd/nscd_query.c").read().decode()
+    # An unavailable socket provider means there is no nscd cache. Let musl
+    # continue its normal passwd/group file lookup, including on a minimal root.
+    nscd = nscd.replace("errno == EAFNOSUPPORT", "errno == EAFNOSUPPORT || errno == ENOSYS")
+    nscd = nscd.replace('fopen("/dev/null", "re")', 'fmemopen(0, 0, "r")')
+    generated(src / "src/passwd/nscd_query.c", nscd)
     # Return EINTR to a timed waiter after a different caught signal. Repeating
     # the full relative timeout on every interrupt would extend its deadline.
     timed_wait = timed_wait.replace("do ret = do_sigtimedwait(mask, si, timeout);\n\twhile (ret==-EINTR);",

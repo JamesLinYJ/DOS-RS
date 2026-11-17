@@ -19,11 +19,17 @@ impl PosixDir {
 pub(crate) const ROOT_INODE: u64 = 256;
 pub(crate) const ROOT: PosixDir = PosixDir::Btrfs(ROOT_INODE);
 #[derive(Clone, Copy)]
-pub(crate) struct Credentials {
+pub(crate) struct Credentials<'a> {
     pub uid: u32,
     pub gid: u32,
+    pub groups: &'a [u32],
 }
-pub(crate) const ADMIN: Credentials = Credentials { uid: 0, gid: 0 };
+impl Credentials<'_> {
+    pub(crate) fn in_group(self, gid: u32) -> bool {
+        self.gid == gid || self.groups.binary_search(&gid).is_ok()
+    }
+}
+pub(crate) const ADMIN: Credentials<'static> = Credentials { uid: 0, gid: 0, groups: &[] };
 #[derive(Clone, Copy)]
 pub(crate) struct Times {
     pub value: [Option<(i64, u32)>; 2],

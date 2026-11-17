@@ -42,3 +42,15 @@ The JSON records both versions of df and both kernels' statvfs counters. FAT cap
 Run `--filesystem btrfs --tree-tools` for 20 comparisons across nested directories. The cases cover recursive copy, symlink traversal, rename and removal, byte offsets in dd, portable-name checks and shred's logical zero pass. The stopped volume supplies the file hashes and permissions. The 32-bit and 64-bit stack regressions replay the exact previously built shred executables via `--replay-elf-dir`.
 
 Run `--filesystem btrfs --posix-tools` for the 34 GNU comparisons for csplit, env, join, pr, printenv and test. The pr port preserves raw input bytes and aligns multi-column output using tab stops. The stopped Btrfs image retains the csplit pieces and evidence of cleanup after a failed match.
+
+The identity and file ownership tests use genuine GNU 9.12 binaries in a Linux AArch64 guest. Both DOS-RS targets use the same editable account and group fixtures, including IDs greater than 65535. The test checks process-wide groups across threads, fork and exec, then compares each command's output streams, exit status and the ownership of files recovered from Btrfs.
+
+```sh
+for tool in chgrp chown groups id whoami; do
+    python3 scripts/build-gnu-df.py --archive "$GNU_COREUTILS_ARCHIVE" --tool "$tool" --output "target/identity-gnu/$tool"
+done
+for arch in i686 x86_64; do
+    python3 scripts/build-uutils.py --arch "$arch" --archive "$UUTILS_ARCHIVE" --output "target/identity-native/$arch" chgrp chown groups id whoami
+done
+python3 scripts/qemu-groups.py --ram-dir "$RAM_DIR" --gnu-bin target/identity-gnu --rust-bin target/identity-native
+```

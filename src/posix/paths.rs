@@ -7,7 +7,7 @@ use super::{executable::errno, io::ProcessContext};
 use crate::{arch::user::AddressSpace, vfs::posix as fs};
 use alloc::vec::Vec;
 use dosrs_native_exec::Call;
-use dosrs_native_posix::{Access, Open};
+use dosrs_native_posix::{Access, Open, Process};
 type Result<T> = core::result::Result<T, isize>;
 pub(super) fn string(image: &AddressSpace, address: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -203,6 +203,7 @@ pub(super) fn dispatch(
                     return Err(-1);
                 }
                 if call == Call::Setuid {
+                    super::process::set_uid(p.getpid(), id)?;
                     p.uid = id;
                 } else {
                     p.gid = id;

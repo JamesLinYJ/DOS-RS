@@ -104,3 +104,5 @@ uname 161 1
 sethostname 162 2
 getaffinity 163 3
 mountinfo 164 3
+getgroups 165 2
+setgroups 166 2

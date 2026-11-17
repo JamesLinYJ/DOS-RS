@@ -246,6 +246,8 @@ fn immediate(
         Call::Getpid => Ok(p.getpid() as usize),
         Call::Getuid => Ok(p.uid as usize),
         Call::Getgid => Ok(p.gid as usize),
+        Call::Getgroups => p.groups.get(image, a, b),
+        Call::Setgroups => p.groups.set(image, p.uid, a, b),
         Call::Mapmem => image.map_anonymous(a).map_err(memory_error),
         Call::Unmapmem => image.unmap_anonymous(a, b).map(|_| 0).map_err(memory_error),
         Call::Meminfo => {

@@ -49,6 +49,13 @@ pub fn register(pid: u32, parent: u32, uid: u32) -> Result<(), isize> {
     Ok(())
 }
 
+pub(super) fn set_uid(pid: u32, uid: u32) -> Result<(), isize> {
+    let mut table = TABLE.borrow();
+    let record = table.iter_mut().find(|r| r.pid == pid).ok_or(-3isize)?;
+    record.uid = uid;
+    Ok(())
+}
+
 pub fn exec(pid: u32) {
     if let Some(caller) = TABLE.borrow().iter_mut().find(|p| p.pid == pid) {
         caller.execed = true;

@@ -122,6 +122,7 @@ pub(super) struct ProcessContext {
     pub(super) caller_mask: u64,
     pub(super) uid: u32,
     pub(super) gid: u32,
+    pub(super) groups: super::groups::Groups,
     cwd: Directories,
     pub(super) directory: vfs::posix::PosixDir,
     cwd_pin: Option<Arc<KernelCell<File>>>,
@@ -154,6 +155,7 @@ impl ProcessContext {
             caller_mask: 0,
             uid: 0,
             gid: 0,
+            groups: Default::default(),
             directory: if cwd_pin.is_some() {
                 directory
             } else {
@@ -238,6 +240,7 @@ impl ProcessContext {
             caller_mask: 0,
             uid: self.uid,
             gid: self.gid,
+            groups: self.groups,
             cwd: self.cwd,
             directory: self.directory,
             cwd_pin: self.cwd_pin.clone(),
@@ -259,10 +262,11 @@ impl ProcessContext {
         self.pid = 0;
         status
     }
-    pub(super) fn credentials(&self) -> vfs::posix::Credentials {
+    pub(super) fn credentials(&self) -> vfs::posix::Credentials<'_> {
         vfs::posix::Credentials {
             uid: self.uid,
             gid: self.gid,
+            groups: self.groups.as_slice(),
         }
     }
     pub(super) fn chdir(&mut self, from: vfs::posix::PosixDir, path: &[u8]) -> Result<()> {
