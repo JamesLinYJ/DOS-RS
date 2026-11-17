@@ -18,3 +18,89 @@ utilities/echo.html#tag_20_37_05	implementation-defined:1	partial	partial	qemu-c
 utilities/basename.html#tag_20_07_03	implementation-defined:1	passed	passed	qemu-coreutils.py#71	The operand // produces one slash
 utilities/head.html#tag_20_57	head	partial	partial	qemu-coreutils.py#84..103	Line/byte selection, signed counts, NUL separator, multiple files, headers and errors
 utilities/tail.html#tag_20_118	tail	partial	partial	qemu-coreutils.py#104..123	Line/byte selection, signed counts, NUL separator, multiple files, headers and errors
+functions/link.html#tag_17_304	link	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/symlink.html#tag_17_597	symlink	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/fstatat.html#tag_17_190	lstat	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/fstatat.html#tag_17_190	stat	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/readlink.html#tag_17_478	readlink	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/mkdir.html#tag_17_338	mkdir	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/chdir.html#tag_17_71	chdir	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/getcwd.html#tag_17_205	getcwd	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/rmdir.html#tag_17_493	rmdir	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/fstat.html#tag_17_189	fstat	partial	partial	ports/musl/tests/files.c	Create with O_CREAT|O_EXCL and umask 0027, check resulting file mode, size and inode
+functions/open.html#tag_17_372	open	partial	partial	ports/musl/tests/files.c	Create with O_CREAT|O_EXCL and umask 0027, check resulting file mode, size and inode
+functions/umask.html#tag_17_645	umask	partial	partial	ports/musl/tests/files.c	Create with O_CREAT|O_EXCL and umask 0027, check resulting file mode, size and inode
+functions/chmod.html#tag_17_72	chmod	partial	partial	ports/musl/tests/files.c	Change permissions via hard link and observe through symbolic link
+functions/fdopendir.html#tag_17_143	opendir	partial	partial	ports/musl/tests/files.c	Enumerate three independently created entries to end of stream and close directory
+functions/readdir.html#tag_17_477	readdir	partial	partial	ports/musl/tests/files.c	Enumerate three independently created entries to end of stream and close directory
+functions/closedir.html#tag_17_82	closedir	partial	partial	ports/musl/tests/files.c	Enumerate three independently created entries to end of stream and close directory
+functions/unlink.html#tag_17_649	unlink	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/rename.html#tag_17_489	rename	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/lseek.html#tag_17_321	lseek	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/read.html#tag_17_476	read	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/write.html#tag_17_699	write	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/close.html#tag_17_81	close	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/open.html#tag_17_372	openat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/fstatat.html#tag_17_190	fstatat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/mkdir.html#tag_17_338	mkdirat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/link.html#tag_17_304	linkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/symlink.html#tag_17_597	symlinkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/readlink.html#tag_17_478	readlinkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/rename.html#tag_17_489	renameat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/unlink.html#tag_17_649	unlinkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/truncate.html#tag_17_639	truncate	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/ftruncate.html#tag_17_195	ftruncate	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/access.html#tag_17_07	access	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/fork.html#tag_17_172	fork	partial	partial	native-exec/examples/family.c	Check independent memory, shared offsets, raw-byte argv/env, ENOENT and process-group waits
+functions/exec.html#tag_17_129	execve	partial	partial	native-exec/examples/family.c	Check independent memory, shared offsets, raw-byte argv/env, ENOENT and process-group waits
+functions/wait.html#tag_17_658	waitpid	partial	partial	native-exec/examples/family.c	Check independent memory, shared offsets, raw-byte argv/env, ENOENT and process-group waits
+functions/pipe.html#tag_17_377	pipe	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/dup.html#tag_17_116	dup2	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getpid.html#tag_17_225	getpid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getppid.html#tag_17_226	getppid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getsid.html#tag_17_234	getsid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getpgid.html#tag_17_223	getpgid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/setpgid.html#tag_17_527	setpgid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/pthread_create.html#tag_17_427	pthread_create	partial	partial	ports/musl/tests/libc.c	Two workers retain separate initialized/zero-initialized TLS and errno and return distinct argument pointers
+functions/pthread_join.html#tag_17_434	pthread_join	partial	partial	ports/musl/tests/libc.c	Two workers retain separate initialized/zero-initialized TLS and errno and return distinct argument pointers
+functions/pthread_cond_broadcast.html#tag_17_421	pthread_cond_broadcast	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_cond_clockwait.html#tag_17_422	pthread_cond_wait	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_cond_clockwait.html#tag_17_422	pthread_cond_timedwait	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_mutex_lock.html#tag_17_442	pthread_mutex_lock	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_mutex_lock.html#tag_17_442	pthread_mutex_unlock	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_cancel.html#tag_17_419	pthread_cancel	partial	partial	ports/musl/tests/libc.c	Deferred cancellation at a blocked pipe read runs cleanup and joins with PTHREAD_CANCELED
+functions/pthread_cleanup_pop.html#tag_17_420	pthread_cleanup_push	partial	partial	ports/musl/tests/libc.c	Deferred cancellation at a blocked pipe read runs cleanup and joins with PTHREAD_CANCELED
+functions/pthread_cleanup_pop.html#tag_17_420	pthread_cleanup_pop	partial	partial	ports/musl/tests/libc.c	Deferred cancellation at a blocked pipe read runs cleanup and joins with PTHREAD_CANCELED
+functions/calloc.html#tag_17_53	calloc	partial	partial	ports/musl/tests/libc.c	Allocate zeroed storage, preserve data across resize and free the allocation
+functions/realloc.html#tag_17_480	realloc	partial	partial	ports/musl/tests/libc.c	Allocate zeroed storage, preserve data across resize and free the allocation
+functions/free.html#tag_17_181	free	partial	partial	ports/musl/tests/libc.c	Allocate zeroed storage, preserve data across resize and free the allocation
+functions/fopen.html#tag_17_171	fopen	partial	partial	ports/musl/tests/libc.c	Write formatted fields to a FAT file and compare its bytes after shutdown
+functions/fclose.html#tag_17_138	fclose	partial	partial	ports/musl/tests/libc.c	Write formatted fields to a FAT file and compare its bytes after shutdown
+functions/fprintf.html#tag_17_175	fprintf	partial	partial	ports/musl/tests/libc.c	Write formatted fields to a FAT file and compare its bytes after shutdown
+functions/getenv.html#tag_17_210	getenv	partial	partial	ports/musl/tests/libc.c	A fork/exec child receives and reads the specified environment
+functions/clock_getres.html#tag_17_78	clock_gettime	partial	partial	ports/musl/tests/libc.c	Query realtime and monotonic clocks and resolution, time a blocking relative sleep
+functions/clock_getres.html#tag_17_78	clock_getres	partial	partial	ports/musl/tests/libc.c	Query realtime and monotonic clocks and resolution, time a blocking relative sleep
+functions/nanosleep.html#tag_17_365	nanosleep	partial	partial	ports/musl/tests/libc.c	Query realtime and monotonic clocks and resolution, time a blocking relative sleep
+functions/sigaction.html#tag_17_544	sigaction	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/pthread_sigmask.html#tag_17_461	sigprocmask	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigpending.html#tag_17_554	sigpending	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigismember.html#tag_17_550	sigismember	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigemptyset.html#tag_17_548	sigemptyset	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigaddset.html#tag_17_545	sigaddset	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/kill.html#tag_17_296	kill	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/poll.html#tag_17_378	poll	partial	partial	tests/native-poll/poll.c	Event masks, invalid/negative fds, bounded pipe, last peer close, blocking wake, relative timeout and signal-mask restoration
+functions/poll.html#tag_17_378	ppoll	partial	partial	tests/native-poll/poll.c	Event masks, invalid/negative fds, bounded pipe, last peer close, blocking wake, relative timeout and signal-mask restoration
+functions/chown.html#tag_17_73	chown	partial	partial	native-exec/examples/vfscheck.c	Drop process credentials, enforce group permission and prohibit privilege regain
+functions/setgid.html#tag_17_523	setgid	partial	partial	native-exec/examples/vfscheck.c	Drop process credentials, enforce group permission and prohibit privilege regain
+functions/setuid.html#tag_17_534	setuid	partial	partial	native-exec/examples/vfscheck.c	Drop process credentials, enforce group permission and prohibit privilege regain
+utilities/comm.html#tag_20_21	comm	partial	partial	scripts/qemu-coreutils.py#173,174	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/cut.html#tag_20_28	cut	partial	partial	scripts/qemu-coreutils.py#175,176,177	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/expand.html#tag_20_41	expand	partial	partial	scripts/qemu-coreutils.py#178,179	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/fold.html#tag_20_48	fold	partial	partial	scripts/qemu-coreutils.py#180,181	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/nl.html#tag_20_87	nl	partial	partial	scripts/qemu-coreutils.py#182,183	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/paste.html#tag_20_91	paste	partial	partial	scripts/qemu-coreutils.py#184,185	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/printf.html#tag_20_96	printf	partial	partial	scripts/qemu-coreutils.py#186,187	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/sort.html#tag_20_112	sort	partial	partial	scripts/qemu-coreutils.py#191,192,193	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/tr.html#tag_20_126	tr	partial	partial	scripts/qemu-coreutils.py#194,195,196	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/unexpand.html#tag_20_136	unexpand	partial	partial	scripts/qemu-coreutils.py#197,198	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/uniq.html#tag_20_138	uniq	partial	partial	scripts/qemu-coreutils.py#199,200,201	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12

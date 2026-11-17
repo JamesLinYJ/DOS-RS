@@ -824,7 +824,7 @@ functions	abort	base	functions/abort.html#tag_17_04	open	open
 functions	abs	base	functions/abs.html#tag_17_05	open	open	
 functions	accept	base	functions/accept.html#tag_17_06	open	open	
 functions	accept4	base	functions/accept.html#tag_17_06	open	open	
-functions	access	base	functions/access.html#tag_17_07	open	open	
+functions	access	base	functions/access.html#tag_17_07	partial	partial	ports/musl/tests/files.c
 functions	faccessat	base	functions/access.html#tag_17_07	open	open	
 functions	acos	base	functions/acos.html#tag_17_08	open	open	
 functions	acosf	base	functions/acos.html#tag_17_08	open	open	
@@ -925,7 +925,7 @@ functions	cacosh	base	functions/cacosh.html#tag_17_51	open	open
 functions	cacoshf	base	functions/cacosh.html#tag_17_51	open	open	
 functions	cacoshl	base	functions/cacosh.html#tag_17_51	open	open	
 functions	call_once	base	functions/call_once.html#tag_17_52	open	open	
-functions	calloc	base	functions/calloc.html#tag_17_53	open	open	
+functions	calloc	base	functions/calloc.html#tag_17_53	partial	partial	ports/musl/tests/libc.c
 functions	carg	base	functions/carg.html#tag_17_54	open	open	
 functions	cargf	base	functions/carg.html#tag_17_54	open	open	
 functions	cargl	base	functions/carg.html#tag_17_54	open	open	
@@ -963,10 +963,10 @@ functions	cfgetispeed	base	functions/cfgetispeed.html#tag_17_67	open	open
 functions	cfgetospeed	base	functions/cfgetospeed.html#tag_17_68	open	open	
 functions	cfsetispeed	base	functions/cfsetispeed.html#tag_17_69	open	open	
 functions	cfsetospeed	base	functions/cfsetospeed.html#tag_17_70	open	open	
-functions	chdir	base	functions/chdir.html#tag_17_71	open	open	
-functions	chmod	base	functions/chmod.html#tag_17_72	open	open	
+functions	chdir	base	functions/chdir.html#tag_17_71	partial	partial	ports/musl/tests/files.c
+functions	chmod	base	functions/chmod.html#tag_17_72	partial	partial	ports/musl/tests/files.c
 functions	fchmodat	base	functions/chmod.html#tag_17_72	open	open	
-functions	chown	base	functions/chown.html#tag_17_73	open	open	
+functions	chown	base	functions/chown.html#tag_17_73	partial	partial	native-exec/examples/vfscheck.c
 functions	fchownat	base	functions/chown.html#tag_17_73	open	open	
 functions	cimag	base	functions/cimag.html#tag_17_74	open	open	
 functions	cimagf	base	functions/cimag.html#tag_17_74	open	open	
@@ -974,16 +974,16 @@ functions	cimagl	base	functions/cimag.html#tag_17_74	open	open
 functions	clearerr	base	functions/clearerr.html#tag_17_75	open	open	
 functions	clock	base	functions/clock.html#tag_17_76	open	open	
 functions	clock_getcpuclockid	CPT	functions/clock_getcpuclockid.html#tag_17_77	open	open	
-functions	clock_getres	base	functions/clock_getres.html#tag_17_78	open	open	
-functions	clock_gettime	base	functions/clock_getres.html#tag_17_78	open	open	
+functions	clock_getres	base	functions/clock_getres.html#tag_17_78	partial	partial	ports/musl/tests/libc.c
+functions	clock_gettime	base	functions/clock_getres.html#tag_17_78	partial	partial	ports/musl/tests/libc.c
 functions	clock_settime	base	functions/clock_getres.html#tag_17_78	open	open	
 functions	clock_nanosleep	base	functions/clock_nanosleep.html#tag_17_79	open	open	
 functions	clog	base	functions/clog.html#tag_17_80	open	open	
 functions	clogf	base	functions/clog.html#tag_17_80	open	open	
 functions	clogl	base	functions/clog.html#tag_17_80	open	open	
-functions	close	base	functions/close.html#tag_17_81	open	open	
+functions	close	base	functions/close.html#tag_17_81	partial	partial	ports/musl/tests/files.c
 functions	posix_close	base	functions/close.html#tag_17_81	open	open	
-functions	closedir	base	functions/closedir.html#tag_17_82	open	open	
+functions	closedir	base	functions/closedir.html#tag_17_82	partial	partial	ports/musl/tests/files.c
 functions	closelog	XSI	functions/closelog.html#tag_17_83	open	open	
 functions	openlog	XSI	functions/closelog.html#tag_17_83	open	open	
 functions	setlogmask	XSI	functions/closelog.html#tag_17_83	open	open	
@@ -1064,7 +1064,7 @@ functions	nrand48	XSI	functions/drand48.html#tag_17_134	open	open
 functions	seed48	XSI	functions/drand48.html#tag_17_134	open	open	
 functions	srand48	XSI	functions/drand48.html#tag_17_134	open	open	
 functions	dup	base	functions/dup.html#tag_17_116	open	open	
-functions	dup2	base	functions/dup.html#tag_17_116	open	open	
+functions	dup2	base	functions/dup.html#tag_17_116	partial	partial	native-exec/examples/family.c
 functions	dup3	base	functions/dup.html#tag_17_116	open	open	
 functions	duplocale	base	functions/duplocale.html#tag_17_117	open	open	
 functions	encrypt	OB XSI	functions/encrypt.html#tag_17_118	open	open	
@@ -1110,7 +1110,7 @@ functions	execl	base	functions/exec.html#tag_17_129	open	open
 functions	execle	base	functions/exec.html#tag_17_129	open	open	
 functions	execlp	base	functions/exec.html#tag_17_129	open	open	
 functions	execv	base	functions/exec.html#tag_17_129	open	open	
-functions	execve	base	functions/exec.html#tag_17_129	open	open	
+functions	execve	base	functions/exec.html#tag_17_129	partial	partial	native-exec/examples/family.c
 functions	execvp	base	functions/exec.html#tag_17_129	open	open	
 functions	fexecve	base	functions/exec.html#tag_17_129	open	open	
 functions	exit	base	functions/exit.html#tag_17_130	open	open	
@@ -1129,7 +1129,7 @@ functions	fabsl	base	functions/fabs.html#tag_17_134	open	open
 functions	fchdir	base	functions/fchdir.html#tag_17_135	open	open	
 functions	fchmod	base	functions/fchmod.html#tag_17_136	open	open	
 functions	fchown	base	functions/fchown.html#tag_17_137	open	open	
-functions	fclose	base	functions/fclose.html#tag_17_138	open	open	
+functions	fclose	base	functions/fclose.html#tag_17_138	partial	partial	ports/musl/tests/libc.c
 functions	fcntl	base	functions/fcntl.html#tag_17_139	open	open	
 functions	fdatasync	SIO	functions/fdatasync.html#tag_17_140	open	open	
 functions	fdim	base	functions/fdim.html#tag_17_141	open	open	
@@ -1137,7 +1137,7 @@ functions	fdimf	base	functions/fdim.html#tag_17_141	open	open
 functions	fdiml	base	functions/fdim.html#tag_17_141	open	open	
 functions	fdopen	base	functions/fdopen.html#tag_17_142	open	open	
 functions	fdopendir	base	functions/fdopendir.html#tag_17_143	open	open	
-functions	opendir	base	functions/fdopendir.html#tag_17_143	open	open	
+functions	opendir	base	functions/fdopendir.html#tag_17_143	partial	partial	ports/musl/tests/files.c
 functions	feclearexcept	base	functions/feclearexcept.html#tag_17_144	open	open	
 functions	fegetenv	base	functions/fegetenv.html#tag_17_145	open	open	
 functions	fesetenv	base	functions/fegetenv.html#tag_17_145	open	open	
@@ -1182,14 +1182,14 @@ functions	fmodf	base	functions/fmod.html#tag_17_168	open	open
 functions	fmodl	base	functions/fmod.html#tag_17_168	open	open	
 functions	fmtmsg	XSI	functions/fmtmsg.html#tag_17_169	open	open	
 functions	fnmatch	base	functions/fnmatch.html#tag_17_170	open	open	
-functions	fopen	base	functions/fopen.html#tag_17_171	open	open	
-functions	fork	base	functions/fork.html#tag_17_172	open	open	
+functions	fopen	base	functions/fopen.html#tag_17_171	partial	partial	ports/musl/tests/libc.c
+functions	fork	base	functions/fork.html#tag_17_172	partial	partial	native-exec/examples/family.c
 functions	fpathconf	base	functions/fpathconf.html#tag_17_173	open	open	
 functions	pathconf	base	functions/fpathconf.html#tag_17_173	open	open	
 functions	fpclassify	base	functions/fpclassify.html#tag_17_174	open	open	
 functions	asprintf	base	functions/fprintf.html#tag_17_175	open	open	
 functions	dprintf	base	functions/fprintf.html#tag_17_175	open	open	
-functions	fprintf	base	functions/fprintf.html#tag_17_175	open	open	
+functions	fprintf	base	functions/fprintf.html#tag_17_175	partial	partial	ports/musl/tests/libc.c
 functions	printf	base	functions/fprintf.html#tag_17_175	open	open	
 functions	snprintf	base	functions/fprintf.html#tag_17_175	open	open	
 functions	sprintf	base	functions/fprintf.html#tag_17_175	open	open	
@@ -1198,7 +1198,7 @@ functions	fputs	base	functions/fputs.html#tag_17_177	open	open
 functions	fputwc	base	functions/fputwc.html#tag_17_178	open	open	
 functions	fputws	base	functions/fputws.html#tag_17_179	open	open	
 functions	fread	base	functions/fread.html#tag_17_180	open	open	
-functions	free	base	functions/free.html#tag_17_181	open	open	
+functions	free	base	functions/free.html#tag_17_181	partial	partial	ports/musl/tests/libc.c
 functions	freeaddrinfo	base	functions/freeaddrinfo.html#tag_17_182	open	open	
 functions	getaddrinfo	base	functions/freeaddrinfo.html#tag_17_182	open	open	
 functions	freelocale	base	functions/freelocale.html#tag_17_183	open	open	
@@ -1212,17 +1212,17 @@ functions	sscanf	base	functions/fscanf.html#tag_17_186	open	open
 functions	fseek	base	functions/fseek.html#tag_17_187	open	open	
 functions	fseeko	base	functions/fseek.html#tag_17_187	open	open	
 functions	fsetpos	base	functions/fsetpos.html#tag_17_188	open	open	
-functions	fstat	base	functions/fstat.html#tag_17_189	open	open	
-functions	fstatat	base	functions/fstatat.html#tag_17_190	open	open	
-functions	lstat	base	functions/fstatat.html#tag_17_190	open	open	
-functions	stat	base	functions/fstatat.html#tag_17_190	open	open	
+functions	fstat	base	functions/fstat.html#tag_17_189	partial	partial	ports/musl/tests/files.c
+functions	fstatat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
+functions	lstat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
+functions	stat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
 functions	fstatvfs	base	functions/fstatvfs.html#tag_17_191	open	open	
 functions	statvfs	base	functions/fstatvfs.html#tag_17_191	open	open	
 functions	fsync	FSC	functions/fsync.html#tag_17_192	open	open	
 functions	ftell	base	functions/ftell.html#tag_17_193	open	open	
 functions	ftello	base	functions/ftell.html#tag_17_193	open	open	
 functions	ftok	XSI	functions/ftok.html#tag_17_194	open	open	
-functions	ftruncate	base	functions/ftruncate.html#tag_17_195	open	open	
+functions	ftruncate	base	functions/ftruncate.html#tag_17_195	partial	partial	ports/musl/tests/files.c
 functions	futimens	base	functions/futimens.html#tag_17_196	open	open	
 functions	utimensat	base	functions/futimens.html#tag_17_196	open	open	
 functions	utimes	XSI	functions/futimens.html#tag_17_196	open	open	
@@ -1241,13 +1241,13 @@ functions	getchar_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	ope
 functions	putc_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
 functions	putchar_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
 functions	getchar	base	functions/getchar.html#tag_17_204	open	open	
-functions	getcwd	base	functions/getcwd.html#tag_17_205	open	open	
+functions	getcwd	base	functions/getcwd.html#tag_17_205	partial	partial	ports/musl/tests/files.c
 functions	getdate	XSI	functions/getdate.html#tag_17_206	open	open	
 functions	getdelim	base	functions/getdelim.html#tag_17_207	open	open	
 functions	getline	base	functions/getdelim.html#tag_17_207	open	open	
 functions	getegid	base	functions/getegid.html#tag_17_208	open	open	
 functions	getentropy	base	functions/getentropy.html#tag_17_209	open	open	
-functions	getenv	base	functions/getenv.html#tag_17_210	open	open	
+functions	getenv	base	functions/getenv.html#tag_17_210	partial	partial	ports/musl/tests/libc.c
 functions	secure_getenv	base	functions/getenv.html#tag_17_210	open	open	
 functions	geteuid	base	functions/geteuid.html#tag_17_211	open	open	
 functions	getgid	base	functions/getgid.html#tag_17_212	open	open	
@@ -1268,10 +1268,10 @@ functions	opterr	base	functions/getopt.html#tag_17_221	open	open
 functions	optind	base	functions/getopt.html#tag_17_221	open	open	
 functions	optopt	base	functions/getopt.html#tag_17_221	open	open	
 functions	getpeername	base	functions/getpeername.html#tag_17_222	open	open	
-functions	getpgid	base	functions/getpgid.html#tag_17_223	open	open	
+functions	getpgid	base	functions/getpgid.html#tag_17_223	partial	partial	native-exec/examples/family.c
 functions	getpgrp	base	functions/getpgrp.html#tag_17_224	open	open	
-functions	getpid	base	functions/getpid.html#tag_17_225	open	open	
-functions	getppid	base	functions/getppid.html#tag_17_226	open	open	
+functions	getpid	base	functions/getpid.html#tag_17_225	partial	partial	native-exec/examples/family.c
+functions	getppid	base	functions/getppid.html#tag_17_226	partial	partial	native-exec/examples/family.c
 functions	getpriority	XSI	functions/getpriority.html#tag_17_227	open	open	
 functions	setpriority	XSI	functions/getpriority.html#tag_17_227	open	open	
 functions	getpwnam	base	functions/getpwnam.html#tag_17_228	open	open	
@@ -1283,7 +1283,7 @@ functions	getresuid	XSI	functions/getresuid.html#tag_17_231	open	open
 functions	getrlimit	base	functions/getrlimit.html#tag_17_232	open	open	
 functions	setrlimit	base	functions/getrlimit.html#tag_17_232	open	open	
 functions	getrusage	XSI	functions/getrusage.html#tag_17_233	open	open	
-functions	getsid	base	functions/getsid.html#tag_17_234	open	open	
+functions	getsid	base	functions/getsid.html#tag_17_234	partial	partial	native-exec/examples/family.c
 functions	getsockname	base	functions/getsockname.html#tag_17_235	open	open	
 functions	getsockopt	base	functions/getsockopt.html#tag_17_236	open	open	
 functions	getsubopt	base	functions/getsubopt.html#tag_17_237	open	open	
@@ -1405,7 +1405,7 @@ functions	isxdigit_l	base	functions/isxdigit.html#tag_17_294	open	open
 functions	j0	XSI	functions/j0.html#tag_17_295	open	open	
 functions	j1	XSI	functions/j0.html#tag_17_295	open	open	
 functions	jn	XSI	functions/j0.html#tag_17_295	open	open	
-functions	kill	base	functions/kill.html#tag_17_296	open	open	
+functions	kill	base	functions/kill.html#tag_17_296	partial	partial	ports/musl/tests/libc.c
 functions	kill_dependency	base	functions/kill_dependency.html#tag_17_297	open	open	
 functions	killpg	XSI	functions/killpg.html#tag_17_298	open	open	
 functions	labs	base	functions/labs.html#tag_17_299	open	open	
@@ -1420,8 +1420,8 @@ functions	lgamma	base	functions/lgamma.html#tag_17_351	open	open
 functions	lgammaf	base	functions/lgamma.html#tag_17_351	open	open	
 functions	lgammal	base	functions/lgamma.html#tag_17_351	open	open	
 functions	signgam	XSI	functions/lgamma.html#tag_17_351	open	open	
-functions	link	base	functions/link.html#tag_17_304	open	open	
-functions	linkat	base	functions/link.html#tag_17_304	open	open	
+functions	link	base	functions/link.html#tag_17_304	partial	partial	ports/musl/tests/files.c
+functions	linkat	base	functions/link.html#tag_17_304	partial	partial	ports/musl/tests/files.c
 functions	lio_listio	base	functions/lio_listio.html#tag_17_305	open	open	
 functions	listen	base	functions/listen.html#tag_17_306	open	open	
 functions	llrint	base	functions/llrint.html#tag_17_307	open	open	
@@ -1458,7 +1458,7 @@ functions	lroundf	base	functions/lround.html#tag_17_319	open	open
 functions	lroundl	base	functions/lround.html#tag_17_319	open	open	
 functions	lsearch	XSI	functions/lsearch.html#tag_17_320	open	open	
 functions	lfind	XSI	functions/lsearch.html#tag_17_320	open	open	
-functions	lseek	base	functions/lseek.html#tag_17_321	open	open	
+functions	lseek	base	functions/lseek.html#tag_17_321	partial	partial	ports/musl/tests/files.c
 functions	malloc	base	functions/malloc.html#tag_17_322	open	open	
 functions	mblen	base	functions/mblen.html#tag_17_323	open	open	
 functions	mbrlen	base	functions/mbrlen.html#tag_17_324	open	open	
@@ -1477,8 +1477,8 @@ functions	memcpy	base	functions/memcpy.html#tag_17_334	open	open
 functions	memmem	base	functions/memmem.html#tag_17_335	open	open	
 functions	memmove	base	functions/memmove.html#tag_17_336	open	open	
 functions	memset	base	functions/memset.html#tag_17_337	open	open	
-functions	mkdir	base	functions/mkdir.html#tag_17_338	open	open	
-functions	mkdirat	base	functions/mkdir.html#tag_17_338	open	open	
+functions	mkdir	base	functions/mkdir.html#tag_17_338	partial	partial	ports/musl/tests/files.c
+functions	mkdirat	base	functions/mkdir.html#tag_17_338	partial	partial	ports/musl/tests/files.c
 functions	mkdtemp	base	functions/mkdtemp.html#tag_17_339	open	open	
 functions	mkostemp	base	functions/mkdtemp.html#tag_17_339	open	open	
 functions	mkstemp	base	functions/mkdtemp.html#tag_17_339	open	open	
@@ -1521,7 +1521,7 @@ functions	munmap	base	functions/munmap.html#tag_17_363	open	open
 functions	nan	base	functions/nan.html#tag_17_364	open	open	
 functions	nanf	base	functions/nan.html#tag_17_364	open	open	
 functions	nanl	base	functions/nan.html#tag_17_364	open	open	
-functions	nanosleep	base	functions/nanosleep.html#tag_17_365	open	open	
+functions	nanosleep	base	functions/nanosleep.html#tag_17_365	partial	partial	ports/musl/tests/libc.c
 functions	nearbyint	base	functions/nearbyint.html#tag_17_366	open	open	
 functions	nearbyintf	base	functions/nearbyint.html#tag_17_366	open	open	
 functions	nearbyintl	base	functions/nearbyint.html#tag_17_366	open	open	
@@ -1536,17 +1536,17 @@ functions	nftw	XSI	functions/nftw.html#tag_17_369	open	open
 functions	nice	XSI	functions/nice.html#tag_17_370	open	open	
 functions	nl_langinfo	base	functions/nl_langinfo.html#tag_17_371	open	open	
 functions	nl_langinfo_l	base	functions/nl_langinfo.html#tag_17_371	open	open	
-functions	open	base	functions/open.html#tag_17_372	open	open	
-functions	openat	base	functions/open.html#tag_17_372	open	open	
+functions	open	base	functions/open.html#tag_17_372	partial	partial	ports/musl/tests/files.c
+functions	openat	base	functions/open.html#tag_17_372	partial	partial	ports/musl/tests/files.c
 functions	open_memstream	base	functions/open_memstream.html#tag_17_373	open	open	
 functions	open_wmemstream	base	functions/open_memstream.html#tag_17_373	open	open	
 functions	pause	base	functions/pause.html#tag_17_374	open	open	
 functions	pclose	base	functions/pclose.html#tag_17_375	open	open	
 functions	perror	base	functions/perror.html#tag_17_376	open	open	
-functions	pipe	base	functions/pipe.html#tag_17_377	open	open	
+functions	pipe	base	functions/pipe.html#tag_17_377	partial	partial	native-exec/examples/family.c
 functions	pipe2	base	functions/pipe.html#tag_17_377	open	open	
-functions	poll	base	functions/poll.html#tag_17_378	open	open	
-functions	ppoll	base	functions/poll.html#tag_17_378	open	open	
+functions	poll	base	functions/poll.html#tag_17_378	partial	partial	tests/native-poll/poll.c
+functions	ppoll	base	functions/poll.html#tag_17_378	partial	partial	tests/native-poll/poll.c
 functions	popen	base	functions/popen.html#tag_17_379	open	open	
 functions	posix_devctl	DC	functions/posix_devctl.html#tag_17_380	open	open	
 functions	posix_fadvise	ADV	functions/posix_fadvise.html#tag_17_381	open	open	
@@ -1614,14 +1614,14 @@ functions	pthread_barrierattr_destroy	base	functions/pthread_barrierattr_destroy
 functions	pthread_barrierattr_init	base	functions/pthread_barrierattr_destroy.html#tag_17_417	open	open	
 functions	pthread_barrierattr_getpshared	TSH	functions/pthread_barrierattr_getpshared.html#tag_17_418	open	open	
 functions	pthread_barrierattr_setpshared	TSH	functions/pthread_barrierattr_getpshared.html#tag_17_418	open	open	
-functions	pthread_cancel	base	functions/pthread_cancel.html#tag_17_419	open	open	
-functions	pthread_cleanup_pop	base	functions/pthread_cleanup_pop.html#tag_17_420	open	open	
-functions	pthread_cleanup_push	base	functions/pthread_cleanup_pop.html#tag_17_420	open	open	
-functions	pthread_cond_broadcast	base	functions/pthread_cond_broadcast.html#tag_17_421	open	open	
+functions	pthread_cancel	base	functions/pthread_cancel.html#tag_17_419	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cleanup_pop	base	functions/pthread_cleanup_pop.html#tag_17_420	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cleanup_push	base	functions/pthread_cleanup_pop.html#tag_17_420	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cond_broadcast	base	functions/pthread_cond_broadcast.html#tag_17_421	partial	partial	ports/musl/tests/libc.c
 functions	pthread_cond_signal	base	functions/pthread_cond_broadcast.html#tag_17_421	open	open	
 functions	pthread_cond_clockwait	base	functions/pthread_cond_clockwait.html#tag_17_422	open	open	
-functions	pthread_cond_timedwait	base	functions/pthread_cond_clockwait.html#tag_17_422	open	open	
-functions	pthread_cond_wait	base	functions/pthread_cond_clockwait.html#tag_17_422	open	open	
+functions	pthread_cond_timedwait	base	functions/pthread_cond_clockwait.html#tag_17_422	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cond_wait	base	functions/pthread_cond_clockwait.html#tag_17_422	partial	partial	ports/musl/tests/libc.c
 functions	pthread_cond_destroy	base	functions/pthread_cond_destroy.html#tag_17_423	open	open	
 functions	pthread_cond_init	base	functions/pthread_cond_destroy.html#tag_17_423	open	open	
 functions	pthread_condattr_destroy	base	functions/pthread_condattr_destroy.html#tag_17_424	open	open	
@@ -1630,7 +1630,7 @@ functions	pthread_condattr_getclock	base	functions/pthread_condattr_getclock.htm
 functions	pthread_condattr_setclock	base	functions/pthread_condattr_getclock.html#tag_17_425	open	open	
 functions	pthread_condattr_getpshared	TSH	functions/pthread_condattr_getpshared.html#tag_17_426	open	open	
 functions	pthread_condattr_setpshared	TSH	functions/pthread_condattr_getpshared.html#tag_17_426	open	open	
-functions	pthread_create	base	functions/pthread_create.html#tag_17_427	open	open	
+functions	pthread_create	base	functions/pthread_create.html#tag_17_427	partial	partial	ports/musl/tests/libc.c
 functions	pthread_detach	base	functions/pthread_detach.html#tag_17_428	open	open	
 functions	pthread_equal	base	functions/pthread_equal.html#tag_17_429	open	open	
 functions	pthread_exit	base	functions/pthread_exit.html#tag_17_430	open	open	
@@ -1639,7 +1639,7 @@ functions	pthread_getschedparam	TPS	functions/pthread_getschedparam.html#tag_17_
 functions	pthread_setschedparam	TPS	functions/pthread_getschedparam.html#tag_17_432	open	open	
 functions	pthread_getspecific	base	functions/pthread_getspecific.html#tag_17_433	open	open	
 functions	pthread_setspecific	base	functions/pthread_getspecific.html#tag_17_433	open	open	
-functions	pthread_join	base	functions/pthread_join.html#tag_17_434	open	open	
+functions	pthread_join	base	functions/pthread_join.html#tag_17_434	partial	partial	ports/musl/tests/libc.c
 functions	pthread_key_create	base	functions/pthread_key_create.html#tag_17_435	open	open	
 functions	pthread_key_delete	base	functions/pthread_key_delete.html#tag_17_436	open	open	
 functions	pthread_kill	base	functions/pthread_kill.html#tag_17_437	open	open	
@@ -1650,9 +1650,9 @@ functions	pthread_mutex_destroy	base	functions/pthread_mutex_destroy.html#tag_17
 functions	pthread_mutex_init	base	functions/pthread_mutex_destroy.html#tag_17_440	open	open	
 functions	pthread_mutex_getprioceiling	RPP|TPP	functions/pthread_mutex_getprioceiling.html#tag_17_441	open	open	
 functions	pthread_mutex_setprioceiling	RPP|TPP	functions/pthread_mutex_getprioceiling.html#tag_17_441	open	open	
-functions	pthread_mutex_lock	base	functions/pthread_mutex_lock.html#tag_17_442	open	open	
+functions	pthread_mutex_lock	base	functions/pthread_mutex_lock.html#tag_17_442	partial	partial	ports/musl/tests/libc.c
 functions	pthread_mutex_trylock	base	functions/pthread_mutex_lock.html#tag_17_442	open	open	
-functions	pthread_mutex_unlock	base	functions/pthread_mutex_lock.html#tag_17_442	open	open	
+functions	pthread_mutex_unlock	base	functions/pthread_mutex_lock.html#tag_17_442	partial	partial	ports/musl/tests/libc.c
 functions	pthread_mutexattr_destroy	base	functions/pthread_mutexattr_destroy.html#tag_17_443	open	open	
 functions	pthread_mutexattr_init	base	functions/pthread_mutexattr_destroy.html#tag_17_443	open	open	
 functions	pthread_mutexattr_getprioceiling	RPP|TPP	functions/pthread_mutexattr_getprioceiling.html#tag_17_444	open	open	
@@ -1687,7 +1687,7 @@ functions	pthread_setcanceltype	base	functions/pthread_setcancelstate.html#tag_1
 functions	pthread_testcancel	base	functions/pthread_setcancelstate.html#tag_17_459	open	open	
 functions	pthread_setschedprio	TPS	functions/pthread_setschedprio.html#tag_17_460	open	open	
 functions	pthread_sigmask	base	functions/pthread_sigmask.html#tag_17_461	open	open	
-functions	sigprocmask	base	functions/pthread_sigmask.html#tag_17_461	open	open	
+functions	sigprocmask	base	functions/pthread_sigmask.html#tag_17_461	partial	partial	ports/musl/tests/libc.c
 functions	pthread_spin_destroy	base	functions/pthread_spin_destroy.html#tag_17_462	open	open	
 functions	pthread_spin_init	base	functions/pthread_spin_destroy.html#tag_17_462	open	open	
 functions	pthread_spin_lock	base	functions/pthread_spin_lock.html#tag_17_463	open	open	
@@ -1708,13 +1708,13 @@ functions	raise	base	functions/raise.html#tag_17_474	open	open
 functions	rand	base	functions/rand.html#tag_17_475	open	open	
 functions	srand	base	functions/rand.html#tag_17_475	open	open	
 functions	pread	base	functions/read.html#tag_17_476	open	open	
-functions	read	base	functions/read.html#tag_17_476	open	open	
-functions	readdir	base	functions/readdir.html#tag_17_477	open	open	
+functions	read	base	functions/read.html#tag_17_476	partial	partial	ports/musl/tests/files.c
+functions	readdir	base	functions/readdir.html#tag_17_477	partial	partial	ports/musl/tests/files.c
 functions	readdir_r	base	functions/readdir.html#tag_17_477	open	open	
-functions	readlink	base	functions/readlink.html#tag_17_478	open	open	
-functions	readlinkat	base	functions/readlink.html#tag_17_478	open	open	
+functions	readlink	base	functions/readlink.html#tag_17_478	partial	partial	ports/musl/tests/files.c
+functions	readlinkat	base	functions/readlink.html#tag_17_478	partial	partial	ports/musl/tests/files.c
 functions	readv	XSI	functions/readv.html#tag_17_479	open	open	
-functions	realloc	base	functions/realloc.html#tag_17_480	open	open	
+functions	realloc	base	functions/realloc.html#tag_17_480	partial	partial	ports/musl/tests/libc.c
 functions	reallocarray	base	functions/realloc.html#tag_17_480	open	open	
 functions	realpath	base	functions/realpath.html#tag_17_481	open	open	
 functions	recv	base	functions/recv.html#tag_17_482	open	open	
@@ -1731,14 +1731,14 @@ functions	remove	base	functions/remove.html#tag_17_487	open	open
 functions	remquo	base	functions/remquo.html#tag_17_488	open	open	
 functions	remquof	base	functions/remquo.html#tag_17_488	open	open	
 functions	remquol	base	functions/remquo.html#tag_17_488	open	open	
-functions	rename	base	functions/rename.html#tag_17_489	open	open	
-functions	renameat	base	functions/rename.html#tag_17_489	open	open	
+functions	rename	base	functions/rename.html#tag_17_489	partial	partial	ports/musl/tests/files.c
+functions	renameat	base	functions/rename.html#tag_17_489	partial	partial	ports/musl/tests/files.c
 functions	rewind	base	functions/rewind.html#tag_17_490	open	open	
 functions	rewinddir	base	functions/rewinddir.html#tag_17_491	open	open	
 functions	rint	base	functions/rint.html#tag_17_492	open	open	
 functions	rintf	base	functions/rint.html#tag_17_492	open	open	
 functions	rintl	base	functions/rint.html#tag_17_492	open	open	
-functions	rmdir	base	functions/rmdir.html#tag_17_493	open	open	
+functions	rmdir	base	functions/rmdir.html#tag_17_493	partial	partial	ports/musl/tests/files.c
 functions	round	base	functions/round.html#tag_17_494	open	open	
 functions	roundf	base	functions/round.html#tag_17_494	open	open	
 functions	roundl	base	functions/round.html#tag_17_494	open	open	
@@ -1778,18 +1778,18 @@ functions	setbuf	base	functions/setbuf.html#tag_17_519	open	open
 functions	setegid	base	functions/setegid.html#tag_17_520	open	open	
 functions	setenv	base	functions/setenv.html#tag_17_521	open	open	
 functions	seteuid	base	functions/seteuid.html#tag_17_522	open	open	
-functions	setgid	base	functions/setgid.html#tag_17_523	open	open	
+functions	setgid	base	functions/setgid.html#tag_17_523	partial	partial	native-exec/examples/vfscheck.c
 functions	setjmp	base	functions/setjmp.html#tag_17_524	open	open	
 functions	setkey	OB XSI	functions/setkey.html#tag_17_525	open	open	
 functions	setlocale	base	functions/setlocale.html#tag_17_526	open	open	
-functions	setpgid	base	functions/setpgid.html#tag_17_527	open	open	
+functions	setpgid	base	functions/setpgid.html#tag_17_527	partial	partial	native-exec/examples/family.c
 functions	setregid	XSI	functions/setregid.html#tag_17_528	open	open	
 functions	setresgid	XSI	functions/setresgid.html#tag_17_529	open	open	
 functions	setresuid	XSI	functions/setresuid.html#tag_17_530	open	open	
 functions	setreuid	XSI	functions/setreuid.html#tag_17_531	open	open	
 functions	setsid	base	functions/setsid.html#tag_17_532	open	open	
 functions	setsockopt	base	functions/setsockopt.html#tag_17_533	open	open	
-functions	setuid	base	functions/setuid.html#tag_17_534	open	open	
+functions	setuid	base	functions/setuid.html#tag_17_534	partial	partial	native-exec/examples/vfscheck.c
 functions	setvbuf	base	functions/setvbuf.html#tag_17_535	open	open	
 functions	shm_open	SHM	functions/shm_open.html#tag_17_536	open	open	
 functions	shm_unlink	SHM	functions/shm_unlink.html#tag_17_537	open	open	
@@ -1800,17 +1800,17 @@ functions	shmget	XSI	functions/shmget.html#tag_17_541	open	open
 functions	shutdown	base	functions/shutdown.html#tag_17_542	open	open	
 functions	sig2str	base	functions/sig2str.html#tag_17_543	open	open	
 functions	str2sig	base	functions/sig2str.html#tag_17_543	open	open	
-functions	sigaction	base	functions/sigaction.html#tag_17_544	open	open	
-functions	sigaddset	base	functions/sigaddset.html#tag_17_545	open	open	
+functions	sigaction	base	functions/sigaction.html#tag_17_544	partial	partial	ports/musl/tests/libc.c
+functions	sigaddset	base	functions/sigaddset.html#tag_17_545	partial	partial	ports/musl/tests/libc.c
 functions	sigaltstack	XSI	functions/sigaltstack.html#tag_17_546	open	open	
 functions	sigdelset	base	functions/sigdelset.html#tag_17_547	open	open	
-functions	sigemptyset	base	functions/sigemptyset.html#tag_17_548	open	open	
+functions	sigemptyset	base	functions/sigemptyset.html#tag_17_548	partial	partial	ports/musl/tests/libc.c
 functions	sigfillset	base	functions/sigfillset.html#tag_17_549	open	open	
-functions	sigismember	base	functions/sigismember.html#tag_17_550	open	open	
+functions	sigismember	base	functions/sigismember.html#tag_17_550	partial	partial	ports/musl/tests/libc.c
 functions	siglongjmp	base	functions/siglongjmp.html#tag_17_551	open	open	
 functions	signal	base	functions/signal.html#tag_17_552	open	open	
 functions	signbit	base	functions/signbit.html#tag_17_553	open	open	
-functions	sigpending	base	functions/sigpending.html#tag_17_554	open	open	
+functions	sigpending	base	functions/sigpending.html#tag_17_554	partial	partial	ports/musl/tests/libc.c
 functions	sigqueue	base	functions/sigqueue.html#tag_17_555	open	open	
 functions	sigsetjmp	base	functions/sigsetjmp.html#tag_17_556	open	open	
 functions	sigsuspend	base	functions/sigsuspend.html#tag_17_557	open	open	
@@ -1882,8 +1882,8 @@ functions	strtoull	base	functions/strtoul.html#tag_17_594	open	open
 functions	strxfrm	base	functions/strxfrm.html#tag_17_595	open	open	
 functions	strxfrm_l	base	functions/strxfrm.html#tag_17_595	open	open	
 functions	swab	XSI	functions/swab.html#tag_17_596	open	open	
-functions	symlink	base	functions/symlink.html#tag_17_597	open	open	
-functions	symlinkat	base	functions/symlink.html#tag_17_597	open	open	
+functions	symlink	base	functions/symlink.html#tag_17_597	partial	partial	ports/musl/tests/files.c
+functions	symlinkat	base	functions/symlink.html#tag_17_597	partial	partial	ports/musl/tests/files.c
 functions	sync	XSI	functions/sync.html#tag_17_598	open	open	
 functions	sysconf	base	functions/sysconf.html#tag_17_599	open	open	
 functions	system	base	functions/system.html#tag_17_600	open	open	
@@ -1943,7 +1943,7 @@ functions	towupper_l	base	functions/towupper.html#tag_17_637	open	open
 functions	trunc	base	functions/trunc.html#tag_17_638	open	open	
 functions	truncf	base	functions/trunc.html#tag_17_638	open	open	
 functions	truncl	base	functions/trunc.html#tag_17_638	open	open	
-functions	truncate	base	functions/truncate.html#tag_17_639	open	open	
+functions	truncate	base	functions/truncate.html#tag_17_639	partial	partial	ports/musl/tests/files.c
 functions	tss_create	base	functions/tss_create.html#tag_17_640	open	open	
 functions	tss_delete	base	functions/tss_delete.html#tag_17_641	open	open	
 functions	tss_get	base	functions/tss_get.html#tag_17_642	open	open	
@@ -1954,12 +1954,12 @@ functions	daylight	XSI	functions/tzset.html#tag_17_644	open	open
 functions	timezone	XSI	functions/tzset.html#tag_17_644	open	open	
 functions	tzname	base	functions/tzset.html#tag_17_644	open	open	
 functions	tzset	base	functions/tzset.html#tag_17_644	open	open	
-functions	umask	base	functions/umask.html#tag_17_645	open	open	
+functions	umask	base	functions/umask.html#tag_17_645	partial	partial	ports/musl/tests/files.c
 functions	uname	base	functions/uname.html#tag_17_646	open	open	
 functions	ungetc	base	functions/ungetc.html#tag_17_647	open	open	
 functions	ungetwc	base	functions/ungetwc.html#tag_17_648	open	open	
-functions	unlink	base	functions/unlink.html#tag_17_649	open	open	
-functions	unlinkat	base	functions/unlink.html#tag_17_649	open	open	
+functions	unlink	base	functions/unlink.html#tag_17_649	partial	partial	ports/musl/tests/files.c
+functions	unlinkat	base	functions/unlink.html#tag_17_649	partial	partial	ports/musl/tests/files.c
 functions	unlockpt	XSI	functions/unlockpt.html#tag_17_650	open	open	
 functions	unsetenv	base	functions/unsetenv.html#tag_17_651	open	open	
 functions	uselocale	base	functions/uselocale.html#tag_17_652	open	open	
@@ -1979,7 +1979,7 @@ functions	vfwscanf	base	functions/vfwscanf.html#tag_17_657	open	open
 functions	vswscanf	base	functions/vfwscanf.html#tag_17_657	open	open	
 functions	vwscanf	base	functions/vfwscanf.html#tag_17_657	open	open	
 functions	wait	base	functions/wait.html#tag_17_658	open	open	
-functions	waitpid	base	functions/wait.html#tag_17_658	open	open	
+functions	waitpid	base	functions/wait.html#tag_17_658	partial	partial	native-exec/examples/family.c
 functions	waitid	base	functions/waitid.html#tag_17_659	open	open	
 functions	wcrtomb	base	functions/wcrtomb.html#tag_17_660	open	open	
 functions	wcscasecmp	base	functions/wcscasecmp.html#tag_17_661	open	open	
@@ -2039,7 +2039,7 @@ functions	wmemset	base	functions/wmemset.html#tag_17_697	open	open
 functions	wordexp	base	functions/wordexp.html#tag_17_698	open	open	
 functions	wordfree	base	functions/wordexp.html#tag_17_698	open	open	
 functions	pwrite	base	functions/write.html#tag_17_699	open	open	
-functions	write	base	functions/write.html#tag_17_699	open	open	
+functions	write	base	functions/write.html#tag_17_699	partial	partial	ports/musl/tests/files.c
 functions	writev	XSI	functions/writev.html#tag_17_700	open	open	
 functions	y0	XSI	functions/y0.html#tag_17_701	open	open	
 functions	y1	XSI	functions/y0.html#tag_17_701	open	open	
@@ -2181,7 +2181,7 @@ utilities	chmod	base	utilities/chmod.html#tag_20_17	open	open
 utilities	chown	base	utilities/chown.html#tag_20_18	open	open	
 utilities	cksum	base	utilities/cksum.html#tag_20_19	open	open	
 utilities	cmp	base	utilities/cmp.html#tag_20_20	open	open	
-utilities	comm	base	utilities/comm.html#tag_20_21	open	open	
+utilities	comm	base	utilities/comm.html#tag_20_21	partial	partial	scripts/qemu-coreutils.py#173,174
 utilities	command	base	utilities/command.html#tag_20_22	open	open	
 utilities	compress	XSI	utilities/compress.html	open	open	
 utilities	uncompress	XSI	utilities/compress.html	open	open	
@@ -2190,7 +2190,7 @@ utilities	cp	base	utilities/cp.html#tag_20_24	open	open
 utilities	crontab	base	utilities/crontab.html#tag_20_25	open	open	
 utilities	csplit	base	utilities/csplit.html#tag_20_26	open	open	
 utilities	ctags	CD SD	utilities/ctags.html#tag_20_27	open	open	
-utilities	cut	base	utilities/cut.html#tag_20_28	open	open	
+utilities	cut	base	utilities/cut.html#tag_20_28	partial	partial	scripts/qemu-coreutils.py#175,176,177
 utilities	cxref	XSI	utilities/cxref.html#tag_20_29	open	open	
 utilities	date	base	utilities/date.html#tag_20_30	open	open	
 utilities	dd	base	utilities/dd.html#tag_20_31	open	open	
@@ -2203,14 +2203,14 @@ utilities	echo	base	utilities/echo.html#tag_20_37	partial	partial	qemu-coreutils
 utilities	ed	base	utilities/ed.html#tag_20_38	open	open	
 utilities	env	base	utilities/env.html#tag_20_39	open	open	
 utilities	ex	UP	utilities/ex.html#tag_20_40	open	open	
-utilities	expand	base	utilities/expand.html#tag_20_41	open	open	
+utilities	expand	base	utilities/expand.html#tag_20_41	partial	partial	scripts/qemu-coreutils.py#178,179
 utilities	expr	base	utilities/expr.html#tag_20_42	open	open	
 utilities	false	base	utilities/false.html#tag_20_43	partial	partial	qemu-coreutils.py#49..51
 utilities	fc	UP	utilities/fc.html#tag_20_44	open	open	
 utilities	fg	UP	utilities/fg.html#tag_20_45	open	open	
 utilities	file	base	utilities/file.html#tag_20_46	open	open	
 utilities	find	base	utilities/find.html#tag_20_47	open	open	
-utilities	fold	base	utilities/fold.html#tag_20_48	open	open	
+utilities	fold	base	utilities/fold.html#tag_20_48	partial	partial	scripts/qemu-coreutils.py#180,181
 utilities	fuser	XSI	utilities/fuser.html#tag_20_49	open	open	
 utilities	gencat	base	utilities/gencat.html#tag_20_50	open	open	
 utilities	get	XSI	utilities/get.html#tag_20_51	open	open	
@@ -2251,16 +2251,16 @@ utilities	newgrp	base	utilities/newgrp.html#tag_20_84	open	open
 utilities	gettext	base	utilities/ngettext.html#tag_20_54	open	open	
 utilities	ngettext	base	utilities/ngettext.html#tag_20_54	open	open	
 utilities	nice	base	utilities/nice.html#tag_20_86	open	open	
-utilities	nl	XSI	utilities/nl.html#tag_20_87	open	open	
+utilities	nl	XSI	utilities/nl.html#tag_20_87	partial	partial	scripts/qemu-coreutils.py#182,183
 utilities	nm	SD | XSI	utilities/nm.html#tag_20_88	open	open	
 utilities	nohup	base	utilities/nohup.html#tag_20_89	open	open	
 utilities	od	base	utilities/od.html#tag_20_90	open	open	
-utilities	paste	base	utilities/paste.html#tag_20_91	open	open	
+utilities	paste	base	utilities/paste.html#tag_20_91	partial	partial	scripts/qemu-coreutils.py#184,185
 utilities	patch	base	utilities/patch.html#tag_20_92	open	open	
 utilities	pathchk	base	utilities/pathchk.html#tag_20_93	open	open	
 utilities	pax	base	utilities/pax.html#tag_20_94	open	open	
 utilities	pr	base	utilities/pr.html#tag_20_95	open	open	
-utilities	printf	base	utilities/printf.html#tag_20_96	open	open	
+utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qemu-coreutils.py#186,187
 utilities	prs	XSI	utilities/prs.html#tag_20_97	open	open	
 utilities	ps	base	utilities/ps.html#tag_20_98	open	open	
 utilities	pwd	base	utilities/pwd.html#tag_20_99	open	open	
@@ -2276,7 +2276,7 @@ utilities	sccs	XSI	utilities/sccs.html#tag_20_108	open	open
 utilities	sed	base	utilities/sed.html#tag_20_109	open	open	
 utilities	sh	base	utilities/sh.html#tag_20_110	open	open	
 utilities	sleep	base	utilities/sleep.html#tag_20_111	open	open	
-utilities	sort	base	utilities/sort.html#tag_20_112	open	open	
+utilities	sort	base	utilities/sort.html#tag_20_112	partial	partial	scripts/qemu-coreutils.py#191,192,193
 utilities	split	base	utilities/split.html#tag_20_113	open	open	
 utilities	strings	base	utilities/strings.html#tag_20_114	open	open	
 utilities	strip	SD	utilities/strip.html#tag_20_115	open	open	
@@ -2290,7 +2290,7 @@ utilities	time	base	utilities/time.html#tag_20_122	open	open
 utilities	timeout	base	utilities/timeout.html#tag_20_123	open	open	
 utilities	touch	base	utilities/touch.html#tag_20_124	open	open	
 utilities	tput	base	utilities/tput.html#tag_20_125	open	open	
-utilities	tr	base	utilities/tr.html#tag_20_126	open	open	
+utilities	tr	base	utilities/tr.html#tag_20_126	partial	partial	scripts/qemu-coreutils.py#194,195,196
 utilities	true	base	utilities/true.html#tag_20_127	partial	partial	qemu-coreutils.py#46..48
 utilities	tsort	base	utilities/tsort.html#tag_20_128	open	open	
 utilities	tty	base	utilities/tty.html#tag_20_129	open	open	
@@ -2302,9 +2302,9 @@ utilities	uname	base	utilities/uname.html#tag_20_134	open	open
 utilities	compress	XSI	utilities/uncompress.html	open	open	
 utilities	uncompress	XSI	utilities/uncompress.html	open	open	
 utilities	zcat	XSI	utilities/uncompress.html	open	open	
-utilities	unexpand	base	utilities/unexpand.html#tag_20_136	open	open	
+utilities	unexpand	base	utilities/unexpand.html#tag_20_136	partial	partial	scripts/qemu-coreutils.py#197,198
 utilities	unget	XSI	utilities/unget.html#tag_20_137	open	open	
-utilities	uniq	base	utilities/uniq.html#tag_20_138	open	open	
+utilities	uniq	base	utilities/uniq.html#tag_20_138	partial	partial	scripts/qemu-coreutils.py#199,200,201
 utilities	unlink	XSI	utilities/unlink.html#tag_20_139	open	open	
 utilities	uucp	UU	utilities/uucp.html#tag_20_140	open	open	
 utilities	uudecode	base	utilities/uudecode.html#tag_20_141	open	open	

@@ -32,3 +32,7 @@ python3 scripts/qemu-coreutils.py --ram-dir "$RAM_DIR" --gnu-bin "$GNU_BIN" --pr
 ```
 
 The runner forks a disk-loaded ELF for each case, redirects its descriptors, records its wait status and shuts down QEMU. The host reads the stopped FAT disk and compares stdout, stderr, exit status and input file contents against the identified GNU build. The per-architecture JSON saves fixture, guest ELF, oracle ELF and output hashes. The kernel trace records each executed path.
+
+Use `--filesystem btrfs` to check file and directory side effects in a Linux btrfs-progs restore of the stopped root. An installed directory's permission bits come from the Linux capture manifest. Use `--namespace-only` to repeat the 28 link, unlink, mkdir and rmdir cases, including the final hard-link inode, link count and directory modes.
+
+The pinned uutils front ends use upstream Rust std with the native musl sysroot. The encoders have 20 GNU comparisons. The C-locale text suite has 29 across twelve tools. The GNU diagnostic for invalid decoder input is in the source overlay. [Build and run instructions](../../userland/uutils/README.md)

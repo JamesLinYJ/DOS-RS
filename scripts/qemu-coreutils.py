@@ -2,6 +2,7 @@
 """Compare disk-loaded Rust utilities with an identified native GNU coreutils 9.12 build."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -27,6 +28,37 @@ FIXTURES = {
     "-q": b"file starting with a dash\n",
     "long.txt": b"q" * 4095 + b"\r\n" + b"b" * 5901 + b"\t!",
 }
+
+
+def upstream_cases():
+    cases = []
+    for tool in ("base32", "base64"):
+        fixture = tool + ".txt"
+        cases.extend((tool, args, stdin, "C") for args, stdin in [
+            ([], "a.txt"), (["b.txt"], "z.txt"), (["-w0", "a.txt"], "z.txt"),
+            (["--wrap=13", "-"], "long.txt"), (["--decode"], fixture),
+            (["-d", fixture], "z.txt"), (["-di"], "junk" + tool[-2:] + ".txt"),
+            (["-d"], "bad.txt"), (["missing"], "z.txt"), ([], "z.txt"),
+        ])
+    return cases
+
+
+def upstream_text_cases():
+    groups = {
+        "comm": [(["s1.txt", "s2.txt"], "z.txt"), (["-12", "s1.txt", "s2.txt"], "z.txt")],
+        "cut": [(["-b", "2-5"], "b.txt"), (["-d", ":", "-f2", "-s"], "cols.txt"), (["-c1-2", "s1.txt"], "z.txt")],
+        "expand": [([], "cols.txt"), (["-t4", "b.txt"], "z.txt")],
+        "fold": [(["-w", "5"], "cols.txt"), (["-b", "-w3", "s1.txt"], "z.txt")],
+        "nl": [([], "s1.txt"), (["-ba", "-w3", "-s", "|"], "cols.txt")],
+        "paste": [(["s1.txt", "s2.txt"], "z.txt"), (["-s", "-d", ":,"], "s1.txt")],
+        "printf": [(["%s:%03d\\n", "val", "9"], "z.txt"), (["%b", r"x\n\x41"], "z.txt")],
+        "seq": [(["1", "5"], "z.txt"), (["-s", ",", "-2", "2", "4"], "z.txt"), (["-w", "8", "11"], "z.txt")],
+        "sort": [([], "cols.txt"), (["-nr", "nums.txt"], "z.txt"), (["-u", "s1.txt"], "z.txt")],
+        "tr": [(["a-z", "A-Z"], "cols.txt"), (["-d", "0-9"], "nums.txt"), (["-s", "a"], "s1.txt")],
+        "unexpand": [([], "cols.txt"), (["-a", "-t4"], "b.txt")],
+        "uniq": [([], "s1.txt"), (["-c"], "s1.txt"), (["-d", "s1.txt"], "z.txt")],
+    }
+    return [(name, args, stdin, "C") for name, cases in groups.items() for args, stdin in cases]
 
 
 def catalog():
@@ -292,7 +324,7 @@ def run_cases(vm):
     raise RuntimeError("QEMU exited before the differential suite finished")
 
 
-def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
+def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, text_tools):
     proof.mkdir(parents=True, exist_ok=True)
     tree = root / "seed"
     (tree / "bin").mkdir(parents=True)
@@ -300,10 +332,18 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
     mode = "bios" if arch == "i686" else "uefi"
     kernel = root / "kernel.efi"
     shutil.copyfile(qemu.build(arch, qemu.ROOT / "target", features="exec-trace"), kernel)
-    subprocess.run([
-        sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--tools-only",
-        "--arch", arch, "--output", root / "bin",
-    ], check=True)
+    if upstream:
+        upstream_suite = upstream_text_cases() if text_tools else upstream_cases()
+        requested_tools = sorted({case[0] for case in upstream_suite})
+        subprocess.run([
+            sys.executable, qemu.ROOT / "scripts/build-uutils.py", "--arch", arch,
+            "--output", root / "bin", "--archive", upstream, "--offline", *requested_tools
+        ], check=True)
+    else:
+        subprocess.run([
+            sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--tools-only",
+            "--arch", arch, "--output", root / "bin",
+        ], check=True)
     driver = root / "probe.elf"
     subprocess.run(
         [
@@ -319,7 +359,12 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
     )
     shutil.copy2(driver, tree / "probe.elf")
     base = catalog()
-    if namespace_only:
+    if upstream:
+        suite = upstream_suite
+        id_offset = len(base) + len(namespace_cases())
+        if text_tools:
+            id_offset += len(upstream_cases())
+    elif namespace_only:
         suite = namespace_cases()
         id_offset = len(base)
     else:
@@ -345,6 +390,17 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
         }
         shutil.copy2(root / "bin" / name, tree / "bin" / name)
     fixtures = dict(FIXTURES)
+    if upstream:
+        fixtures.update({
+            "s1.txt": b"a\naa\naa\nbb\nd\n", "s2.txt": b"aa\ncc\nd\nz\n",
+            "cols.txt": b"a:9\tb\nxy:22\n  a    z\t   a\n\n",
+            "nums.txt": b"20\n-1\n4\n2\n12\n",
+        })
+        fixtures["bad.txt"] = b"!@#\n"
+        for name, encode in [("32", base64.b32encode), ("64", base64.b64encode)]:
+            encoded = encode(fixtures["a.txt"])
+            fixtures["base" + name + ".txt"] = encoded
+            fixtures["junk" + name + ".txt"] = b"!" + encoded[:500] + b"\n@" + encoded[500:]
     for name, data in fixtures.items():
         (tree / name).write_bytes(data)
     config = bytearray()
@@ -382,7 +438,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
             config.extend((len(args) + 1, int(append)))
             for field in [stdin, "LC_ALL=" + locale, guest_bin + name, name, *args]:
                 config.extend(os.fsencode(field) + b"\0")
-        if fs == "btrfs":
+        if fs == "btrfs" and not upstream:
             expected_effects = namespace_state(temp)
         for name, data in fixtures.items():
             if (temp / name).read_bytes() != data:
@@ -447,7 +503,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
     for name in tools:
         if (b"path=" + guest_bin.encode() + name.encode() + b"\r\n") not in traces:
             raise RuntimeError("missing guest execve trace for " + name)
-    if fs == "btrfs":
+    if fs == "btrfs" and not upstream:
         capture = root / "restored"
         effects = namespace_state(capture / "files", capture / "archive.json")
         (proof / (arch + "-namespace.json")).write_text(json.dumps(effects, indent=2) + "\n")
@@ -461,9 +517,12 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only):
         firmware=mode,
         filesystem=fs,
         tools=build_info,
+        upstream_archive=digest(upstream.read_bytes()) if upstream else None,
         locales=sorted({case[3] for case in suite}),
         timezone="UTC",
         kernel=digest(kernel.read_bytes()),
+        rustc=subprocess.check_output(["rustc", "-Vv"], text=True).strip(),
+        qemu=subprocess.check_output(["qemu-system-" + qemu.ARCH[arch][0], "--version"], text=True).splitlines()[0],
         fixtures={n: digest(d) for n, d in fixtures.items()},
         cases=checks,
     )
@@ -511,7 +570,13 @@ if __name__ == "__main__":
         action="store_true",
         help="run the Btrfs link/directory cases in isolation",
     )
+    cli.add_argument("--text-tools", action="store_true", help="exercise the upstream POSIX text utility set")
+    cli.add_argument("--upstream-archive", type=Path, help="test ordinary Rust std utilities built from this pinned uutils archive")
     args = cli.parse_args()
+    if args.text_tools and not args.upstream_archive:
+        cli.error("--text-tools requires --upstream-archive")
+    if args.upstream_archive and args.namespace_only:
+        cli.error("select either upstream encoders or namespace tools")
     if args.namespace_only and args.filesystem != "btrfs":
         cli.error("namespace tests require the Btrfs root")
     helper_args = []
@@ -531,4 +596,6 @@ if __name__ == "__main__":
                 args.filesystem,
                 helper_args,
                 args.namespace_only,
+                args.upstream_archive,
+                args.text_tools,
             )
