@@ -53,7 +53,7 @@ def mcopy(image, src, dest, data=None):
 def boot(work, proof, name, cpu, cyl, commands, image, dosbox):
     floppy = work / "boot.img"
     floppy.write_bytes(image)
-    batch = "\r\n".join(["C:", *commands, ""]).encode("ascii")
+    batch = "\r\n".join(["C:", *commands, "ECHO OWNERSHIP-BATCH-END", ""]).encode("ascii")
     mcopy(floppy, "-", "::AUTOEXEC.BAT", batch)
     serial = proof / (name + ".serial")
     serial.unlink(missing_ok=True)
@@ -80,7 +80,7 @@ def boot(work, proof, name, cpu, cyl, commands, image, dosbox):
             deadline = time.monotonic() + 75
             while time.monotonic() < deadline:
                 data = serial.read_bytes() if serial.exists() else b""
-                if b"C:\\> " in data:
+                if b"\nOWNERSHIP-BATCH-END\r\nC:\\> " in data:
                     break
                 if proc.poll() is not None:
                     raise RuntimeError(f"{name} emulator exited, see {out.name}")

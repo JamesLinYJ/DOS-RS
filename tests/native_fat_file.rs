@@ -36,6 +36,9 @@ fn copy_bytes(s: u16, p: u16, d: u16, q: u16, n: u16) {
             .copy_within(i..i + usize::from(n), usize::from(d) * 16 + usize::from(q))
     })
 }
+fn floppy_sector(_: u16, lba: u32, write: bool) -> bool {
+    sector(lba, write)
+}
 fn sector(lba: u32, write: bool) -> bool {
     M.with(|m| {
         let mut state = m.borrow_mut();
@@ -275,4 +278,92 @@ fn fat16_file_ranges() {
 #[test]
 fn fat32_file_ranges() {
     exercise(true)
+}
+
+// Cluster 341 crosses FAT bytes 511 and 512. Exercise the live write path
+// with only this cluster free, including a failed write to mirror two.
+#[test]
+fn fat12_split_chain_preserves_neighbors_and_both_mirrors() {
+    let sectors = 2880;
+    M.with(|m| {
+        let mut state = m.borrow_mut();
+        state.memory = vec![0; 1 << 20];
+        state.disk = vec![0; sectors * 512];
+        let d = &mut state.disk;
+        d[0] = 0xeb;
+        wr16(d, 11, 512);
+        d[13] = 1;
+        wr16(d, 14, 1);
+        d[16] = 2;
+        wr16(d, 17, 224);
+        wr16(d, 19, sectors as u16);
+        wr16(d, 22, 9);
+        wr16(d, 510, 0xaa55);
+        for start in [512, 5120] {
+            d[start..start + 9 * 512].fill(0xff);
+            d[start + 511] = 0x0a;
+            d[start + 512] = 0;
+            d[start + 513] = 0xa5;
+        }
+    });
+    let mut v = disk::Volume::EMPTY;
+    assert!(v.mount_drive(1));
+    let id = open(&mut v, b"SPLIT   DAT");
+    let before = M.with(|m| m.borrow().disk[512..512 * 19].to_vec());
+    for fault in [2, 10, 11] {
+        M.with(|m| m.borrow_mut().fail_write = Some(fault));
+        assert!(write(&mut v, id, 0, b"FAT12") >= 0x10000);
+        check(&v, id, b"");
+        M.with(|m| assert_eq!(&m.borrow().disk[512..512 * 19], before));
+    }
+    assert_eq!(write(&mut v, id, 0, b"FAT12"), 5);
+    assert_eq!(stat(&v, id), (341, 5));
+    check(&v, id, b"FAT12");
+    M.with(|m| {
+        let state = m.borrow();
+        for start in [512, 5120] {
+            assert_eq!(state.disk[start + 511], 0xfa);
+            assert_eq!(state.disk[start + 512], 0xff);
+            assert_eq!(state.disk[start + 513], 0xa5);
+        }
+    });
+    assert_eq!(v.file_resize(id.0, id.1, 0), 0);
+    M.with(|m| assert_eq!(&m.borrow().disk[512..512 * 19], before));
+}
+
+#[test]
+fn deleting_short_name_only_removes_matching_long_name() {
+    for (sequence, matching) in [(0x41, true), (0x41, false), (0x42, true)] {
+        let (mut v, data, _) = volume(false, 2);
+        let root = (data - 2) * 512;
+        let short = b"LONGNA~1TXT";
+        let checksum = short
+            .iter()
+            .fold(0u8, |sum, b| sum.rotate_right(1).wrapping_add(*b));
+        M.with(|m| {
+            let mut x = m.borrow_mut();
+            let d = &mut x.disk;
+            d[root] = sequence;
+            d[root + 11] = 15;
+            d[root + 13] = if matching { checksum } else { checksum ^ 1 };
+            d[root + 32..root + 43].copy_from_slice(short);
+            d[root + 43] = 32;
+        });
+        for (i, ch) in short.iter().enumerate() {
+            store(COMMAND, 128 + i as u16, u16::from(*ch))
+        }
+        assert_eq!(v.remove(false, 0), 0);
+        M.with(|m| {
+            let x = m.borrow();
+            assert_eq!(x.disk[root + 32], 0xe5);
+            assert_eq!(
+                x.disk[root],
+                if sequence == 0x41 && matching {
+                    0xe5
+                } else {
+                    sequence
+                }
+            );
+        });
+    }
 }

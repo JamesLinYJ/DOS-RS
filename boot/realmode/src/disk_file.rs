@@ -22,7 +22,7 @@ impl Volume {
         {
             return BAD_HANDLE;
         }
-        if !sector(lba, false) {
+        if !self.sector(lba, false) {
             return READ_FAULT;
         }
         if matches!(b(at), 0 | 229) || b(at + 11) & 0x18 != 0 {
@@ -31,6 +31,24 @@ impl Volume {
         self.entry(e, lba, at);
         if (e.first == 0 && e.size != 0) || (e.first != 0 && !self.valid(e.first)) {
             return READ_FAULT;
+        }
+        0
+    }
+    pub fn file_time(&self, lba: u32, at: u16, write: bool, time: &mut u16, date: &mut u16) -> u16 {
+        let mut item = Entry::EMPTY;
+        let err = self.load_entry(lba, at, &mut item);
+        if err != 0 {
+            return err;
+        }
+        if write {
+            set_word(at + 22, *time);
+            set_word(at + 24, *date);
+            if !self.sector(lba, true) {
+                return WRITE_FAULT;
+            }
+        } else {
+            *time = word(at + 22);
+            *date = word(at + 24);
         }
         0
     }
@@ -68,11 +86,11 @@ impl Volume {
                 if err != 0 {
                     return err;
                 }
-                if !sector(e.lba, false) {
+                if !self.sector(e.lba, false) {
                     return READ_FAULT;
                 }
                 store(BUFFER, e.offset + 11, attr | 32);
-                if !sector(e.lba, true) {
+                if !self.sector(e.lba, true) {
                     return WRITE_FAULT;
                 }
             }
@@ -86,7 +104,7 @@ impl Volume {
             if !self.new_slot(&mut e) {
                 return DISK_FULL;
             }
-            if !sector(e.lba, false) {
+            if !self.sector(e.lba, false) {
                 return READ_FAULT;
             }
             let mut i = 0;
@@ -101,7 +119,7 @@ impl Volume {
             store(BUFFER, e.offset + 11, attr | 32);
             set_word(e.offset + 16, 0x21);
             set_word(e.offset + 24, 0x21);
-            if !sector(e.lba, true) {
+            if !self.sector(e.lba, true) {
                 return WRITE_FAULT;
             }
         }
@@ -129,14 +147,14 @@ impl Volume {
         a && b
     }
     fn publish(&self, e: &Entry, first: u32, size: u32) -> bool {
-        if !sector(e.lba, false) {
+        if !self.sector(e.lba, false) {
             return false;
         }
         set_word(e.offset + 20, (first >> 16) as u16);
         set_word(e.offset + 26, first as u16);
         set_dw(e.offset + 28, size);
         store(BUFFER, e.offset + 11, e.attr | 32);
-        sector(e.lba, true)
+        self.sector(e.lba, true)
     }
     fn shrink(&self, e: &Entry, size: u32) -> u16 {
         if size == e.size && !(size == 0 && e.first != 0) {
@@ -289,7 +307,7 @@ impl Volume {
             } else {
                 room
             };
-            if take != 512 && !sector(lba, false) {
+            if take != 512 && !self.sector(lba, false) {
                 failure = READ_FAULT;
                 break;
             }
@@ -302,7 +320,7 @@ impl Volume {
             } else {
                 super::super::copy_bytes(seg, off + (p - pos) as u16, BUFFER, at, take);
             }
-            if !sector(lba, true) {
+            if !self.sector(lba, true) {
                 failure = WRITE_FAULT;
                 break;
             }

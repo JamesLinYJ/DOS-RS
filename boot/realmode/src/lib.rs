@@ -10,7 +10,6 @@ pub mod layout;
 mod firmware {
     unsafe extern "Rust" {
         pub fn bios_hd_unit(lba: u32, seg: u16, write: u16, unit: u16) -> u16;
-        pub fn floppy_read(chs: u16, head: u16, segment: u16, unit: u16) -> u16;
         pub fn floppy_reset(unit: u16);
         pub fn far_copy(src: u16, off: u16, dst: u16, at: u16, count: u16);
         pub fn video_bios(ax: u16, bx: u16, cx: u16, dx: u16) -> u16;
@@ -18,6 +17,7 @@ mod firmware {
         pub fn bios_char(value: u16);
         pub fn resident_io(op: u16, a: u16, b: u16, c: u16) -> u16;
         pub fn bios_text(text: &str);
+        pub fn dos_rtc(ax: u16, registers: *mut u16) -> u16;
         pub fn bios_key() -> u16;
         pub fn bios_chain() -> !;
         pub fn bios_stop() -> !;
@@ -57,6 +57,10 @@ pub fn put(c: u16) {
 }
 pub fn control(op: u16, a: u16, b: u16, c: u16) -> u16 {
     unsafe { firmware::resident_io(op, a, b, c) }
+}
+pub fn rtc(ax: u16, registers: &mut [u16; 2]) -> bool {
+    // The real-mode library passes a near pointer to two live words (CX and DX).
+    unsafe { firmware::dos_rtc(ax, registers.as_mut_ptr()) == 0 }
 }
 pub fn key() -> u16 {
     unsafe { firmware::bios_key() }
@@ -105,11 +109,44 @@ pub fn video(ax: u16, bx: u16, cx: u16, dx: u16) -> u16 {
     unsafe { firmware::video_bios(ax, bx, cx, dx) }
 }
 pub(crate) fn sector(lba: u32, write: bool) -> bool {
-    hd(lba, BUFFER, write)
+    hd(lba, BUFFER, write) && (!write || verify(hard_unit(), lba))
+}
+pub(crate) fn floppy_sector(unit: u16, lba: u32, write: bool) -> bool {
+    floppy_io(unit, lba, BUFFER, write) && (!write || verify(unit, lba))
+}
+fn verify(unit: u16, lba: u32) -> bool {
+    if byte(dos_tables::LIST_SEG, dos_tables::VERIFY) == 0 {
+        return true;
+    }
+    // Read back from the drive itself, bypassing SMARTDRV's write-through cache.
+    const READBACK: u16 = 0x3a00;
+    let ok = if unit < 128 {
+        floppy_io(unit, lba, READBACK, false)
+    } else {
+        raw_hd(unit, lba, READBACK, false)
+    };
+    let mut i = 0;
+    while ok && i < 512 && byte(READBACK, i) == byte(BUFFER, i) {
+        i += 1
+    }
+    ok && i == 512
+}
+fn floppy_io(unit: u16, lba: u32, seg: u16, write: bool) -> bool {
+    if unit >= floppies() {
+        return false;
+    }
+    let mut retries = 3;
+    while retries > 0 {
+        if raw_hd(unit, lba, seg, write) {
+            return true;
+        }
+        unsafe { firmware::floppy_reset(unit) };
+        retries -= 1;
+    }
+    false
 }
 pub const BUFFER: u16 = 0x3000;
 pub use layout::{COMMAND, FONT_META, PROGRAM};
-pub const BATCH: u16 = 0x3a00;
 /// On smaller ATs keep the font workspace at its original, lower address.
 pub fn font_workspace() -> u16 {
     system::w(FONT_META, layout::FONT_WORKSPACE_SEGMENT)
@@ -131,22 +168,9 @@ fn read(lba: u16, segment: u16) -> bool {
     read_floppy(byte(COMMAND, 258), lba, segment)
 }
 pub fn read_floppy(unit: u16, lba: u16, segment: u16) -> bool {
-    // The native boot format is a two-head, 18-sector/track 1.44 MiB floppy.
-    if lba >= 2880 {
-        return false;
-    }
-    let chs = ((lba / 36) << 8) | (lba % 18 + 1);
-    let mut tries = 3;
-    while tries > 0 {
-        if unsafe { firmware::floppy_read(chs, (lba / 18) % 2, segment, unit) } == 0 {
-            return true;
-        }
-        unsafe {
-            firmware::floppy_reset(unit);
-        }
-        tries -= 1;
-    }
-    false
+    // The BIOS reports the geometry of each drive. 1.44 and 2.88 MiB
+    // media have different sectors per track at the same cylinder count.
+    floppy_io(unit, u32::from(lba), segment, false)
 }
 pub fn reserved() -> u16 {
     if !read(0, BUFFER)

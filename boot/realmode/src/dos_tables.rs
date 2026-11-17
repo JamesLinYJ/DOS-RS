@@ -108,6 +108,9 @@ pub fn psp(segment: u16, parent: u16, top: u16) {
 }
 
 pub const SDA: u16 = 0xa0;
+// Kernel-owned process-wide switches. The Windows DOS VM instance area covers these bytes.
+pub const VERIFY: u16 = SDA + 0x1a;
+pub const BREAK: u16 = SDA + 0x1b;
 pub const INSTANCE: u16 = 0xd0;
 const PATCH: u16 = 0x120;
 const START: u16 = 0x108;
@@ -126,6 +129,8 @@ fn put_words(at: u16, data: &[u16]) {
 }
 /// Set up a DOS data image that Windows can instance separately for each DOS VM.
 pub fn extended_init() {
+    pc::store(LIST_SEG, VERIFY, 0);
+    pc::store(LIST_SEG, BREAK, 0);
     // LastDrive A..C. Root CDS records for the native FAT drives are updated
     // with the working path on each change; DPB links are filled at mount.
     let mut drive = 0;

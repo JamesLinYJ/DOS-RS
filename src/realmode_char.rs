@@ -1,10 +1,45 @@
-//! Install an already resolved resident character device into this DOS PSP.
+//! Bridge DOS handles and process buffers to resident character devices.
 use dosrs_realmode::{
     self as pc,
     dos_tables::{SEG, entry, set_handle},
     store,
     system::{dw, sd, sw, w},
 };
+
+fn valid_buffer(psp: u16, ds: u16, off: u16, count: u16) -> bool {
+    if count == 0 {
+        return true;
+    }
+    let last = off.wrapping_add(count - 1);
+    let start = ds.wrapping_add(off >> 4);
+    let end = ds.wrapping_add(last >> 4);
+    if last < off || end < ds || end >= pc::font_workspace() {
+        return false;
+    }
+    if start >= pc::PROGRAM {
+        return true;
+    }
+    let meta = psp + 16;
+    let data = w(meta, 4);
+    w(pc::COMMAND, pc::layout::ACTIVE_SHELL) == psp && start >= data && end - data < w(meta, 6)
+}
+
+pub(super) fn dispatch(ss: u16, sp: u16, psp: u16) -> u16 {
+    let ax = w(ss, sp);
+    if matches!(ax >> 8, 0x3f | 0x40) || matches!(ax, 0x4402 | 0x4403) {
+        let sys = pc::dos_tables::handle(psp, w(ss, sp + 2));
+        if sys < super::SLOTS
+            && w(SEG, entry(sys)) != 0
+            && w(SEG, entry(sys) + 5) & 0x80 != 0
+            && !valid_buffer(psp, w(ss, sp + 16), w(ss, sp + 6), w(ss, sp + 4))
+        {
+            sw(ss, sp, 5);
+            sw(ss, sp + 22, w(ss, sp + 22) | 1);
+            return 1;
+        }
+    }
+    pc::control(26, ss, sp, psp)
+}
 
 pub(super) fn open(ss: u16, sp: u16, psp: u16) {
     let ax = w(ss, sp);

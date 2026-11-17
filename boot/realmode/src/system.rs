@@ -20,7 +20,7 @@ pub fn block(unit: u16, lba: u32, seg: u16) -> bool {
     if unit >= 128 {
         super::cache::io(unit, lba, seg, false)
     } else {
-        lba < 2880 && super::read_floppy(unit, lba as u16, seg)
+        lba <= u32::from(u16::MAX) && super::read_floppy(unit, lba as u16, seg)
     }
 }
 

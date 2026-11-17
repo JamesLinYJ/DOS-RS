@@ -1,6 +1,6 @@
-//! Sector-based FAT16/FAT32 on BIOS disk 80h. A sector buffer fits a near
+//! Sector-based FAT12, FAT16 and FAT32 on mounted BIOS disks. A buffer fits a near
 //! segment; disk addresses, chain cursors and file lengths remain 32-bit.
-use super::{BUFFER, COMMAND, byte, print, put, sector, store, word};
+use super::{BUFFER, COMMAND, byte, print, put, store, word};
 
 fn b(at: u16) -> u16 {
     byte(BUFFER, at)
@@ -22,6 +22,8 @@ const EOC: u32 = 0x0fff_fff8;
 mod file;
 
 pub struct Volume {
+    drive: u16,
+    fat12: bool,
     start: u32,
     total: u32,
     fat: u32,
@@ -57,6 +59,8 @@ impl Entry {
 }
 impl Volume {
     pub const EMPTY: Self = Self {
+        drive: 2,
+        fat12: false,
         start: 0,
         total: 0,
         fat: 0,
@@ -80,8 +84,22 @@ impl Volume {
     pub fn is32(&self) -> bool {
         self.root != 0
     }
+    pub fn drive(&self) -> u16 {
+        self.drive
+    }
+    pub fn mount_drive(&mut self, drive: u16) -> bool {
+        self.drive = drive;
+        self.mount()
+    }
+    fn sector(&self, lba: u32, write: bool) -> bool {
+        if self.drive == 2 {
+            super::sector(lba, write)
+        } else {
+            super::floppy_sector(self.drive, lba, write)
+        }
+    }
     pub fn mount(&mut self) -> bool {
-        if !sector(0, false) || word(510) != 0xaa55 {
+        if !self.sector(0, false) || word(510) != 0xaa55 {
             return false;
         }
         let mut start = 0;
@@ -99,7 +117,8 @@ impl Volume {
                 }
                 at += 16;
             }
-            if start == 0 || length == 0 || start > u32::MAX - length || !sector(start, false) {
+            if start == 0 || length == 0 || start > u32::MAX - length || !self.sector(start, false)
+            {
                 return false;
             }
         }
@@ -152,15 +171,21 @@ impl Volume {
         }
         let first = root_rel + root_sectors as u32;
         let count = (total - first) >> shift;
-        if count < 4085 || count > 0x0fff_ffee {
+        if count == 0 || count > 0x0fff_ffee {
             return false;
         }
         let fat32 = count >= 65525;
+        self.fat12 = count < 4085;
         if (short == 0) != fat32 || (root_entries == 0) != fat32 {
             return false;
         }
         let entries_shift = if fat32 { 7 } else { 8 };
-        if fat_size <= ((count + 1) >> entries_shift) {
+        let last = if self.fat12 {
+            (count + 1 + ((count + 1) >> 1) + 1) >> 9
+        } else {
+            (count + 1) >> entries_shift
+        };
+        if fat_size <= last {
             return false;
         }
         let mut root = 0;
@@ -206,7 +231,7 @@ impl Volume {
         self.info = info;
         self.backup_info = backup;
         self.hint = 2;
-        if info != 0 && sector(info, false) && fsinfo_valid() {
+        if info != 0 && self.sector(info, false) && fsinfo_valid() {
             let hint = dw(492);
             if self.valid(hint) {
                 self.hint = hint;
@@ -221,74 +246,147 @@ impl Volume {
         self.data + ((c - 2) << self.shift)
     }
     fn table(&self, t: u16, c: u32) -> u32 {
-        self.fat + self.fat_size * t as u32 + (c >> if self.is32() { 7 } else { 8 })
+        let rel = if self.fat12 {
+            (c + (c >> 1)) >> 9
+        } else {
+            c >> if self.is32() { 7 } else { 8 }
+        };
+        self.fat + self.fat_size * u32::from(t) + rel
     }
     fn slot(&self, c: u32) -> u16 {
-        if self.is32() {
-            ((c as u16) & 127) << 2
+        if self.fat12 {
+            (c + (c >> 1)) as u16 & 511
+        } else if self.is32() {
+            (c as u16 & 127) << 2
         } else {
-            ((c as u16) & 255) << 1
+            (c as u16 & 255) << 1
         }
     }
-    fn value(&self, c: u32) -> u32 {
+    // Input sector is the first half of the table entry. Keep it selected
+    // after a split read so scans can reuse that sector for the next cluster.
+    fn raw_entry(&self, table: u16, c: u32) -> u32 {
         let at = self.slot(c);
         if self.is32() {
-            dw(at) & 0x0fff_ffff
+            return dw(at) & 0x0fff_ffff;
+        }
+        if !self.fat12 {
+            return u32::from(word(at));
+        }
+        let low = b(at);
+        let high = if at == 511 {
+            let lba = self.table(table, c);
+            if !self.sector(lba + 1, false) {
+                return u32::MAX;
+            }
+            let high = b(0);
+            if !self.sector(lba, false) {
+                return u32::MAX;
+            }
+            high
         } else {
-            let n = word(at);
-            if n >= 0xfff8 { EOC } else { n as u32 }
+            b(at + 1)
+        };
+        let pair = low | (high << 8);
+        u32::from(if c & 1 == 0 { pair & 0xfff } else { pair >> 4 })
+    }
+    fn value(&self, c: u32) -> u32 {
+        let raw = self.raw_entry(self.first_table, c);
+        let eoc = if self.fat12 {
+            0xff8
+        } else if self.is32() {
+            EOC
+        } else {
+            0xfff8
+        };
+        if raw == u32::MAX {
+            1
+        } else if raw >= eoc {
+            EOC
+        } else {
+            raw
         }
     }
     fn next(&self, c: u32) -> u32 {
-        if !self.valid(c) || !sector(self.table(self.first_table, c), false) {
+        if !self.valid(c) || !self.sector(self.table(self.first_table, c), false) {
             return 1;
         }
         self.value(c)
     }
-    fn store_fat(&self, at: u16, value: u32) {
-        if self.is32() {
-            set_dw(at, (dw(at) & 0xf000_0000) | (value & 0x0fff_ffff));
+    // A packed FAT12 entry can share two sectors and two adjacent entries.
+    // Publish the second byte only after the first sector succeeds.
+    fn write_link(&self, lba: u32, c: u32, value: u32) -> bool {
+        if !self.sector(lba, false) {
+            return false;
+        }
+        let at = self.slot(c);
+        if self.fat12 {
+            let odd = c & 1 != 0;
+            let original = b(at);
+            let v = value as u16;
+            store(BUFFER, at, if odd { (original & 15) | (v << 4) } else { v });
+            let split = at == 511;
+            let hi = if split {
+                if !self.sector(lba, true) {
+                    return false;
+                }
+                0
+            } else {
+                at + 1
+            };
+            let dest = lba + u32::from(split);
+            let ready = !split || self.sector(dest, false);
+            if ready {
+                store(
+                    BUFFER,
+                    hi,
+                    if odd {
+                        v >> 4
+                    } else {
+                        (b(hi) & 0xf0) | ((v >> 8) & 15)
+                    },
+                );
+                if self.sector(dest, true) {
+                    return true;
+                }
+            }
+            if split && self.sector(lba, false) {
+                store(BUFFER, at, original);
+                self.sector(lba, true);
+            }
+            false
         } else {
-            set_word(at, value as u16);
+            if self.is32() {
+                set_dw(at, (dw(at) & 0xf000_0000) | (value & 0x0fff_ffff));
+            } else {
+                set_word(at, value as u16);
+            }
+            self.sector(lba, true)
         }
     }
     fn change(&self, c: u32, value: u32) -> bool {
         if !self.valid(c) {
             return false;
         }
+        let mut previous = [0u32; 8];
         let mut table = self.first_table;
-        let at = self.slot(c);
-        let mut old = 0;
         while table < self.last_table {
             let lba = self.table(table, c);
-            if !sector(lba, false) {
+            if !self.sector(lba, false) {
                 break;
             }
-            if table == self.first_table {
-                old = if self.is32() {
-                    dw(at) & 0x0fff_ffff
-                } else {
-                    u32::from(word(at))
-                };
-            }
-            self.store_fat(at, value);
-            if !sector(lba, true) {
+            let old = self.raw_entry(table, c);
+            if old == u32::MAX || !self.write_link(lba, c, value) {
                 break;
             }
+            previous[usize::from(table)] = old;
             table += 1;
         }
         if table == self.last_table {
             return true;
         }
-        // A fault on a later mirror must not leave the earlier FAT copies
-        // claiming an allocation that the caller has been told failed.
         while table > self.first_table {
             table -= 1;
-            let lba = self.table(table, c);
-            if sector(lba, false) {
-                self.store_fat(at, old);
-                sector(lba, true);
-            }
+            self.write_link(self.table(table, c), c, previous[usize::from(table)]);
         }
         false
     }
@@ -321,7 +419,7 @@ impl Volume {
             let mut i = 0;
             while i < sectors {
                 let lba = base + i as u32;
-                if !sector(lba, false) {
+                if !self.sector(lba, false) {
                     out.lba = u32::MAX;
                     return false;
                 }
@@ -429,7 +527,11 @@ impl Volume {
         if self.cwd == self.root {
             return true;
         }
-        if !sector(self.first(self.cwd), false) || b(32) != 46 || b(33) != 46 || b(43) & 16 == 0 {
+        if !self.sector(self.first(self.cwd), false)
+            || b(32) != 46
+            || b(33) != 46
+            || b(43) & 16 == 0
+        {
             return false;
         }
         let mut e = Entry::EMPTY;
@@ -476,7 +578,7 @@ impl Volume {
                 }
                 i = 0;
                 while i < (1u16 << self.shift) {
-                    if !sector(self.first(fresh) + i as u32, true) {
+                    if !self.sector(self.first(fresh) + i as u32, true) {
                         self.change(fresh, 0);
                         return false;
                     }
@@ -548,7 +650,7 @@ impl Volume {
         let mut within = (offset & (cluster_bytes - 1)) as u16;
         let mut copied = 0u32;
         while copied < amount {
-            if !self.valid(c) || !sector(self.first(c) + (within >> 9) as u32, false) {
+            if !self.valid(c) || !self.sector(self.first(c) + (within >> 9) as u32, false) {
                 return u32::MAX;
             }
             let inside = within & 511;
@@ -593,7 +695,7 @@ impl Volume {
         while self.valid(c) && steps < self.limit - 1 {
             let mut i = 0;
             while i < (1u16 << self.shift) && left != 0 {
-                if !sector(self.first(c) + i as u32, false) {
+                if !self.sector(self.first(c) + i as u32, false) {
                     return u32::MAX;
                 }
                 let n = if left < 512 { left as u16 } else { 512 };
@@ -633,13 +735,17 @@ impl Volume {
         while checked < self.limit - 1 {
             let lba = self.table(self.first_table, c);
             if lba != cached {
-                if !sector(lba, false) {
+                if !self.sector(lba, false) {
                     return 0;
                 }
                 cached = lba;
             }
             let after = if c == self.limit { 2 } else { c + 1 };
-            if self.value(c) == 0 {
+            let value = self.raw_entry(self.first_table, c);
+            if value == u32::MAX {
+                return 0;
+            }
+            if value == 0 {
                 if !self.change(c, 0x0fff_ffff) {
                     *error = 29;
                     return 0;
@@ -672,7 +778,7 @@ impl Volume {
         if lba == 0 {
             return true;
         }
-        if !sector(lba, false) {
+        if !self.sector(lba, false) {
             return false;
         }
         if !fsinfo_valid() {
@@ -690,7 +796,7 @@ impl Volume {
         };
         set_dw(488, new);
         set_dw(492, self.hint);
-        sector(lba, true)
+        self.sector(lba, true)
     }
     /// Stage the new chain, publish the directory entry, then reclaim the old
     /// chain. A full disk leaves an existing destination readable.
@@ -758,7 +864,7 @@ impl Volume {
                     512
                 };
                 if src == 0 {
-                    if !sector(self.first(source_cluster) + i as u32, false) {
+                    if !self.sector(self.first(source_cluster) + i as u32, false) {
                         self.release(first);
                         return false;
                     }
@@ -777,7 +883,7 @@ impl Volume {
                         x += 1;
                     }
                 }
-                if !sector(self.first(c) + i as u32, true) {
+                if !self.sector(self.first(c) + i as u32, true) {
                     self.release(first);
                     return false;
                 }
@@ -792,7 +898,7 @@ impl Volume {
                 }
             }
         }
-        if !sector(entry.lba, false) {
+        if !self.sector(entry.lba, false) {
             self.release(first);
             return false;
         }
@@ -815,7 +921,7 @@ impl Volume {
         set_word(at + 20, (first >> 16) as u16);
         set_word(at + 26, first as u16);
         set_dw(at + 28, size as u32);
-        if !sector(entry.lba, true) {
+        if !self.sector(entry.lba, true) {
             return false;
         }
         let freed = self.release(old);
@@ -827,3 +933,7 @@ impl Volume {
 fn fsinfo_valid() -> bool {
     dw(0) == 0x4161_5252 && dw(484) == 0x6141_7272 && dw(508) == 0xaa55_0000
 }
+
+#[path = "disk_directory.rs"]
+mod directory;
+pub use directory::{match_mask, unpack_name};
