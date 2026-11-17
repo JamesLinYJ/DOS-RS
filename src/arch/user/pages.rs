@@ -1,35 +1,29 @@
-//! BSP address space used between entry to user mode and the next trap.
-//! Only the selected process's leaf entries carry the user bit.
-use dosrs_native_exec::{BASE, END, Image, Mapping, PAGE};
-use x86::controlregs::*;
+//! Each process owns its PAE or four-level page-table root. All threads of the
+//! process load the same root. Other processes only share supervisor mappings.
+use crate::arch::frames::UserImage as Image;
+use alloc::{sync::Arc, vec::Vec};
+#[cfg(target_arch = "x86")]
+use core::arch::x86::__cpuid;
 #[cfg(target_arch = "x86_64")]
-use {alloc::vec::Vec, dosrs_native_exec::HIGH_USER_START};
+use core::arch::x86_64::__cpuid;
+use core::ops::Range;
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use dosrs_native_exec::{ANON_BASE, ANON_END, BASE, END, PAGE};
+use x86::controlregs::*;
 
 #[repr(C, align(4096))]
-struct Table([u64; 512]);
+struct Table([AtomicU64; 512]);
 impl Table {
-    const EMPTY: Self = Self([0; 512]);
-}
-static mut INITIALIZED: bool = false;
-#[cfg(target_arch = "x86")]
-static mut LEAVES: Table = Table::EMPTY;
-static mut DIRECTORIES: [Table; 4] = [const { Table::EMPTY }; 4];
-static mut DIRECTORY_POINTERS: Table = Table::EMPTY;
-/// Keep the page tables and their backing frames together. Callers can
-/// change user bytes; only this module can replace mappings.
-pub(crate) struct AddressSpace {
-    image: Image,
-    #[cfg(target_arch = "x86_64")]
-    tables: Vec<Table>,
+    const EMPTY: Self = Self([const { AtomicU64::new(0) }; 512]);
 }
 
+pub(crate) struct AddressSpace {
+    image: Image,
+    table: Option<Arc<UserPageTable>>,
+}
 impl From<Image> for AddressSpace {
     fn from(image: Image) -> Self {
-        Self {
-            image,
-            #[cfg(target_arch = "x86_64")]
-            tables: Vec::new(),
-        }
+        Self { image, table: None }
     }
 }
 impl core::ops::Deref for AddressSpace {
@@ -42,45 +36,96 @@ impl AddressSpace {
     pub(crate) fn write(&mut self, address: usize, bytes: &[u8]) -> Result<(), &'static str> {
         self.image.write(address, bytes)
     }
+    pub(crate) fn prepare(&mut self) -> Result<(), &'static str> {
+        if self.table.is_none() {
+            self.table = Some(UserPageTable::build(&self.image, 0..0)?);
+        }
+        Ok(())
+    }
+    pub(crate) fn map_anonymous(&mut self, pages: usize) -> Result<usize, &'static str> {
+        let base = self.image.map_anonymous(pages)?;
+        match UserPageTable::build(&self.image, 0..0) {
+            Ok(table) => {
+                self.invalidate();
+                self.table = Some(table);
+                Ok(base)
+            }
+            Err(error) => {
+                // The old CR3 never contained these newly allocated frames.
+                self.image.unmap_anonymous(base, pages)?;
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn unmap_anonymous(
+        &mut self,
+        base: usize,
+        pages: usize,
+    ) -> Result<(), &'static str> {
+        self.image.validate_unmap(base, pages)?;
+        // Allocate the replacement while all old mappings and their backing
+        // frames remain intact. A failed rebuild leaves the old root usable.
+        let next = UserPageTable::build(&self.image, base..base + pages * PAGE)?;
+        self.invalidate();
+        self.table = Some(next);
+        self.image.unmap_anonymous(base, pages)
+    }
+
+    pub(crate) fn page_table(&self) -> Arc<UserPageTable> {
+        self.table
+            .as_ref()
+            .expect("unprepared process address space")
+            .clone()
+    }
+    /// Stop admitting new slices and wait until every CPU has restored its host
+    /// CR3. Stale queued handles cannot reactivate the retired mappings.
+    pub(crate) fn invalidate(&mut self) {
+        if let Some(table) = self.table.take() {
+            table.retire();
+        }
+    }
+}
+impl Drop for AddressSpace {
+    fn drop(&mut self) {
+        self.invalidate();
+    }
 }
 fn identity_mapped(address: usize) -> bool {
-    (address as u64) < 0x1_0000_0000 && !(BASE..END).contains(&address)
+    (address as u64) < 0x1_0000_0000
+        && !(BASE..END).contains(&address)
+        && !(ANON_BASE..ANON_END).contains(&address)
 }
+const RETIRED: usize = 1 << (usize::BITS - 1);
+const LONG: bool = cfg!(target_arch = "x86_64");
+const PDPT: usize = LONG as usize;
+const FIRST_PD: usize = PDPT + 1;
 
-fn leaf(mapping: &mut Mapping, nx: bool) -> u64 {
-    let mut flags = 5;
-    if mapping.writable {
-        flags |= 2;
-    }
-    if nx && !mapping.executable {
-        flags |= 1 << 63;
-    }
-    mapping.frame_address() as u64 | flags
+pub(crate) struct UserPageTable {
+    tables: Vec<Table>,
+    active: AtomicUsize,
 }
+impl UserPageTable {
+    fn root(&self) -> usize {
+        self.tables.as_ptr() as usize
+    }
 
-#[cfg(target_arch = "x86_64")]
-impl AddressSpace {
-    /// Keep the kernel's low identity directories. Allocate higher branches
-    /// only for mapped ELF pages. Sorted VAs share their ancestor prefixes.
-    fn root(&mut self, low: [u64; 4], nx: bool) -> Result<u64, &'static str> {
-        if let Some(root) = self.tables.first_mut() {
-            return Ok(root.0.as_mut_ptr() as u64);
-        }
-        let shifts = [39, 30, 21];
-        // Each process owns a path from its PML4 to the ABI stack. The PDPT
-        // also references the remaining supervisor-only identity directories.
-        let mut previous = 0usize;
-        let mut count = 4;
-        for (addr, _) in self
-            .image
-            .pages()
-            .filter(|(a, _)| *a as u64 >= HIGH_USER_START)
-        {
-            count += shifts
-                .iter()
-                .filter(|&&s| (addr >> s) != (previous >> s))
-                .count();
-            previous = addr;
+    fn build(image: &Image, removed: Range<usize>) -> Result<Arc<Self>, &'static str> {
+        let retained = || {
+            image
+                .pages()
+                .filter(|(address, _)| !removed.contains(address))
+        };
+        // Reserve the exact number of branches before embedding their physical
+        // addresses. Sorted ELF pages in the same subtree allocate one branch.
+        let mut count = FIRST_PD + 4;
+        let mut prev = u64::MAX;
+        for (address, _) in retained() {
+            let addr = address as u64;
+            count += usize::from(addr >> 21 != prev >> 21);
+            count += usize::from(addr >= 1 << 32 && addr >> 30 != prev >> 30);
+            count += usize::from(addr >= 1 << 39 && addr >> 39 != prev >> 39);
+            prev = addr;
         }
         let mut tables = Vec::new();
         tables
@@ -89,40 +134,101 @@ impl AddressSpace {
         tables.resize_with(count, || Table::EMPTY);
         if tables
             .iter()
-            .any(|table| !identity_mapped(table.0.as_ptr() as usize))
+            .any(|p| !identity_mapped(p as *const Table as usize))
         {
-            return Err("user page tables outside low identity map");
+            return Err("page tables outside the kernel identity map");
         }
-        tables[0].0[0] = tables[1].0.as_mut_ptr() as u64 | 7;
-        tables[1].0[..4].copy_from_slice(&low);
-        tables[1].0[BASE >> 30] = tables[2].0.as_mut_ptr() as u64 | 7;
-        for (i, entry) in tables[2].0.iter_mut().enumerate() {
-            *entry = (((BASE >> 30) << 30) | (i << 21)) as u64 | 0x83;
+        let base = tables.as_ptr() as usize;
+        let phys = |i: usize| (base + i * PAGE) as u64;
+        if LONG {
+            *tables[0].0[0].get_mut() = phys(PDPT) | 7;
         }
-        tables[2].0[(BASE >> 21) & 511] = tables[3].0.as_mut_ptr() as u64 | 7;
-
-        let mut path = [0, 1, 0, 0];
-        let mut next_table = 4;
-        previous = 0;
-        for (addr, mapping) in self.image.pages_mut() {
-            if addr < END {
-                tables[3].0[(addr - BASE) / PAGE] = leaf(mapping, nx);
-                continue;
-            }
-            for (level, shift) in shifts.into_iter().enumerate() {
-                let prefix = addr >> shift;
-                if prefix != previous >> shift {
-                    let child = next_table;
-                    next_table += 1;
-                    tables[path[level]].0[prefix & 511] = tables[child].0.as_mut_ptr() as u64 | 7;
-                    path[level + 1] = child;
+        for i in 0..4 {
+            *tables[PDPT].0[i].get_mut() = phys(FIRST_PD + i) | if LONG { 7 } else { 1 };
+            for j in 0..512 {
+                let addr = (i * 512 + j) << 21;
+                if identity_mapped(addr) {
+                    *tables[FIRST_PD + i].0[j].get_mut() = addr as u64 | 0x83;
                 }
             }
-            tables[path[3]].0[(addr >> 12) & 511] = leaf(mapping, nx);
-            previous = addr;
         }
-        self.tables = tables;
-        Ok(self.tables[0].0.as_mut_ptr() as u64)
+        let nx =
+            __cpuid(0x8000_0000).eax >= 0x8000_0001 && __cpuid(0x8000_0001).edx & (1 << 20) != 0;
+        let mut next = FIRST_PD + 4;
+        let mut pdpt = PDPT;
+        let mut pd = FIRST_PD;
+        let mut pt = 0;
+        prev = u64::MAX;
+        for (address, mapping) in retained() {
+            let addr = address as u64;
+            if addr >= 1 << 39 && addr >> 39 != prev >> 39 {
+                pdpt = next;
+                next += 1;
+                *tables[0].0[((addr >> 39) & 511) as usize].get_mut() = phys(pdpt) | 7;
+            }
+            if addr >> 30 != prev >> 30 {
+                if addr < 1 << 32 {
+                    pd = FIRST_PD + (addr >> 30) as usize;
+                } else {
+                    pd = next;
+                    next += 1;
+                    *tables[pdpt].0[((addr >> 30) & 511) as usize].get_mut() = phys(pd) | 7;
+                }
+            }
+            if addr >> 21 != prev >> 21 {
+                pt = next;
+                next += 1;
+                *tables[pd].0[((addr >> 21) & 511) as usize].get_mut() = phys(pt) | 7;
+            }
+            let frame = mapping.frame_address();
+            if !identity_mapped(frame) {
+                return Err("user frame outside the kernel identity map");
+            }
+            let flags = 5
+                | if mapping.writable { 2 } else { 0 }
+                | if nx && !mapping.executable {
+                    1 << 63
+                } else {
+                    0
+                };
+            *tables[pt].0[((addr >> 12) & 511) as usize].get_mut() = frame as u64 | flags;
+            prev = addr;
+        }
+        Arc::try_new(Self {
+            tables,
+            active: AtomicUsize::new(0),
+        })
+        .map_err(|_| "insufficient memory for process address space")
+    }
+
+    pub(super) fn acquire(&self, slot: usize) -> Result<Activation<'_>, &'static str> {
+        let bit = 1 << slot;
+        self.active
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+                (v & (RETIRED | bit) == 0).then_some(v | bit)
+            })
+            .map_err(|_| "retired or already active address space")?;
+        Ok(Activation { table: self, bit })
+    }
+    fn retire(&self) {
+        let mask = self.active.fetch_or(RETIRED, Ordering::AcqRel);
+        for cpu in 0..crate::platform::MAX_CPUS {
+            if mask & (1 << cpu) != 0 {
+                super::reschedule_slot(cpu);
+            }
+        }
+        while self.active.load(Ordering::Acquire) != RETIRED {
+            core::hint::spin_loop();
+        }
+    }
+}
+pub(super) struct Activation<'a> {
+    table: &'a UserPageTable,
+    bit: usize,
+}
+impl Drop for Activation<'_> {
+    fn drop(&mut self) {
+        self.table.active.fetch_and(!self.bit, Ordering::Release);
     }
 }
 pub(super) struct Host {
@@ -133,11 +239,7 @@ pub(super) struct Host {
     sysenter: Option<u64>,
 }
 
-pub(super) fn enter(space: &mut AddressSpace) -> Result<Host, &'static str> {
-    #[cfg(target_arch = "x86")]
-    use core::arch::x86::__cpuid;
-    #[cfg(target_arch = "x86_64")]
-    use core::arch::x86_64::__cpuid;
+pub(super) fn enter(table: &UserPageTable) -> Result<Host, &'static str> {
     let features = __cpuid(1).edx;
     const REQUIRED: u32 = (1 << 6) | (1 << 24) | (1 << 25);
     if features & REQUIRED != REQUIRED {
@@ -150,20 +252,11 @@ pub(super) fn enter(space: &mut AddressSpace) -> Result<Host, &'static str> {
     };
     let nx = ext & (1 << 20) != 0;
     let has_efer = ext & ((1 << 11) | (1 << 20) | (1 << 29)) != 0;
-    // The kernel and BSP stack are identity mapped by both DOS-RS boot paths.
-    // Until a high-memory kernel mapping exists, reject firmware placement
-    // beyond the low identity map or in the process's virtual address window.
-    if !identity_mapped(&nx as *const _ as usize)
-        || !identity_mapped(enter as *const () as usize)
-        || !identity_mapped(&raw const DIRECTORY_POINTERS as usize)
-        || space
-            .pages()
-            .any(|(_, p)| !identity_mapped(p.bytes().as_ptr() as usize))
-    {
+    if !identity_mapped(&nx as *const _ as usize) || !identity_mapped(enter as *const () as usize) {
         return Err("kernel outside supported low memory map");
     }
-    // The scheduler invokes this only on the BSP with interrupts disabled and
-    // with no active user address space. APs retain their own page-table root.
+    // The local CPU disables interrupts in kernel mode. Its saved controls stay
+    // on its own scheduler stack until this activation traps and leaves the CR3.
     unsafe {
         let host = Host {
             cr0: cr0(),
@@ -178,30 +271,6 @@ pub(super) fn enter(space: &mut AddressSpace) -> Result<Host, &'static str> {
         {
             return Err("unsupported host paging mode");
         }
-        if !INITIALIZED {
-            for i in 0..4 {
-                DIRECTORY_POINTERS.0[i] = (&raw const DIRECTORIES[i] as u64)
-                    | if cfg!(target_arch = "x86_64") { 7 } else { 1 };
-                for j in 0..512 {
-                    DIRECTORIES[i].0[j] = ((i as u64 * 512 + j as u64) << 21) | 0x83;
-                }
-            }
-            #[cfg(target_arch = "x86")]
-            {
-                DIRECTORIES[BASE >> 30].0[(BASE >> 21) & 511] = (&raw const LEAVES as u64) | 7;
-            }
-            INITIALIZED = true;
-        }
-        #[cfg(target_arch = "x86_64")]
-        let root = space.root(core::array::from_fn(|i| DIRECTORY_POINTERS.0[i]), nx)?;
-        #[cfg(target_arch = "x86")]
-        let root = {
-            LEAVES.0 = [0; 512];
-            for (addr, mapping) in space.image.pages_mut() {
-                LEAVES.0[(addr - BASE) / PAGE] = leaf(mapping, nx);
-            }
-            &raw const DIRECTORY_POINTERS as u64
-        };
         #[cfg(target_arch = "x86")]
         if host.cr0.contains(Cr0::CR0_ENABLE_PAGING) {
             cr0_write(host.cr0 - Cr0::CR0_ENABLE_PAGING);
@@ -220,7 +289,7 @@ pub(super) fn enter(space: &mut AddressSpace) -> Result<Host, &'static str> {
         if host.sysenter.is_some() {
             x86::msr::wrmsr(0x174, 0);
         }
-        cr3_write(root);
+        cr3_write(table.root() as u64);
         cr0_write(
             (host.cr0 | Cr0::CR0_ENABLE_PAGING | Cr0::CR0_WRITE_PROTECT)
                 - Cr0::CR0_TASK_SWITCHED
@@ -244,6 +313,12 @@ impl Host {
                 x86::msr::wrmsr(0x174, cs);
             }
             cr0_write(self.cr0);
+            #[cfg(feature = "tlb-selftest")]
+            assert_eq!(
+                cr3(),
+                self.cr3,
+                "host CR3 must be restored before TLB acknowledgement"
+            );
         }
     }
 }

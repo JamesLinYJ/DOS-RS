@@ -1,12 +1,19 @@
-//! Hardware user-mode entry on the boot CPU. The architecture library owns
+//! Hardware user-mode entry on each CPU. The architecture library owns
 //! the register save/restore instructions; Rust owns the page and trap state.
 mod pages;
-use core::{mem::size_of, ptr};
-use dosrs_native_exec::Image;
-pub(crate) use pages::AddressSpace;
+#[cfg(feature = "tlb-selftest")]
+pub(crate) mod tlb_test;
+use crate::arch::frames::UserImage as Image;
+use alloc::vec::Vec;
+use core::{
+    mem::size_of,
+    ptr,
+    sync::atomic::{AtomicU16, Ordering},
+};
+pub(crate) use pages::{AddressSpace, UserPageTable};
 use x86::{
     Ring,
-    dtables::{DescriptorTablePointer, lgdt},
+    dtables::{DescriptorTablePointer, lgdt, sgdt},
     segmentation::{self as seg, SegmentSelector},
 };
 
@@ -57,42 +64,66 @@ impl Floating {
         Self(f)
     };
 }
+// The descriptor base identifies this CPU after a user trap, including when
+// user GS/FS refer to application selectors.
 #[repr(C, align(16))]
-struct Stack([usize; 4096]);
-static mut STACK: Stack = Stack([0; 4096]);
-static mut TSS: [u8; 104] = [0; 104];
-static mut GDT: [u64; 7] = [0; 7];
-static mut HOST_STACK: usize = 0;
-static mut RETURNED: *mut Frame = ptr::null_mut();
-static mut USER_FP: *mut u8 = ptr::null_mut();
-static mut HOST_FP: Floating = Floating::INITIAL;
+struct Local {
+    gdt: [u64; 7],
+    tss: [u8; 104],
+    host_stack: usize,
+    frame: *mut Frame,
+    user_fp: *mut u8,
+    host_fp: Floating,
+}
+impl Local {
+    const EMPTY: Self = Self {
+        gdt: [0; 7],
+        tss: [0; 104],
+        host_stack: 0,
+        frame: ptr::null_mut(),
+        user_fp: ptr::null_mut(),
+        host_fp: Floating::INITIAL,
+    };
+}
+static mut CPUS: [Local; crate::platform::MAX_CPUS] =
+    [const { Local::EMPTY }; crate::platform::MAX_CPUS];
+static APICS: [AtomicU16; crate::platform::MAX_CPUS] =
+    [const { AtomicU16::new(u16::MAX) }; crate::platform::MAX_CPUS];
 
-pub(super) fn init() {
-    // One BSP GDT and TSS, installed before the IDT. APs have separate tables.
+fn reschedule_slot(slot: usize) {
+    if let Ok(id) = u8::try_from(APICS[slot].load(Ordering::Acquire)) {
+        super::platform::reschedule(id);
+    }
+}
+
+pub(super) fn init(slot: usize) {
+    let apic = super::platform::boot_cpu().0;
+    // Startup assigns each online CPU a unique slot before running any user
+    // work. This CPU alone owns its descriptor bytes and trap return state.
     unsafe {
+        let local = &mut *(&raw mut CPUS).cast::<Local>().add(slot);
         let long = cfg!(target_arch = "x86_64");
-        GDT[1] = if long {
+        local.gdt[1] = if long {
             0x0020_9a00_0000_0000
         } else {
             0x00cf_9a00_0000_ffff
         };
-        GDT[2] = 0x00cf_9200_0000_ffff;
-        GDT[3] = if long {
+        local.gdt[2] = 0x00cf_9200_0000_ffff;
+        local.gdt[3] = if long {
             0x0020_fa00_0000_0000
         } else {
             0x00cf_fa00_0000_ffff
         };
-        GDT[4] = 0x00cf_f200_0000_ffff;
-        let base = &raw mut TSS as u64;
-        GDT[5] = 103 | ((base & 0xff_ffff) << 16) | (0x89 << 40) | ((base & 0xff00_0000) << 32);
-        GDT[6] = base >> 32;
-        let stack = (&raw const STACK as usize) + size_of::<Stack>();
-        ptr::write_unaligned((&raw mut TSS).cast::<u8>().add(4).cast::<usize>(), stack);
+        local.gdt[4] = 0x00cf_f200_0000_ffff;
+        let base = local.tss.as_ptr() as u64;
+        local.gdt[5] =
+            103 | ((base & 0xff_ffff) << 16) | (0x89 << 40) | ((base & 0xff00_0000) << 32);
+        local.gdt[6] = base >> 32;
         #[cfg(target_arch = "x86")]
-        ptr::write_unaligned((&raw mut TSS).cast::<u8>().add(8).cast::<u16>(), 16);
-        TSS[102] = 104; // no user-accessible I/O bitmap
+        ptr::write_unaligned(local.tss.as_mut_ptr().add(8).cast::<u16>(), 16);
+        local.tss[102] = 104; // I/O bitmap beyond the segment limit
         lgdt(&DescriptorTablePointer {
-            base: (&raw const GDT).cast::<u64>(),
+            base: local.gdt.as_ptr(),
             limit: 55,
         });
         x86::dtables::load_ldtr(SegmentSelector::new(0, Ring::Ring0));
@@ -105,10 +136,16 @@ pub(super) fn init() {
         seg::load_gs(data);
         x86::task::load_tr(SegmentSelector::new(5, Ring::Ring0));
     }
+    APICS[slot].store(u16::from(apic), Ordering::Release);
 }
+
+#[derive(Clone, Copy)]
+#[repr(C, align(16))]
+struct StackChunk([u8; 16]);
 pub(crate) struct Thread {
     regs: Frame,
     fp: Floating,
+    kernel_stack: Vec<StackChunk>,
 }
 pub(crate) enum Stop {
     Call(usize),
@@ -116,7 +153,12 @@ pub(crate) enum Stop {
     Fault(usize),
 }
 impl Thread {
-    pub fn new(entry: usize, sp: usize, argc: usize, argv: usize) -> Self {
+    pub fn try_new(
+        entry: usize,
+        sp: usize,
+        argc: usize,
+        argv: usize,
+    ) -> Result<Self, &'static str> {
         let mut regs = Frame {
             regs: [0; cpu::GPRS],
             vector: 0,
@@ -138,10 +180,17 @@ impl Thread {
             regs.regs[10] = 35;
             regs.regs[11] = 35;
         }
-        Self {
+        const STACK_CHUNKS: usize = 1024;
+        let mut kernel_stack = Vec::new();
+        kernel_stack
+            .try_reserve_exact(STACK_CHUNKS)
+            .map_err(|_| "insufficient memory for thread kernel stack")?;
+        kernel_stack.resize(STACK_CHUNKS, StackChunk([0; 16]));
+        Ok(Self {
             regs,
             fp: Floating::INITIAL,
-        }
+            kernel_stack,
+        })
     }
     pub fn result(&mut self, value: isize) {
         self.regs.regs[cpu::AX] = value as usize;
@@ -165,11 +214,7 @@ impl Thread {
             Some(args)
         }
     }
-    pub fn step(&mut self, image: &mut AddressSpace) -> Result<Stop, &'static str> {
-        #[cfg(target_arch = "x86")]
-        if self.regs.sp > dosrs_native_exec::END {
-            return Ok(Stop::Fault(12));
-        }
+    pub fn step_on(&mut self, slot: usize, table: &UserPageTable) -> Result<Stop, &'static str> {
         // IRET rejects noncanonical RIP/RSP before reaching userspace.
         #[cfg(target_arch = "x86_64")]
         if self.regs.sp as u64 >= dosrs_native_exec::USER_END
@@ -177,14 +222,26 @@ impl Thread {
         {
             return Ok(Stop::Fault(13));
         }
-        if !super::platform::boot_cpu().1 || !super::platform::enable_apic() {
-            return Err("native processes require the local APIC");
+        let (id, apic) = super::platform::boot_cpu();
+        if !apic
+            || APICS
+                .get(slot)
+                .is_none_or(|v| v.load(Ordering::Acquire) != u16::from(id))
+            || !super::platform::enable_apic()
+        {
+            return Err("native thread requires its scheduled CPU and local APIC");
         }
-        let host = pages::enter(image)?;
-        // Assembly consumes this context then IRETs to a Frame, on a stack
-        // owned exclusively by this synchronous activation of the BSP.
+        let _activation = table.acquire(slot)?;
+        let host = pages::enter(table)?;
+        // The scheduler exclusively owns this thread until this CPU traps. RSP0
+        // (ESP0 on i686) names its kernel stack for every privilege transition.
         unsafe {
-            let top = (&raw mut STACK as usize) + size_of::<Stack>();
+            let local = (&raw mut CPUS).cast::<Local>().add(slot);
+            let top = self.kernel_stack.as_mut_ptr().add(self.kernel_stack.len()) as usize;
+            ptr::write_unaligned(
+                (&raw mut (*local).tss).cast::<u8>().add(4).cast::<usize>(),
+                top,
+            );
             let frame = (top - size_of::<Frame>()) as *mut Frame;
             frame.write(self.regs);
             let context = frame.cast::<usize>().sub(cpu::CONTEXT + 1);
@@ -192,22 +249,22 @@ impl Thread {
             context
                 .add(cpu::CONTEXT)
                 .write(trapret as *const () as usize);
-            RETURNED = &raw mut self.regs;
-            USER_FP = self.fp.0.as_mut_ptr();
+            (*local).frame = &raw mut self.regs;
+            (*local).user_fp = self.fp.0.as_mut_ptr();
             super::traps::use_user_gates(true);
             super::platform::user_timer(true);
-            cpu::save((&raw mut HOST_FP).cast());
-            cpu::restore(USER_FP);
-            cpu::swtch(&raw mut HOST_STACK, context as usize);
+            cpu::save((&raw mut (*local).host_fp).cast());
+            cpu::restore((*local).user_fp);
+            cpu::swtch(&raw mut (*local).host_stack, context as usize);
             super::platform::user_timer(false);
             super::traps::use_user_gates(false);
-            RETURNED = ptr::null_mut();
-            USER_FP = ptr::null_mut();
+            (*local).frame = ptr::null_mut();
+            (*local).user_fp = ptr::null_mut();
         }
         host.restore();
         Ok(match self.regs.vector {
             64 => Stop::Call(self.regs.regs[cpu::AX]),
-            0xf0 | 0xff => Stop::Slice,
+            0xf0 | 0xf1 | 0xff => Stop::Slice,
             fault => Stop::Fault(fault),
         })
     }
@@ -223,17 +280,23 @@ fn from_user(frame: *const Frame) -> ! {
         x86::bits32::eflags::set(x86::bits32::eflags::EFlags::from_bits_truncate(2));
     }
     unsafe {
-        if RETURNED.is_null() || (*frame).cs & 3 != 3 {
+        let mut descriptor = DescriptorTablePointer::<u64> {
+            base: ptr::null(),
+            limit: 0,
+        };
+        sgdt(&mut descriptor);
+        let local = descriptor.base as *mut Local;
+        if (*local).frame.is_null() || (*frame).cs & 3 != 3 {
             super::halt()
         }
-        cpu::save(USER_FP);
-        cpu::restore((&raw const HOST_FP).cast());
-        RETURNED.write(frame.read());
-        if (*frame).vector == 0xf0 {
+        cpu::save((*local).user_fp);
+        cpu::restore((&raw const (*local).host_fp).cast());
+        (*local).frame.write(frame.read());
+        if matches!((*frame).vector, 0xf0 | 0xf1) {
             super::platform::user_eoi();
         }
         let mut discarded = 0;
-        cpu::swtch(&mut discarded, HOST_STACK);
+        cpu::swtch(&mut discarded, (*local).host_stack);
         super::halt()
     }
 }

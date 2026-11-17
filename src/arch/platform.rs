@@ -47,6 +47,11 @@ fn ipi(id: u8, command: u32) -> bool {
     ready()
 }
 
+/// Interrupt an executing user slice after publishing work or retiring a CR3.
+pub(crate) fn reschedule(apic_id: u8) -> bool {
+    ipi(apic_id, 0xf1)
+}
+
 // PIT channel 2 in one-shot mode. Leave the speaker output disconnected.
 pub(crate) fn pit_wait(count: u16) -> bool {
     use super::{inb, outb};
@@ -80,6 +85,13 @@ pub(crate) fn session_nonce() -> u32 {
     (ticks as u32).rotate_left(11)
         ^ (ticks >> 32) as u32
         ^ SEQUENCE.fetch_add(0x9e3779b9, Ordering::Relaxed)
+}
+
+#[cfg(feature = "thread-trace")]
+pub(crate) fn timestamp() -> u64 {
+    // CPUID orders earlier work before the timestamp on both supported x86 ABIs.
+    __cpuid(0);
+    unsafe { x86::time::rdtsc() }
 }
 
 pub(super) fn user_timer(on: bool) {

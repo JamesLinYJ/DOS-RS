@@ -7,6 +7,7 @@ edition = "2024"
 batch-console = []
 kernel-selftest = []
 native-gate-test = []
+tlb-selftest = []
 pc386 = []
 
 [profile.dev]

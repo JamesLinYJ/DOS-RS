@@ -8,6 +8,11 @@ pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
     puts(firmware);
     puts("\n");
     platform::initialize(handoff);
+    #[cfg(feature = "tlb-selftest")]
+    if let Err(error) = arch::user::tlb_test::run() {
+        puts(error);
+        debug_exit(false);
+    }
     if cfg!(feature = "native-gate-test") {
         gate_test_wait();
     }

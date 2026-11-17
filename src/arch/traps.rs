@@ -56,7 +56,6 @@ impl Gate {
     }
 }
 static mut BSP_IDT: [Gate; 256] = [Gate::ZERO; 256];
-static mut AP_IDT: [Gate; 256] = [Gate::ZERO; 256];
 static mut USER_IDT: [Gate; 256] = [Gate::ZERO; 256];
 unsafe extern "C" {
     static vectors: [usize; 256];
@@ -75,7 +74,7 @@ pub(super) unsafe fn use_user_gates(active: bool) {
     }
 }
 pub(crate) fn install_interrupts() {
-    super::user::init();
+    super::user::init(0);
     let mut map = Templates {
         base: 0,
         stride: 0,
@@ -92,7 +91,6 @@ pub(crate) fn install_interrupts() {
                 USER_IDT[n].attr = 0xee;
             }
             BSP_IDT[n] = Gate::new(address, x86::segmentation::cs().bits());
-            AP_IDT[n] = Gate::new(address, if cfg!(target_arch = "x86") { 8 } else { 24 });
         }
         lidt(&DescriptorTablePointer {
             base: (&raw const BSP_IDT).cast::<Gate>(),
@@ -100,14 +98,13 @@ pub(crate) fn install_interrupts() {
         });
     }
 }
-pub(crate) fn load_interrupts() {
-    // Startup release publishes the fully initialized table before any AP reads it.
-    unsafe {
-        lidt(&DescriptorTablePointer {
-            base: (&raw const AP_IDT).cast::<Gate>(),
-            limit: (size_of::<[Gate; 256]>() - 1) as u16,
-        });
+pub(crate) fn load_interrupts(slot: usize) {
+    if slot == 0 || slot >= crate::platform::MAX_CPUS {
+        super::halt();
     }
+    super::user::init(slot);
+    // The shared kernel IDT refers to selector 8 in each CPU's private GDT.
+    unsafe { use_user_gates(false) }
 }
 #[repr(C)]
 struct Context {
@@ -142,6 +139,14 @@ struct Context {
 }
 #[unsafe(no_mangle)]
 extern "efiapi" fn CommonExceptionHandler(vector: usize, context: &mut Context) {
+    if matches!(vector, 0xf0 | 0xf1 | 0xff) {
+        // A queued one-shot timer or reschedule IPI may arrive after the
+        // previous slice returned. Spurious LAPIC interrupts need no EOI.
+        if vector != 0xff {
+            super::platform::user_eoi();
+        }
+        return;
+    }
     if vector != 0x21 {
         // UART only: exception reporting must not borrow a terminal or the scheduler.
         for b in b"CPU exception " {
