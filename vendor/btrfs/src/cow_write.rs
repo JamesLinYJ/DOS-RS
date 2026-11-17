@@ -255,6 +255,16 @@ impl Filesystem {
         if data.is_empty() {
             return Ok(0);
         }
+        self.ensure_metadata_reserve()?;
+        loop {
+            match self.write_once(ino, offset, data) {
+                Err(Error::DataGroupFull(bytes)) => self.grow_data(bytes)?,
+                result => return result,
+            }
+        }
+    }
+
+    fn write_once(&mut self, ino: u64, offset: u64, data: &[u8]) -> Result<usize> {
         let inode = self.read_inode(ino)?;
         if !inode.is_regular_file() {
             return Err(Error::NotAFile);

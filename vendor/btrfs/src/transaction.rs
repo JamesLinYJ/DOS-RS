@@ -890,10 +890,7 @@ impl Filesystem {
                 }
             }
         }
-        Err(Error::UnsupportedFeature(format!(
-            "no metadata block group has room for another {nodesize}-byte block; \
-             allocating a new block group is not implemented"
-        )))
+        Err(Error::NoSpace)
     }
 
     /// Whether `[at, at + len)` overlaps a range this mount has pinned.

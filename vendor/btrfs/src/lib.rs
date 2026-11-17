@@ -24,6 +24,7 @@ pub mod dir;
 pub mod error;
 pub mod extent_write;
 pub mod fs;
+mod grow;
 pub mod inode;
 pub mod leaf_edit;
 pub mod log_tree;

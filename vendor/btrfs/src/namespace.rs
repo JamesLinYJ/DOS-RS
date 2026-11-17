@@ -174,6 +174,7 @@ impl Filesystem {
             return self.writing_subvolume(|fs| fs.link(ino, parent, name));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         let root = self.written_tree();
         let dir = self.writable_parent(parent, name)?;
         let target = self.read_inode(ino)?;
@@ -246,6 +247,7 @@ impl Filesystem {
     /// Commit the unlinked inode and its on-disk orphan item with the name removal.
     pub fn unlink_open(&mut self, parent: u64, name: &[u8]) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let child = self.named_inode(parent, name)?;
         if !child.is_regular_file() || child.nlink != 1 {
             return self.unlink(parent, name);
@@ -256,6 +258,7 @@ impl Filesystem {
     /// Detach an empty open directory and keep its inode until its last reference closes.
     pub fn rmdir_open(&mut self, parent: u64, name: &[u8]) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let dir = self.named_inode(parent, name)?;
         if !dir.is_dir() { return Err(Error::NotADirectory); }
         self.refuse_non_empty(&dir, name)?;
@@ -292,6 +295,7 @@ impl Filesystem {
     /// previous owner stopped before its descriptors could be closed.
     pub fn reap_file(&mut self, ino: u64) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let orphan = key(crate::subvol::ORPHAN_OBJECTID, crate::subvol::ORPHAN_ITEM_KEY, ino);
         let mut pending = Pending::default();
         if pending.get(self, orphan)?.as_deref() != Some(&[]) {
@@ -332,6 +336,7 @@ impl Filesystem {
             return self.writing_subvolume(|fs| fs.remove_name(parent, name, want_dir));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         check_name(name)?;
         let dir = self.read_inode(parent)?;
         if !dir.is_dir() {
@@ -429,6 +434,7 @@ impl Filesystem {
                 .writing_subvolume(|fs| fs.rename_pinned(old_parent, old_name, new_parent, new_name, pinned));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         let root = self.written_tree();
         check_name(old_name)?;
         check_name(new_name)?;
@@ -807,6 +813,7 @@ impl Filesystem {
         uid: u32,
         gid: u32,
     ) -> Result<u64> {
+        self.ensure_metadata_reserve()?;
         let dir = self.writable_parent(parent, name)?;
         if let NewKind::Symlink(target) = kind {
             let limit = (self.sb.sectorsize as usize - 1).min(self.max_item_size() - INLINE_HEADER);
