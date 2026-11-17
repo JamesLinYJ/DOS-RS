@@ -1246,7 +1246,7 @@ functions	getdate	XSI	functions/getdate.html#tag_17_206	open	open
 functions	getdelim	base	functions/getdelim.html#tag_17_207	open	open	
 functions	getline	base	functions/getdelim.html#tag_17_207	open	open	
 functions	getegid	base	functions/getegid.html#tag_17_208	open	open	
-functions	getentropy	base	functions/getentropy.html#tag_17_209	open	open	
+functions	getentropy	base	functions/getentropy.html#tag_17_209	partial	partial	tests/native-entropy/random.c
 functions	getenv	base	functions/getenv.html#tag_17_210	partial	partial	ports/musl/tests/libc.c
 functions	secure_getenv	base	functions/getenv.html#tag_17_210	open	open	
 functions	geteuid	base	functions/geteuid.html#tag_17_211	open	open	
@@ -1345,7 +1345,7 @@ functions	isalnum	base	functions/isalnum.html#tag_17_263	open	open
 functions	isalnum_l	base	functions/isalnum.html#tag_17_263	open	open	
 functions	isalpha	base	functions/isalpha.html#tag_17_264	open	open	
 functions	isalpha_l	base	functions/isalpha.html#tag_17_264	open	open	
-functions	isatty	base	functions/isatty.html#tag_17_265	open	open	
+functions	isatty	base	functions/isatty.html#tag_17_265	partial	partial	ports/musl/tests/terminal.c
 functions	isblank	base	functions/isblank.html#tag_17_266	open	open	
 functions	isblank_l	base	functions/isblank.html#tag_17_266	open	open	
 functions	iscntrl	base	functions/iscntrl.html#tag_17_267	open	open	
@@ -1642,7 +1642,7 @@ functions	pthread_setspecific	base	functions/pthread_getspecific.html#tag_17_433
 functions	pthread_join	base	functions/pthread_join.html#tag_17_434	partial	partial	ports/musl/tests/libc.c
 functions	pthread_key_create	base	functions/pthread_key_create.html#tag_17_435	open	open	
 functions	pthread_key_delete	base	functions/pthread_key_delete.html#tag_17_436	open	open	
-functions	pthread_kill	base	functions/pthread_kill.html#tag_17_437	open	open	
+functions	pthread_kill	base	functions/pthread_kill.html#tag_17_437	partial	partial	ports/musl/tests/libc.c
 functions	pthread_mutex_clocklock	base	functions/pthread_mutex_clocklock.html#tag_17_438	open	open	
 functions	pthread_mutex_timedlock	base	functions/pthread_mutex_clocklock.html#tag_17_438	open	open	
 functions	pthread_mutex_consistent	base	functions/pthread_mutex_consistent.html#tag_17_439	open	open	
@@ -1686,7 +1686,7 @@ functions	pthread_setcancelstate	base	functions/pthread_setcancelstate.html#tag_
 functions	pthread_setcanceltype	base	functions/pthread_setcancelstate.html#tag_17_459	open	open	
 functions	pthread_testcancel	base	functions/pthread_setcancelstate.html#tag_17_459	open	open	
 functions	pthread_setschedprio	TPS	functions/pthread_setschedprio.html#tag_17_460	open	open	
-functions	pthread_sigmask	base	functions/pthread_sigmask.html#tag_17_461	open	open	
+functions	pthread_sigmask	base	functions/pthread_sigmask.html#tag_17_461	partial	partial	ports/musl/tests/libc.c
 functions	sigprocmask	base	functions/pthread_sigmask.html#tag_17_461	partial	partial	ports/musl/tests/libc.c
 functions	pthread_spin_destroy	base	functions/pthread_spin_destroy.html#tag_17_462	open	open	
 functions	pthread_spin_init	base	functions/pthread_spin_destroy.html#tag_17_462	open	open	
@@ -1893,17 +1893,17 @@ functions	tanl	base	functions/tan.html#tag_17_601	open	open
 functions	tanh	base	functions/tanh.html#tag_17_602	open	open	
 functions	tanhf	base	functions/tanh.html#tag_17_602	open	open	
 functions	tanhl	base	functions/tanh.html#tag_17_602	open	open	
-functions	tcdrain	base	functions/tcdrain.html#tag_17_603	open	open	
-functions	tcflow	base	functions/tcflow.html#tag_17_604	open	open	
-functions	tcflush	base	functions/tcflush.html#tag_17_605	open	open	
-functions	tcgetattr	base	functions/tcgetattr.html#tag_17_606	open	open	
-functions	tcgetpgrp	base	functions/tcgetpgrp.html#tag_17_607	open	open	
-functions	tcgetsid	base	functions/tcgetsid.html#tag_17_608	open	open	
-functions	tcgetwinsize	base	functions/tcgetwinsize.html#tag_17_609	open	open	
+functions	tcdrain	base	functions/tcdrain.html#tag_17_603	partial	partial	ports/musl/tests/terminal.c
+functions	tcflow	base	functions/tcflow.html#tag_17_604	partial	partial	ports/musl/tests/terminal.c
+functions	tcflush	base	functions/tcflush.html#tag_17_605	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetattr	base	functions/tcgetattr.html#tag_17_606	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetpgrp	base	functions/tcgetpgrp.html#tag_17_607	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetsid	base	functions/tcgetsid.html#tag_17_608	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetwinsize	base	functions/tcgetwinsize.html#tag_17_609	partial	partial	ports/musl/tests/terminal.c
 functions	tcsendbreak	base	functions/tcsendbreak.html#tag_17_610	open	open	
-functions	tcsetattr	base	functions/tcsetattr.html#tag_17_611	open	open	
-functions	tcsetpgrp	base	functions/tcsetpgrp.html#tag_17_612	open	open	
-functions	tcsetwinsize	base	functions/tcsetwinsize.html#tag_17_613	open	open	
+functions	tcsetattr	base	functions/tcsetattr.html#tag_17_611	partial	partial	ports/musl/tests/terminal.c
+functions	tcsetpgrp	base	functions/tcsetpgrp.html#tag_17_612	partial	partial	ports/musl/tests/terminal.c
+functions	tcsetwinsize	base	functions/tcsetwinsize.html#tag_17_613	partial	partial	ports/musl/tests/terminal.c
 functions	tdelete	XSI	functions/tdelete.html#tag_17_614	open	open	
 functions	tfind	XSI	functions/tdelete.html#tag_17_614	open	open	
 functions	tsearch	XSI	functions/tdelete.html#tag_17_614	open	open	

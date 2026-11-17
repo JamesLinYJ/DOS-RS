@@ -122,3 +122,17 @@ utilities/link.html#tag_20_66	link	partial	partial	scripts/qemu-coreutils.py#125
 utilities/unlink.html#tag_20_139	unlink	partial	partial	scripts/qemu-coreutils.py#131,133,134,135	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
 utilities/mkdir.html#tag_20_79	mkdir	partial	partial	scripts/qemu-coreutils.py#136,137,138,139,140,141,142,143,144,145	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
 utilities/rmdir.html#tag_20_106	rmdir	partial	partial	scripts/qemu-coreutils.py#146,147,148,149,150,151,152	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+functions/getentropy.html#tag_17_209	getentropy	partial	partial	tests/native-entropy/random.c	256-byte reads and overlong EIO with a hardware CPU source and with VirtIO, checked on a stopped disk
+functions/isatty.html#tag_17_265	isatty	partial	partial	ports/musl/tests/terminal.c	Recognize keyboard and screen descriptors; pipe and invalid descriptor report ENOTTY and EBADF
+functions/tcgetwinsize.html#tag_17_609	tcgetwinsize	partial	partial	ports/musl/tests/terminal.c	Read the actual 80 by 25 VGA console geometry on both kernel architectures
+functions/tcsetwinsize.html#tag_17_613	tcsetwinsize	partial	partial	ports/musl/tests/terminal.c	Set the supported dimensions and reject an unsupported row count with EINVAL, preserving the prior size
+functions/tcgetattr.html#tag_17_606	tcgetattr	partial	partial	ports/musl/tests/terminal.c	Read and compare the line discipline and control characters via two handles to the console
+functions/tcsetattr.html#tag_17_611	tcsetattr	partial	partial	ports/musl/tests/terminal.c	Change canonical, echo, signal and all four VMIN/VTIME read modes through a real keyboard
+functions/tcgetpgrp.html#tag_17_607	tcgetpgrp	partial	partial	ports/musl/tests/terminal.c	Read the actual foreground process group and reject an invalid destination with EFAULT
+functions/tcsetpgrp.html#tag_17_612	tcsetpgrp	partial	partial	ports/musl/tests/terminal.c	Select the current process group and reject an invalid source with EFAULT
+functions/tcgetsid.html#tag_17_608	tcgetsid	partial	partial	ports/musl/tests/terminal.c	Read the controlling session and compare it to the process session
+functions/tcdrain.html#tag_17_603	tcdrain	partial	partial	ports/musl/tests/terminal.c	Drain output on the foreground physical text console
+functions/tcflush.html#tag_17_605	tcflush	partial	partial	ports/musl/tests/terminal.c	Flush the console input queue while switching modes
+functions/tcflow.html#tag_17_604	tcflow	partial	partial	ports/musl/tests/terminal.c	Stop and resume output and observe POLLOUT readiness change on the output descriptor
+functions/pthread_kill.html#tag_17_437	pthread_kill	partial	partial	ports/musl/tests/libc.c	Send SIGUSR2 to the selected worker, observe its pending signal while blocked and deliver it in that thread only
+functions/pthread_sigmask.html#tag_17_461	pthread_sigmask	partial	partial	ports/musl/tests/libc.c	Block and restore a worker signal mask, observe SIGUSR2 pending in that thread and run its handler after unblocking
