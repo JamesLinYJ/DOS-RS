@@ -6,7 +6,7 @@ DOS 是用 Rust 实现的操作系统。80286 和 80386 可以从同一张 BIOS 
 
 ## 在 286 或 386 上原生启动
 
-从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/d4b18403c56382722f43907752d2cd80543538c1)
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/81775e8be657a7fefd7aaacfe5491156a416c2a7)
 
 在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
 
