@@ -11,7 +11,6 @@ unsafe extern "Rust" {
     fn dos_key() -> u16;
     fn dos_drive() -> u16;
     fn dos_ui(op: u16, a: u16, b: u16) -> u16;
-    fn dos_line(p: *const u8, n: u16);
     fn arg(index: u16, at: u16) -> u16;
     fn disk_size(unit: u16) -> u32;
 }
@@ -32,9 +31,6 @@ pub fn key() -> u16 {
 }
 pub fn drive() -> u16 {
     unsafe { dos_drive() }
-}
-pub fn submit(s: &[u8], n: u16) {
-    unsafe { dos_line(s.as_ptr(), n) }
 }
 pub fn argument(i: u16, s: &str) -> bool {
     let mut j = 0;
