@@ -165,6 +165,41 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
     case SYS_clock_nanosleep_time64:
         return clock_sleep(a, b, c, d, 1);
 #endif
+    case SYS_rt_sigtimedwait:
+#if defined(SYS_rt_sigtimedwait_time64) && SYS_rt_sigtimedwait != SYS_rt_sigtimedwait_time64
+    case SYS_rt_sigtimedwait_time64:
+#endif
+    {
+        if (d != 8)
+            return -EINVAL;
+        struct {
+            uint32_t signo;
+            int32_t code, pid;
+            uint32_t uid;
+            int32_t status;
+        } info;
+        int64_t duration[2];
+        if (c) {
+            int wide = sizeof(long) == 8;
+#ifdef SYS_rt_sigtimedwait_time64
+            if (n == SYS_rt_sigtimedwait_time64)
+                wide = 1;
+#endif
+            get_time(duration, c, wide);
+        }
+        long r = sys_sigwait(a, b ? (long)&info : 0, c ? (long)duration : 0);
+        if (r >= 0 && b) {
+            siginfo_t *out = (siginfo_t *)b;
+            *out = (siginfo_t){0};
+            out->si_signo = info.signo;
+            out->si_code = info.code;
+            out->si_pid = info.pid;
+            out->si_uid = info.uid;
+            if (info.signo == SIGCHLD)
+                out->si_status = info.status;
+        }
+        return r;
+    }
     case SYS_rt_sigaction:
         return d == 8 ? signal_action(a, (void *)b, (void *)c) : -EINVAL;
     case SYS_rt_sigpending:

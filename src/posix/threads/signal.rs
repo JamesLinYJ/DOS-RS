@@ -85,6 +85,7 @@ impl Member {
             self.interrupt_wait(image);
         }
         self.tty_read.reset(self.tid);
+        self.signal_wait = None;
         self.lock_request = None;
         let regs = self.registers.as_mut().ok_or(())?;
         let resume = match self.state {
@@ -133,7 +134,13 @@ impl Member {
 }
 
 impl Threads {
-    pub(super) fn thread_signal(&mut self, pid: u32, tid: i32, sig: i32) -> Result<usize, isize> {
+    pub(super) fn thread_signal(
+        &mut self,
+        pid: u32,
+        uid: u32,
+        tid: i32,
+        sig: i32,
+    ) -> Result<usize, isize> {
         if !(0..=64).contains(&sig) {
             return Err(-22);
         }
@@ -150,8 +157,16 @@ impl Threads {
         }
         let n = sig as u8;
         let a = signals::disposition(pid, n, false);
-        if a.handler != 1 && !(a.handler == 0 && matches!(n, 17 | 23 | 28)) {
-            t.pending_signals |= signals::bit(n);
+        if a.handler != 1 {
+            t.pending_signals.add(
+                n,
+                signals::Origin {
+                    code: -6,
+                    pid,
+                    uid,
+                    status: 0,
+                },
+            )?;
         }
         Ok(0)
     }
@@ -169,10 +184,7 @@ impl Threads {
                 continue;
             }
             let mask = thread.registers.as_ref()?.signal_mask;
-            let directed = thread.pending_signals & !mask;
-            let next = if directed != 0 {
-                let n = (directed.trailing_zeros() + 1) as u8;
-                thread.pending_signals &= !signals::bit(n);
+            let next = if let Some((n, _)) = thread.pending_signals.take(!mask) {
                 Some((n, signals::disposition(p.getpid(), n, true)))
             } else {
                 signals::take(p.getpid(), mask)
@@ -199,4 +211,62 @@ impl Threads {
         }
         None
     }
+}
+
+pub(super) struct Wait {
+    set: u64,
+    info: usize,
+}
+pub(super) fn wait(
+    t: &mut Member,
+    image: &mut AddressSpace,
+    pid: u32,
+    [set, info, timeout]: [usize; 3],
+    cx: &Context,
+) -> Poll<Result<usize, isize>> {
+    use super::clock;
+    if t.signal_wait.is_none() {
+        let mut bytes = [0; 8];
+        image.read(set, &mut bytes).map_err(|_| -14isize)?;
+        t.signal_wait = Some(Wait {
+            set: u64::from_le_bytes(bytes) & !(signals::bit(9) | signals::bit(19)),
+            info,
+        });
+    }
+    let request = t.signal_wait.as_ref().unwrap();
+    if request.info != 0 {
+        image.check(request.info, 20, true).map_err(|_| -14isize)?;
+    }
+    if let Some((n, origin)) = t
+        .pending_signals
+        .take(request.set)
+        .or_else(|| signals::take_waiting(pid, request.set))
+    {
+        if request.info != 0 {
+            let fields = [
+                u32::from(n),
+                origin.code as u32,
+                origin.pid,
+                origin.uid,
+                origin.status as u32,
+            ];
+            let mut bytes = [0; 20];
+            for (slot, v) in bytes.chunks_exact_mut(4).zip(fields) {
+                slot.copy_from_slice(&v.to_le_bytes());
+            }
+            image.write(request.info, &bytes).map_err(|_| -14isize)?;
+        }
+        return Poll::Ready(Ok(usize::from(n)));
+    }
+    if timeout != 0 && t.timer.is_none() {
+        let interval = clock::read_ns(image, timeout)?;
+        if interval == 0 {
+            return Poll::Ready(Err(-11));
+        }
+        t.timer = Some(clock::Timer::after(t.tid, interval, cx)?);
+    }
+    if t.timer.as_ref().is_some_and(clock::Timer::expired) {
+        return Poll::Ready(Err(-11));
+    }
+    Poll::Pending
 }

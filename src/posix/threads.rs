@@ -41,7 +41,8 @@ struct Member {
     cpu: usize,
     stack: Range<usize>,
     errno: usize,
-    pending_signals: u64,
+    pending_signals: signals::Pending,
+    signal_wait: Option<signal::Wait>,
     interrupted: Vec<State>,
     clear_tid: usize,
     tty_read: super::io::ReadClock,
@@ -70,7 +71,8 @@ impl Member {
             cpu: user::assign_cpu(),
             stack,
             errno,
-            pending_signals: 0,
+            pending_signals: signals::Pending::default(),
+            signal_wait: None,
             interrupted: Vec::new(),
             clear_tid: 0,
             tty_read: super::io::ReadClock::new(tid),
@@ -92,6 +94,7 @@ impl Member {
     }
     fn reply(&mut self, value: isize) {
         self.tty_read.reset(self.tid);
+        self.signal_wait = None;
         self.lock_request = None;
         self.timer = None;
         if let Some(request) = self.poll_request.take() {
@@ -410,7 +413,10 @@ impl Threads {
                 Call::Setpgid => {
                     Poll::Ready(super::process::set_group(p.getpid(), a as i32, b as i32))
                 }
-                Call::Tkill => Poll::Ready(self.thread_signal(p.getpid(), a as i32, b as i32)),
+                Call::Sigwait => signal::wait(&mut self.0[i], image, p.getpid(), args, cx),
+                Call::Tkill => {
+                    Poll::Ready(self.thread_signal(p.getpid(), p.uid, a as i32, b as i32))
+                }
                 Call::Kill => Poll::Ready(signals::kill(p.getpid(), a as i32, b as i32)),
                 Call::Sigaction => Poll::Ready(signal::action(image, p.getpid(), a, b, c)),
                 Call::Sigreturn => {
@@ -427,7 +433,8 @@ impl Threads {
                         image
                             .write(
                                 a,
-                                &((signals::pending(p.getpid()) | self.0[i].pending_signals)
+                                &((signals::pending(p.getpid())
+                                    | self.0[i].pending_signals.mask())
                                     & mask)
                                     .to_le_bytes(),
                             )
@@ -459,7 +466,9 @@ impl Threads {
                     clock::call(&mut self.0[i], image, call, args, cx)
                 }
                 Call::Poll | Call::Ppoll => poll::call(&mut self.0[i], image, p, call, args, cx),
-                Call::Readv | Call::Writev => musl::vectors(image, p, cx, call, args, &mut self.0[i].tty_read),
+                Call::Readv | Call::Writev => {
+                    musl::vectors(image, p, cx, call, args, &mut self.0[i].tty_read)
+                }
                 Call::Threadfinish => match self.finish_pthread(i, image, a, b) {
                     Ok(()) => {
                         cx.waker().wake_by_ref();

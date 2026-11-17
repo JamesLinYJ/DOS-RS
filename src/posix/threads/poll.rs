@@ -124,7 +124,7 @@ pub(super) fn call(
     if ready == 0 && request.previous_mask.is_some() {
         use dosrs_native_posix::Process;
         let mask = thread.registers.as_ref().unwrap().signal_mask;
-        if (signals::pending(process.getpid()) | thread.pending_signals) & !mask != 0 {
+        if (signals::pending(process.getpid()) | thread.pending_signals.mask()) & !mask != 0 {
             cx.waker().wake_by_ref();
             return Poll::Pending;
         }

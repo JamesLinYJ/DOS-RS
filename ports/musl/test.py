@@ -22,6 +22,8 @@ def check(arch, archive, ram, proof):
         work = Path(temporary)
         binary = work / "libtest.elf"
         poll_test = work / "polltest.elf"
+        sig_test = work / "sigtest.elf"
+        compile(arch, [PORT / "tests/sigwait.c"], sig_test)
         tty_test = work / "ttytest.elf"
         compile(arch, [PORT / "tests/terminal.c"], tty_test)
         compile(arch, [ROOT / "tests/native-poll/poll.c"], poll_test)
@@ -34,7 +36,7 @@ def check(arch, archive, ram, proof):
         with disk.open("wb") as f:
             f.truncate(4 << 20)
         subprocess.run(["mformat", "-i", disk, "::"], check=True)
-        subprocess.run(["mcopy", "-i", disk, binary, poll_test, tty_test, "::"], check=True)
+        subprocess.run(["mcopy", "-i", disk, binary, poll_test, tty_test, sig_test, "::"], check=True)
         mode = "bios" if arch == "i686" else "uefi"
         launch = qemu.boot_args(kernel, arch, work / "boot", 4, mode, esp_mib=36)
         launch += ["-accel", "tcg,thread=multi", "-drive", "if=ide,format=raw,file=" + str(disk)]
@@ -68,6 +70,8 @@ def check(arch, archive, ram, proof):
             trace = shell.log.read_bytes()[at:]
             if b"ab\x08 \x08c\r\n" not in trace or b"^C" in trace or b"^D" in trace:
                 raise RuntimeError("incorrect keyboard echo: " + repr(trace))
+            shell.command("echo $?", expect=b"\r\n0\r\n")
+            shell.command("sigtest.elf", expect=b"sigwait: process, targeted thread, competing waiters, realtime order, sender, child and timeout passed")
             shell.command("echo $?", expect=b"\r\n0\r\n")
             shell.command("polltest.elf > poll.out")
             shell.command("echo $?", expect=b"\r\n0\r\n")

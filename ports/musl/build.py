@@ -33,6 +33,7 @@ def prepare(src, target, cpu, archive):
         ("platform.c", "src/thread/dosrs.c"),
         ("fstatat.c", "src/stat/fstatat.c"),
         ("cancel.c", "src/thread/dos_cancel.c"),
+        ("sigwait.c", "src/signal/sigwait.c"),
         ("setxid.c", "src/unistd/setxid.c"),
         ("pwrite.c", "src/unistd/pwrite.c"),
     ):
@@ -54,6 +55,12 @@ def prepare(src, target, cpu, archive):
         member = release.extractfile("musl-1.2.6/src/thread/pthread_cancel.c")
         body = member.read().decode()
         header = release.extractfile("musl-1.2.6/include/fcntl.h").read().decode()
+        timed_wait = release.extractfile("musl-1.2.6/src/signal/sigtimedwait.c").read().decode()
+    # Return EINTR to a timed waiter after a different caught signal. Repeating
+    # the full relative timeout on every interrupt would extend its deadline.
+    timed_wait = timed_wait.replace("do ret = do_sigtimedwait(mask, si, timeout);\n\twhile (ret==-EINTR);",
+                                    "ret = do_sigtimedwait(mask, si, timeout);")
+    generated(src / "src/signal/sigtimedwait.c", timed_wait)
     header = header.replace("#define FD_CLOEXEC 1", "#define FD_CLOEXEC 1\n#define FD_CLOFORK 2\n#define O_CLOFORK 0x04000000\n#define F_DUPFD_CLOFORK 1100")
     generated(src / "include/fcntl.h", header)
     begin = body.index("static void _sigaddset(")

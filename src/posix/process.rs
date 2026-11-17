@@ -61,9 +61,23 @@ pub fn exited(pid: u32, status: i32) {
     if let Some(me) = table.iter_mut().find(|p| p.pid == pid) {
         me.status = Some(status);
         let parent = me.parent;
+        let uid = me.uid;
         if let Some(parent) = table.iter_mut().find(|p| p.pid == parent) {
             parent.waiting.wake();
-            parent.signals.raise(17);
+            let signaled = status & 127 != 0;
+            let _ = parent.signals.raise(
+                17,
+                signals::Origin {
+                    code: if signaled { 2 } else { 1 },
+                    pid,
+                    uid,
+                    status: if signaled {
+                        status & 127
+                    } else {
+                        (status >> 8) & 255
+                    },
+                },
+            );
         }
     }
     for p in table.iter_mut().filter(|p| p.parent == pid) {

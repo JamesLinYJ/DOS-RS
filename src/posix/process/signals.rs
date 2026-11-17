@@ -1,7 +1,10 @@
 //! Process-directed standard signals coalesce until an eligible thread accepts them.
 use super::{Record, TABLE};
+#[path = "pending.rs"]
+mod pending;
 use alloc::vec::Vec;
 use core::task::{Context, Waker};
+pub(in crate::posix) use pending::{Origin, Pending};
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Action {
@@ -13,7 +16,7 @@ pub(crate) struct Action {
 #[derive(Default)]
 pub(super) struct Signals {
     actions: Vec<(u8, Action)>,
-    pending: u64,
+    pending: Pending,
     pub stopped: bool,
     pub transition: Option<i32>,
     owner: Option<Waker>,
@@ -43,23 +46,24 @@ impl Signals {
             .find(|(s, _)| *s == n)
             .map_or(Action::default(), |(_, a)| *a)
     }
-    pub(super) fn raise(&mut self, n: u8) {
+    pub(super) fn raise(&mut self, n: u8, origin: Origin) -> Result<(), isize> {
         if n == 18 {
-            self.pending &= !(bit(19) | bit(20) | bit(21) | bit(22));
+            self.pending.clear(bit(19) | bit(20) | bit(21) | bit(22));
             if self.stopped {
                 self.stopped = false;
                 self.transition = Some(0xffff);
             }
         } else if matches!(n, 19..=22) {
-            self.pending &= !bit(18);
+            self.pending.clear(bit(18));
         }
         let h = self.action(n).handler;
-        if h != 1 && !(h == 0 && matches!(n, 17 | 18 | 23 | 28)) {
-            self.pending |= bit(n);
+        if h != 1 {
+            self.pending.add(n, origin)?;
         }
         if let Some(w) = &self.owner {
             w.wake_by_ref();
         }
+        Ok(())
     }
 }
 
@@ -89,7 +93,7 @@ pub fn install(pid: u32, n: u8, action: Option<Action>) -> Result<Action, isize>
             (None, false) => {}
         }
         if a.handler == 1 || a.handler == 0 && matches!(n, 17 | 18 | 23 | 28) {
-            s.pending &= !bit(n);
+            s.pending.clear(bit(n));
         }
     }
     Ok(old)
@@ -110,7 +114,7 @@ pub fn pending(pid: u32) -> u64 {
         .borrow()
         .iter()
         .find(|r| r.pid == pid)
-        .map_or(0, |r| r.signals.pending)
+        .map_or(0, |r| r.signals.pending.mask())
 }
 pub fn observe(pid: u32, cx: &Context) -> bool {
     let mut table = TABLE.borrow();
@@ -124,31 +128,31 @@ pub fn observe(pid: u32, cx: &Context) -> bool {
     {
         r.signals.owner = Some(cx.waker().clone());
     }
-    r.signals.stopped && r.signals.pending & bit(9) == 0
+    r.signals.stopped && r.signals.pending.mask() & bit(9) == 0
 }
 pub fn take(pid: u32, mask: u64) -> Option<(u8, Action)> {
     let mut table = TABLE.borrow();
     let r = table.iter_mut().find(|r| r.pid == pid)?;
-    let allowed = r.signals.pending & !mask;
-    if allowed == 0 {
-        return None;
-    }
-    let n = if allowed & bit(9) != 0 {
-        9
-    } else {
-        (allowed.trailing_zeros() + 1) as u8
-    };
-    r.signals.pending &= !bit(n);
+    let (n, _) = r.signals.pending.take(!mask)?;
     let a = r.signals.action(n);
     if a.flags & 0x8000_0000 != 0 {
         r.signals.actions.retain(|(s, _)| *s != n);
     }
     Some((n, a))
 }
-fn notify_parent(table: &mut [Record], pid: u32) {
+pub fn take_waiting(pid: u32, set: u64) -> Option<(u8, Origin)> {
+    TABLE
+        .borrow()
+        .iter_mut()
+        .find(|p| p.pid == pid)?
+        .signals
+        .pending
+        .take(set)
+}
+fn notify_parent(table: &mut [Record], pid: u32, origin: Origin) {
     if let Some(p) = table.iter_mut().find(|r| r.pid == pid) {
         p.waiting.wake();
-        p.signals.raise(17);
+        let _ = p.signals.raise(17, origin);
     }
 }
 pub fn stop(pid: u32, sig: u8) {
@@ -157,7 +161,13 @@ pub fn stop(pid: u32, sig: u8) {
         p.signals.stopped = true;
         p.signals.transition = Some((i32::from(sig) << 8) | 0x7f);
         let parent = p.parent;
-        notify_parent(&mut table, parent);
+        let origin = Origin {
+            code: 5,
+            pid,
+            uid: p.uid,
+            status: i32::from(sig),
+        };
+        notify_parent(&mut table, parent, origin);
     }
 }
 pub fn kill(caller: u32, target: i32, sig: i32) -> Result<usize, isize> {
@@ -187,10 +197,24 @@ pub fn kill(caller: u32, target: i32, sig: i32) -> Result<usize, isize> {
         permitted = true;
         if sig != 0 && p.status.is_none() {
             let stopped = p.signals.stopped;
-            p.signals.raise(sig as u8);
+            p.signals.raise(
+                sig as u8,
+                Origin {
+                    code: 0,
+                    pid: caller,
+                    uid,
+                    status: 0,
+                },
+            )?;
             let (parent, continued) = (p.parent, stopped && !p.signals.stopped);
             if continued {
-                notify_parent(&mut table, parent);
+                let origin = Origin {
+                    code: 6,
+                    pid: p.pid,
+                    uid: p.uid,
+                    status: 18,
+                };
+                notify_parent(&mut table, parent, origin);
             }
         }
     }
@@ -209,6 +233,6 @@ pub fn terminal_input(group: u32, sig: u8) {
         .iter_mut()
         .filter(|p| p.group == group && p.status.is_none())
     {
-        p.signals.raise(sig);
+        let _ = p.signals.raise(sig, Origin::KERNEL);
     }
 }
