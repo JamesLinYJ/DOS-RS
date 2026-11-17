@@ -6,7 +6,7 @@ DOS 是用 Rust 实现的操作系统，提供三个原生内核目标。**16 �
 
 ## 在 286 或 386 上原生启动
 
-从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，在引导阶段处理 `CONFIG.SYS`，随后启动 `COMMAND.COM /P`。首个 Shell 执行 `AUTOEXEC.BAT`，完成后显示当前驱动器和完整目录。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/2e9ef1f1a3caadb369c92f44fe3ea3d6192ddfde)
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，在引导阶段处理 `CONFIG.SYS`，随后启动 `COMMAND.COM /P`。首个 Shell 执行 `AUTOEXEC.BAT`，完成后显示当前驱动器和完整目录。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/c073e743d3f5adda306ee6899b6a001564f4e555)
 
 在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建包含完整字体和工具的 2.88 MB 安装软盘，并创建 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
 
@@ -42,7 +42,7 @@ qemu-system-i386 -m 16 -boot c -drive "if=ide,format=raw,file=$RAM_DISK/new-c.im
 - `SMARTDRV /STATUS` 显示写穿缓存状态，`SMARTDRV /BENCH` 比较相同访问序列的 BIOS 读取次数。独立的 B 软驱和 IDE ATAPI 光驱可从 Shell 读取。光驱支持 ISO 9660 目录与文件。[光驱驱动](boot/realmode/src/optical.rs)
 - 原生 16 位内核在 FAT16、FAT32 上按 32 位偏移读写文件。可以同时写多个文件，也可以在写入期间用 `EXEC` 启动子程序。独立打开的句柄各有读写位置，`DUP` 和父子继承的句柄共享位置，各自关闭。单次 DOS 调用的字节数仍为 16 位。286、386 回归会写入超过 128 KiB 的文件、跨 64 KiB 定位和截断，再冷启动逐字节核对。[文件回归](scripts/realmode-file-ownership.py)
 
-DOSBox-X 的 80286 机型（30,000 cycles/ms）从启动软盘进入提示符约需 8 秒。若启动批处理先用 `TYPE WELCOME.TXT` 显示多语言文本，两次冷启动实测为 10.8 和 10.9 秒。可用下列命令测量本机耗时；串口记录和计时结果写入 `--proof` 目录。
+DOSBox-X 的 80286 机型在 30,000 cycles/ms 下从启动 2.88 MB 软盘到可输入命令，两次冷启动分别用了 16.9 秒和 16.6 秒。启动批处理先用 `TYPE WELCOME.TXT` 显示多语言文本时，两次均为 19.4 秒。以下命令将串口记录和本机计时结果写入 `--proof` 目录。
 
 ```sh
 python3 scripts/realmode-boot-time.py --image "$RAM_DISK/install.img" --ram-dir "$RAM_DISK" --proof target/boot-time --cpu 286 --window --welcome

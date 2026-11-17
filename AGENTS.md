@@ -38,6 +38,8 @@ The native DOS kernel owns the PSP and MCB chain, including high-loading an MZ i
 
 Keep the conventional arena bound fixed across the Windows VMM handoff. Reserve GEMMIS snapshot space before exposing the XMS free list. Run [the native Windows test](scripts/realmode-win32.py) with an installed Chinese Windows 3.2 BIOS disk and a RAM volume. It runs the 16-bit kernel on both Pentium III and x86_64 QEMU machines, checks XMS, enters `WIN /3` and captures the Windows About box. Use the separate i686 BIOS and x86_64 UEFI kernel builds for wide-kernel acceptance.
 
+Run the same Windows test with `--kernel i686` and `--kernel x86_64` against one installed Windows FAT volume to check the two wide kernels. Each boot creates a fresh RAM overlay. The serial banner identifies the kernel and firmware. [The conventional memory probe](scripts/realmode-command-memory.py) takes `--toolchain`, `--baseline`, `--candidate`, `--ram-dir` and `--proof`. Build the install disk first to prepare its 286 DOS ABI objects. The probe records the initial PSP extent, shrinks its own block, unlinks UMBs and tests both ends of the largest conventional allocation. Compare identical probe binaries and CONFIG.SYS files.
+
 Build with the rust16 revision pinned in the README. Use a RAM volume for all writable test images. Run the native FAT, installer and Edit scripts listed in the README. Retain serial logs, screenshots and host-side file comparisons with `--proof`. Use `rustc +stable --edition 2024 --test tests/edit_buffer.rs -o target/edit-buffer-test && target/edit-buffer-test` to exercise document offsets beyond 64 KiB on a wide host.
 
 ## Checking a change
