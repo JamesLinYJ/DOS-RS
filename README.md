@@ -148,7 +148,7 @@ cat count.txt
 
 32 位和 64 位原生 Shell 的 `read` 可以从同一描述符连续读取记录，支持 `-r`、`-d`、NUL 分隔符和管道输入。两种内核还测过参数默认值、引号、`IFS` 拆词、目录通配及 `set -f`。测试逐字节核对关机后的输出。[输入用例](tests/user-shell/read.sh) · [展开用例](tests/user-shell/expand.sh)
 
-在 i686 BIOS 和 x86_64 UEFI 上，原生 Shell 可以将 here-document（`<<` 和 `<<-`）作为程序输入。引号控制变量和命令展开，`<<-` 会移除行首制表符。两台 QEMU 都通过了 16,401 字节输入的关机读回。[脚本用例](tests/user-shell/here.sh)
+在 i686 BIOS 和 x86_64 UEFI 上，原生 Shell 可以将 here-document（`<<` 和 `<<-`）作为程序输入。引号控制变量和命令展开，`<<-` 会移除行首制表符。两台 QEMU 都通过了 16,401 字节输入的关机读回。另在 `a3e57a6` 归档内核的 Btrfs 安装盘上装入新版 `/bin/sh`，冷启动后重新执行脚本，两个架构的输出及退出码均与参考 Shell 一致。[脚本用例](tests/user-shell/here.sh)
 
 制盘需要 QEMU、mtools、目标架构交叉编译器。有 `mkfs.btrfs` 时在宿主制盘。macOS 也可由脚本启动 Linux，在内存盘上格式化 Btrfs。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。
 
