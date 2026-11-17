@@ -53,6 +53,26 @@ def extract(disk,part,target):
             out.write(data)
             size-=len(data)
 
+def archive_disk(disk, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    original = hashlib.sha256()
+    with tempfile.NamedTemporaryFile(dir=destination.parent) as staged:
+        with disk.open("rb") as src, gzip.GzipFile(filename="", mode="wb", fileobj=staged, mtime=0) as compressed:
+            for chunk in iter(lambda: src.read(1 << 20), b""):
+                compressed.write(chunk)
+                original.update(chunk)
+        staged.flush()
+        os.fsync(staged.fileno())
+        restored = hashlib.sha256()
+        with gzip.open(staged.name, "rb") as src:
+            for chunk in iter(lambda: src.read(1 << 20), b""):
+                restored.update(chunk)
+        if original.digest() != restored.digest():
+            raise ValueError("archived disk differs")
+        os.link(staged.name, destination)
+    return original.hexdigest()
+
+
 def run(arch,work,proof,volume,archive):
     installer=module("posix-install-image")
     shell=module("qemu-user-shell")
@@ -119,23 +139,18 @@ def run(arch,work,proof,volume,archive):
         result={}
         for name,reference_bytes in expected.items():
             actual=(restored/name).read_bytes()
-            if actual!=reference_bytes: raise ValueError(f"Linux recovered different {name}")
+            if actual!=reference_bytes:
+                (proof/(arch+"-"+name+".actual")).write_bytes(actual)
+                (proof/(arch+"-"+name+".expected")).write_bytes(reference_bytes)
+                raise ValueError(f"Linux recovered different {name}")
             result[name]={"bytes":len(actual),"sha256":hashlib.sha256(actual).hexdigest()}
             (proof/(arch+"-"+name)).write_bytes(actual)
         if (restored/"gone.tmp").exists():raise ValueError("unlinked file survived")
-        (proof/(arch+".json")).write_text(json.dumps({"arch":arch,"firmware":mode,"files":result,
+        (proof/(arch+".json")).write_text(json.dumps({"arch":arch,"kernel_bits":32 if arch=="i686" else 64,"firmware":mode,"files":result,
+                "qemu":subprocess.check_output(["qemu-system-"+qemu.ARCH[arch][0],"--version"], text=True).splitlines()[0],
                 "partitions":{hex(k):v for k,v in table.items()}},indent=2)+"\n")
     if archive:
-        archive.parent.mkdir(parents=True,exist_ok=True)
-        with archive.open("xb") as out, gzip.GzipFile(filename="",mode="wb",fileobj=out,mtime=0) as gz:
-            with disk.open("rb") as src: shutil.copyfileobj(src,gz)
-        def digest(stream):
-            h=hashlib.sha256()
-            for chunk in iter(lambda:stream.read(1<<20),b""):h.update(chunk)
-            return h.hexdigest()
-        with gzip.open(archive,"rb") as src, disk.open("rb") as raw:
-            verified=digest(raw)
-            if digest(src)!=verified: raise ValueError("archived disk differs")
+        verified=archive_disk(disk,archive)
         (proof/(arch+"-disk.sha256")).write_text(verified+"  system.img\n")
     print(f"{arch}/{mode}: single-disk boot, native shell, unlink, cold read and Linux disk checks passed",flush=True)
 
@@ -148,5 +163,18 @@ if __name__=="__main__":
     cli.add_argument("--archive",type=Path,help="retain the checked stopped disk as a new gzip archive")
     args=cli.parse_args()
     args.proof.mkdir(parents=True,exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=args.ram_dir) as work:
-        run(args.arch,Path(work),args.proof,args.root_image,args.archive)
+    if args.archive and args.archive.exists():
+        raise FileExistsError(args.archive)
+    with tempfile.TemporaryDirectory(dir=args.proof, prefix="."+args.arch+"-") as directory:
+        staged = Path(directory)
+        try:
+            with tempfile.TemporaryDirectory(dir=args.ram_dir) as work:
+                run(args.arch,Path(work),staged,args.root_image,args.archive)
+        except BaseException:
+            failures = args.proof / "failed"
+            failures.mkdir(exist_ok=True)
+            shutil.copytree(staged, failures / staged.name.removeprefix("."))
+            raise
+        # Publish the JSON manifest after the logs and reference bytes it describes.
+        for file in sorted(staged.iterdir(), key=lambda file: file.suffix == ".json"):
+            os.replace(file, args.proof / file.name)
