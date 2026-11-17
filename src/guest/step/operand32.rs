@@ -443,7 +443,7 @@ pub(super) fn step(
             0x9c => push(cpu, ram, cpu.eflags() & !(1 << 17))?,
             0x9d => {
                 let v = pop(cpu, ram)?;
-                cpu.set_flags(v as u16);
+                cpu.set_flags(cpu.flags_from_stack(v as u16));
             }
             0xb8..=0xbf => {
                 let v = imm(cpu, ram)?;

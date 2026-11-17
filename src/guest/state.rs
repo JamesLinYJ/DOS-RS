@@ -215,6 +215,21 @@ impl CpuState {
         self.flags = value | RESERVED_FLAG;
     }
 
+    /// POPF and IRET use the privilege of the instruction restoring the flags.
+    pub(super) fn flags_from_stack(&self, requested: u16) -> u16 {
+        #[cfg(feature = "pc386")]
+        if self.machine.protected() && self.machine.cpl != 0 {
+            let iopl = (self.flags >> 12) & 3;
+            let preserve = if u16::from(self.machine.cpl) > iopl {
+                0x3000 | 0x0200 // IOPL and IF
+            } else {
+                0x3000 // IOPL
+            };
+            return (self.flags & preserve) | (requested & !preserve);
+        }
+        requested
+    }
+
     pub fn instruction(&self) -> u16 {
         self.instruction as u16
     }

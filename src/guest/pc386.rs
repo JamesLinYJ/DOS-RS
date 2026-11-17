@@ -423,6 +423,7 @@ pub(super) fn iretd(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<()> {
     let ip = pop_stack(cpu, ram, 4)?;
     let cs = pop_stack(cpu, ram, 4)? as u16;
     let flags = pop_stack(cpu, ram, 4)?;
+    let restored_flags = cpu.flags_from_stack(flags as u16);
     let old_level = cpu.machine.cpl;
     if cpu.machine.protected() && !cpu.machine.vm86 && old_level == 0 && flags & (1 << 17) != 0 {
         if ip > 65535 {
@@ -463,14 +464,7 @@ pub(super) fn iretd(cpu: &mut CpuState, ram: &mut GuestRam) -> Option<()> {
     }
     cpu.set_selector(Segment::Code, cs);
     cpu.set_eip(ip);
-    let mut mask = 0xffffu16;
-    if old_level != 0 {
-        mask &= !0x3000;
-        if old_level > (cpu.flags() >> 12 & 3) as u8 {
-            mask &= !0x200;
-        }
-    }
-    cpu.set_flags((cpu.flags() & !mask) | (flags as u16 & mask));
+    cpu.set_flags(restored_flags);
     Some(())
 }
 pub(super) fn switch_stack(cpu: &mut CpuState, ram: &mut GuestRam, level: u16, n: u8) -> bool {

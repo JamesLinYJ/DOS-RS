@@ -90,6 +90,69 @@ fn protected_far_jump_interrupt_and_iret_use_guest_tables() {
 }
 
 #[test]
+fn popf_and_iret_restore_io_privilege_and_interrupts_at_the_callers_level() {
+    let _lock = RAM_ZERO.lock().unwrap();
+    let mut ram = memory::session_ram(0);
+    ram.clear();
+    for (level, initial, requested, expected) in [
+        (3u8, 0x3002, 0x0203u16, 0x3203), // DOSX returns with interrupts enabled at IOPL 3.
+        (3, 0x0202, 0x3003, 0x0203),
+        (0, 0x0202, 0x3003, 0x3003),
+    ] {
+        let cs = 8 | u16::from(level);
+        let ss = 16 | u16::from(level);
+        bytes(
+            &mut ram,
+            0x308,
+            &[0xff, 0xff, 0, 0x50, 0, 0x9b | level << 5, 0, 0],
+        );
+        bytes(
+            &mut ram,
+            0x310,
+            &[0xff, 0xff, 0, 0x60, 0, 0x93 | level << 5, 0, 0],
+        );
+        for (opcode, width) in [(0x9d, 2), (0x9d, 4), (0xcf, 2), (0xcf, 4)] {
+            let mut cpu = CpuState::at_com(0);
+            cpu.machine.gdtr = pc386::Table {
+                base: 0x300,
+                limit: 23,
+            };
+            cpu.machine.cr0 = 1;
+            for (reg, selector) in [(Segment::Code, cs), (Segment::Stack, ss)] {
+                assert!(cpu.machine.load(&mut ram, reg, selector));
+                cpu.set_selector(reg, selector);
+            }
+            cpu.set_flags(initial);
+            let code = [0x66, opcode];
+            bytes(
+                &mut ram,
+                0x5100,
+                if width == 4 { &code } else { &code[1..] },
+            );
+            let mut stack = 0x6400;
+            if opcode == 0xcf {
+                for word in [0x120, cs] {
+                    bytes(&mut ram, stack, &u32::from(word).to_le_bytes()[..width]);
+                    stack += width;
+                }
+            }
+            bytes(
+                &mut ram,
+                stack,
+                &u32::from(requested).to_le_bytes()[..width],
+            );
+            assert_eq!(step::step(&mut cpu, &mut ram), Outcome::Continue);
+            assert_eq!(
+                cpu.flags(),
+                expected,
+                "CPL {level}, opcode {opcode:x}, width {width}"
+            );
+            assert_eq!(usize::from(cpu.wide(Slot::Stack)), stack + width - 0x6000);
+        }
+    }
+}
+
+#[test]
 fn rotates_preserve_zero_and_inc_preserves_carry() {
     let mut ram = memory::session_ram(1);
     ram.clear();

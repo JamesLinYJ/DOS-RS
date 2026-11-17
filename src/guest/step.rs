@@ -379,7 +379,7 @@ pub fn step(cpu: &mut CpuState, ram: &mut GuestRam) -> Outcome {
         }
         0x9D => match pop_word(cpu, ram) {
             Some(value) => {
-                cpu.set_flags(value);
+                cpu.set_flags(cpu.flags_from_stack(value));
                 Outcome::Continue
             }
             None => Outcome::Fault(opcode),
@@ -2090,6 +2090,7 @@ pub(super) fn interrupt_return(cpu: &mut CpuState, ram: &mut GuestRam, opcode: u
     let Some(flags) = pop_word(cpu, ram) else {
         return Outcome::Fault(opcode);
     };
+    let flags = cpu.flags_from_stack(flags);
     #[cfg(feature = "pc386")]
     if cpu.machine.protected()
         && !cpu.machine.vm86
