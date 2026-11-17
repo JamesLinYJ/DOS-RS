@@ -154,3 +154,5 @@ utilities/rm.html#tag_20_104	rm	partial	partial	scripts/qemu-coreutils.py#266,26
 utilities/uname.html#tag_20_134	uname	partial	partial	scripts/qemu-uname.py	Single and combined field order, architecture and boot-local node identity on both kernels
 functions/uname.html#tag_17_646	uname	partial	partial	tests/native-uts/names.c	Return kernel system name, nodename, release, version and machine fields
 functions/gethostname.html#tag_17_217	gethostname	partial	partial	tests/native-uts/names.c	Read the boot and renamed hostname across fork with the maximum supported length
+functions/fstatvfs.html#tag_17_191	statvfs	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c	Path resolution on Btrfs and FAT, allocation units, capacity and read-only GPT mounts, missing path error
+functions/fstatvfs.html#tag_17_191	fstatvfs	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c	Descriptor identity, available blocks before and after growing a Btrfs data group, read-only mounts and invalid descriptor

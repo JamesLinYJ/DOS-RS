@@ -1216,8 +1216,8 @@ functions	fstat	base	functions/fstat.html#tag_17_189	partial	partial	ports/musl/
 functions	fstatat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
 functions	lstat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
 functions	stat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
-functions	fstatvfs	base	functions/fstatvfs.html#tag_17_191	open	open	
-functions	statvfs	base	functions/fstatvfs.html#tag_17_191	open	open	
+functions	fstatvfs	base	functions/fstatvfs.html#tag_17_191	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c
+functions	statvfs	base	functions/fstatvfs.html#tag_17_191	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c
 functions	fsync	FSC	functions/fsync.html#tag_17_192	partial	partial	native-exec/examples/atcheck.c
 functions	ftell	base	functions/ftell.html#tag_17_193	open	open	
 functions	ftello	base	functions/ftell.html#tag_17_193	open	open	

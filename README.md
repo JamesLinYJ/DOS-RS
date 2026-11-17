@@ -200,6 +200,8 @@ i686 和 x86_64 的 DOS Shell、INT 21h、FCB、COM/MZ 加载器和原生进程�
 
 NTFS 驱动使用 Rust 直接读取 MFT。目前支持 512 字节逻辑扇区和基记录内可完整描述的数据流。压缩、加密和重解析点返回未支持。Windows 系统卷的独占管理员写入及日志恢复仍待实现。原生 16 位 286/386 内核使用驻留 IO.SYS 提供的 FAT 服务。[NTFS 实现](storage/ntfs/src/lib.rs) · [16 位内核](src/realmode.rs)
 
+在 i686 和 x86_64 上，程序可以用 musl 的 `statvfs` 或 `fstatvfs` 查询 Btrfs 根卷和 FAT 盘的可用空间。只读卷报告 `ST_RDONLY` 和零个可分配块。单设备 Btrfs 卷可在写入时增加数据块组。两端都在 Linux 格式化的 128 MiB 卷上把初始 8 MiB 数据块组用完，新增了 16 MiB 块组。关机后 Linux 从每块盘恢复的 9,469,952 字节均与宿主生成的数据一致。[容量与扩容回归](scripts/qemu-btrfs-capacity.py)
+
 Btrfs 代码移植自 Antimatter Studios 维护的 Rust 驱动，DOS-RS 提供块设备、时钟与打开后删除的生命周期处理。源版本和许可证列在 NOTICE 中。[Rust 上游](https://github.com/antimatter-studios/rust-fs-btrfs/tree/bac713a69c2b65f70ef1ea0845760f92858ad88d) · [组件说明](NOTICE)
 
 以下命令使用已挂载的内存盘。FAT 需要 dosfstools 和 mtools，NTFS 需要 `mkntfs`、`ntfscp`、`ntfscat` 和 mtools。Btrfs 需要 Linux btrfs-progs，macOS 可加 `--linux-tools-image <本地镜像名>` 使用装有这些工具的 Linux 容器。
