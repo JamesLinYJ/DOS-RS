@@ -31,12 +31,13 @@ int main(void) {
     umask(022);
     int cfg = open("cases.bin", O_RDONLY);
     int results = open("status.bin", O_CREAT | O_TRUNC | O_WRONLY, 0600);
-    if (cfg < 0 || results < 0) return 101;
+    int signals = open("signals.bin", O_CREAT | O_TRUNC | O_WRONLY, 0600);
+    if (cfg < 0 || results < 0 || signals < 0) return 101;
     for (int idx = 0; idx < 1000; idx++) {
         unsigned char count;
         if (exact(cfg, (char *)&count, 1) || count > 24) return 102;
         if (!count) {
-            if (close(results) || close(cfg)) return 103;
+            if (close(signals) || close(results) || close(cfg)) return 103;
             return write(1, "coreutils cases finished\n", 25) == 25 ? 0 : 104;
         }
         unsigned char append;
@@ -56,21 +57,30 @@ int main(void) {
         if (child < 0) return 107;
         if (!child) {
             char *env[] = {locale, "LANG=C", "TZ=UTC", "PATH=/bin", 0};
-            close(cfg); close(results);
+            close(cfg); close(results); close(signals);
             if (redirect_to(input, 0, 0) || redirect_to(out, 1, append) || redirect_to(err, 2, 0)) _exit(108);
             execve(path, args, env);
             _exit(109);
         }
         int status;
-        if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 110;
-        unsigned char code = WEXITSTATUS(status);
+        if (waitpid(child, &status, 0) != child) return 110;
+        unsigned char signal = 0;
+        unsigned char code;
+        if (WIFEXITED(status)) {
+            code = WEXITSTATUS(status);
+        } else if (WIFSIGNALED(status)) {
+            signal = WTERMSIG(status);
+            code = 128 + signal;
+        } else {
+            return 110;
+        }
         if (code == 0 && count == 3 && values[0][0] == 'l' && values[0][1] == 'i' &&
             values[0][2] == 'n' && values[0][3] == 'k' && !values[0][4]) {
             struct stat a, b;
             if (stat(values[1], &a) || stat(values[2], &b) || a.st_nlink < 2 ||
                 a.st_dev != b.st_dev || a.st_ino != b.st_ino || a.st_nlink != b.st_nlink) return 113;
         }
-        if (write(results, &code, 1) != 1) return 111;
+        if (write(results, &code, 1) != 1 || write(signals, &signal, 1) != 1) return 111;
     }
     return 112;
 }

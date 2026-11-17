@@ -19,3 +19,5 @@ python3 scripts/qemu-coreutils.py --ram-dir "$RAM_DIR" --gnu-bin "$GNU_BIN" --up
 ```
 
 The text utility differential set covers comm, cut, expand, fold, nl, paste, printf, seq, sort, tr, unexpand and uniq. Add `--text-tools` to the differential command to run this set. Named input to sort exercises access(2) as well as file I/O. The encoders and these twelve utilities supply independent ELF entry points on each target.
+
+Use `--filesystem btrfs --data-tools` for 42 GNU comparisons covering 17 additional numerical, text and checksum commands. The default installer selection includes these programs. The entropy-dependent commands use native getrandom. The Btrfs suite verifies long executable names on disk.

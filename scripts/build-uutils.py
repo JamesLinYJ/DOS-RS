@@ -17,6 +17,12 @@ TOOLS = (
 )
 
 
+DATA_TOOLS = (
+    "basenc", "b2sum", "cksum", "md5sum", "sha1sum", "sha224sum", "sha256sum",
+    "sha384sum", "sha512sum", "sum", "expr", "factor", "fmt", "numfmt", "od", "tac", "tsort",
+)
+
+
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -52,6 +58,9 @@ def build(arch, archive, output, names, offline):
     triple = arch + "-unknown-linux-musl"
     target = ROOT / "target/rust-std-tools"
     key = triple.replace("-", "_")
+    compiler_headers = subprocess.check_output(
+        [arch + "-elf-gcc", "-print-file-name=include"], text=True
+    ).strip()
     env = dict(os.environ)
     env.update({
         "DOSRS_RUST_ARCH": arch,
@@ -61,7 +70,7 @@ def build(arch, archive, output, names, offline):
         ]),
         "CC_" + key: arch + "-elf-gcc",
         "AR_" + key: arch + "-elf-ar",
-        "CFLAGS_" + key: "-nostdinc -isystem " + str(sysroot / "include"),
+        "CFLAGS_" + key: "-nostdinc -isystem " + str(sysroot / "include") + " -isystem " + compiler_headers,
         "CARGO_PROFILE_RELEASE_PANIC": "abort",
     })
     output.mkdir(parents=True, exist_ok=True)
@@ -88,6 +97,6 @@ if __name__ == "__main__":
     cli.add_argument("--offline", action="store_true")
     cli.add_argument("tools", nargs="*", metavar="TOOL")
     args = cli.parse_args()
-    if set(args.tools) - set(TOOLS):
+    if set(args.tools) - set(TOOLS + DATA_TOOLS):
         cli.error("unknown utility in requested build")
-    build(args.arch, args.archive, args.output, args.tools or TOOLS, args.offline)
+    build(args.arch, args.archive, args.output, args.tools or (TOOLS + DATA_TOOLS), args.offline)

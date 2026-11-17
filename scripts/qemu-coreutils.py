@@ -61,6 +61,29 @@ def upstream_text_cases():
     return [(name, args, stdin, "C") for name, cases in groups.items() for args, stdin in cases]
 
 
+def upstream_data_cases():
+    cases = []
+    for tool in ("b2sum", "md5sum", "sha1sum", "sha224sum", "sha256sum", "sha384sum", "sha512sum"):
+        for args, stdin in [([], "a.txt"), (["z.txt"], "z.txt"), (["-b", "s1.txt", "s2.txt"], "z.txt")]:
+            cases.append((tool, args, stdin, "C"))
+    groups = {
+        "basenc": [(["--base16", "-w0"], "a.txt"), (["--base64url"], "b.txt")],
+        "cksum": [([], "a.txt"), (["s1.txt", "s2.txt"], "z.txt")],
+        "sum": [([], "a.txt"), (["-s", "z.txt", "nums.txt"], "z.txt")],
+        "expr": [(["8", "+", "9"], "z.txt"), (["7", ">", "11"], "z.txt"), (["substr", "hello", "2", "3"], "z.txt")],
+        "factor": [(["91", "120", "65537"], "z.txt"), ([], "facts.txt")],
+        "fmt": [(["-w", "12"], "cols.txt"), (["-s", "-w5", "s1.txt"], "z.txt")],
+        "numfmt": [(["--to=iec", "1048576", "2048"], "z.txt"), (["--from=si", "3k"], "z.txt")],
+        "od": [(["-An", "-tx1", "-N16", "a.txt"], "z.txt"), (["-An", "-tu1", "-j1"], "b.txt")],
+        "tac": [([], "b.txt"), (["-s", ":", "cols.txt"], "z.txt")],
+        "tsort": [([], "edges.txt"), (["z.txt"], "z.txt")],
+    }
+    return cases + [(name, args, stdin, "C") for name, pairs in groups.items() for args, stdin in pairs]
+
+
+UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases}
+
+
 def catalog():
     cases = []
 
@@ -285,7 +308,7 @@ def format_image(disk, tree, fs, helper_args, log):
         return
     with disk.open("xb") as out:
         total = sum(entry.stat().st_size for entry in tree.rglob("*") if entry.is_file())
-        out.truncate((16 << 20) + total * 2)
+        out.truncate((16 << 20) + ((total + 511) // 512) * 512)
     subprocess.run(["mformat", "-i", disk, "::"], check=True)
     subprocess.run(
         ["mcopy", "-i", disk, "-s", *sorted(tree.iterdir()), "::"], check=True
@@ -324,7 +347,7 @@ def run_cases(vm):
     raise RuntimeError("QEMU exited before the differential suite finished")
 
 
-def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, text_tools):
+def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, upstream_set):
     proof.mkdir(parents=True, exist_ok=True)
     tree = root / "seed"
     (tree / "bin").mkdir(parents=True)
@@ -333,7 +356,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
     kernel = root / "kernel.efi"
     shutil.copyfile(qemu.build(arch, qemu.ROOT / "target", features="exec-trace"), kernel)
     if upstream:
-        upstream_suite = upstream_text_cases() if text_tools else upstream_cases()
+        upstream_suite = UPSTREAM_CASES[upstream_set]()
         requested_tools = sorted({case[0] for case in upstream_suite})
         subprocess.run([
             sys.executable, qemu.ROOT / "scripts/build-uutils.py", "--arch", arch,
@@ -362,8 +385,10 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
     if upstream:
         suite = upstream_suite
         id_offset = len(base) + len(namespace_cases())
-        if text_tools:
-            id_offset += len(upstream_cases())
+        for group, cases in UPSTREAM_CASES.items():
+            if group == upstream_set:
+                break
+            id_offset += len(cases())
     elif namespace_only:
         suite = namespace_cases()
         id_offset = len(base)
@@ -395,6 +420,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
             "s1.txt": b"a\naa\naa\nbb\nd\n", "s2.txt": b"aa\ncc\nd\nz\n",
             "cols.txt": b"a:9\tb\nxy:22\n  a    z\t   a\n\n",
             "nums.txt": b"20\n-1\n4\n2\n12\n",
+            "facts.txt": b"42\n97\n", "edges.txt": b"a b\nb c\nc d\n",
         })
         fixtures["bad.txt"] = b"!@#\n"
         for name, encode in [("32", base64.b32encode), ("64", base64.b64encode)]:
@@ -406,6 +432,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
     config = bytearray()
     expected = []
     expected_effects = {}
+    check_namespace = fs == "btrfs" and not upstream
     guest_bin = "/bin/" if fs == "btrfs" else "C:/bin/"
     with tempfile.TemporaryDirectory(dir=root) as sandbox:
         temp = Path(sandbox)
@@ -438,7 +465,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
             config.extend((len(args) + 1, int(append)))
             for field in [stdin, "LC_ALL=" + locale, guest_bin + name, name, *args]:
                 config.extend(os.fsencode(field) + b"\0")
-        if fs == "btrfs" and not upstream:
+        if check_namespace:
             expected_effects = namespace_state(temp)
         for name, data in fixtures.items():
             if (temp / name).read_bytes() != data:
@@ -448,6 +475,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
     serial = proof / (arch + ".serial")
     vm = Shell(
         qemu.boot_args(kernel, arch, root / "boot", 2, mode, esp_mib=36)
+        + (["-device", "virtio-rng-pci"] if upstream else [])
         + ["-drive", f"if=ide,format=raw,file={disk}"],
         serial,
         root,
@@ -462,10 +490,10 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
         disk, fs, root / "restored", helper_args, proof / (arch + "-fsck.txt")
     )
     statuses = read_file("status.bin")
-    if len(statuses) != len(suite):
-        raise RuntimeError(
-            f"{arch}: only {len(statuses)} wait statuses, expected {len(suite)}"
-        )
+    signals = read_file("signals.bin")
+    if len(statuses) != len(suite) or len(signals) != len(suite):
+        raise RuntimeError(f"{arch}: incomplete wait records for {len(suite)} guest processes")
+    statuses = [-signal if signal else code for code, signal in zip(statuses, signals)]
     checks = []
     for i, ((tool, args, stdin, locale), ref) in enumerate(zip(suite, expected)):
         out, err = [read_file(f"q{i:03}.{ext}") for ext in ("out", "err")]
@@ -503,7 +531,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, te
     for name in tools:
         if (b"path=" + guest_bin.encode() + name.encode() + b"\r\n") not in traces:
             raise RuntimeError("missing guest execve trace for " + name)
-    if fs == "btrfs" and not upstream:
+    if check_namespace:
         capture = root / "restored"
         effects = namespace_state(capture / "files", capture / "archive.json")
         (proof / (arch + "-namespace.json")).write_text(json.dumps(effects, indent=2) + "\n")
@@ -570,11 +598,15 @@ if __name__ == "__main__":
         action="store_true",
         help="run the Btrfs link/directory cases in isolation",
     )
-    cli.add_argument("--text-tools", action="store_true", help="exercise the upstream POSIX text utility set")
-    cli.add_argument("--upstream-archive", type=Path, help="test ordinary Rust std utilities built from this pinned uutils archive")
+    selection = cli.add_mutually_exclusive_group()
+    for flag, name in [("--text-tools","text"), ("--data-tools","data")]:
+        selection.add_argument(flag, action="store_const", const=name, dest="upstream_set")
+    cli.add_argument("--upstream-archive", type=Path, help="test Rust std utilities built from the pinned uutils archive")
     args = cli.parse_args()
-    if args.text_tools and not args.upstream_archive:
-        cli.error("--text-tools requires --upstream-archive")
+    if args.upstream_set and not args.upstream_archive:
+        cli.error("upstream test groups require --upstream-archive")
+    if args.upstream_set == "data" and args.filesystem != "btrfs":
+        cli.error("this utility group needs the POSIX Btrfs root")
     if args.upstream_archive and args.namespace_only:
         cli.error("select either upstream encoders or namespace tools")
     if args.namespace_only and args.filesystem != "btrfs":
@@ -597,5 +629,5 @@ if __name__ == "__main__":
                 helper_args,
                 args.namespace_only,
                 args.upstream_archive,
-                args.text_tools,
+                args.upstream_set or "encoding",
             )
