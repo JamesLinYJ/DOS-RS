@@ -126,6 +126,10 @@ impl Directories {
         Some((if absolute { root(dir) } else { dir }, tail))
     }
 
+    pub(super) fn active(self) -> u8 {
+        self.active
+    }
+
     pub fn locate(self, path: &[u8]) -> Option<(u32, &[u8])> {
         if let Some((drive, rest)) = mount_path(path) {
             return Some((drive_root(drive)?, rest));

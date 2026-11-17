@@ -36,8 +36,8 @@ pub(super) fn open(
     if bits & 0x10000 != 0 && flags.create {
         return Err(-22);
     }
-    if bits & (0x10000 | 0x20000) != 0 && (fs::native(&path) || fs::mount_namespace(&path)) {
-        match fs::stat(dir, &path, p.credentials(), bits & 0x20000 == 0) {
+    if bits & (0x10000 | 0x20000) != 0 {
+        match p.metadata_at(dir, &path, bits & 0x20000 == 0) {
             Ok(meta) if meta.mode & 0o170000 == 0o120000 => {
                 return Err(if flags.create && flags.exclusive {
                     -17
@@ -50,8 +50,6 @@ pub(super) fn open(
             Err(dosrs_native_posix::Errno::NoEntry) if flags.create => (),
             Err(e) => return Err(errno(e)),
         }
-    } else if bits & 0x10000 != 0 {
-        return Err(-20);
     }
     let new = p.open_at(dir, &path, flags, mode).map_err(errno)?;
     p.set_open_flags(new, bits);
@@ -119,20 +117,12 @@ pub(super) fn dispatch(
                 let path = string(image, b)?;
                 let meta = if path.is_empty() && flags & EMPTY != 0 {
                     if a as i32 == FDCWD {
-                        fs::stat(p.directory, b".", who, true)
+                        p.path_metadata(b".", true)
                     } else {
                         p.metadata(a)
                     }
-                } else if fs::native(&path) {
-                    fs::stat(
-                        p.at(a, &path).map_err(errno)?,
-                        &path,
-                        who,
-                        flags & NOFOLLOW == 0,
-                    )
                 } else {
-                    p.at(a, &path).map_err(errno)?;
-                    p.path_metadata(&path, flags & NOFOLLOW == 0)
+                    p.metadata_at(p.at(a, &path).map_err(errno)?, &path, flags & NOFOLLOW == 0)
                 }
                 .map_err(errno)?;
                 image.write(output, &meta.bytes()).map_err(|_| -14isize)?;

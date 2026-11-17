@@ -266,7 +266,7 @@ impl ProcessContext {
         }
     }
     pub(super) fn chdir(&mut self, from: vfs::posix::PosixDir, path: &[u8]) -> Result<()> {
-        let next = vfs::posix::chdir(from, path, self.credentials())?;
+        let next = vfs::posix::chdir(self.cwd, from, path, self.credentials())?;
         let pin = if next == vfs::posix::ROOT {
             None
         } else {
@@ -334,21 +334,29 @@ impl ProcessContext {
         )
     }
     pub(super) fn path_metadata(&self, path: &[u8], follow: bool) -> Result<vfs::posix::Metadata> {
-        let qualified = vfs::mounts::qualify(self.directory, path);
-        let path = qualified.as_ref();
-        if vfs::posix::native(path) || vfs::posix::mount_namespace(path) {
-            return vfs::posix::stat(self.directory, path, self.credentials(), follow);
+        self.metadata_at(self.directory, path, follow)
+    }
+    pub(super) fn metadata_at(
+        &self,
+        directory: vfs::posix::PosixDir,
+        path: &[u8],
+        follow: bool,
+    ) -> Result<vfs::posix::Metadata> {
+        let qualified = vfs::mounts::qualify(directory, path);
+        if vfs::posix::native(&qualified) || vfs::posix::mount_namespace(&qualified) {
+            return vfs::posix::stat(directory, &qualified, self.credentials(), follow);
         }
-        let name = core::str::from_utf8(path).map_err(|_| Errno::Invalid)?;
-        match vfs::open(self.cwd, name, Open::READ) {
-            Ok((file, _)) => file.metadata(),
-            Err(Errno::IsDirectory) => Ok(vfs::posix::Metadata {
-                mode: 0o040777,
-                nlink: 1,
-                ..Default::default()
-            }),
-            Err(e) => Err(e),
-        }
+        vfs::posix::open(
+            self.cwd,
+            directory,
+            &qualified,
+            Open::READ,
+            0,
+            self.credentials(),
+            false,
+        )?
+        .0
+        .metadata()
     }
     pub(super) fn metadata(&self, fd: Fd) -> Result<vfs::posix::Metadata> {
         let desc = self.get(fd)?.borrow();

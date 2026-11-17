@@ -9,16 +9,29 @@ use dosrs_native_posix::{Errno, Result};
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum MountDir {
     Hub,
-    Drive { letter: u8, cluster: u32 },
+    Drive {
+        letter: u8,
+        cluster: u32,
+        at_root: bool,
+    },
 }
 
 impl MountDir {
     pub(crate) fn path(self) -> Vec<u8> {
         match self {
             Self::Hub => b"/dos".to_vec(),
-            Self::Drive { letter, cluster } => {
-                let mut prefix = b"/dos/a".to_vec();
-                prefix[5] += letter;
+            Self::Drive {
+                letter,
+                cluster,
+                at_root,
+            } => {
+                let mut prefix = if at_root {
+                    Vec::new()
+                } else {
+                    let mut name = b"/dos/a".to_vec();
+                    name[5] += letter;
+                    name
+                };
                 let mut buf = [0; 256];
                 let len = driver::at(cluster).path(cluster, &mut buf);
                 if len > 0 {
@@ -28,6 +41,9 @@ impl MountDir {
                             .iter()
                             .map(|b| if *b == b'\\' { b'/' } else { *b }),
                     );
+                }
+                if prefix.is_empty() {
+                    prefix.push(b'/');
                 }
                 prefix
             }
@@ -48,17 +64,50 @@ impl MountDir {
         }
         let (letter, rest) = dos::mount_path(path)?;
         let cluster = dos::walk(dos::drive_root(letter)?, rest)?;
-        Some(Self::Drive { letter, cluster })
+        Some(Self::Drive {
+            letter,
+            cluster,
+            at_root: false,
+        })
+    }
+    pub(crate) fn on_dos_root(dirs: dos::Directories, path: &[u8]) -> Option<Self> {
+        if path.is_empty() {
+            return None;
+        }
+        let (base, rest) = dirs.locate(path)?;
+        let letter = if path.get(1) == Some(&b':') {
+            path[0].to_ascii_uppercase().checked_sub(b'A')?
+        } else {
+            dirs.active()
+        };
+        Some(Self::Drive {
+            letter,
+            cluster: dos::walk(base, rest)?,
+            at_root: letter == dirs.active(),
+        })
     }
     fn dir_item(self, offset: u64) -> Option<DirEntry> {
         let (ino, name, kind) = if offset < 2 {
             let parent = match self {
                 Self::Hub => ROOT_INODE,
-                Self::Drive { letter, cluster } if dos::drive_root(letter) == Some(cluster) => {
-                    Self::Hub.identity().1
+                Self::Drive {
+                    letter,
+                    cluster,
+                    at_root,
+                } if dos::drive_root(letter) == Some(cluster) => {
+                    if at_root {
+                        self.identity().1
+                    } else {
+                        Self::Hub.identity().1
+                    }
                 }
-                Self::Drive { letter, cluster } => {
+                Self::Drive {
+                    letter,
+                    cluster,
+                    at_root,
+                } => {
                     Self::Drive {
+                        at_root,
                         letter,
                         cluster: driver::at(cluster).parent(cluster),
                     }
@@ -86,7 +135,13 @@ impl MountDir {
                         .filter_map(|n| dos::drive_root(n).map(|d| (n, d)))
                         .nth(usize::try_from(offset - 2).ok()?)?;
                     (
-                        Self::Drive { letter, cluster }.identity().1,
+                        Self::Drive {
+                            letter,
+                            cluster,
+                            at_root: false,
+                        }
+                        .identity()
+                        .1,
                         alloc::vec![b'a' + letter],
                         4,
                     )
@@ -180,6 +235,9 @@ pub(crate) fn qualify<'a>(dir: PosixDir, path: &'a [u8]) -> Cow<'a, [u8]> {
         d if d == ROOT && (path == b"dos" || path.starts_with(b"dos/")) => Vec::new(),
         _ => return Cow::Borrowed(path),
     };
+    if base == b"/" {
+        base.clear();
+    }
     for part in path.split(|b| *b == b'/') {
         match part {
             b"" | b"." => (),

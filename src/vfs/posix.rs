@@ -53,13 +53,29 @@ pub(crate) fn getcwd(dir: PosixDir) -> Result<Vec<u8>> {
     }
     btrfs::posix::getcwd(dir)
 }
-pub(crate) fn chdir(dir: PosixDir, path: &[u8], who: Credentials) -> Result<PosixDir> {
+pub(crate) fn chdir(
+    dos: Directories,
+    dir: PosixDir,
+    path: &[u8],
+    who: Credentials,
+) -> Result<PosixDir> {
     let path = super::mounts::qualify(dir, path);
     if let Some(node) = super::mounts::MountDir::from_path(&path) {
         return Ok(PosixDir::Mount(node));
     }
     if mount_namespace(&path) {
         stat(dir, &path, who, true)?;
+        return Err(Errno::NotDirectory);
+    }
+    if !native(&path) {
+        if let Some(node) = super::mounts::MountDir::on_dos_root(dos, &path) {
+            return Ok(PosixDir::Mount(node));
+        }
+        super::open_dos(
+            dos,
+            core::str::from_utf8(&path).map_err(|_| Errno::Invalid)?,
+            Open::READ,
+        )?;
         return Err(Errno::NotDirectory);
     }
     btrfs::posix::chdir(dir, &path, who)
@@ -111,7 +127,13 @@ pub(crate) fn initial(dos: Directories) -> PosixDir {
     if super::driver::btrfs_drive() && dir & super::driver::HARD != 0 {
         return btrfs::posix::from_dos(dir).unwrap_or(ROOT);
     }
-    let _ = dir;
+    if !btrfs::is_mounted() {
+        return PosixDir::Mount(super::mounts::MountDir::Drive {
+            letter: dos.active(),
+            cluster: dir,
+            at_root: true,
+        });
+    }
     ROOT
 }
 pub(crate) fn open(
@@ -125,7 +147,17 @@ pub(crate) fn open(
 ) -> Result<(File, bool)> {
     let name = super::mounts::qualify(cwd, path);
     let path = name.as_ref();
-    if let Some(node) = super::mounts::MountDir::from_path(path) {
+    if path.is_empty() {
+        return Err(Errno::NoEntry);
+    }
+    let directory = super::mounts::MountDir::from_path(path).or_else(|| {
+        if !mount_namespace(path) && !native(path) {
+            super::mounts::MountDir::on_dos_root(dos, path)
+        } else {
+            None
+        }
+    });
+    if let Some(node) = directory {
         if flags.create && flags.exclusive {
             return Err(Errno::Exists);
         }
