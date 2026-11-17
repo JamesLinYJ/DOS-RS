@@ -163,3 +163,8 @@ utilities/V3_chap02.html#tag_19_06_03	tag_19_06_03	partial	partial	tests/user-sh
 utilities/V3_chap02.html#tag_19_06_04	tag_19_06_04	partial	partial	tests/user-shell/control.sh	Integer precedence, signed constants, assignment side effects, conditional evaluation, nested expansion and invalid division
 functions/exec.html#tag_17_129	execlp	partial	partial	ports/musl/tests/exec_script.c	Explicit path, PATH search including empty component, preserved arguments, environment and text scripts with option-like names
 functions/exec.html#tag_17_129	execvp	partial	partial	ports/musl/tests/exec_script.c	Executable text script receives arguments and environment after ENOEXEC; direct execve still returns ENOEXEC
+utilities/dd.html#tag_20_31	dd	partial	partial	scripts/qemu-coreutils.py#271,272,273,274	Copy selected blocks, seek without truncation, sparse seek and pad; compare stopped file bytes
+utilities/realpath.html#tag_20_102	realpath	partial	partial	scripts/qemu-coreutils.py#280,281,282	Physical and lexical resolution for relative paths through a symbolic link in a copied directory
+utilities/pathchk.html#tag_20_93	pathchk	partial	partial	scripts/qemu-coreutils.py#283,284	Portable characters and complete operand diagnostic
+utilities/df.html#tag_20_33	df	partial	partial	scripts/qemu-df.py	List live mounted volumes and verify FAT fields and Btrfs total capacity on the same disk with Linux GNU df 9.12; verify each implementation against its raw statvfs counters
+functions/realpath.html#tag_17_481	realpath	partial	partial	tests/native-df/mounts.c	Canonicalize the virtual DOS mount directory, nested volume and regular file

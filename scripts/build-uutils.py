@@ -26,7 +26,8 @@ FILE_TOOLS = (
     "chmod", "cp", "du", "install", "ln", "ls", "mv", "readlink", "rm", "split",
     "stat", "tee", "touch", "truncate",
 )
-DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS
+TREE_TOOLS = ("dd", "df", "pathchk", "realpath", "shred")
+DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS
 
 
 def digest(path):

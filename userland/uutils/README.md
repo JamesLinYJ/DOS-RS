@@ -27,3 +27,16 @@ The arch and uname ELF programs query the running DOS-RS kernel. The uname OS fi
 Use `--filesystem btrfs --file-tools` for the 27 cases that exercise chmod, cp, du, install, ln, ls, mv, readlink, rm, split, stat, tee, touch and truncate. Both target kernels run the individual ELF programs. A Linux recovery guest reads the stopped Btrfs volume, and the host compares modes, file bytes, symlink targets and the explicit modification timestamp with GNU's results. On i686 the Rust libc dependency uses musl 1.2's 64-bit time layout.
 
 The nproc ELF uses the running kernel's online CPU mask. scripts/qemu-affinity.py boots each ELF architecture with one and four vCPUs, verifies musl's sched_getaffinity and sysconf, queries another process and its worker TID, then checks nproc, --all and --ignore. The affinity API reports all online scheduler slots for each live task.
+
+The DOS-RS `df` port enumerates real VFS mounts through native syscall 164. Each result contains four NUL-terminated strings for the source, canonical mount point, filesystem type and mount options. The index starts at zero. The syscall returns the packed byte length, zero after the final mount, or `ERANGE` for a short buffer. The Btrfs source uses its on-disk UUID. DOS A: and B: address the same boot volume and appear as a single mount in df. Applications can open both names under /dos.
+
+To compare capacity with Linux, build the pinned GNU coreutils 9.12 source using Zig, LLVM ar/ranlib and GNU make, then run the native DOS-RS and Linux guests on independent RAM copies of a pre-mounted GPT fixture. [GNU release archive](https://ftp.gnu.org/gnu/coreutils/coreutils-9.12.tar.xz)
+
+```sh
+python3 scripts/build-gnu-df.py --archive "$GNU_COREUTILS_ARCHIVE" --output target/gnu-df
+python3 scripts/qemu-df.py --archive "$UUTILS_ARCHIVE" --gnu-df target/gnu-df --ram-dir "$RAM_DIR"
+```
+
+The JSON records both versions of df and both kernels' statvfs counters. FAT capacity, used bytes, available bytes and use percentage match across the kernels. Btrfs total size matches. Linux includes a running global reservation in used space. The DOS-RS allocator excludes the physical MiB containing the mirrored superblock when claiming a new data chunk. These filesystem policies affect the available-space figures reported by their respective tools.
+
+Run `--filesystem btrfs --tree-tools` for 20 comparisons across nested directories. The cases cover recursive copy, symlink traversal, rename and removal, byte offsets in dd, portable-name checks and shred's logical zero pass. The stopped volume supplies the file hashes and permissions. The 32-bit and 64-bit stack regressions replay the exact previously built shred executables via `--replay-elf-dir`.

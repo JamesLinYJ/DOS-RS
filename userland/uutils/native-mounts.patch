@@ -1,0 +1,52 @@
+--- a/src/uucore/src/lib/features/fsext/mod.rs
++++ b/src/uucore/src/lib/features/fsext/mod.rs
+@@ -330,10 +330,6 @@
+     target_os = "openbsd"
+ ))]
+ use crate::error::USimpleError;
+-#[cfg(any(target_os = "linux", target_os = "android", target_os = "cygwin"))]
+-use std::fs::File;
+-#[cfg(any(target_os = "linux", target_os = "android", target_os = "cygwin"))]
+-use std::io::{BufRead, BufReader};
+ #[cfg(any(
+     target_vendor = "apple",
+     target_os = "freebsd",
+@@ -363,18 +363,26 @@
+ pub fn read_fs_list() -> UResult<Vec<MountInfo>> {
+     #[cfg(any(target_os = "linux", target_os = "android", target_os = "cygwin"))]
+     {
+-        let (file_name, f) = File::open(LINUX_MOUNTINFO)
+-            .map(|f| (LINUX_MOUNTINFO, f))
+-            .or_else(|_| File::open(LINUX_MTAB).map(|f| (LINUX_MTAB, f)))?;
+-        let reader = BufReader::new(f);
+-        Ok(reader
+-            .split(b'\n')
+-            .map_while(Result::ok)
+-            .filter_map(|line| {
+-                let raw_data = line.split(|c| *c == b' ').collect::<Vec<&[u8]>>();
+-                MountInfo::new(file_name, &raw_data)
+-            })
+-            .collect::<Vec<_>>())
++        unsafe extern "C" {
++            fn sys_mountinfo(index: libc::c_long, buffer: *mut u8, len: libc::c_long) -> libc::c_long;
++        }
++        let mut entries = Vec::new();
++        let mut record = [0u8; 96];
++        loop {
++            // DOS-RS enumerates the current VFS mounts; no procfs dependency.
++            let n = unsafe { sys_mountinfo(entries.len() as _, record.as_mut_ptr(), record.len() as _) };
++            if n < 0 {
++                return Err(std::io::Error::from_raw_os_error(-n as i32).into());
++            }
++            if n == 0 {
++                return Ok(entries);
++            }
++            let fields = record.get(..n as usize).and_then(|s| s.strip_suffix(&[0]))
++                .map(|s| s.split(|b| *b == 0).collect::<Vec<_>>())
++                .filter(|fields| fields.len() == 4)
++                .ok_or_else(|| std::io::Error::from_raw_os_error(libc::EIO))?;
++            entries.push(MountInfo::new(LINUX_MTAB, &fields).unwrap());
++        }
+     }
+     #[cfg(any(
+         target_vendor = "apple",

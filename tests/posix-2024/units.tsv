@@ -1716,7 +1716,7 @@ functions	readlinkat	base	functions/readlink.html#tag_17_478	partial	partial	por
 functions	readv	XSI	functions/readv.html#tag_17_479	open	open	
 functions	realloc	base	functions/realloc.html#tag_17_480	partial	partial	ports/musl/tests/libc.c
 functions	reallocarray	base	functions/realloc.html#tag_17_480	open	open	
-functions	realpath	base	functions/realpath.html#tag_17_481	open	open	
+functions	realpath	base	functions/realpath.html#tag_17_481	partial	partial	tests/native-df/mounts.c
 functions	recv	base	functions/recv.html#tag_17_482	open	open	
 functions	recvfrom	base	functions/recvfrom.html#tag_17_483	open	open	
 functions	recvmsg	base	functions/recvmsg.html#tag_17_484	open	open	
@@ -2193,9 +2193,9 @@ utilities	ctags	CD SD	utilities/ctags.html#tag_20_27	open	open
 utilities	cut	base	utilities/cut.html#tag_20_28	partial	partial	scripts/qemu-coreutils.py#175,176,177
 utilities	cxref	XSI	utilities/cxref.html#tag_20_29	open	open	
 utilities	date	base	utilities/date.html#tag_20_30	open	open	
-utilities	dd	base	utilities/dd.html#tag_20_31	open	open	
+utilities	dd	base	utilities/dd.html#tag_20_31	partial	partial	scripts/qemu-coreutils.py#271,272,273,274
 utilities	delta	XSI	utilities/delta.html#tag_20_32	open	open	
-utilities	df	base	utilities/df.html#tag_20_33	open	open	
+utilities	df	base	utilities/df.html#tag_20_33	partial	partial	scripts/qemu-df.py
 utilities	diff	base	utilities/diff.html#tag_20_34	open	open	
 utilities	dirname	base	utilities/dirname.html#tag_20_35	partial	partial	qemu-coreutils.py#61..68
 utilities	du	base	utilities/du.html#tag_20_36	partial	partial	scripts/qemu-coreutils.py#254
@@ -2257,7 +2257,7 @@ utilities	nohup	base	utilities/nohup.html#tag_20_89	open	open
 utilities	od	base	utilities/od.html#tag_20_90	partial	partial	scripts/qemu-coreutils.py#238,239
 utilities	paste	base	utilities/paste.html#tag_20_91	partial	partial	scripts/qemu-coreutils.py#184,185
 utilities	patch	base	utilities/patch.html#tag_20_92	open	open	
-utilities	pathchk	base	utilities/pathchk.html#tag_20_93	open	open	
+utilities	pathchk	base	utilities/pathchk.html#tag_20_93	partial	partial	scripts/qemu-coreutils.py#283,284
 utilities	pax	base	utilities/pax.html#tag_20_94	open	open	
 utilities	pr	base	utilities/pr.html#tag_20_95	open	open	
 utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qemu-coreutils.py#186,187
@@ -2266,7 +2266,7 @@ utilities	ps	base	utilities/ps.html#tag_20_98	open	open
 utilities	pwd	base	utilities/pwd.html#tag_20_99	open	open	
 utilities	read	base	utilities/read.html#tag_20_100	open	open	
 utilities	readlink	base	utilities/readlink.html#tag_20_101	partial	partial	scripts/qemu-coreutils.py#247
-utilities	realpath	base	utilities/realpath.html#tag_20_102	open	open	
+utilities	realpath	base	utilities/realpath.html#tag_20_102	partial	partial	scripts/qemu-coreutils.py#280,281,282
 utilities	renice	base	utilities/renice.html#tag_20_103	open	open	
 utilities	rm	base	utilities/rm.html#tag_20_104	partial	partial	scripts/qemu-coreutils.py#266,268,269
 utilities	rmdel	XSI	utilities/rmdel.html#tag_20_105	open	open	

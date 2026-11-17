@@ -113,7 +113,37 @@ def upstream_file_cases():
     ]]
 
 
-UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases}
+def upstream_tree_cases():
+    commands = [
+        ("dd", ["if=a.txt", "of=ops/raw", "bs=257", "count=3", "status=none"]),
+        ("dd", ["if=b.txt", "of=ops/raw", "bs=13", "seek=1", "count=2", "conv=notrunc", "status=none"]),
+        ("dd", ["if=c.txt", "of=ops/padded", "bs=16", "count=1", "conv=sync", "status=none"]),
+        ("dd", ["if=s1.txt", "of=ops/seek", "bs=8", "seek=4", "status=none"]),
+        ("cp", ["b.txt", "ops/src/nested/data"]),
+        ("ln", ["-s", "nested/data", "ops/src/shortcut"]),
+        ("cp", ["-RP", "ops/src", "ops/clone"]),
+        ("mv", ["ops/clone", "ops/archive"]),
+        ("chmod", ["0750", "ops/archive/nested"]),
+        ("realpath", ["--relative-to=ops", "ops/archive/shortcut"]),
+        ("realpath", ["-s", "--relative-to=ops", "ops/archive/shortcut"]),
+        ("realpath", ["-m", "--relative-to=ops", "ops/no/../new"]),
+        ("pathchk", ["-p", "ops/archive/nested/data"]),
+        ("pathchk", ["-p", "ops/path with space"]),
+        ("shred", ["-n", "0", "-z", "-x", "ops/src/nested/data"]),
+        ("shred", ["-n", "0", "-z", "-u", "ops/seek"]),
+        ("cp", ["ops/src/nested/data", "ops/zeroed"]),
+        ("rm", ["-r", "ops/src"]),
+        ("rm", ["-r", "ops/absent"]),
+        ("ls", ["-1R", "ops/archive"]),
+    ]
+    return [(name, args, "z.txt", "C") for name, args in commands]
+
+
+def file_paths(tree):
+    return sorted(path.relative_to(tree).as_posix() for path in (tree / "ops").rglob("*"))
+
+
+UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases, "trees": upstream_tree_cases}
 
 
 def catalog():
@@ -383,7 +413,7 @@ def run_cases(vm):
     raise RuntimeError("QEMU exited before the differential suite finished")
 
 
-def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, upstream_set):
+def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, upstream_set, replay):
     proof.mkdir(parents=True, exist_ok=True)
     tree = root / "seed"
     (tree / "bin").mkdir(parents=True)
@@ -394,10 +424,17 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     if upstream:
         upstream_suite = UPSTREAM_CASES[upstream_set]()
         requested_tools = sorted({case[0] for case in upstream_suite})
-        subprocess.run([
-            sys.executable, qemu.ROOT / "scripts/build-uutils.py", "--arch", arch,
-            "--output", root / "bin", "--archive", upstream, "--offline", *requested_tools
-        ], check=True)
+        recorded = {name: replay / arch / name for name in requested_tools
+                    if replay is not None and (replay / arch / name).is_file()}
+        requested_tools = [name for name in requested_tools if name not in recorded]
+        if requested_tools:
+            subprocess.run([
+                sys.executable, qemu.ROOT / "scripts/build-uutils.py", "--arch", arch,
+                "--output", root / "bin", "--archive", upstream, "--offline", *requested_tools
+            ], check=True)
+        (root / "bin").mkdir(exist_ok=True)
+        for name, executable in recorded.items():
+            shutil.copy2(executable, root / "bin" / name)
     else:
         subprocess.run([
             sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--tools-only",
@@ -443,7 +480,11 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
                 [str(reference), "--version"], env=env, stdout=subprocess.PIPE
             ).stdout
         )
-        if b"GNU coreutils) 9.12\n" not in version.splitlines(keepends=True)[:1][0]:
+        first = version.splitlines()[0]
+        expected = {f"{name} (GNU coreutils) 9.12".encode()}
+        if name == "dd":
+            expected.add(b"dd (coreutils) 9.12")
+        if first not in expected:
             raise RuntimeError(f"{reference} is not GNU 9.12")
         build_info[name] = {
             "reference": digest(reference.read_bytes()),
@@ -468,7 +509,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     config = bytearray()
     expected = []
     expected_effects = {}
-    file_suite = upstream_set == "files"
+    file_suite = upstream_set in ("files", "trees")
     check_namespace = fs == "btrfs" and (not upstream or file_suite)
     paths = NAMESPACE_PATHS
     guest_bin = "/bin/" if fs == "btrfs" else "C:/bin/"
@@ -477,6 +518,9 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
         if file_suite:
             (temp / "ops").mkdir(mode=0o755)
             (tree / "ops").mkdir(mode=0o755)
+        if upstream_set == "trees":
+            for base_dir in (temp, tree):
+                (base_dir / "ops/src/nested").mkdir(parents=True)
         for name, data in fixtures.items():
             (temp / name).write_bytes(data)
         for i, (name, args, stdin, locale) in enumerate(suite):
@@ -508,7 +552,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
                 config.extend(os.fsencode(field) + b"\0")
         if check_namespace:
             if file_suite:
-                paths = sorted("ops/" + p.name for p in (temp / "ops").iterdir())
+                paths = file_paths(temp)
             expected_effects = namespace_state(temp, paths=paths)
         for name, data in fixtures.items():
             if (temp / name).read_bytes() != data:
@@ -577,7 +621,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     if check_namespace:
         capture = root / "restored"
         if file_suite:
-            paths = sorted("ops/" + p.name for p in (capture / "files/ops").iterdir())
+            paths = file_paths(capture / "files")
         effects = namespace_state(capture / "files", capture / "archive.json", paths)
         (proof / (arch + "-namespace.json")).write_text(json.dumps(effects, indent=2) + "\n")
         if effects != expected_effects:
@@ -644,13 +688,14 @@ if __name__ == "__main__":
         help="run the Btrfs link/directory cases in isolation",
     )
     selection = cli.add_mutually_exclusive_group()
-    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files")]:
+    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files"), ("--tree-tools","trees")]:
         selection.add_argument(flag, action="store_const", const=name, dest="upstream_set")
     cli.add_argument("--upstream-archive", type=Path, help="test Rust std utilities built from the pinned uutils archive")
+    cli.add_argument("--replay-elf-dir", type=Path, help="reuse retained ARCH/TOOL ELFs to test another kernel with identical user code")
     args = cli.parse_args()
     if args.upstream_set and not args.upstream_archive:
         cli.error("upstream test groups require --upstream-archive")
-    if args.upstream_set in ("data", "files") and args.filesystem != "btrfs":
+    if args.upstream_set in ("data", "files", "trees") and args.filesystem != "btrfs":
         cli.error("this utility group needs the POSIX Btrfs root")
     if args.upstream_archive and args.namespace_only:
         cli.error("select either upstream encoders or namespace tools")
@@ -675,4 +720,5 @@ if __name__ == "__main__":
                 args.namespace_only,
                 args.upstream_archive,
                 args.upstream_set or "encoding",
+                args.replay_elf_dir,
             )
