@@ -170,15 +170,13 @@ fn open(vol: &mut Volume, creating: bool, mode: u16, attributes: u16) -> u32 {
     set_handle(psp, fd, sys);
     u32::from(fd)
 }
-fn removable(seg: u16, at: u16, n: u16, drive: u16, mode: u16) -> u32 {
+fn removable(entry: &pc::cdrom::Entry, drive: u16, mode: u16, end: u16) -> u32 {
     if mode & 7 != 0 {
         return failure(19);
     }
-    if drive != pc::cdrom::letter() || !pc::cdrom::find(seg, at, at + n, false) {
-        return failure(2);
+    if entry.attr & 16 != 0 {
+        return failure(5);
     }
-    let head = pc::cdrom::extent();
-    let size = pc::cdrom::length();
     let fd = free_handle(super::arena::current());
     let sys = free_slot();
     if fd == CLOSED || sys >= SLOTS {
@@ -188,10 +186,17 @@ fn removable(seg: u16, at: u16, n: u16, drive: u16, mode: u16) -> u32 {
     set(TABLE, s, 1);
     set(TABLE, s + 2, mode);
     set(TABLE, s + 5, drive);
-    pc::copy_bytes(pc::COMMAND, 128, TABLE, s + 0x20, 11);
+    pc::store(TABLE, s + 4, entry.attr);
+    set(TABLE, s + 0x0d, entry.time);
+    set(TABLE, s + 0x0f, entry.date);
+    let mut leaf = end;
+    while leaf > paths::PATH && b(pc::COMMAND, leaf - 1) != 92 {
+        leaf -= 1;
+    }
+    pc::disk::pack_mask(pc::COMMAND, leaf, end, TABLE, s + 0x20);
     set_handle(super::arena::current(), fd, sys);
-    set_d(s + 0x2b, head);
-    set_d(s + 0x11, size);
+    set_d(s + 0x2b, entry.lba);
+    set_d(s + 0x11, entry.size);
     set_d(s + 0x15, 0);
     fd as u32
 }
@@ -204,16 +209,38 @@ fn path_service(main: &mut Volume, ah: u16, al: u16, ss: u16, sp: u16) -> u32 {
         Err(e) => return failure(e),
     };
     if path.drive == pc::cdrom::letter() {
-        return match ah {
-            0x3b => paths::chdir(main, &path),
-            0x3d => removable(ds, path.start, path.end - path.start, path.drive, al),
-            0x43 if al == 0 && pc::cdrom::find(ds, path.start, path.end, false) => {
-                set(ss, sp + 4, 1);
-                0
-            }
-            0x43 => failure(2),
-            _ => failure(19),
+        if ah == 0x3b {
+            return paths::chdir(main, &path);
+        }
+        if ah != 0x3d && ah != 0x4e && !(ah == 0x43 && al == 0) {
+            return failure(19);
+        }
+        let Ok(n) = path.canon(127) else {
+            return failure(3);
         };
+        if ah == 0x4e {
+            let Some((seg, at)) = paths::dta() else {
+                return failure(18);
+            };
+            let err = pc::cdrom::first(
+                pc::COMMAND,
+                paths::PATH,
+                paths::PATH + n,
+                seg,
+                at,
+                cx,
+                path.drive,
+            );
+            return if err == 0 { 0 } else { failure(err) };
+        }
+        let Some(entry) = pc::cdrom::lookup(pc::COMMAND, paths::PATH, paths::PATH + n) else {
+            return failure(2);
+        };
+        if ah == 0x3d {
+            return removable(&entry, path.drive, al, paths::PATH + n);
+        }
+        set(ss, sp + 4, entry.attr);
+        return 0;
     }
     let mut tmp = Volume::EMPTY;
     let vol = match paths::select(main, &mut tmp, path.drive) {
@@ -376,6 +403,30 @@ fn volume_service(main: &mut Volume, ss: u16, sp: u16, ax: u16) -> u32 {
     } else {
         unit - 1
     };
+    if drive == pc::cdrom::letter() && pc::cdrom::present() {
+        if free_space {
+            let mut sectors = 1u16;
+            let mut clusters = pc::cdrom::capacity();
+            while clusters > 65535 && sectors < 32768 {
+                clusters >>= 1;
+                sectors <<= 1;
+            }
+            set(ss, sp + 2, 0);
+            set(ss, sp + 4, 2048);
+            set(ss, sp + 6, clusters as u16);
+            return u32::from(sectors);
+        }
+        let seg = w(ss, sp + 16);
+        let at = w(ss, sp + 6);
+        if at > u16::MAX - 24 || w(seg, at) != 0 {
+            return failure(13);
+        }
+        return if pc::cdrom::volume_info(seg, at) {
+            0
+        } else {
+            failure(30)
+        };
+    }
     let mut tmp = Volume::EMPTY;
     let v = match paths::select(main, &mut tmp, drive) {
         Ok(v) => v,
@@ -562,6 +613,11 @@ fn service(vol: &mut Volume, ss: u16, sp: u16) {
                     let drive = w(TABLE, s + 5);
                     let mut tmp = Volume::EMPTY;
                     match paths::select(vol, &mut tmp, drive) {
+                        Err(_) if drive == pc::cdrom::letter() && al == 0 => {
+                            set(ss, sp + 4, w(TABLE, s + 0x0d));
+                            set(ss, sp + 6, w(TABLE, s + 0x0f));
+                            0
+                        }
                         Err(_) => failure(if al == 0 { 1 } else { 5 }),
                         Ok(v) => {
                             let mut time = cx;
@@ -619,9 +675,17 @@ fn service(vol: &mut Volume, ss: u16, sp: u16) {
             0x4f => {
                 let drive = paths::search_drive();
                 let mut tmp = Volume::EMPTY;
-                match paths::select(vol, &mut tmp, drive) {
-                    Ok(v) => paths::search(v, None, ss, sp),
-                    Err(_) => failure(18),
+                if drive == pc::cdrom::letter() {
+                    let err = match paths::dta() {
+                        Some((s, p)) => pc::cdrom::next(s, p),
+                        None => 18,
+                    };
+                    if err == 0 { 0 } else { failure(err) }
+                } else {
+                    match paths::select(vol, &mut tmp, drive) {
+                        Ok(v) => paths::search(v, None, ss, sp),
+                        Err(_) => failure(18),
+                    }
                 }
             }
             0x47 => {

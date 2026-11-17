@@ -936,4 +936,4 @@ fn fsinfo_valid() -> bool {
 
 #[path = "disk_directory.rs"]
 mod directory;
-pub use directory::{match_mask, unpack_name};
+pub use directory::{match_mask, pack_mask, unpack_name};

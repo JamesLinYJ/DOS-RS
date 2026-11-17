@@ -5,7 +5,7 @@ use dosrs_realmode::{
     disk::{match_mask, unpack_name},
 };
 
-const PATH: u16 = 0x320;
+pub(super) const PATH: u16 = 0x320;
 const FROM: u16 = 0x3a0;
 const TO: u16 = FROM + 11;
 pub(super) struct Path {
@@ -39,7 +39,7 @@ impl Path {
             end,
         })
     }
-    fn canon(&self, limit: u16) -> Result<u16, u16> {
+    pub(super) fn canon(&self, limit: u16) -> Result<u16, u16> {
         super::super::environment::canonical(
             self.drive, self.seg, self.start, self.end, COMMAND, PATH, limit,
         )
@@ -110,12 +110,15 @@ pub(crate) fn executable(
     };
     if path.drive == pc::cdrom::letter() {
         let Ok(n) = path.canon(127) else { return 3 };
-        if !pc::cdrom::find(COMMAND, PATH, PATH + n, false) {
+        let Some(entry) = pc::cdrom::lookup(COMMAND, PATH, PATH + n) else {
+            return 2;
+        };
+        if entry.attr & 16 != 0 {
             return 2;
         }
         *unit = u16::MAX;
-        *first = pc::cdrom::extent();
-        *size = pc::cdrom::length();
+        *first = entry.lba;
+        *size = entry.size;
         return 0;
     }
     let mut removable = Volume::EMPTY;
@@ -138,7 +141,7 @@ pub(super) fn chdir(vol: &mut Volume, path: &Path) -> u32 {
         return failure(3);
     };
     let ok = if path.drive == pc::cdrom::letter() {
-        pc::cdrom::find(COMMAND, PATH, PATH + n, true)
+        pc::cdrom::lookup(COMMAND, PATH, PATH + n).is_some_and(|entry| entry.attr & 16 != 0)
     } else {
         vol.path(COMMAND, PATH, n, true)
     };
@@ -220,12 +223,9 @@ pub(super) fn directory(vol: &mut Volume, path: &Path, ah: u16, ss: u16, sp: u16
 // Store both cluster and slot in the user's DTA. Independent searches in
 // different processes can then resume after a nested EXEC or a disk read.
 pub(super) fn search(vol: &mut Volume, path: Option<&Path>, ss: u16, sp: u16) -> u32 {
-    let sda = pc::dos_tables::SDA;
-    let seg = w(LIST_SEG, sda + 14);
-    let at = w(LIST_SEG, sda + 12);
-    if at > 65535 - 43 {
+    let Some((seg, at)) = dta() else {
         return failure(18);
-    }
+    };
     if let Some(path) = path {
         let n = match path.canon(127) {
             Ok(n) => n,
@@ -258,7 +258,7 @@ pub(super) fn search(vol: &mut Volume, path: Option<&Path>, ss: u16, sp: u16) ->
             || flags == 15
             || (flags & 8 != 0) != (wanted == 8)
             || flags & 0x16 & !wanted != 0
-            || !match_mask(seg, at + 1, off)
+            || !match_mask(seg, at + 1, BUFFER, off)
         {
             continue;
         }
@@ -275,12 +275,18 @@ pub(super) fn search(vol: &mut Volume, path: Option<&Path>, ss: u16, sp: u16) ->
     pc::store(seg, at + 20, 0);
     failure(18)
 }
-pub(super) fn search_drive() -> u16 {
+pub(super) fn dta() -> Option<(u16, u16)> {
     let sda = pc::dos_tables::SDA;
     let at = w(LIST_SEG, sda + 12);
-    if at > u16::MAX - 43 {
-        return u16::MAX;
+    if at > u16::MAX - 42 {
+        return None;
     }
-    let v = b(w(LIST_SEG, sda + 14), at + 20);
+    Some((w(LIST_SEG, sda + 14), at))
+}
+pub(super) fn search_drive() -> u16 {
+    let Some((seg, at)) = dta() else {
+        return u16::MAX;
+    };
+    let v = b(seg, at + 20);
     if v & 0xf0 == 0xf0 { v & 15 } else { u16::MAX }
 }

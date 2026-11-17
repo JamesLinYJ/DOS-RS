@@ -27,9 +27,7 @@ pub fn io_dispatch(op: u16, a: u16, b: u16, _c: u16) -> u16 {
         }
         16 => bios::optical::probe() as u16,
         17 => bios::optical::present() as u16,
-        18 => bios::optical::list() as u16,
-        19 | 20 => bios::optical::find(a, b, _c, op == 20) as u16,
-        21 => bios::optical::display() as u16,
+        18 => bios::optical::read(u32::from(a) | (u32::from(b) << 16)) as u16,
         23 => {
             let Some(m) = Media::device(a) else { return 0 };
             let Some(f) = named_file(&m) else { return 0 };

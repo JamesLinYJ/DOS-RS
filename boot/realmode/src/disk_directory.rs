@@ -400,11 +400,11 @@ pub fn pack_mask(seg: u16, mut i: u16, end: u16, dest: u16, off: u16) -> bool {
     }
     true
 }
-pub fn match_mask(seg: u16, off: u16, entry: u16) -> bool {
+pub fn match_mask(seg: u16, off: u16, src: u16, entry: u16) -> bool {
     let mut i = 0;
     while i < 11 {
         let c = byte(seg, off + i);
-        if c != 63 && c != b(entry + i) {
+        if c != 63 && c != byte(src, entry + i) {
             return false;
         }
         i += 1;
