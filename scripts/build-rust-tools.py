@@ -11,14 +11,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build(arch, output, include_shell=True):
+def build(arch, output, include_shell=True, uutils_archive=None):
     sysroot = ROOT / "target/musl" / arch / "sysroot"
-    if not (sysroot / "lib/libc.a").is_file():
-        tarball = os.environ.get("DOSRS_MUSL_ARCHIVE")
-        if not tarball:
-            raise SystemExit(
-                f"Set DOSRS_MUSL_ARCHIVE to the upstream musl-1.2.6.tar.gz or build the {arch} DOS-RS musl sysroot first"
-            )
+    archive = os.environ.get("DOSRS_MUSL_ARCHIVE")
+    tarball = Path(archive) if archive else ROOT / "target/upstream/musl-1.2.6.tar.gz"
+    if archive or tarball.is_file():
         subprocess.run(
             [
                 sys.executable,
@@ -29,6 +26,10 @@ def build(arch, output, include_shell=True):
                 tarball,
             ],
             check=True,
+        )
+    elif not (sysroot / "lib/libc.a").is_file():
+        raise SystemExit(
+            f"Set DOSRS_MUSL_ARCHIVE to musl-1.2.6.tar.gz or supply the prebuilt {arch} DOS-RS musl sysroot"
         )
     output.mkdir(parents=True, exist_ok=True)
     target = arch + "-unknown-linux-gnu"
@@ -85,6 +86,11 @@ def build(arch, output, include_shell=True):
                 check=True,
             )
         built.check_returncode()
+    if uutils_archive:
+        subprocess.run([
+            sys.executable, ROOT / "scripts/build-uutils.py", "--arch", arch,
+            "--archive", uutils_archive, "--output", output, "--offline",
+        ], check=True)
 
 
 if __name__ == "__main__":
@@ -92,5 +98,7 @@ if __name__ == "__main__":
     cli.add_argument("--arch", choices=["i686", "x86_64"], required=True)
     cli.add_argument("--output", type=Path, required=True)
     cli.add_argument("--tools-only", action="store_true")
+    cli.add_argument("--uutils-archive", type=Path, default=os.environ.get("DOSRS_UUTILS_ARCHIVE"),
+                     help="also install standalone std utilities from the pinned uutils release")
     args = cli.parse_args()
-    build(args.arch, args.output, not args.tools_only)
+    build(args.arch, args.output, not args.tools_only, args.uutils_archive)
