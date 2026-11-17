@@ -17,9 +17,10 @@ def verify(arch, root, proof):
     with disk.open("wb") as f:
         f.truncate(4 << 20)
     subprocess.run(["mformat", "-i", disk, "::"], check=True)
-    for name in ("family","signal"):
+    for name in ("family","signal","bigimage"):
         app = root / (name + ".elf")
         subprocess.run([sys.executable, qemu.ROOT / "scripts/native-cc.py", "--arch", arch,
+                        *(["--text-base","0x61000000"] if name=="bigimage" else []),
                         "-o", app, qemu.ROOT / "native-exec/examples" / (name+".c")], check=True)
         subprocess.run(["mcopy", "-i", disk, app, "::"], check=True)
     serial = proof / (arch + ".serial")
@@ -28,6 +29,7 @@ def verify(arch, root, proof):
     try:
         vm.wait(b"A:\\> ")
         vm.command("c:")
+        vm.command("bigimage.elf", expect=b"5 MiB ELF and disjoint anonymous mappings OK")
         vm.command("family.elf", expect=b"fork exec wait OK")
         vm.command("signal.elf", expect=b"signal delivery stop continue wait OK")
     finally:

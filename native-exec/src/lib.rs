@@ -42,6 +42,7 @@ pub trait Frame: Sized {
 
 pub struct Mapping<F> {
     frame: F,
+    anonymous: bool,
     pub accessible: bool,
     pub writable: bool,
     pub executable: bool,
@@ -141,9 +142,10 @@ impl<F: Frame> Image<F> {
                 .and_then(|v| usize::try_from(v).ok())
                 .ok_or("invalid ELF address")?;
             let legacy = start >= BASE && end <= LIMIT;
+            let program_arena = start >= ANON_BASE && end <= ANON_END;
             let high =
                 machine == elf::EM_X86_64 && address >= HIGH_USER_START && end as u64 <= USER_END;
-            if start < prior_end || !(legacy || high) {
+            if start < prior_end || !(legacy || program_arena || high) {
                 return Err("ELF segment is outside the process image");
             }
             prior_end = end;
@@ -227,6 +229,7 @@ impl<F: Frame> Image<F> {
                 *address,
                 Mapping {
                     frame,
+                    anonymous: source.anonymous,
                     accessible: source.accessible,
                     writable: source.writable,
                     executable: source.executable,
@@ -320,6 +323,7 @@ impl<F: Frame> Image<F> {
         for address in (base..base + size).step_by(PAGE) {
             match Mapping::zero() {
                 Ok(mut mapping) => {
+                    mapping.anonymous = true;
                     mapping.writable = true;
                     self.pages.push((address, mapping));
                 }
@@ -348,6 +352,9 @@ impl<F: Frame> Image<F> {
         if self.pages.get(end - 1).map(|p| p.0) != Some(base + (count - 1) * PAGE) {
             return Err("unmapped user address");
         }
+        if self.pages[i..end].iter().any(|(_, page)| !page.anonymous) {
+            return Err("invalid anonymous mapping");
+        }
         Ok(i..end)
     }
 
@@ -375,6 +382,7 @@ impl<F: Frame> Mapping<F> {
     fn zero() -> Result<Self> {
         Ok(Self {
             frame: F::allocate_zeroed()?,
+            anonymous: false,
             accessible: true,
             writable: false,
             executable: false,
