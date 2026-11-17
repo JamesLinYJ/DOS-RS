@@ -106,3 +106,27 @@ pub(super) fn user_timer(on: bool) {
 pub(super) fn user_eoi() {
     apic_write(0xb0, 0);
 }
+
+/// Read successful hardware samples only. None denotes an unsupported CPU.
+pub(crate) fn hardware_random(bytes: &mut [u8]) -> Option<usize> {
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86::{__cpuid_count, _rdrand32_step, _rdseed32_step};
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::{__cpuid_count, _rdrand32_step, _rdseed32_step};
+    let rdrand = __cpuid(1).ecx & (1 << 30) != 0;
+    let rdseed = __cpuid(0).eax >= 7 && __cpuid_count(7, 0).ebx & (1 << 18) != 0;
+    if !rdrand && !rdseed {return None;}
+    let mut count = 0;
+    for piece in bytes.chunks_mut(4) {
+        let mut sample = 0;
+        // Each instruction is guarded by its own CPUID bit and success flag.
+        let available = (0..10).any(|_| unsafe {
+            (rdseed && _rdseed32_step(&mut sample) == 1) ||
+            (rdrand && _rdrand32_step(&mut sample) == 1)
+        });
+        if !available {break;}
+        piece.copy_from_slice(&sample.to_ne_bytes()[..piece.len()]);
+        count += piece.len();
+    }
+    Some(count)
+}

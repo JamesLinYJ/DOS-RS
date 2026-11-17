@@ -172,6 +172,17 @@ pub(super) fn file_call(
     args: [usize; 3],
 ) -> Poll<Result<usize, isize>> {
     let [fd, address, length] = args;
+    if call == Call::Getrandom {
+        let [address, length, flags] = args;
+        if flags & !7 != 0 || flags & 6 == 6 {return Poll::Ready(Err(-22));}
+        let mut bytes = [0; 256];
+        let n = length.min(bytes.len());
+        if n == 0 {return Poll::Ready(Ok(0));}
+        image.check(address,n,true).map_err(|_|-14isize)?;
+        let count = core::task::ready!(crate::drivers::entropy::fill(&mut bytes[..n],flags & 1 != 0,cx))?;
+        image.write(address,&bytes[..count]).map_err(|_|-14isize)?;
+        return Poll::Ready(Ok(count));
+    }
     if matches!(call, Call::Read | Call::Write) {
         let length = length.min(4096);
         image

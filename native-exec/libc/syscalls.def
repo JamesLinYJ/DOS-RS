@@ -85,3 +85,4 @@ fchown 92 3
 access 93 2
 readlinkat 94 3
 symlinkat 95 3
+getrandom 160 3

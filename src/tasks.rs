@@ -100,6 +100,7 @@ pub(crate) fn launch(id: usize, scheduled: bool, line: &[u8], cwd: Directories) 
     }
     loop {
         crate::posix::poll_timers();
+        crate::drivers::entropy::tick();
         user::run_one(0);
         if pc::key(false).is_some() {
             job.notify_input();
@@ -135,6 +136,7 @@ pub(crate) fn interactive() -> ! {
     let mut dos = crate::guest::run::Terminals::new();
     loop {
         crate::posix::poll_timers();
+        crate::drivers::entropy::tick();
         user::run_one(0);
         let events = pc::poll_keyboard(|id, code| dos.input(id, code));
         for id in 0..pc::TERMINALS {

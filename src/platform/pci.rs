@@ -22,6 +22,26 @@ impl Device {
                 | u32::from(reg & !3),
         );
     }
+    pub(crate) fn read_config(self, reg: u8, width: u8) -> u32 {
+        self.select(reg);
+        let port = 0xcfc + u16::from(reg & 3);
+        match width {
+            1 => u32::from(crate::arch::inb(port)),
+            2 => u32::from(crate::arch::inw(port)),
+            4 => port32(port),
+            _ => unreachable!(),
+        }
+    }
+    pub(crate) fn write_config(self, reg: u8, width: u8, value: u32) {
+        self.select(reg);
+        let port = 0xcfc + u16::from(reg & 3);
+        match width {
+            1 => crate::arch::outb(port, value as u8),
+            2 => crate::arch::outw(port, value as u16),
+            4 => put32(port, value),
+            _ => unreachable!(),
+        }
+    }
     pub fn read(self, reg: u8) -> u32 {
         self.select(reg);
         port32(0xcfc)

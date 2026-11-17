@@ -165,6 +165,7 @@ def main():
                                   "pc386" if args.pc386 else None)
     with tempfile.TemporaryDirectory(dir=args.ram_dir) as temp:
         cmd = boot_args(kernel, args.arch, Path(temp), args.cpus, args.firmware)
+        cmd += ["-device", "virtio-rng-pci"]
         if args.c_disk:
             disk = ram_disk(args.c_disk, args.ram_dir) if args.ram_dir else args.c_disk.resolve()
             print(f"C: {disk}", flush=True)

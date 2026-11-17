@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 #[cfg(feature = "pc386")]
 mod display;
+pub(crate) mod entropy;
 mod net;
 mod usb;
 mod wireless;
@@ -12,6 +13,7 @@ struct PciDriver {
     attach: fn(Device) -> Result<(), &'static str>,
 }
 const PCI_DRIVERS: &[PciDriver] = &[
+    PciDriver { matches: entropy::matches, attach: entropy::attach },
     #[cfg(feature = "pc386")]
     PciDriver {
         matches: display::matches,
