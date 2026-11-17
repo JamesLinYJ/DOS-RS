@@ -1108,10 +1108,10 @@ functions	errno	base	functions/errno.html#tag_17_128	open	open
 functions	environ	base	functions/exec.html#tag_17_129	open	open	
 functions	execl	base	functions/exec.html#tag_17_129	open	open	
 functions	execle	base	functions/exec.html#tag_17_129	open	open	
-functions	execlp	base	functions/exec.html#tag_17_129	open	open	
+functions	execlp	base	functions/exec.html#tag_17_129	partial	partial	ports/musl/tests/exec_script.c
 functions	execv	base	functions/exec.html#tag_17_129	open	open	
 functions	execve	base	functions/exec.html#tag_17_129	partial	partial	native-exec/examples/family.c
-functions	execvp	base	functions/exec.html#tag_17_129	open	open	
+functions	execvp	base	functions/exec.html#tag_17_129	partial	partial	ports/musl/tests/exec_script.c
 functions	fexecve	base	functions/exec.html#tag_17_129	open	open	
 functions	exit	base	functions/exit.html#tag_17_130	open	open	
 functions	exp	base	functions/exp.html#tag_17_131	open	open	
@@ -2084,8 +2084,8 @@ utilities	tag_19_05_03	chapter	utilities/V3_chap02.html#tag_19_05_03	open	open
 utilities	tag_19_06	chapter	utilities/V3_chap02.html#tag_19_06	open	open	
 utilities	tag_19_06_01	chapter	utilities/V3_chap02.html#tag_19_06_01	open	open	
 utilities	tag_19_06_02	chapter	utilities/V3_chap02.html#tag_19_06_02	open	open	
-utilities	tag_19_06_03	chapter	utilities/V3_chap02.html#tag_19_06_03	open	open	
-utilities	tag_19_06_04	chapter	utilities/V3_chap02.html#tag_19_06_04	open	open	
+utilities	tag_19_06_03	chapter	utilities/V3_chap02.html#tag_19_06_03	partial	partial	tests/user-shell/control.sh
+utilities	tag_19_06_04	chapter	utilities/V3_chap02.html#tag_19_06_04	partial	partial	tests/user-shell/control.sh
 utilities	tag_19_06_05	chapter	utilities/V3_chap02.html#tag_19_06_05	open	open	
 utilities	tag_19_06_06	chapter	utilities/V3_chap02.html#tag_19_06_06	open	open	
 utilities	tag_19_06_07	chapter	utilities/V3_chap02.html#tag_19_06_07	open	open	

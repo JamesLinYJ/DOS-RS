@@ -159,3 +159,7 @@ functions/fstatvfs.html#tag_17_191	fstatvfs	partial	partial	scripts/qemu-btrfs-c
 functions/sigtimedwait.html#tag_17_558	sigtimedwait	partial	partial	ports/musl/tests/sigwait.c	Immediate, finite and interrupted waits, realtime order and sender PID/UID from a separate process
 functions/sigtimedwait.html#tag_17_558	sigwaitinfo	partial	partial	ports/musl/tests/sigwait.c	Competing threads consume a process signal once, directed delivery selects its target and SIGCHLD returns child status
 functions/sigwait.html#tag_17_559	sigwait	partial	partial	ports/musl/tests/sigwait.c	Receive a blocked standard signal through the public musl interface and verify coalescing with a zero-time second wait
+utilities/V3_chap02.html#tag_19_06_03	tag_19_06_03	partial	partial	tests/user-shell/control.sh	Nested grammar and case patterns, backquotes, child status, newline stripping, quoted and unquoted output, and capture beyond pipe capacity
+utilities/V3_chap02.html#tag_19_06_04	tag_19_06_04	partial	partial	tests/user-shell/control.sh	Integer precedence, signed constants, assignment side effects, conditional evaluation, nested expansion and invalid division
+functions/exec.html#tag_17_129	execlp	partial	partial	ports/musl/tests/exec_script.c	Explicit path, PATH search including empty component, preserved arguments, environment and text scripts with option-like names
+functions/exec.html#tag_17_129	execvp	partial	partial	ports/musl/tests/exec_script.c	Executable text script receives arguments and environment after ENOEXEC; direct execve still returns ENOEXEC
