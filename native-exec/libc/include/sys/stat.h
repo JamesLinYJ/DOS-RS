@@ -28,4 +28,10 @@ mode_t umask(mode_t);
 int mkdirat(int,const char *,mode_t);
 int fstatat(int,const char *,struct stat *,int);
 int fchmod(int,mode_t);
+#include <time.h>
+#define UTIME_NOW ((1L<<30)-1)
+#define UTIME_OMIT ((1L<<30)-2)
+int fchmodat(int,const char *,mode_t,int);
+int utimensat(int,const char *,const struct timespec [2],int);
+int futimens(int,const struct timespec [2]);
 #endif

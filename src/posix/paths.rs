@@ -1,6 +1,8 @@
 //! Native VFS syscall boundary. Paths are NUL-terminated byte strings.
 #[path = "paths/at.rs"]
 mod at;
+#[path = "paths/attributes.rs"]
+mod attributes;
 use super::{executable::errno, io::ProcessContext};
 use crate::{arch::user::AddressSpace, vfs::posix as fs};
 use alloc::vec::Vec;
@@ -49,7 +51,7 @@ fn open_flags(b: usize) -> Result<Open> {
         2 => Access::ReadWrite,
         _ => return Err(-22),
     };
-    if b & !(0x6c3 | 0x800 | 0x10000 | 0x20000 | 0x80000) != 0 {
+    if b & !(0x6c3 | 0x800 | 0x10000 | 0x20000 | 0x80000 | 0x04000000) != 0 {
         return Err(-22);
     }
     Ok(Open {
@@ -66,6 +68,9 @@ pub(super) fn dispatch(
     call: Call,
     [a, b, c]: [usize; 3],
 ) -> Option<Result<usize>> {
+    if let Some(result) = attributes::dispatch(image, p, call, [a, b, c]) {
+        return Some(result);
+    }
     if let Some(result) = at::dispatch(image, p, call, [a, b, c]) {
         return Some(result);
     }
@@ -107,7 +112,7 @@ pub(super) fn dispatch(
             ),
             Call::Unlink => p.unlink_path(&string(image, a)?).map(|_| 0).map_err(errno),
             Call::Chdir => {
-                p.directory = fs::chdir(dir, &root_path(image, a)?, who).map_err(errno)?;
+                p.chdir(dir, &root_path(image, a)?).map_err(errno)?;
                 Ok(0)
             }
             Call::Getcwd => {

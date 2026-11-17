@@ -170,6 +170,7 @@ pub(super) fn file_call(
     cx: &Context,
     call: Call,
     args: [usize; 3],
+    tty_read: &mut super::io::ReadClock,
 ) -> Poll<Result<usize, isize>> {
     let [fd, address, length] = args;
     if call == Call::Getrandom {
@@ -195,7 +196,7 @@ pub(super) fn file_call(
             image.read(address, &mut bytes).map_err(|_| -14isize)?;
             return p.poll_write(fd, cx, &bytes).map(|r| r.map_err(errno));
         }
-        let count = core::task::ready!(p.poll_read(fd, cx, &mut bytes)).map_err(errno)?;
+        let count = core::task::ready!(p.poll_read(fd, cx, &mut bytes, tty_read)).map_err(errno)?;
         image
             .write(address, &bytes[..count])
             .map_err(|_| -14isize)?;
@@ -215,9 +216,9 @@ fn immediate(
         return result;
     }
     match call {
-        Call::Pipe => {
+        Call::Pipe | Call::Pipe2 => {
             image.check(a, 8, true).map_err(|_| -14isize)?;
-            let (r, w) = p.pipe().map_err(errno)?;
+            let (r, w) = p.pipe2(if call == Call::Pipe2 { b } else { 0 }).map_err(errno)?;
             image
                 .write(a, &(r as i32).to_le_bytes())
                 .map_err(|_| -14isize)?;
@@ -227,6 +228,7 @@ fn immediate(
             Ok(0)
         }
         Call::Dup => p.dup(a).map_err(errno),
+        Call::Dup3 => p.dup3(a, b, c).map_err(errno),
         Call::Tcgetpgrp | Call::Tcsetpgrp | Call::Tcgetsid => p.tty_group(a, call, b as i32),
         Call::Getpid => Ok(p.getpid() as usize),
         Call::Getuid => Ok(p.uid as usize),

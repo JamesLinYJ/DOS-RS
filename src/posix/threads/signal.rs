@@ -84,6 +84,8 @@ impl Member {
         if self.timer.is_some() || self.poll_request.is_some() {
             self.interrupt_wait(image);
         }
+        self.tty_read.reset(self.tid);
+        self.lock_request = None;
         let regs = self.registers.as_mut().ok_or(())?;
         let resume = match self.state {
             State::Suspended(mask) => {

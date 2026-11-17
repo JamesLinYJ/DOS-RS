@@ -40,6 +40,8 @@ def verify(root, output):
     helper("check","--image",root,"--output",output)
     if (output/"files/at-hard").read_bytes()!=b"abc\x00":
         raise RuntimeError("Linux restored incorrect truncated data")
+    if (output/"files/attrs/file").read_bytes()!=b"aXc" or (output/"files/attrs/sym").readlink()!=Path("file"):
+        raise RuntimeError("Linux restored incorrect positioned write or symlink")
     files = output / "files/work"
     if (files/"result").read_bytes()!=b"newdata" or (files/"alias").read_bytes()!=b"newdata" or (files/"dst").read_bytes()!=b"swap":
         raise RuntimeError("Linux restored different file bytes")
@@ -50,6 +52,8 @@ def verify(root, output):
     if (r["mode"], r["uid"], r["gid"]) != (0o640,123,456):
         raise RuntimeError("Linux restored different mode/uid/gid")
     dump = (output/"tree.txt").read_text()
+    if not all(stamp in dump for stamp in ["mtime 42.123456789", "mtime 4567890123.456"]):
+        raise RuntimeError("Linux found incorrect persistent 64-bit file or symlink timestamps")
     refs=re.findall(r"location key \((\d+) INODE_ITEM 0\) type FILE\n[^\n]*\n\s*name: (alias|result)\n",dump)
     if {name for _,name in refs}!={"alias","result"} or len({ino for ino,_ in refs})!=1:
         raise RuntimeError("Linux did not find both names referencing the same inode")
@@ -85,13 +89,16 @@ def run(arch, ram, proof, prepared, musl):
             tree=work/"tree";tree.mkdir()
             if musl:
                 (tree/"bin").mkdir()
-                shutil.copyfile(qemu.ROOT/"target/musl"/arch/"fstest.elf",tree/"bin/fstest.elf")
-                (tree/"bin/fstest.elf").chmod(0o755)
+                for name,source in [("fstest","files"),("locktest","locks")]:
+                    elf=tree/"bin"/(name+".elf")
+                    subprocess.run([sys.executable,qemu.ROOT/"ports/musl/cc.py","--arch",arch,
+                                    "-o",elf,qemu.ROOT/"ports/musl/tests"/(source+".c")],check=True)
+                    elf.chmod(0o755)
             helper("create","--root",tree,"--image",root)
         fat=work/"fat.img"
         with fat.open("xb") as out: out.truncate(4*MIB)
         subprocess.run(["mformat","-i",fat,"::"],check=True)
-        for name,source in [("vfsc","vfscheck"),("atcheck","atcheck")]:
+        for name,source in [("vfsc","vfscheck"),("atcheck","atcheck"),("attrck","attrcheck"),("lockck","lockcheck")]:
             elf=work/(name+".elf")
             subprocess.run([sys.executable,qemu.ROOT/"scripts/native-cc.py","--arch",arch,"-o",elf,qemu.ROOT/"native-exec/examples"/(source+".c")],check=True)
             subprocess.run(["mcopy","-i",fat,elf,"::"],check=True)
@@ -106,7 +113,11 @@ def run(arch, ram, proof, prepared, musl):
                 vm.command("c:")
                 if phase=="first" and musl:
                     command(vm,"/bin/fstest.elf",b"musl Btrfs directory enumeration permissions links and unlink OK")
-                if phase=="first": command(vm,"atcheck.elf",b"directory fd and file flags OK")
+                    command(vm,"/bin/locktest.elf",b"musl fcntl process locks and 64-bit ranges OK")
+                if phase=="first":
+                    command(vm,"lockck.elf",b"advisory lock ranges ownership and wakeup OK")
+                    command(vm,"atcheck.elf",b"directory fd and file flags OK")
+                    command(vm,"attrck.elf",b"file times and positioned I/O OK")
                 command(vm,"vfsc.elf" if phase=="first" else "vfsc.elf cold",
                         b"Btrfs root VFS OK" if phase=="first" else b"cold root OK")
             finally:
@@ -126,7 +137,7 @@ if __name__=="__main__":
     cli.add_argument("--arch",choices=["i686","x86_64"],action="append")
     cli.add_argument("--ram-dir",type=Path,required=True)
     cli.add_argument("--proof",type=Path,required=True)
-    cli.add_argument("--musl",action="store_true",help="also run prepared musl fstest.elf from /bin on the root volume")
+    cli.add_argument("--musl",action="store_true",help="build and run both public libc probes from /bin using the installed musl sysroot")
     cli.add_argument("--root-image",type=Path,help="use a copy of an existing disposable root fixture")
     a=cli.parse_args();a.proof.mkdir(parents=True,exist_ok=True)
     for arch in a.arch or ["i686","x86_64"]:

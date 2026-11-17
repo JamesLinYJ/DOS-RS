@@ -1,129 +1,27 @@
-use super::{Waiters, pipe, poll};
+use super::{pipe, poll};
 use crate::{
-    bios::pc,
     kernel_cell::KernelCell,
     vfs::{self, Directories, File},
 };
-use alloc::{collections::VecDeque, sync::Arc, vec, vec::Vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use core::{
     future::poll_fn,
     task::{Context, Poll},
 };
 use dosrs_native_posix::{Access, Errno, Fd, Open, Process, Result, Whence};
 
-pub(super) struct Terminal {
-    editing: Vec<u8>,
-    ready: VecDeque<Option<u8>>,
-    waiting: Waiters,
-    pollers: poll::Subscribers,
-    session: u32,
-    foreground: u32,
-}
-impl Terminal {
-    pub fn new() -> Self {
-        Self {
-            editing: Vec::new(),
-            ready: VecDeque::new(),
-            waiting: Waiters::default(),
-            pollers: poll::Subscribers::default(),
-            session: 0,
-            foreground: 0,
-        }
-    }
-    fn attach(&mut self, pid: u32) {
-        if self.session == 0 {
-            self.session = pid;
-            self.foreground = pid;
-        }
-        super::process::attach(pid, self.session, self.foreground);
-    }
-    pub fn notify_input(&mut self) {
-        while let Some(key) = pc::key(true) {
-            match key as u8 {
-                ch @ (3 | 26 | 28) => {
-                    self.editing.clear();
-                    super::process::signals::terminal_input(
-                        self.foreground,
-                        match ch {
-                            3 => 2,
-                            26 => 20,
-                            _ => 3,
-                        },
-                    );
-                    console(match ch {
-                        3 => b"^C\n",
-                        26 => b"^Z\n",
-                        _ => b"^\\\n",
-                    });
-                }
-                4 => {
-                    if self.editing.is_empty() {
-                        self.ready.push_back(None);
-                    } else {
-                        self.ready.extend(self.editing.drain(..).map(Some));
-                    }
-                }
-                b'\r' | b'\n' => {
-                    self.ready.extend(self.editing.drain(..).map(Some));
-                    self.ready.push_back(Some(b'\n'));
-                    console(b"\n");
-                }
-                8 if self.editing.pop().is_some() => console(b"\x08 \x08"),
-                ch @ 32..=126 if self.editing.len() < 4095 => {
-                    self.editing.push(ch);
-                    console(&[ch]);
-                }
-                _ => {}
-            }
-        }
-        self.waiting.wake();
-        if !self.ready.is_empty() {
-            self.pollers.wake();
-        }
-    }
-    fn read(&mut self, cx: &Context, out: &mut [u8]) -> Poll<Result<usize>> {
-        if out.is_empty() {
-            return Poll::Ready(Ok(0));
-        }
-        if self.ready.is_empty() {
-            return self.waiting.wait(cx);
-        }
-        let mut n = 0;
-        while n < out.len() {
-            match self.ready.front().copied() {
-                Some(Some(ch)) => {
-                    self.ready.pop_front();
-                    out[n] = ch;
-                    n += 1;
-                    if ch == b'\n' {
-                        break;
-                    }
-                }
-                Some(None) if n == 0 => {
-                    self.ready.pop_front();
-                    break;
-                }
-                _ => break,
-            }
-        }
-        Poll::Ready(Ok(n))
-    }
-}
-fn console(bytes: &[u8]) {
-    for &b in bytes {
-        if b == b'\n' {
-            crate::putc(b'\r');
-        }
-        crate::putc(b);
-    }
-}
+#[path = "io/terminal.rs"]
+mod terminal;
+pub(super) use terminal::{ReadClock, Terminal};
 
 #[path = "io/descriptor.rs"]
 mod descriptor;
+#[path = "io/record.rs"]
+pub(super) mod record;
 pub(super) type Handle = Arc<descriptor::Shared>;
 pub(super) enum Description {
     Input(Arc<KernelCell<Terminal>>),
-    Output,
+    Output(Arc<KernelCell<Terminal>>),
     Pipe(pipe::End),
     File {
         object: File,
@@ -144,9 +42,15 @@ impl Description {
         }
         Ok(())
     }
-    fn read(&mut self, cx: &Context, out: &mut [u8]) -> Poll<Result<usize>> {
+    fn read(
+        &mut self,
+        cx: &Context,
+        out: &mut [u8],
+        timer: &mut ReadClock,
+        nonblock: bool,
+    ) -> Poll<Result<usize>> {
         match self {
-            Self::Input(terminal) => terminal.borrow().read(cx, out),
+            Self::Input(terminal) => terminal.borrow().read(cx, out, timer, nonblock),
             Self::Pipe(end) => end.read(cx, out),
             Self::File {
                 object,
@@ -163,10 +67,7 @@ impl Description {
     }
     fn write(&mut self, cx: &Context, data: &[u8]) -> Poll<Result<usize>> {
         match self {
-            Self::Output => {
-                console(data);
-                Poll::Ready(Ok(data.len()))
-            }
+            Self::Output(tty) => tty.borrow().write(cx, data),
             Self::Pipe(end) => end.write(cx, data),
             Self::File {
                 object,
@@ -223,8 +124,10 @@ pub(super) struct ProcessContext {
     pub(super) gid: u32,
     cwd: Directories,
     pub(super) directory: vfs::posix::PosixDir,
+    cwd_pin: Option<Arc<KernelCell<File>>>,
     pub(super) mask: u32,
     close_on_exec: u32,
+    close_on_fork: u32,
     io_budget: u8,
     fds: Vec<Option<Handle>>,
 }
@@ -234,7 +137,15 @@ impl ProcessContext {
         cwd: Directories,
         children: alloc::sync::Weak<super::process::NewProcesses>,
     ) -> Self {
-        let output = handle(Description::Output);
+        let output = handle(Description::Output(input.clone()));
+        let directory = vfs::posix::initial(cwd);
+        let cwd_pin = if directory.0 == vfs::posix::ROOT.0 {
+            None
+        } else {
+            vfs::posix::pin_directory(directory)
+                .ok()
+                .map(|f| Arc::new(KernelCell::new(f)))
+        };
         Self {
             pid: 0,
             tty: input.clone(),
@@ -243,9 +154,15 @@ impl ProcessContext {
             caller_mask: 0,
             uid: 0,
             gid: 0,
-            directory: vfs::posix::initial(cwd),
+            directory: if cwd_pin.is_some() {
+                directory
+            } else {
+                vfs::posix::ROOT
+            },
+            cwd_pin,
             mask: 0o022,
             close_on_exec: 0,
+            close_on_fork: 0,
             cwd,
             io_budget: IO_QUANTUM,
             fds: vec![
@@ -262,7 +179,10 @@ impl ProcessContext {
         arg: i32,
     ) -> core::result::Result<usize, isize> {
         let tty = self.get(fd).map_err(super::executable::errno)?;
-        if !matches!(&*tty.borrow(), Description::Input(_) | Description::Output) {
+        if !matches!(
+            &*tty.borrow(),
+            Description::Input(_) | Description::Output(_)
+        ) {
             return Err(-25);
         }
         let mut terminal = self.tty.borrow();
@@ -299,7 +219,13 @@ impl ProcessContext {
         let mut fds = Vec::new();
         fds.try_reserve_exact(self.fds.len())
             .map_err(|_| Errno::TooManyFiles)?;
-        fds.extend(self.fds.iter().cloned());
+        fds.extend(self.fds.iter().enumerate().map(|(fd, entry)| {
+            if self.close_on_fork & (1 << fd) == 0 {
+                entry.clone()
+            } else {
+                None
+            }
+        }));
         super::process::register(pid, self.pid, self.uid).map_err(|_| Errno::TooManyFiles)?;
         if self.pid == 0 {
             self.tty.borrow().attach(pid);
@@ -314,8 +240,10 @@ impl ProcessContext {
             gid: self.gid,
             cwd: self.cwd,
             directory: self.directory,
+            cwd_pin: self.cwd_pin.clone(),
             mask: self.mask,
-            close_on_exec: self.close_on_exec,
+            close_on_exec: self.close_on_exec & !self.close_on_fork,
+            close_on_fork: 0,
             io_budget: IO_QUANTUM,
             fds,
         })
@@ -336,6 +264,17 @@ impl ProcessContext {
             uid: self.uid,
             gid: self.gid,
         }
+    }
+    pub(super) fn chdir(&mut self, from: vfs::posix::PosixDir, path: &[u8]) -> Result<()> {
+        let next = vfs::posix::chdir(from, path, self.credentials())?;
+        let pin = if next.0 == vfs::posix::ROOT.0 {
+            None
+        } else {
+            Some(Arc::new(KernelCell::new(vfs::posix::pin_directory(next)?)))
+        };
+        self.cwd_pin = pin;
+        self.directory = next;
+        Ok(())
     }
     pub(super) fn open_mode(&mut self, path: &[u8], flags: Open, mode: u32) -> Result<Fd> {
         self.open_at(self.directory, path, flags, mode)
@@ -368,9 +307,6 @@ impl ProcessContext {
             }),
         );
         Ok(fd)
-    }
-    pub(super) fn mark_cloexec(&mut self, fd: Fd) {
-        self.close_on_exec |= 1u32 << fd;
     }
     pub(super) fn close_exec_fds(&mut self) {
         let mut pending = core::mem::take(&mut self.close_on_exec);
@@ -436,6 +372,7 @@ impl ProcessContext {
         Ok(bytes)
     }
     pub fn finish(&mut self) -> Result<()> {
+        record::release(self.pid, None);
         let mut result = Ok(());
         for h in self.fds.drain(..).flatten() {
             if let Err(e) = h.borrow().sync() {
@@ -457,7 +394,7 @@ impl ProcessContext {
         }
     }
     pub fn set(&mut self, fd: Fd, value: Handle) {
-        self.close_on_exec &= !(1u32 << fd);
+        self.set_open_flags(fd, 0);
         if fd == self.fds.len() {
             self.fds.push(Some(value));
         } else {
@@ -480,23 +417,19 @@ impl ProcessContext {
             return Ok(poll::INVALID);
         };
         match &*handle.borrow() {
-            Description::Input(tty) => {
-                let mut tty = tty.borrow();
-                if tty.ready.is_empty() {
-                    if events & poll::READ != 0 {
-                        tty.pollers.subscribe(waker)?;
-                    }
-                    Ok(0)
-                } else {
-                    Ok(events & poll::READ)
-                }
-            }
-            Description::Output => Ok(events & poll::WRITE),
+            Description::Input(tty) => tty.borrow().readiness(events, false, waker),
+            Description::Output(tty) => tty.borrow().readiness(events, true, waker),
             Description::Pipe(end) => end.readiness(events, waker),
             Description::File { .. } => Ok(events & (poll::READ | poll::WRITE)),
         }
     }
-    pub(super) fn poll_read(&self, fd: Fd, cx: &Context, out: &mut [u8]) -> Poll<Result<usize>> {
+    pub(super) fn poll_read(
+        &self,
+        fd: Fd,
+        cx: &Context,
+        out: &mut [u8],
+        timer: &mut ReadClock,
+    ) -> Poll<Result<usize>> {
         let handle = self.get(fd)?;
         if matches!(&*handle.borrow(), Description::Input(_)) && !out.is_empty() {
             let mut tty = self.tty.borrow();
@@ -513,10 +446,19 @@ impl ProcessContext {
                 return tty.waiting.wait(cx);
             }
         }
-        handle.blocking(handle.borrow().read(cx, out))
+        handle.blocking(handle.borrow().read(cx, out, timer, handle.nonblock()))
     }
     pub(super) fn poll_write(&self, fd: Fd, cx: &Context, bytes: &[u8]) -> Poll<Result<usize>> {
         let handle = self.get(fd)?;
+        if let Description::Output(terminal) = &*handle.borrow() {
+            let mut tty = terminal.borrow();
+            if !bytes.is_empty()
+                && tty.stop_background_output()
+                && self.background_output(&tty).map_err(|_| Errno::Io)?
+            {
+                return tty.waiting.wait(cx);
+            }
+        }
         handle.blocking(handle.borrow().write(cx, bytes))
     }
     pub fn redirect(&mut self, target: Fd, path: &str, flags: Open) -> Result<()> {
@@ -532,6 +474,7 @@ impl ProcessContext {
 impl Drop for ProcessContext {
     fn drop(&mut self) {
         if self.pid != 0 {
+            record::release(self.pid, None);
             super::process::exited(self.pid, 1 << 8);
         }
     }
@@ -591,7 +534,10 @@ impl Process for ProcessContext {
             .get_mut(fd)
             .and_then(Option::take)
             .ok_or(Errno::BadFd)?;
-        self.close_on_exec &= !(1u32 << fd);
+        self.set_open_flags(fd, 0);
+        if let Description::File { object, .. } = &*h.borrow() {
+            record::release(self.pid, Some(object.identity()));
+        }
         h.borrow().sync()
     }
     fn dup(&mut self, fd: Fd) -> Result<Fd> {
@@ -608,12 +554,16 @@ impl Process for ProcessContext {
         if target >= OPEN_MAX {
             return Err(Errno::BadFd);
         }
-        if fd != target {
-            if self.fds.len() <= target {
-                self.fds.resize_with(target + 1, || None);
-            }
-            self.fds[target] = Some(h);
+        if self.fds.len() < target {
+            self.fds
+                .try_reserve(target + 1 - self.fds.len())
+                .map_err(|_| Errno::TooManyFiles)?;
+            self.fds.resize_with(target, || None);
         }
+        if self.get(target).is_ok() {
+            self.close(target)?;
+        }
+        self.set(target, h);
         Ok(target)
     }
     fn pipe(&mut self) -> Result<(Fd, Fd)> {
@@ -633,7 +583,8 @@ impl Process for ProcessContext {
     }
     async fn read(&mut self, fd: Fd, out: &mut [u8]) -> Result<usize> {
         timeslice(&mut self.io_budget).await;
-        poll_fn(|cx| self.poll_read(fd, cx, out)).await
+        let mut timer = ReadClock::new(self.pid);
+        poll_fn(|cx| self.poll_read(fd, cx, out, &mut timer)).await
     }
     async fn write(&mut self, fd: Fd, bytes: &[u8]) -> Result<usize> {
         timeslice(&mut self.io_budget).await;

@@ -24,6 +24,8 @@ int rename(const char *,const char *);
 int dup(int);
 int dup2(int, int);
 int pipe(int[2]);
+int pipe2(int[2],int);
+int dup3(int,int,int);
 typedef int pid_t;
 pid_t getpid(void);
 pid_t fork(void);
@@ -53,5 +55,11 @@ int fchown(int,unsigned int,unsigned int);
 #define W_OK 2
 #define R_OK 4
 int access(const char *,int);
+int fchdir(int);
+int faccessat(int,const char *,int,int);
+int fchownat(int,const char *,unsigned int,unsigned int,int);
+int lchown(const char *,unsigned int,unsigned int);
+ssize_t pread(int,void *,size_t,off_t);
+ssize_t pwrite(int,const void *,size_t,off_t);
 _Noreturn void _exit(int status);
 #endif

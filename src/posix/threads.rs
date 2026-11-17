@@ -42,8 +42,10 @@ struct Member {
     pending_signals: u64,
     interrupted: Vec<State>,
     clear_tid: usize,
+    tty_read: super::io::ReadClock,
     timer: Option<clock::Timer>,
     poll_request: Option<poll::Request>,
+    lock_request: Option<super::io::record::Request>,
     registers: Option<Thread>,
     returned: Arc<Completion>,
     state: State,
@@ -64,8 +66,10 @@ impl Member {
             pending_signals: 0,
             interrupted: Vec::new(),
             clear_tid: 0,
+            tty_read: super::io::ReadClock::new(tid),
             timer: None,
             poll_request: None,
+            lock_request: None,
             registers: Some(registers),
             returned: Completion::new()?,
             state: State::Ready,
@@ -80,6 +84,8 @@ impl Member {
         self.reply(-4);
     }
     fn reply(&mut self, value: isize) {
+        self.tty_read.reset(self.tid);
+        self.lock_request = None;
         self.timer = None;
         if let Some(request) = self.poll_request.take() {
             request.restore(self);
@@ -318,6 +324,7 @@ impl Threads {
         }
         if self.0[0].tid == 0 {
             self.0[0].tid = p.getpid();
+            self.0[0].tty_read.reset(p.getpid());
         }
         self.collect(image, p.getpid())?;
         for t in &mut self.0 {
@@ -444,7 +451,7 @@ impl Threads {
                     clock::call(&mut self.0[i], image, call, args, cx)
                 }
                 Call::Poll | Call::Ppoll => poll::call(&mut self.0[i], image, p, call, args, cx),
-                Call::Readv | Call::Writev => musl::vectors(image, p, cx, call, args),
+                Call::Readv | Call::Writev => musl::vectors(image, p, cx, call, args, &mut self.0[i].tty_read),
                 Call::Threadfinish => match self.finish_pthread(i, image, a, b) {
                     Ok(()) => {
                         cx.waker().wake_by_ref();
@@ -464,7 +471,11 @@ impl Threads {
                 Call::Gettid => Poll::Ready(Ok(self.0[i].tid as usize)),
                 Call::Threrrno => Poll::Ready(Ok(self.0[i].errno)),
                 Call::Futexwait | Call::Futexwake => self.futex(i, p.getpid(), image, call, a, b),
-                _ => file_call(image, p, cx, call, args),
+                Call::Fcntl if matches!(b, 5..=7 | 36..=38) => {
+                    super::io::record::call(&mut self.0[i].lock_request, p, image, args, cx)
+                }
+                Call::Ttyio => p.tty_ioctl(image, a, b, c, cx),
+                _ => file_call(image, p, cx, call, args, &mut self.0[i].tty_read),
             };
             if let Poll::Ready(value) = result {
                 self.0[i].reply(value.map(|n| n as isize).unwrap_or_else(|e| e));

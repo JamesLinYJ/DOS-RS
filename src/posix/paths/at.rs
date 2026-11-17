@@ -7,7 +7,7 @@ const REMOVEDIR: usize = 0x200;
 const FOLLOW: usize = 0x400;
 const EMPTY: usize = 0x1000;
 
-fn words<const N: usize>(image: &AddressSpace, address: usize) -> Result<[usize; N]> {
+pub(super) fn words<const N: usize>(image: &AddressSpace, address: usize) -> Result<[usize; N]> {
     let mut result = [0; N];
     for (i, v) in result.iter_mut().enumerate() {
         let mut bytes = [0; size_of::<usize>()];
@@ -54,9 +54,7 @@ pub(super) fn open(
         return Err(-20);
     }
     let new = p.open_at(dir, &path, flags, mode).map_err(errno)?;
-    if bits & 0x80000 != 0 {
-        p.mark_cloexec(new);
-    }
+    p.set_open_flags(new, bits);
     if bits & 0x800 != 0 {
         p.fcntl(new, 4, bits).map_err(errno)?;
     }

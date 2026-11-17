@@ -163,8 +163,11 @@ ssize_t readlinkat(int dir,const char *name,char *out,size_t len) {
 int symlinkat(const char *target,int dir,const char *name) { return (int)result(sys_symlinkat(target,dir,name)); }
 int fcntl(int fd,int cmd,...) {
     uintptr_t arg=0;
-    if (cmd==F_DUPFD || cmd==F_DUPFD_CLOEXEC || cmd==F_SETFD || cmd==F_SETFL) {
+    if (cmd==F_DUPFD || cmd==F_DUPFD_CLOEXEC || cmd==F_DUPFD_CLOFORK || cmd==F_SETFD || cmd==F_SETFL) {
         va_list ap;va_start(ap,cmd);arg=(uintptr_t)va_arg(ap,int);va_end(ap);
+    }
+    if ((cmd>=F_GETLK && cmd<=F_SETLKW) || (cmd>=F_OFD_GETLK && cmd<=F_OFD_SETLKW)) {
+        va_list ap;va_start(ap,cmd);arg=(uintptr_t)va_arg(ap,struct flock *);va_end(ap);
     }
     return (int)result(sys_fcntl(fd,cmd,arg));
 }
@@ -174,3 +177,42 @@ int fsync(int fd) {return (int)result(sys_fsync(fd));}
 int fchmod(int fd,mode_t mode) {return (int)result(sys_fchmod(fd,mode));}
 int fchown(int fd,unsigned int uid,unsigned int gid) {return (int)result(sys_fchown(fd,uid,gid));}
 int access(const char *path,int mode) {return (int)result(sys_access(path,mode));}
+
+extern long sys_fchdir(int), sys_faccessat(int,const char *,const uintptr_t *);
+extern long sys_fchmodat(int,const char *,const uintptr_t *), sys_fchownat(int,const char *,const uintptr_t *);
+extern long sys_utimensat(int,const char *,const uintptr_t *), sys_futimens(int,const struct timespec *);
+extern long sys_pread(int,void *,const uint64_t *), sys_pwrite(int,const void *,const uint64_t *);
+
+int fchdir(int fd) { return (int)result(sys_fchdir(fd)); }
+int faccessat(int dir, const char *path, int mode, int flags) {
+    uintptr_t option[]={ (uintptr_t)mode, (uintptr_t)flags };
+    return (int)result(sys_faccessat(dir,path,option));
+}
+int fchmodat(int dir, const char *path, mode_t mode, int flags) {
+    uintptr_t option[]={mode,(uintptr_t)flags};
+    return (int)result(sys_fchmodat(dir,path,option));
+}
+int fchownat(int dir, const char *path, unsigned int uid, unsigned int gid, int flags) {
+    uintptr_t option[]={uid,gid,(uintptr_t)flags};
+    return (int)result(sys_fchownat(dir,path,option));
+}
+int lchown(const char *path,unsigned int uid,unsigned int gid) {
+    return fchownat(AT_FDCWD,path,uid,gid,AT_SYMLINK_NOFOLLOW);
+}
+int utimensat(int dir, const char *path,const struct timespec times[2],int flags) {
+    uintptr_t option[]={ (uintptr_t)times,(uintptr_t)flags };
+    return (int)result(sys_utimensat(dir,path,option));
+}
+int futimens(int fd,const struct timespec times[2]) {return (int)result(sys_futimens(fd,times));}
+ssize_t pread(int fd,void *buf,size_t count,off_t pos) {
+    uint64_t option[]={ (uint64_t)pos,count };
+    return result(sys_pread(fd,buf,option));
+}
+ssize_t pwrite(int fd,const void *buf,size_t count,off_t pos) {
+    uint64_t option[]={ (uint64_t)pos,count };
+    return result(sys_pwrite(fd,buf,option));
+}
+
+extern long sys_dup3(int,int,int), sys_pipe2(int *,int);
+int dup3(int old,int next,int flags) {return (int)result(sys_dup3(old,next,flags));}
+int pipe2(int endpoints[2],int flags) {return (int)result(sys_pipe2(endpoints,flags));}
