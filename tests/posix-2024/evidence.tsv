@@ -156,3 +156,6 @@ functions/uname.html#tag_17_646	uname	partial	partial	tests/native-uts/names.c	R
 functions/gethostname.html#tag_17_217	gethostname	partial	partial	tests/native-uts/names.c	Read the boot and renamed hostname across fork with the maximum supported length
 functions/fstatvfs.html#tag_17_191	statvfs	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c	Path resolution on Btrfs and FAT, allocation units, capacity and read-only GPT mounts, missing path error
 functions/fstatvfs.html#tag_17_191	fstatvfs	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c	Descriptor identity, available blocks before and after growing a Btrfs data group, read-only mounts and invalid descriptor
+functions/sigtimedwait.html#tag_17_558	sigtimedwait	partial	partial	ports/musl/tests/sigwait.c	Immediate, finite and interrupted waits, realtime order and sender PID/UID from a separate process
+functions/sigtimedwait.html#tag_17_558	sigwaitinfo	partial	partial	ports/musl/tests/sigwait.c	Competing threads consume a process signal once, directed delivery selects its target and SIGCHLD returns child status
+functions/sigwait.html#tag_17_559	sigwait	partial	partial	ports/musl/tests/sigwait.c	Receive a blocked standard signal through the public musl interface and verify coalescing with a zero-time second wait

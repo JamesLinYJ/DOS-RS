@@ -1814,9 +1814,9 @@ functions	sigpending	base	functions/sigpending.html#tag_17_554	partial	partial	p
 functions	sigqueue	base	functions/sigqueue.html#tag_17_555	open	open	
 functions	sigsetjmp	base	functions/sigsetjmp.html#tag_17_556	open	open	
 functions	sigsuspend	base	functions/sigsuspend.html#tag_17_557	open	open	
-functions	sigtimedwait	base	functions/sigtimedwait.html#tag_17_558	open	open	
-functions	sigwaitinfo	base	functions/sigtimedwait.html#tag_17_558	open	open	
-functions	sigwait	base	functions/sigwait.html#tag_17_559	open	open	
+functions	sigtimedwait	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c
+functions	sigwaitinfo	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c
+functions	sigwait	base	functions/sigwait.html#tag_17_559	partial	partial	ports/musl/tests/sigwait.c
 functions	sin	base	functions/sin.html#tag_17_560	open	open	
 functions	sinf	base	functions/sin.html#tag_17_560	open	open	
 functions	sinl	base	functions/sin.html#tag_17_560	open	open	

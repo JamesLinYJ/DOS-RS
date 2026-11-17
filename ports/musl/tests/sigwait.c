@@ -75,6 +75,23 @@ int main(void)
         void *value;
         CHECK(!pthread_join(threads[i], &value) && value == &ids[i]);
     }
+    // Keep an earlier waiter registered on the very same set while targeting
+    // the later worker. Only the chosen thread may consume this signal.
+    atomic_store(&ready, 0);
+    for (int i = 0; i < 2; i++)
+        CHECK(!pthread_create(&threads[i], 0, consumer, &ids[i]));
+    while (atomic_load(&ready) != 2)
+        sched_yield();
+    CHECK(!pthread_kill(threads[1], SIGUSR2));
+    CHECK(read(results[0], report, sizeof report) == sizeof report && report[0] == 1 &&
+          report[1] == SIGUSR2 && report[2] == SI_TKILL && poll(&reader, 1, 20) == 0);
+    CHECK(kill(getpid(), SIGUSR1) == 0);
+    CHECK(read(results[0], report, sizeof report) == sizeof report && report[0] == 0 &&
+          report[2] == SI_USER);
+    for (int i = 0; i < 2; i++) {
+        void *value;
+        CHECK(!pthread_join(threads[i], &value) && value == &ids[i]);
+    }
     struct timespec zero = {0, 0}, short_wait = {0, 50000000}, invalid = {0, 1000000000};
     siginfo_t info;
     CHECK(sigtimedwait(&usrs, &info, &zero) == -1 && errno == EAGAIN);
@@ -83,8 +100,10 @@ int main(void)
     CHECK(sigtimedwait(&usrs, &info, &short_wait) == -1 && errno == EAGAIN &&
           now() - begin >= 50000000LL);
     CHECK(kill(getpid(), SIGUSR1) == 0);
+    CHECK(kill(getpid(), SIGUSR1) == 0);
     int signo;
     CHECK(sigwait(&usrs, &signo) == 0 && signo == SIGUSR1);
+    CHECK(sigtimedwait(&usrs, 0, &zero) == -1 && errno == EAGAIN);
     sigset_t rt;
     sigemptyset(&rt);
     sigaddset(&rt, SIGRTMIN);
