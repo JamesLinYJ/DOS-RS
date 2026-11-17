@@ -283,8 +283,8 @@ def main():
         if disk_set:
             # Keep the boot font and message catalogue at identical sector addresses
             # while a single-drive, low-memory SETUP streams files from disk 2.
-            common = [d / n for n in ("IO.SYS", "GLYPHS.FNT", "LANG.DAT", "LICENSE.TXT", "NOTICE.TXT")]
-            tools2 = [d / n for n in ("WELCOME.TXT", "SMARTDRV.EXE", "INPUT.DAT", "EDIT.EXE")]
+            common = [d / n for n in ("IO.SYS", "GLYPHS.FNT", "LANG.DAT", "LICENSE.TXT", "OFL.TXT")]
+            tools2 = [d / n for n in ("WELCOME.TXT", "SMARTDRV.EXE", "INPUT.DAT", "NOTICE.TXT", "EDIT.EXE")]
             identity = hashlib.sha256(manifest).digest()[:16]
             for number in (1, 2):
                 mark = d / f"DISK{number}.ID"

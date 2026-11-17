@@ -30,6 +30,8 @@ Run [the memory acceptance suite](scripts/realmode-ems-test.py) with a RAM volum
 
 The optional two-floppy set has a release ID on each disk. Test a wrong disk, cancellation, a swap in one drive, cold boot and host-side readback. SETUP stages disk 2 in its own PSP allocation. Keep the configuration buffer outside the staged payload.
 
+Run `python3 scripts/realmode-command-devices.py --image <boot.img> --toolchain ../rust16 --ram-dir <ram> --proof <dir>` for LOADHIGH placement, region sizes and console behavior. To compare with MS-DOS 6.22, supply its original boot disk and `--drivers` pointing at HIMEM.SYS and EMM386.EXE. [The ATAPI regression](scripts/realmode-optical-test.py) takes `--image`, `--ram-dir` and `--proof` and verifies nested searches, read-only operations, launch from CD and copied bytes on the stopped disk.
+
 The native utilities are built with the same rust16 compiler. Partition inspection, file transfer, startup configuration and installer rendering have separate modules in `native-tools/src`. Edit uses a storage-independent gap buffer with a segmented DOS adapter. Use emulator key events for interaction tests. The pinned legacy DOS compatibility clients and their source revision are documented in [tests/fixtures/dos](tests/fixtures/dos/README.md).
 
 For native EMM changes, run the installation and legacy CPU checks in `scripts/realmode-ems-test.py`. Run `scripts/realmode-high-memory.py` to compare the DOS client's high-page reads with QEMU physical memory. For changes to ELF virtual addresses use the native ELF tests on both architectures, including high page faults and pipeline data.
