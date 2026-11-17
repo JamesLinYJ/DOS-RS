@@ -1,7 +1,7 @@
 //! Native executable loading and checked copies between process and kernel memory.
 use super::io::ProcessContext;
 use crate::{
-    arch::user::{Stop, Thread},
+    arch::user::{AddressSpace, Stop, Thread},
     vfs::{self, Directories},
 };
 use alloc::{string::String, vec::Vec};
@@ -10,7 +10,7 @@ use dosrs_native_exec::{Call, END, Image, Machine, STACK};
 use dosrs_native_posix::{Access, Errno, Open, Process, Whence};
 
 pub(super) struct Executable {
-    image: Image,
+    image: AddressSpace,
     cpu: Thread,
 }
 const MAX_FILE: usize = 2 << 20;
@@ -73,7 +73,10 @@ impl Executable {
         }
         push_stack(&mut image, &mut sp, &0usize.to_le_bytes())?;
         let cpu = Thread::new(image.entry, sp, argv.len(), vector);
-        Ok(Self { image, cpu })
+        Ok(Self {
+            image: image.into(),
+            cpu,
+        })
     }
     pub async fn run(mut self, process: &mut ProcessContext) -> u8 {
         loop {

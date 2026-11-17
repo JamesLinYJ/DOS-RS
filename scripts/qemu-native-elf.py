@@ -19,10 +19,13 @@ def check(arch, firmware, work, proof):
     with disk.open("wb") as f:
         f.truncate(4 << 20)
     subprocess.run(["mformat", "-i", disk, "::"], check=True)
-    for name in EXAMPLES:
+    high_images = {"highva": "0x7f0000001000", "highlow": "0x100000000"} if arch == "x86_64" else {}
+    for name in (*EXAMPLES, *high_images):
         binary = work / (name + ".elf")
-        source = qemu.ROOT / "native-exec/examples" / (name + ".c")
-        subprocess.run([sys.executable, qemu.ROOT / "scripts/native-cc.py", "--arch", arch,
+        source_name = "highva" if name in high_images else name
+        source = qemu.ROOT / "native-exec/examples" / (source_name + ".c")
+        bases = ["--text-base", high_images[name], "--data-base", "0x7ffffffff000"] if name in high_images else []
+        subprocess.run([sys.executable, qemu.ROOT / "scripts/native-cc.py", "--arch", arch, *bases,
                         "-o", binary, source], check=True)
         subprocess.run(["mcopy", "-i", disk, binary, "::"], check=True)
     subprocess.run(["mcopy", "-i", disk, "-", "::a.txt"], input=PAYLOAD, check=True)
@@ -30,7 +33,7 @@ def check(arch, firmware, work, proof):
     subprocess.run(["mcopy", "-i", disk, "-", "::keep.txt"], input=b"original", check=True)
 
     log = proof / (arch + ".log")
-    shell = Shell(qemu.boot_args(kernel, arch, work / "boot", 2, firmware)
+    shell = Shell(qemu.boot_args(kernel, arch, work / "boot", 2, firmware, esp_mib=36)
                   + ["-drive", f"if=ide,format=raw,file={disk}"], log, work)
     try:
         shell.wait(b"A:\\> ")
@@ -42,6 +45,13 @@ def check(arch, firmware, work, proof):
         shell.command("cat.elf < a.txt | cat.elf > copy.bin")
         shell.command("fdcheck.elf", expect=b"unlink, shared offset, pipe EOF OK")
         shell.command("private.elf send | private.elf receive", expect=b"private BSS and distinct PIDs OK")
+        if arch == "x86_64":
+            shell.command("highva.elf send | highva.elf receive", expect=b"high VA exec, private data and syscall buffers OK")
+            for mode in ("write", "execute"):
+                shell.command("highva.elf " + mode, expect=b"user exception 0e")
+            shell.command("highlow.elf send | highva.elf receive", expect=b"high VA exec, private data and syscall buffers OK")
+            shell.command("highlow.elf hole", expect=b"user exception 0e")
+            shell.command("hello.elf 7", expect=b"hello from native C")
         shell.command("large.elf | large.elf > keep.txt", expect=b"native process memory limit reached")
         shell.command("large.elf", expect=b"large image loaded")
         shell.command("divide.elf", expect=b"user exception 00")

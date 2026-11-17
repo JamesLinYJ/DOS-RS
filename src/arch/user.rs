@@ -2,7 +2,8 @@
 //! the register save/restore instructions; Rust owns the page and trap state.
 mod pages;
 use core::{mem::size_of, ptr};
-use dosrs_native_exec::{END, Image};
+use dosrs_native_exec::Image;
+pub(crate) use pages::AddressSpace;
 use x86::{
     Ring,
     dtables::{DescriptorTablePointer, lgdt},
@@ -164,9 +165,17 @@ impl Thread {
             Some(args)
         }
     }
-    pub fn step(&mut self, image: &mut Image) -> Result<Stop, &'static str> {
-        if self.regs.sp > END {
+    pub fn step(&mut self, image: &mut AddressSpace) -> Result<Stop, &'static str> {
+        #[cfg(target_arch = "x86")]
+        if self.regs.sp > dosrs_native_exec::END {
             return Ok(Stop::Fault(12));
+        }
+        // IRET rejects noncanonical RIP/RSP before reaching userspace.
+        #[cfg(target_arch = "x86_64")]
+        if self.regs.sp as u64 >= dosrs_native_exec::USER_END
+            || self.regs.ip as u64 >= dosrs_native_exec::USER_END
+        {
+            return Ok(Stop::Fault(13));
         }
         if !super::platform::boot_cpu().1 || !super::platform::enable_apic() {
             return Err("native processes require the local APIC");

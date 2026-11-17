@@ -16,6 +16,10 @@ pub const BASE: usize = 0x6000_0000;
 pub const END: usize = BASE + 0x20_0000;
 pub const STACK: usize = END - 16 * PAGE;
 const LIMIT: usize = STACK - PAGE;
+/// The kernel identity-maps the low four GiB. Sparse ELF64 segments can use
+/// the rest of the lower canonical half in four-level paging mode.
+pub const HIGH_USER_START: u64 = 1 << 32;
+pub const USER_END: u64 = 1 << 47;
 
 #[derive(Clone, Copy)]
 pub enum Machine {
@@ -95,7 +99,10 @@ impl Image {
                 .checked_add(memory)
                 .and_then(|v| usize::try_from(v).ok())
                 .ok_or("invalid ELF address")?;
-            if start < prior_end || end > LIMIT {
+            let legacy = start >= BASE && end <= LIMIT;
+            let high =
+                machine == elf::EM_X86_64 && address >= HIGH_USER_START && end as u64 <= USER_END;
+            if start < prior_end || !(legacy || high) {
                 return Err("ELF segment is outside the process image");
             }
             prior_end = end;
@@ -125,6 +132,8 @@ impl Image {
         for addr in (STACK..END).step_by(PAGE) {
             image.append_page(addr)?.writable = true;
         }
+        // Keep binary searches valid when the ABI stack precedes high segments.
+        image.pages.sort_unstable_by_key(|page| page.0);
         Ok(image)
     }
 
@@ -156,10 +165,7 @@ impl Image {
         if len == 0 {
             return Ok(());
         }
-        let end = addr
-            .checked_add(len)
-            .filter(|&end| addr >= BASE && end <= END)
-            .ok_or("invalid user address")?;
+        let end = addr.checked_add(len).ok_or("invalid user address")?;
         for base in (addr / PAGE * PAGE..end).step_by(PAGE) {
             if !self.pages[self.index(base)?].1.writable && write {
                 return Err("unmapped or protected user address");

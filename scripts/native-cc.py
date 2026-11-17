@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIBC = ROOT / "native-exec/libc"
 
 
-def build(arch, sources, destination):
+def build(arch, sources, destination, text_base=None, data_base=None):
     compiler = arch + "-elf-gcc"
     package = "user32-cpu" if arch == "i686" else "user64-cpu"
     cpu = ROOT / "target" / package
@@ -17,6 +17,13 @@ def build(arch, sources, destination):
              "-fno-stack-protector", "-fno-asynchronous-unwind-tables", "-I", LIBC / "include"]
     if arch == "x86_64":
         flags.append("-mno-red-zone")
+    placement = []
+    if text_base is not None or data_base is not None:
+        if arch == "x86_64":
+            flags.append("-mcmodel=large")
+        for symbol, address in [("__image_base", text_base), ("__data_base", data_base)]:
+            if address is not None:
+                placement.append(f"-Wl,--defsym={symbol}={address:#x}")
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
         upstream = (cpu / "usys.S").read_text()
@@ -34,7 +41,7 @@ def build(arch, sources, destination):
         library = directory / "libc.a"
         subprocess.run([arch + "-elf-ar", "rcs", library, directory / "unistd.o",
                         directory / "calls.o"], check=True)
-        subprocess.run([compiler, *flags, "-nostdlib", "-Wl,-T," + str(LIBC / "user.ld"),
+        subprocess.run([compiler, *flags, "-nostdlib", *placement, "-Wl,-T," + str(LIBC / "user.ld"),
                         "-Wl,-z,max-page-size=4096", directory / "crt.o", *sources,
                         library, "-lgcc", "-o", destination], check=True)
 
@@ -42,7 +49,9 @@ def build(arch, sources, destination):
 if __name__ == "__main__":
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--arch", required=True, choices=["i686", "x86_64"])
+    cli.add_argument("--text-base", type=lambda s: int(s, 0), help="address of executable code")
+    cli.add_argument("--data-base", type=lambda s: int(s, 0), help="address of writable data")
     cli.add_argument("-o", required=True, type=Path)
     cli.add_argument("sources", nargs="+", type=Path)
     args = cli.parse_args()
-    build(args.arch, args.sources, args.o)
+    build(args.arch, args.sources, args.o, args.text_base, args.data_base)

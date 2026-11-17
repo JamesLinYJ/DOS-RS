@@ -54,7 +54,7 @@ def build(arch, target_dir, image=None, features=None):
     return target_dir / target / "release/dos.efi"
 
 
-def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
+def boot_args(kernel, arch, work, cpus=4, mode="uefi", *, esp_mib=64):
     machine, name = ARCH[arch]
     work.mkdir(parents=True, exist_ok=True)
     # SizeOfImage includes all four session arenas even when the PE file is small.
@@ -87,7 +87,7 @@ def boot_args(kernel, arch, work, cpus=4, mode="uefi"):
         ]
     disk = work / "efi.img"
     with disk.open("wb") as stream:
-        stream.truncate(64 * 1024 * 1024)
+        stream.truncate(esp_mib * 1024 * 1024)
     subprocess.run(["mformat", "-F", "-i", disk, "::"], check=True)
     subprocess.run(["mmd", "-i", disk, "::EFI", "::EFI/BOOT"], check=True)
     subprocess.run(["mcopy", "-i", disk, kernel, "::EFI/BOOT/" + name], check=True)
