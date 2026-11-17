@@ -1,0 +1,18 @@
+source	item	i686	x86_64	test	behavior
+utilities/cat.html#tag_20_13	cat	partial	partial	qemu-coreutils.py#0..22	File operands, stdin, repeated operands, byte preservation and option/IO errors
+utilities/wc.html#tag_20_148	wc	partial	partial	qemu-coreutils.py#23..45,80..83	C and C.UTF-8, bytes/lines/words/characters/width, multiple operands, errors and totals
+utilities/true.html#tag_20_127	true	partial	partial	qemu-coreutils.py#46..48	Zero status and empty streams for normal and ignored operands
+utilities/false.html#tag_20_43	false	partial	partial	qemu-coreutils.py#49..51	Status 1 and empty streams for normal and ignored operands
+utilities/echo.html#tag_20_37	echo	partial	partial	qemu-coreutils.py#52..60	Arguments, spaces, control escapes, no newline and early termination
+utilities/dirname.html#tag_20_35	dirname	partial	partial	qemu-coreutils.py#61..68	Lexical directory result, slash runs, multiple operands and NUL output
+utilities/basename.html#tag_20_07	basename	partial	partial	qemu-coreutils.py#69..79	Final component, removable suffix, slash runs, multi-operand and NUL output
+utilities/cat.html#tag_20_13_03	shall:1	partial	partial	qemu-coreutils.py#0..6	Files and standard input in supplied order
+utilities/cat.html#tag_20_13_03	shall:2	partial	partial	qemu-coreutils.py#0..6	Binary output including NUL remains byte-for-byte equal
+utilities/wc.html#tag_20_148_03	shall:1	partial	partial	qemu-coreutils.py#23..36,80..83	Input bytes and words with C and C.UTF-8 fixtures
+utilities/wc.html#tag_20_148_03	shall:2	partial	partial	qemu-coreutils.py#33..34,37..39	Two or more operands emit total with GNU-compatible width
+utilities/wc.html#tag_20_148_03	shall:3	partial	partial	qemu-coreutils.py#23,26,80..83	Whitespace including nonbreaking space and malformed UTF-8 scenarios
+utilities/true.html#tag_20_127_03	shall:1	passed	passed	qemu-coreutils.py#46..48	Always exits zero in the normative invocations
+utilities/false.html#tag_20_43_03	shall:1	passed	passed	qemu-coreutils.py#49..51	Exits nonzero
+utilities/false.html#tag_20_43_14	shall:1	passed	passed	qemu-coreutils.py#49..51	Implemented failure code is 1
+utilities/echo.html#tag_20_37_05	implementation-defined:1	partial	partial	qemu-coreutils.py#54..59	-n suppresses newline; initial -e enables escapes and -E disables them
+utilities/basename.html#tag_20_07_03	implementation-defined:1	passed	passed	qemu-coreutils.py#71	The operand // produces one slash
