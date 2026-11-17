@@ -239,9 +239,10 @@ fn ctty(args: &[u8]) -> Result<u16, u16> {
     let v = if !dos::call(&mut r) || r[3] & 0x80 == 0 {
         Err(5)
     } else {
+        // Mark the selected character device as standard input and output.
+        let mut e = dos::service(0x4401, fd, 0, (r[3] & 255) | 3).map(|_| 0);
         let mut i = 0;
-        let mut e = Ok(0);
-        while i < 3 {
+        while i < 3 && e.is_ok() {
             if let Err(n) = dos::service(0x4600, fd, i, 0) {
                 e = Err(n);
                 break;
@@ -355,7 +356,19 @@ pub fn run(name: &[u8], args: &[u8], batch: bool) -> Option<u16> {
     } else if equal(name, b"CTTY") {
         result(ctty(a))
     } else if equal(name, b"CLS") {
-        dos_tools::screen(2, 0, 0);
+        if matches!(dos_tools::screen(7, 0, 0), 6 | 7 | 16 | 18) {
+            dos_tools::screen(2, 0, 0);
+        } else {
+            // A standard DOS BIOS supplies the active mode/page and the dimensions.
+            use dosrs_realmode::{byte, system::w, video};
+            let rows = byte(0x40, 0x84);
+            let bottom = if rows == 0 { 24 } else { rows };
+            let columns = w(0x40, 0x4a);
+            if columns != 0 {
+                video(0x0600, 0x0700, 0, (bottom << 8) | (columns - 1));
+                video(0x0200, byte(0x40, 0x62) << 8, 0, 0);
+            }
+        }
         0
     } else if equal(name, b"TRUENAME") {
         match Path::from(if a.is_empty() { b"." } else { a }).and_then(|p| p.true_name()) {
@@ -382,7 +395,7 @@ pub fn run(name: &[u8], args: &[u8], batch: bool) -> Option<u16> {
 
 /// Short usage for the internal commands, including the alternate DOS spellings.
 pub fn help(name: &[u8]) -> bool {
-    let usage=b"BREAK [ON|OFF]\nCALL [drive:][path]batch [arguments]\nCD [drive:][path]\nCHDIR [drive:][path]\nCHCP [code-page]\nCLS\nCOPY [/A|/B] source[+source...] [destination] [/A|/B] [/V] [/Y|/-Y]\nCTTY device\nDATE [mm-dd-yy]\nDEL [drive:][path]name [/P]\nERASE [drive:][path]name [/P]\nDIR [drive:][path][pattern] [/P] [/W] [/A[:attributes]] [/O[:order]] [/S] [/B] [/L]\nECHO [ON|OFF|message]\nEXIT\nFOR %variable IN (set) DO command\nGOTO label\nIF [NOT] condition command\nLH [options] program [arguments]\nLOADHIGH [options] program [arguments]\nMD [drive:]path\nMKDIR [drive:]path\nPATH [directories]\nPAUSE\nPROMPT [text]\nRD [drive:]path\nRMDIR [drive:]path\nREM [comment]\nREN [drive:][path]oldname newname\nRENAME [drive:][path]oldname newname\nSET [variable=[value]]\nSHIFT\nTIME [hh:mm[:ss[.cc]]]\nTYPE [drive:][path]filename\nVER\nVERIFY [ON|OFF]\nVOL [drive:]\nTRUENAME [drive:][path]name\n";
+    let usage=b"BREAK [ON|OFF]\nCALL [drive:][path]batch [arguments]\nCD [drive:][path]\nCHDIR [drive:][path]\nCHCP [code-page]\nCLS\nCOPY [/A|/B] source[+source...] [destination] [/A|/B] [/V] [/Y|/-Y]\nCTTY device\nDATE [mm-dd-yy]\nDEL [drive:][path]name [/P]\nERASE [drive:][path]name [/P]\nDIR [drive:][path][pattern] [/P] [/W] [/A[:attributes]] [/O[:order]] [/S] [/B] [/L]\nECHO [ON|OFF|message]\nEXIT\nFOR %variable IN (set) DO command\nGOTO label\nIF [NOT] condition command\nLH [/L:region[,bytes][;region[,bytes]...]] [/S] program [arguments]\nLOADHIGH [/L:region[,bytes][;region[,bytes]...]] [/S] program [arguments]\nMD [drive:]path\nMKDIR [drive:]path\nPATH [directories]\nPAUSE\nPROMPT [text]\nRD [drive:]path\nRMDIR [drive:]path\nREM [comment]\nREN [drive:][path]oldname newname\nRENAME [drive:][path]oldname newname\nSET [variable=[value]]\nSHIFT\nTIME [hh:mm[:ss[.cc]]]\nTYPE [drive:][path]filename\nVER\nVERIFY [ON|OFF]\nVOL [drive:]\nTRUENAME [drive:][path]name\n";
     let mut start = 0;
     while start < usage.len() {
         let mut end = start;

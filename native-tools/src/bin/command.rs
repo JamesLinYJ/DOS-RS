@@ -11,6 +11,8 @@ mod dos;
 mod environment;
 #[path = "../command/execute.rs"]
 mod execute;
+#[path = "../command/loadhigh.rs"]
+mod loadhigh;
 #[path = "../command/parse.rs"]
 mod parse;
 #[path = "../command/prompt.rs"]

@@ -69,7 +69,7 @@ fn locate(name: &[u8], dirs: &[u8], out: &mut [u8]) -> usize {
     }
     0
 }
-fn external(sh: &mut Shell, f: &mut Frame, name: &[u8], args: &[u8], called: bool) {
+pub(super) fn external(sh: &mut Shell, f: &mut Frame, name: &[u8], args: &[u8], called: bool) {
     let mut dirs = [0; 256];
     let len = sh.env.get(b"PATH", &mut dirs).unwrap_or(0);
     let mut path = [0; 128];
@@ -187,7 +187,7 @@ fn dispatch(sh: &mut Shell, f: &mut Frame, cmd: &[u8], called: bool) {
             let mut one = [0; 1];
             let _ = dos::read(0, &mut one);
         }
-        dos::out(b"\r\n");
+        dos::out(b"\r\n\r\n");
         return;
     }
     if parse::equal(name, b"EXIT") {
@@ -204,22 +204,7 @@ fn dispatch(sh: &mut Shell, f: &mut Frame, cmd: &[u8], called: bool) {
         return;
     }
     if parse::equal(name, b"LOADHIGH") || parse::equal(name, b"LH") {
-        let mut rest = args;
-        while !rest.is_empty() && rest[0] == b'/' {
-            rest = parse::word(rest).1;
-        }
-        let (program, tail) = parse::word(rest);
-        if program.is_empty() {
-            syntax(sh);
-            return;
-        }
-        let strategy = dos::service(0x5800, 0, 0, 0).unwrap_or(0);
-        let linked = dos::service(0x5802, 0, 0, 0).unwrap_or(0);
-        let _ = dos::service(0x5803, 1, 0, 0);
-        let _ = dos::service(0x5801, 0x80 | (strategy & 3), 0, 0);
-        external(sh, f, program, tail, called);
-        let _ = dos::service(0x5801, strategy, 0, 0);
-        let _ = dos::service(0x5803, linked & 255, 0, 0);
+        super::loadhigh::run(sh, f, args, called);
         return;
     }
     if let Some(code) = builtins::run(name, args, f.active()) {
