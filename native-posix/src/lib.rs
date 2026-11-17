@@ -154,40 +154,14 @@ pub trait Process {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum Program {
-    Cat,
-    Wc,
-    FdCheck,
-    Unlink,
-}
-impl Program {
-    pub fn lookup(name: &str) -> Option<Self> {
-        match name {
-            "cat" => Some(Self::Cat),
-            "wc" => Some(Self::Wc),
-            "unlink" => Some(Self::Unlink),
-            "fdcheck" => Some(Self::FdCheck),
-            _ => None,
-        }
-    }
-    pub async fn run(self, process: &mut (impl Process + Send), argv: &[String]) -> u8 {
-        let result = match self {
-            Self::Unlink => match &argv[1..] {
-                [path] => process.unlink(path),
-                _ => Err(Errno::Invalid),
-            },
-            Self::Cat => utilities::cat(process, &argv[1..]).await,
-            Self::Wc => utilities::wc(process, &argv[1..]).await,
-            Self::FdCheck => utilities::fdcheck(process, &argv[1..]).await,
-        };
-        match result {
-            Ok(()) => 0,
-            Err(error) => {
-                let message = alloc::format!("{}: {}\n", argv[0], error.message());
-                let _ = process.write_all(2, message.as_bytes()).await;
-                1
-            }
+/// Run the descriptor conformance probe from the DOS diagnostics entry point.
+pub async fn fdcheck(process: &mut (impl Process + Send), argv: &[String]) -> u8 {
+    match utilities::fdcheck(process, &argv[1..]).await {
+        Ok(()) => 0,
+        Err(error) => {
+            let message = alloc::format!("fdcheck: {}\n", error.message());
+            let _ = process.write_all(2, message.as_bytes()).await;
+            1
         }
     }
 }

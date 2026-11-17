@@ -1,5 +1,8 @@
 # Working on DOS-RS
 
+Track three independent native kernel targets. In build and test results, record kernel bitness, CPU and firmware separately. Run the 16-bit kernel on 80286 and 80386, the 32-bit i686 kernel on BIOS, and the 64-bit x86_64 kernel on UEFI. A DOS guest running under a wider kernel exercises that kernel's compatibility path.
+
+
 Start from the boundary that owns the state you need to change. The i686 and x86_64 targets use the same guest, scheduler, filesystem and device services.
 
 | Owner | Code | Contract |
@@ -50,7 +53,7 @@ Build with the rust16 revision pinned in the README. Use a RAM volume for all wr
 
 ## Installed i686 and x86_64 userspace
 
-Each installed wide-target disk boots its own kernel. Keep the native 16-bit DOS install set on its separate 286/386 build path. The BIOS image has a loader and kernel partition. The UEFI image has an ESP. Both have a FAT DOS C: and a separate Btrfs root. Use [posix-install-image.py](scripts/posix-install-image.py) on a RAM volume. A supplied root image must contain the target architecture's userspace.
+Each installed wide-target disk boots its own kernel. Keep the native 16-bit DOS install set on its separate 286/386 build path. The BIOS image has a loader and kernel partition. The UEFI image has an ESP. Both have a FAT DOS C: and a separate Btrfs root. Use [posix-install-image.py](scripts/posix-install-image.py) on a RAM volume. A supplied root image must contain the target architecture's userspace. The default wide kernel boot volume also has independently linked Rust/musl executables in A:\BIN. Bootstrap those programs with scripts/prepare-cpu.py and scripts/boot-userland.py. To prepare offline, set DOSRS_MUSL_ARCHIVE to the pinned upstream tarball. An explicit DOS_RS_GUEST_IMAGE is installed byte-for-byte.
 
 The userspace [shell](userland/shell/src/lib.rs) owns command interpretation, PATH search, pipeline children and redirections. The kernel [process table](src/posix/process.rs) owns parentage, groups, dispositions and wait status. The architecture module saves signal and floating-point state. File and executable path lookup use the process working directory. Keep open descriptions alive across unlink and fork. A successful exec releases close-on-exec descriptors after the replacement image is ready.
 

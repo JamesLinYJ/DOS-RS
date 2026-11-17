@@ -16,9 +16,9 @@ use crate::kernel_cell::KernelCell;
 use crate::{tasks::Group, vfs::Directories};
 use alloc::{sync::Arc, vec::Vec};
 use core::task::{Context, Poll, Waker};
-use dosrs_native_posix::{Open, Program};
+use dosrs_native_posix::{Errno, Open};
 enum Native {
-    Builtin(Program),
+    FdCheck,
     Disk(executable::Executable),
 }
 use io::{ProcessContext, Terminal};
@@ -45,24 +45,60 @@ pub(crate) struct Job {
     new_processes: Arc<process::NewProcesses>,
 }
 
+fn find_utility(
+    cwd: Directories,
+    name: &str,
+) -> Result<(crate::vfs::File, alloc::string::String), Errno> {
+    use crate::vfs::posix;
+    for dir in ["/bin", "/dos/a/bin"] {
+        let path = alloc::format!("{dir}/{name}");
+        match posix::open(
+            cwd,
+            posix::initial(cwd),
+            path.as_bytes(),
+            Open::READ,
+            0,
+            posix::ADMIN,
+            true,
+        ) {
+            Ok((file, _)) => return Ok((file, path)),
+            Err(Errno::NoEntry | Errno::NotDirectory) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(Errno::NoEntry)
+}
+
 impl Job {
     pub fn launch(line: &[u8], cwd: Directories) -> Option<Result<Self, &'static str>> {
         let line = core::str::from_utf8(line).ok()?;
         let name = line.split([' ', '\t', '|', '>', '<']).next()?;
         let shell = matches!(name, "sh" | "/bin/sh");
-        let installed_tool = Program::lookup(name).is_some()
-            && crate::vfs::open(cwd, &alloc::format!("/bin/{name}"), Open::READ).is_ok();
-        if shell || installed_tool {
-            let argv = if shell {
-                shell::shell_args(line)
-            } else {
-                Ok(alloc::vec!["sh".into(), "-c".into(), line.into()])
-            };
-            return Some(argv.and_then(|argv| {
-                let task = executable::Executable::load(cwd, "/bin/sh", &argv)?;
+        let external = name.to_ascii_lowercase().ends_with(".elf");
+        let diagnostic = name == "fdcheck";
+        if !(shell || external || diagnostic) {
+            if name.is_empty() || name.contains(['/', ':', '.', '\\']) {
+                return None;
+            }
+            match find_utility(cwd, name) {
+                Ok(_) => {}
+                Err(Errno::NoEntry | Errno::NotDirectory | Errno::NameTooLong) => return None,
+                Err(error) => return Some(Err(error.message())),
+            }
+        }
+        if !external && !diagnostic {
+            return Some((|| {
+                let argv = if shell {
+                    shell::shell_args(line)?
+                } else {
+                    alloc::vec!["sh".into(), "-c".into(), line.into()]
+                };
+                let (file, _path) = find_utility(cwd, "sh").map_err(|e| e.message())?;
+                let env = [alloc::string::String::from("PATH=/bin:/dos/a/bin")];
+                let task = executable::Executable::from_file(file, &argv, &env, 0, 0)?;
                 #[cfg(feature = "exec-trace")]
-                for byte in b"EXEC foreground path=/bin/sh\r\n" {
-                    crate::bios::pc::serial_write(0x3f8, *byte);
+                for byte in alloc::format!("EXEC foreground path={_path}\r\n").bytes() {
+                    crate::bios::pc::serial_write(0x3f8, byte);
                 }
                 Self::spawn(
                     alloc::vec![shell::Stage {
@@ -73,10 +109,7 @@ impl Job {
                     }],
                     cwd,
                 )
-            }));
-        }
-        if Program::lookup(name).is_none() && !name.to_ascii_lowercase().ends_with(".elf") {
-            return None;
+            })());
         }
         Some(shell::parse(line, cwd).and_then(|stages| Self::spawn(stages, cwd)))
     }
@@ -111,7 +144,9 @@ impl Job {
             }
             group.spawn(i + 1 == count, async move {
                 let status = match stage.program {
-                    Native::Builtin(p) => p.run(&mut descriptors, &stage.argv).await,
+                    Native::FdCheck => {
+                        dosrs_native_posix::fdcheck(&mut descriptors, &stage.argv).await
+                    }
                     Native::Disk(task) => task.run(&mut descriptors).await,
                 };
                 descriptors.complete(status)

@@ -17,7 +17,9 @@ pub(crate) use btrfs::posix::{
     rmdir, stat, symlink, unlink,
 };
 pub(crate) fn native(path: &[u8]) -> bool {
-    btrfs::is_mounted() && !(path.len() >= 2 && path[0].is_ascii_alphabetic() && path[1] == b':')
+    btrfs::is_mounted()
+        && super::dos::mount_path(path).is_none()
+        && !(path.len() >= 2 && path[0].is_ascii_alphabetic() && path[1] == b':')
 }
 pub(crate) fn initial(dos: Directories) -> PosixDir {
     let Some((dir, _)) = dos.locate(b"") else {

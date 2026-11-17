@@ -2,6 +2,7 @@
 """Exercise the live native shell, DOS coexistence and the shared FAT volume."""
 import argparse
 import hashlib
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,7 +15,7 @@ PAYLOAD = bytes(range(256)) * 78 + b"native DOS-RS\x00\xff"
 
 
 def check(work, proof, arch, firmware, cpus, fat):
-    kernel = qemu.build(arch, qemu.ROOT / "target")
+    kernel = qemu.build(arch, qemu.ROOT / "target", features="exec-trace")
     disk = work / "c.img"
     with disk.open("wb") as f:
         f.truncate(({12: 2, 16: 16, 32: 48}[fat] if fat else 4) << 20)
@@ -47,7 +48,7 @@ def check(work, proof, arch, firmware, cpus, fat):
         command("cat seed.txt >> append.txt")
         command("cat seed.txt >> append.txt")
         command("fdcheck gone.tmp", expect=b"unlink: ENOENT; old fd: original!; new file: replacement")
-        command("cat gone.tmp", expect=b"cat: no such file or directory")
+        command("cat gone.tmp", expect=b"cat: gone.tmp: No such file or directory")
         # Leave two processes on VT1 waiting for input, then run a DOS binary on VT2.
         start = log.stat().st_size
         enter("cat | wc -c > keys.txt")
@@ -77,10 +78,10 @@ def check(work, proof, arch, firmware, cpus, fat):
         command("cat hold.txt", expect=b"same name, new file")
         command("fdcheck seed.txt", expect=b"fdcheck: file exists")
         command("echo $?", expect=b"\r\n1\r\n")
-        command("cat gone.tmp | wc -c > zero.txt", expect=b"cat: no such file or directory")
+        command("cat gone.tmp 2>error.txt | wc -c > zero.txt")
         command("echo $?", expect=b"\r\n0\r\n")
         command("unlink keys.txt")
-        command("cat keys.txt", expect=b"cat: no such file or directory")
+        command("cat keys.txt", expect=b"cat: keys.txt: No such file or directory")
         command("cat a.txt | wc -c > count.txt")
         enter("cat - seed.txt > resumed.txt")
         key("alt-f2")
@@ -92,6 +93,15 @@ def check(work, proof, arch, firmware, cpus, fat):
     finally:
         shell.close()
 
+    trace = log.read_bytes()
+    if b"EXEC foreground path=/dos/a/bin/sh\r\n" not in trace:
+        raise RuntimeError(f"{arch}: bootstrap shell did not run from the FAT boot volume")
+    executions = re.findall(rb"EXEC pid=\d+ path=([^\r\n]+)\r\n", trace)
+    for name in ("cat", "wc", "unlink"):
+        path = f"/dos/a/bin/{name}".encode()
+        if path not in executions:
+            raise RuntimeError(f"{arch}: no user exec of {path!r} on the FAT boot volume")
+
     def read(name):
         return subprocess.check_output(["mcopy", "-i", disk, "::" + name, "-"])
     if read("count.txt") != count + b"\n" or read("hold.txt") != b"same name, new file":
@@ -100,6 +110,8 @@ def check(work, proof, arch, firmware, cpus, fat):
         raise ValueError(f"{arch}: append lost existing bytes")
     if read("resumed.txt") != b"same name, new file":
         raise ValueError(f"{arch}: resumed process lost its current directory")
+    if read("error.txt") != b"cat: gone.tmp: No such file or directory\n":
+        raise ValueError(f"{arch}: incorrect cat stderr")
     if read("zero.txt") != b"0\n":
         raise ValueError(f"{arch}: empty stream count is wrong")
     if read("copy.bin") != PAYLOAD or read("a.txt") != PAYLOAD:

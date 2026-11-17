@@ -103,6 +103,16 @@ pub fn path_start(path: &[u8]) -> Option<(u32, &[u8])> {
     directories().start(working_directory(), path)
 }
 
+/// POSIX-visible absolute names for mounted DOS drives.
+pub(super) fn mount_path(path: &[u8]) -> Option<(u8, &[u8])> {
+    let tail = path.strip_prefix(b"/dos/")?;
+    let (&letter, rest) = tail.split_first()?;
+    if !(b'a'..=b'c').contains(&letter) || !(rest.is_empty() || rest.starts_with(b"/")) {
+        return None;
+    }
+    Some((letter - b'a', rest))
+}
+
 impl Directories {
     fn start(self, current: u32, path: &[u8]) -> Option<(u32, &[u8])> {
         let (dir, tail) = if path.get(1) == Some(&b':') {
@@ -117,6 +127,9 @@ impl Directories {
     }
 
     pub fn locate(self, path: &[u8]) -> Option<(u32, &[u8])> {
+        if let Some((drive, rest)) = mount_path(path) {
+            return Some((drive_root(drive)?, rest));
+        }
         self.start(self.paths[usize::from(self.active)], path)
     }
 }

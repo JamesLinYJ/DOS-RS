@@ -8,7 +8,7 @@ DOS 是用 Rust 实现的操作系统，提供三个原生内核目标。**16 �
 
 从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，在引导阶段处理 `CONFIG.SYS`，随后启动 `COMMAND.COM /P`。首个 Shell 执行 `AUTOEXEC.BAT`，完成后显示当前驱动器和完整目录。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/c073e743d3f5adda306ee6899b6a001564f4e555)
 
-在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建包含完整字体和工具的 2.88 MB 安装软盘，并创建 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
+在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建包含完整字体和工具的 2.88 MB 安装软盘，并创建 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建 16 位系统时运行 `python3 scripts/prepare-cpu.py --cpu-only` 获取并校验固定版本的架构库。
 
 ```sh
 RAM_DISK=/Volumes/DOS-INSTALL-QA
@@ -156,7 +156,7 @@ python3 scripts/posix-install-image.py --arch x86_64 --ram-dir "$RAM_DISK" --out
 
 ### DOS 提示符下的原生文件和管道
 
-i686 和 x86_64 的 Shell 可以运行内置 Rust 命令，也可以从挂载卷加载独立的静态 ELF 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
+i686 和 x86_64 的 POSIX Shell 和文件工具都从磁盘加载。安装盘优先查找根卷的 `/bin`。只有 FAT 数据盘时，系统从启动盘 `A:\BIN` 加载对应架构的程序，在用户态通过 `/dos/a/bin` 访问。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
 
 在含有 `a.txt` 的可写目录中输入以下命令。
 
@@ -184,7 +184,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios --ram-dir "$RAM_DISK" --c-di
 
 x86_64 的原生 ELF 支持低半区的 48 位规范虚拟地址。按实际装载段分配四级页表，用户栈、读写权限和不可执行页由各进程独立维护。QEMU 已从 `0x7f0000001000` 执行代码，并通过 `0x7ffffffff000` 的数据页完成跨进程管道传输。两架构均保留原有的低位静态 ELF 地址窗口，另提供独立的匿名页映射区。[装载器和运行示例](native-exec/examples/highva.c)
 
-`python3 scripts/qemu-native-elf.py --ram-dir "$RAM_DISK"` 会为两种架构分别编译 C 程序，从 QEMU Shell 执行 `cat.elf a.txt | wc.elf -c > count.txt`，并在退出 QEMU 后核对文件。它还检查 unlink 后的描述符、并行进程的私有内存、异常退出、时钟抢占和 DOS COM 共存。内置命令的回归入口是 `scripts/qemu-posix.py`，同样接受 `--ram-dir`。
+`python3 scripts/qemu-native-elf.py --ram-dir "$RAM_DISK"` 会为两种架构分别编译 C 程序，从 QEMU Shell 执行 `cat.elf a.txt | wc.elf -c > count.txt`，并在退出 QEMU 后核对文件。它还检查 unlink 后的描述符、并行进程的私有内存、异常退出、时钟抢占和 DOS COM 共存。FAT 启动盘上的独立用户程序回归入口是 `scripts/qemu-posix.py`，同样接受 `--ram-dir`。
 
 ## 文件系统
 
