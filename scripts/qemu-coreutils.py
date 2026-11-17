@@ -139,11 +139,51 @@ def upstream_tree_cases():
     return [(name, args, "z.txt", "C") for name, args in commands]
 
 
+def upstream_posix_cases():
+    groups = {
+        "csplit": [
+            (["-f", "ops/chunk", "-n", "3", "s1.txt", "3", "/bb/"], "z.txt"),
+            (["-s", "-z", "-f", "ops/cut", "-", "/^aa/", "{1}"], "s1.txt"),
+            (["-f", "ops/fail", "s1.txt", "/nomatch/"], "z.txt"),
+        ],
+        "join": [
+            (["left.txt", "right.txt"], "z.txt"),
+            (["-a1", "-a2", "-e", "NA", "-o", "auto", "left.txt", "right.txt"], "z.txt"),
+            (["-v1", "-", "right.txt"], "left.txt"),
+            (["-t", ":", "-1", "2", "jcolon.txt", "jkeys.txt"], "z.txt"),
+        ],
+        "pr": [
+            (["-t"], "s1.txt"), (["-t", "-n"], "b.txt"),
+            (["-t", "-2", "-l", "4", "-w", "24", "left.txt"], "z.txt"),
+            (["-t", "-m", "-s:", "left.txt", "right.txt"], "z.txt"),
+            (["-t", "-2", "-w", "16"], "left.txt"),
+            (["-t", "-a", "-2", "-w", "15", "-S::"], "left.txt"),
+            (["-t", "-2", "-s:"], "left.txt"),
+            (["-t", "-W", "4"], "left.txt"),
+            (["-t", "-2", "-o", "2", "-w", "20"], "left.txt"),
+        ],
+        "env": [
+            (["-i"], "z.txt"), (["-i", "A=alpha", "B=two words"], "z.txt"),
+            (["-i", "-0", "X=a", "Y=b"], "z.txt"),
+        ],
+        "printenv": [
+            (["LC_ALL", "LANG", "TZ"], "z.txt"), (["-0", "LANG", "TZ"], "z.txt"),
+            (["ABSENT", "LC_ALL"], "z.txt"), (["ABSENT"], "z.txt"),
+        ],
+        "test": [(args, "z.txt") for args in [
+            [], ["-n", "text"], ["-z", ""], ["a", "=", "b"], ["!", "-e", "missing"],
+            ["23", "-gt", "3"], ["003", "-eq", "3"], ["-d", "ops"],
+            ["-f", "b.txt"], ["-s", "z.txt"], ["s1.txt", "-ef", "s1.txt"],
+        ]],
+    }
+    return [(tool, argv, source, "C") for tool, pairs in groups.items() for argv, source in pairs]
+
+
 def file_paths(tree):
     return sorted(path.relative_to(tree).as_posix() for path in (tree / "ops").rglob("*"))
 
 
-UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases, "trees": upstream_tree_cases}
+UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases, "trees": upstream_tree_cases, "posix": upstream_posix_cases}
 
 
 def catalog():
@@ -480,8 +520,14 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
                 [str(reference), "--version"], env=env, stdout=subprocess.PIPE
             ).stdout
         )
+        if name == "test":
+            # GNU test treats --version as its single, nonempty operand.
+            # Its bracket companion ships in the same GNU 9.12 installation.
+            version = subprocess.check_output([gnubin / "[", "--version"], env=env)
         first = version.splitlines()[0]
         expected = {f"{name} (GNU coreutils) 9.12".encode()}
+        if name == "test":
+            expected.add(b"[ (GNU coreutils) 9.12")
         if name == "dd":
             expected.add(b"dd (coreutils) 9.12")
         if first not in expected:
@@ -498,6 +544,9 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
             "cols.txt": b"a:9\tb\nxy:22\n  a    z\t   a\n\n",
             "nums.txt": b"20\n-1\n4\n2\n12\n",
             "facts.txt": b"42\n97\n", "edges.txt": b"a b\nb c\nc d\n",
+            "left.txt": b"aa red\naa blue\nbb black\ncc white\n",
+            "right.txt": b"aa A\ncc C\ndd D\n", "jcolon.txt": b"1:x\n2:y\n",
+            "jkeys.txt": b"x:EX\ny:WHY\n",
         })
         fixtures["bad.txt"] = b"!@#\n"
         for name, encode in [("32", base64.b32encode), ("64", base64.b64encode)]:
@@ -509,7 +558,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     config = bytearray()
     expected = []
     expected_effects = {}
-    file_suite = upstream_set in ("files", "trees")
+    file_suite = upstream_set in ("files", "trees", "posix")
     check_namespace = fs == "btrfs" and (not upstream or file_suite)
     paths = NAMESPACE_PATHS
     guest_bin = "/bin/" if fs == "btrfs" else "C:/bin/"
@@ -688,14 +737,14 @@ if __name__ == "__main__":
         help="run the Btrfs link/directory cases in isolation",
     )
     selection = cli.add_mutually_exclusive_group()
-    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files"), ("--tree-tools","trees")]:
+    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files"), ("--tree-tools","trees"), ("--posix-tools","posix")]:
         selection.add_argument(flag, action="store_const", const=name, dest="upstream_set")
     cli.add_argument("--upstream-archive", type=Path, help="test Rust std utilities built from the pinned uutils archive")
     cli.add_argument("--replay-elf-dir", type=Path, help="reuse retained ARCH/TOOL ELFs to test another kernel with identical user code")
     args = cli.parse_args()
     if args.upstream_set and not args.upstream_archive:
         cli.error("upstream test groups require --upstream-archive")
-    if args.upstream_set in ("data", "files", "trees") and args.filesystem != "btrfs":
+    if args.upstream_set in ("data", "files", "trees", "posix") and args.filesystem != "btrfs":
         cli.error("this utility group needs the POSIX Btrfs root")
     if args.upstream_archive and args.namespace_only:
         cli.error("select either upstream encoders or namespace tools")

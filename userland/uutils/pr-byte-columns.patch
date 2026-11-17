@@ -1,0 +1,301 @@
+--- a/src/uu/pr/src/pr.rs
++++ b/src/uu/pr/src/pr.rs
+@@ -33,8 +33,6 @@
+ const TRAILER_LINES_PER_PAGE: usize = 5;
+ const FILE_STDIN: &str = "-";
+ const DEFAULT_COLUMN_WIDTH: usize = 72;
+-const DEFAULT_COLUMN_WIDTH_WITH_S_OPTION: usize = 512;
+-const DEFAULT_COLUMN_SEPARATOR: &char = &TAB;
+ const FF: u8 = 0x0C_u8;
+ const NL: u8 = b'\n';
+ const MAX_INT_VALUE: usize = i32::MAX as usize;
+@@ -83,7 +81,6 @@
+     merge_files_print: Option<usize>,
+     offset_spaces: usize,
+     form_feed_used: bool,
+-    join_lines: bool,
+     col_sep_for_printing: String,
+     line_width: Option<usize>,
+     expand_tabs: Option<ExpandTabsOptions>,
+@@ -129,7 +126,6 @@
+ struct ColumnModeOptions {
+     width: usize,
+     columns: usize,
+-    column_separator: String,
+     across_mode: bool,
+ }
+ 
+@@ -875,7 +871,7 @@
+         && !matches.get_flag(options::OMIT_HEADER)
+         && !matches.get_flag(options::OMIT_PAGINATION);
+ 
+-    let content_lines_per_page = if page_length_le_ht {
++    let content_lines_per_page = if !display_header_and_trailer {
+         page_length
+     } else {
+         page_length - (HEADER_LINES_PER_PAGE + TRAILER_LINES_PER_PAGE)
+@@ -890,26 +886,25 @@
+ 
+     let across_mode = matches.get_flag(options::ACROSS);
+ 
+-    let column_separator = match matches.get_one::<String>(options::COLUMN_STRING_SEPARATOR) {
+-        Some(x) => Some(x),
+-        None => matches.get_one::<String>(options::COLUMN_CHAR_SEPARATOR),
+-    }
+-    .map_or_else(|| DEFAULT_COLUMN_SEPARATOR.to_string(), ToString::to_string);
+-
+-    let default_column_width = if matches.contains_id(options::COLUMN_WIDTH)
+-        && matches.contains_id(options::COLUMN_CHAR_SEPARATOR)
+-    {
+-        DEFAULT_COLUMN_WIDTH_WITH_S_OPTION
+-    } else {
+-        DEFAULT_COLUMN_WIDTH
+-    };
++    let short_separator = matches.get_one::<String>(options::COLUMN_CHAR_SEPARATOR);
++    let separator = matches
++        .get_one::<String>(options::COLUMN_STRING_SEPARATOR)
++        .or(short_separator);
++    let joined = matches.get_flag(options::JOIN_LINES)
++        || (short_separator.is_some()
++            && !matches.contains_id(options::COLUMN_WIDTH)
++            && !matches.contains_id(options::PAGE_WIDTH));
++    let default_separator = if joined { "\t" } else { " " };
++    let col_sep_for_printing = separator
++        .map_or(default_separator, String::as_str)
++        .to_owned();
+ 
+     let column_width = parse_usize(
+         matches,
+         options::COLUMN_WIDTH,
+         "'-w PAGE_WIDTH' invalid number of characters",
+     )
+-    .unwrap_or(Ok(default_column_width))?;
++    .unwrap_or(Ok(DEFAULT_COLUMN_WIDTH))?;
+ 
+     if column_width == 0 {
+         return Err(PrError::EncounteredErrors {
+@@ -977,7 +972,6 @@
+     let column_mode_options = column_option_value.map(|columns| ColumnModeOptions {
+         columns,
+         width: column_width,
+-        column_separator,
+         across_mode,
+     });
+ 
+@@ -1000,28 +994,17 @@
+         },
+     };
+ 
+-    let join_lines = matches.get_flag(options::JOIN_LINES);
+-
+-    let col_sep_for_printing = column_mode_options.as_ref().map_or_else(
+-        || {
+-            merge_files_print
+-                .map(|_k| DEFAULT_COLUMN_SEPARATOR.to_string())
+-                .unwrap_or_default()
+-        },
+-        |i| i.column_separator.clone(),
+-    );
+-
+     let columns_to_print =
+         merge_files_print.unwrap_or_else(|| column_mode_options.as_ref().map_or(1, |i| i.columns));
+ 
+-    let line_width = if join_lines {
++    let line_width = if joined {
+         None
+     } else if columns_to_print > 1 {
+-        Some(
++        Some(page_width.unwrap_or_else(|| {
+             column_mode_options
+                 .as_ref()
+-                .map_or(DEFAULT_COLUMN_WIDTH, |i| i.width),
+-        )
++                .map_or(column_width, |i| i.width)
++        }))
+     } else {
+         page_width
+     };
+@@ -1042,7 +1025,6 @@
+         merge_files_print,
+         offset_spaces,
+         form_feed_used,
+-        join_lines,
+         col_sep_for_printing,
+         line_width,
+         expand_tabs,
+@@ -1466,7 +1448,6 @@
+         .unwrap_or_else(|| get_columns(options));
+     let line_width = options.line_width;
+     let feed_line_present = options.form_feed_used;
+-    let mut not_found_break = false;
+ 
+     let across_mode = options
+         .column_mode_options
+@@ -1518,79 +1499,98 @@
+         } else {
+             row.iter().take_while(|cell| cell.is_some()).count()
+         };
+-        let mut cells_written = 0;
+-        for (i, cell) in row.iter().enumerate() {
+-            let line_to_print = match cell {
+-                None if options.merge_files_print.is_some() => &blank_line,
+-                None => {
+-                    not_found_break = true;
+-                    break;
++        if row.iter().all(Option::is_none) {
++            if feed_line_present || !options.display_header_and_trailer {
++                break;
++            }
++        } else {
++            write_offset_spaces(writer, options.offset_spaces)?;
++            let mut output = Vec::new();
++            let mut position = options.offset_spaces;
++            let separator = options.col_sep_for_printing.as_bytes();
++            let width =
++                line_width.map(|w| w.saturating_sub((columns - 1) * separator.len()) / columns);
++            let row_ends_empty = row
++                .get(indexes.saturating_sub(1))
++                .is_some_and(|cell| cell.is_none_or(|line| line.line_content.is_empty()));
++            for (i, cell) in row.into_iter().take(indexes).enumerate() {
++                let line = cell.unwrap_or(&blank_line);
++                let number = get_formatted_line_number(options, line.line_number, i);
++                let mut field = number.into_bytes();
++                field.extend_from_slice(&line.line_content);
++                if columns == 1 && width.is_none() {
++                    output.extend_from_slice(&field);
++                    continue;
+                 }
+-                Some(file_line) => file_line,
+-            };
+-
+-            write_offset_spaces(writer, options.offset_spaces)?;
+-            writer.write_all(
+-                get_line_for_printing(options, line_to_print, columns, i, line_width, indexes)
+-                    .as_bytes(),
+-            )?;
+-            cells_written += 1;
+-        }
+-        // The last row of a partly filled page has content in its leading
+-        // columns and nothing in the rest, so it still needs to be terminated.
+-        // Only a row without any content at all means the page ran out.
+-        if cells_written == 0
+-            && not_found_break
+-            && (feed_line_present || !options.display_header_and_trailer)
+-        {
++                let begin = position;
++                for byte in field {
++                    let next = if byte == b'\t' {
++                        position + 8 - position % 8
++                    } else {
++                        position + 1
++                    };
++                    if width.is_some_and(|w| next - begin > w) {
++                        break;
++                    }
++                    output.push(byte);
++                    position = next;
++                }
++                if i + 1 < indexes {
++                    if let Some(width) = width {
++                        let pad_end = begin + width;
++                        output.resize(output.len() + pad_end - position, b' ');
++                        position = pad_end;
++                    }
++                    output.extend_from_slice(separator);
++                    position += separator.len();
++                }
++            }
++            if columns == 1 {
++                writer.write_all(&output)?;
++            } else {
++                write_tabified(writer, &output, options.offset_spaces, row_ends_empty)?;
++            }
++        }
++        writer.write_all(line_separator)?;
++    }
++
++    Ok(())
++}
++
++// Fixed-width columns use tab stops for a run of spaces. Preserve raw input
++// bytes, including invalid UTF-8, and omit pending trailing padding at EOL.
++fn write_tabified(
++    out: &mut impl Write,
++    bytes: &[u8],
++    mut position: usize,
++    keep_padding: bool,
++) -> io::Result<()> {
++    let mut spaces = 0;
++    for byte in bytes.iter().copied().map(Some).chain([None]) {
++        if byte == Some(b' ') {
++            spaces += 1;
++            continue;
++        }
++        if byte.is_none() && !keep_padding {
+             break;
+         }
+-        writer.write_all(line_separator)?;
+-    }
+-
++        while spaces != 0 {
++            let stop = 8 - position % 8;
++            if spaces >= stop && spaces > 1 {
++                out.write_all(b"\t")?;
++                position += stop;
++                spaces -= stop;
++            } else {
++                write_offset_spaces(out, spaces)?;
++                position += spaces;
++                spaces = 0;
++            }
++        }
++        let Some(byte) = byte else { break };
++        out.write_all(&[byte])?;
++        position += if byte == b'\t' { 8 - position % 8 } else { 1 };
++    }
+     Ok(())
+-}
+-
+-fn get_line_for_printing(
+-    options: &OutputOptions,
+-    file_line: &FileLine,
+-    columns: usize,
+-    index: usize,
+-    line_width: Option<usize>,
+-    indexes: usize,
+-) -> String {
+-    let blank_line = String::new();
+-    let formatted_line_number = get_formatted_line_number(options, file_line.line_number, index);
+-
+-    // TODO: support non-UTF-8 bytes (currently replaced with U+FFFD)
+-    let content = String::from_utf8_lossy(&file_line.line_content);
+-    let mut complete_line = format!("{formatted_line_number}{content}");
+-
+-    let tab_count = complete_line.chars().filter(|i| i == &TAB).count();
+-
+-    let display_length = complete_line.len() + (tab_count * 7);
+-
+-    let sep = if (index + 1) != indexes && !options.join_lines {
+-        &options.col_sep_for_printing
+-    } else {
+-        &blank_line
+-    };
+-
+-    format!(
+-        "{}{sep}",
+-        line_width
+-            .map(|i| {
+-                let min_width = i.saturating_sub(columns - 1) / columns;
+-                if display_length < min_width {
+-                    for _i in 0..(min_width - display_length) {
+-                        complete_line.push(' ');
+-                    }
+-                }
+-
+-                complete_line.chars().take(min_width).collect()
+-            })
+-            .unwrap_or(complete_line),
+-    )
+ }
+ 
+ fn get_formatted_line_number(opts: &OutputOptions, line_number: usize, index: usize) -> String {

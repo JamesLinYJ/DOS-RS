@@ -27,7 +27,8 @@ FILE_TOOLS = (
     "stat", "tee", "touch", "truncate",
 )
 TREE_TOOLS = ("dd", "df", "pathchk", "realpath", "shred")
-DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS
+POSIX_TOOLS = ("csplit", "env", "join", "pr", "printenv", "test")
+DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS + TREE_TOOLS + POSIX_TOOLS
 
 
 def digest(path):
