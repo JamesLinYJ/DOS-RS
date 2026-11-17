@@ -187,6 +187,8 @@ BIOS 从 E820、UEFI 从退出启动服务时的内存图交付空闲物理页�
 
 C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。静态 musl 1.2.6 程序支持 ELF TLS、pthread、`fork`、`execve` 和 `waitpid`。动态链接和完整 POSIX 验收仍待完成。[musl 复测](ports/musl/test.py) [独立 ELF 多核回归](scripts/qemu-native-threads.py)
 
+固定版本的上游 libc-test 已在两个原生 ELF 目标各通过首批 35 个独立程序，覆盖字符串、数字转换、格式化与扫描、环境、内存流、查找结构和信号掩码跳转。其中长输入扫描实际在 100 KiB 栈限额下处理 8 MiB 字符串。回归记录每例输出、错误和退出状态，并从停机 Btrfs 盘恢复结果。[上游测试入口](ports/libc-test/README.md)
+
 原生 32 位和 64 位程序可创建实时或单调时钟定时器，使用周期、相对期限或绝对期限。双架构内存盘回归验证了信号值、过期次数、过去期限立即通知和进程生命周期回收，64 位信号值完整保留到 `sigtimedwait`。当前支持 `SIGEV_SIGNAL`、`SIGEV_NONE` 和单参数信号处理器，`SIGEV_THREAD` 与 `SA_SIGINFO` 处理器仍待实现。[定时器回归](scripts/qemu-posix-timers.py)
 
 独立 Rust `sleep`、`nohup` 和 `timeout` 在 32 位 BIOS 与 64 位 UEFI 内核上各通过了 17 项 GNU coreutils 9.12 差分，覆盖输出、错误、退出状态和客体单调时钟计时。程序从 Btrfs 的 `/bin` 加载，关机后由 Linux 工具恢复并检查输出。[构建与复测](userland/uutils/README.md)

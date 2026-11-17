@@ -215,3 +215,73 @@ functions/getrlimit.html#tag_17_232	getrlimit	partial	partial	ports/musl/tests/l
 functions/getrlimit.html#tag_17_232	setrlimit	partial	partial	ports/musl/tests/limits.c	RLIMIT_STACK soft/hard bounds, 100 KiB actual growth enforcement, syscall entry, privilege, fork and exec inheritance, failed exec survival; other resource types remain open
 utilities/sleep.html#tag_20_111	sleep	partial	partial	scripts/qemu-coreutils.py#325..330	Zero and fractional delays, unit operands and argument errors; guest monotonic durations and GNU 9.12 streams/status
 utilities/nohup.html#tag_20_89	nohup	partial	partial	scripts/qemu-coreutils.py#338..341	Non-terminal command execution, output and failure statuses against GNU 9.12; terminal redirection and delivered SIGHUP cases remain open
+functions/basename.html#tag_17_42	basename	partial	partial	scripts/qemu-libc-test.py#functional/basename	Null, empty, relative and repeated-slash final components
+functions/dirname.html#tag_17_108	dirname	partial	partial	scripts/qemu-libc-test.py#functional/dirname	Null, empty, relative and repeated-slash directory components
+functions/putenv.html#tag_17_468	putenv	partial	partial	scripts/qemu-libc-test.py#functional/env	Environment lookup, removal, replacement policy and invalid empty names
+functions/setenv.html#tag_17_521	setenv	partial	partial	scripts/qemu-libc-test.py#functional/env	Environment lookup, removal, replacement policy and invalid empty names
+functions/unsetenv.html#tag_17_651	unsetenv	partial	partial	scripts/qemu-libc-test.py#functional/env	Environment lookup, removal, replacement policy and invalid empty names
+functions/fnmatch.html#tag_17_170	fnmatch	partial	partial	scripts/qemu-libc-test.py#functional/fnmatch	Upstream pathname pattern, bracket, escaping and matching-flag fixtures
+functions/iconv_open.html#tag_17_250	iconv_open	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open	Invalid codeset, UTF-8 round trip and E2BIG output buffer
+functions/iconv.html#tag_17_248	iconv	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open	Invalid codeset, UTF-8 round trip and E2BIG output buffer
+functions/iconv_close.html#tag_17_249	iconv_close	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open	Invalid codeset, UTF-8 round trip and E2BIG output buffer
+functions/inet_ntop.html#tag_17_260	inet_pton	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/inet_ntop.html#tag_17_260	inet_ntop	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/inet_addr.html#tag_17_259	inet_addr	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/inet_addr.html#tag_17_259	inet_ntoa	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/fmemopen.html#tag_17_166	fmemopen	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/open_memstream.html#tag_17_373	open_memstream	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/fflush.html#tag_17_154	fflush	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/fseek.html#tag_17_187	fseek	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/ftell.html#tag_17_193	ftell	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/qsort.html#tag_17_472	qsort	partial	partial	scripts/qemu-libc-test.py#functional/qsort	Character, string, signed integer and uint64 orderings
+functions/initstate.html#tag_17_261	random	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/initstate.html#tag_17_261	srandom	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/initstate.html#tag_17_261	initstate	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/initstate.html#tag_17_261	setstate	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/hcreate.html#tag_17_245	hcreate	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch	Hash insertion, lookup, duplicate keys and impossible-capacity ENOMEM
+functions/hcreate.html#tag_17_245	hsearch	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch	Hash insertion, lookup, duplicate keys and impossible-capacity ENOMEM
+functions/insque.html#tag_17_262	insque	partial	partial	scripts/qemu-libc-test.py#functional/search_insque	Bidirectional queue links before and after removal
+functions/insque.html#tag_17_262	remque	partial	partial	scripts/qemu-libc-test.py#functional/search_insque	Bidirectional queue links before and after removal
+functions/lsearch.html#tag_17_320	lfind	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch	Linear search, insertion and duplicate count preservation
+functions/lsearch.html#tag_17_320	lsearch	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch	Linear search, insertion and duplicate count preservation
+functions/tdelete.html#tag_17_614	tfind	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/tdelete.html#tag_17_614	tsearch	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/tdelete.html#tag_17_614	twalk	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/tdelete.html#tag_17_614	tdelete	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/setjmp.html#tag_17_524	setjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/longjmp.html#tag_17_317	longjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/sigsetjmp.html#tag_17_556	sigsetjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/siglongjmp.html#tag_17_551	siglongjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/fprintf.html#tag_17_175	snprintf	partial	partial	scripts/qemu-libc-test.py#functional/snprintf	Upstream bounded integer and floating formatting fixtures
+functions/fscanf.html#tag_17_186	sscanf	partial	partial	scripts/qemu-libc-test.py#functional/sscanf,scripts/qemu-libc-test.py#functional/sscanf_long	Upstream string scanning fixtures, with the separate 8 MiB input case under a real 100 KiB stack limit
+functions/strcpy.html#tag_17_573	strcpy	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strncpy.html#tag_17_583	strncpy	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strncmp.html#tag_17_582	strncmp	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strncat.html#tag_17_581	strncat	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strrchr.html#tag_17_586	strrchr	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strspn.html#tag_17_588	strspn	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strpbrk.html#tag_17_584	strpbrk	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strtok.html#tag_17_592	strtok	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strlcat.html#tag_17_579	strlcpy	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strlcat.html#tag_17_579	strlcat	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/memcpy.html#tag_17_334	memcpy	partial	partial	scripts/qemu-libc-test.py#functional/string_memcpy	Upstream variable-size and alignment copy fixtures
+functions/memmem.html#tag_17_335	memmem	partial	partial	scripts/qemu-libc-test.py#functional/string_memmem	Upstream byte-substring fixtures
+functions/memset.html#tag_17_337	memset	partial	partial	scripts/qemu-libc-test.py#functional/string_memset	Upstream fill sizes, values and alignment fixtures
+functions/strchr.html#tag_17_570	strchr	partial	partial	scripts/qemu-libc-test.py#functional/string_strchr	Upstream character-search fixtures
+functions/strcspn.html#tag_17_574	strcspn	partial	partial	scripts/qemu-libc-test.py#functional/string_strcspn	Upstream rejected-character span fixtures
+functions/strstr.html#tag_17_589	strstr	partial	partial	scripts/qemu-libc-test.py#functional/string_strstr	Upstream substring positions and absent matches
+functions/strtod.html#tag_17_590	strtod	partial	partial	scripts/qemu-libc-test.py#functional/strtod,scripts/qemu-libc-test.py#functional/strtod_simple	Decimal/hex and subnormal/overflow rounding boundaries, plus 100 separate decimal round trips
+functions/strtod.html#tag_17_590	strtof	partial	partial	scripts/qemu-libc-test.py#functional/strtof	Float subnormal and maximum-mantissa rounding boundaries
+functions/strtol.html#tag_17_593	strtol	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtoul.html#tag_17_594	strtoul	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtol.html#tag_17_593	strtoll	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtoul.html#tag_17_594	strtoull	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtod.html#tag_17_590	strtold	partial	partial	scripts/qemu-libc-test.py#functional/strtold	Upstream long-double conversion boundary fixtures
+functions/fwprintf.html#tag_17_198	swprintf	partial	partial	scripts/qemu-libc-test.py#functional/swprintf	Bounded wide formatting, UTF-8 conversion and integer/float fixtures
+functions/ungetc.html#tag_17_647	ungetc	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/tmpfile.html#tag_17_631	tmpfile	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/fread.html#tag_17_180	fread	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/fgetc.html#tag_17_156	fgetc	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/wcsstr.html#tag_17_679	wcsstr	partial	partial	scripts/qemu-libc-test.py#functional/wcsstr	Wide substring positions, empty and absent matches
+functions/wcstol.html#tag_17_683	wcstol	partial	partial	scripts/qemu-libc-test.py#functional/wcstol	Wide 32/64-bit limits, bases, signs, end pointers and ERANGE
+functions/wcstoul.html#tag_17_685	wcstoul	partial	partial	scripts/qemu-libc-test.py#functional/wcstol	Wide 32/64-bit limits, bases, signs, end pointers and ERANGE

@@ -894,7 +894,7 @@ functions	atomic_signal_fence	base	functions/atomic_signal_fence.html#tag_17_40	
 functions	atomic_thread_fence	base	functions/atomic_signal_fence.html#tag_17_40	open	open	
 functions	atomic_store	base	functions/atomic_store.html#tag_17_41	open	open	
 functions	atomic_store_explicit	base	functions/atomic_store.html#tag_17_41	open	open	
-functions	basename	XSI	functions/basename.html#tag_17_42	open	open	
+functions	basename	XSI	functions/basename.html#tag_17_42	partial	partial	scripts/qemu-libc-test.py#functional/basename
 functions	be16toh	base	functions/be16toh.html#tag_17_43	open	open	
 functions	be32toh	base	functions/be16toh.html#tag_17_43	open	open	
 functions	be64toh	base	functions/be16toh.html#tag_17_43	open	open	
@@ -1047,7 +1047,7 @@ functions	dbm_open	XSI	functions/dbm_clearerr.html#tag_17_105	open	open
 functions	dbm_store	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
 functions	difftime	base	functions/difftime.html#tag_17_106	open	open	
 functions	dirfd	base	functions/dirfd.html#tag_17_107	open	open	
-functions	dirname	XSI	functions/dirname.html#tag_17_108	open	open	
+functions	dirname	XSI	functions/dirname.html#tag_17_108	partial	partial	scripts/qemu-libc-test.py#functional/dirname
 functions	div	base	functions/div.html#tag_17_109	open	open	
 functions	dladdr	base	functions/dladdr.html#tag_17_110	open	open	
 functions	dlclose	base	functions/dlclose.html#tag_17_111	open	open	
@@ -1151,11 +1151,11 @@ functions	feraiseexcept	base	functions/feraiseexcept.html#tag_17_150	open	open
 functions	ferror	base	functions/ferror.html#tag_17_151	open	open	
 functions	fetestexcept	base	functions/fetestexcept.html#tag_17_152	open	open	
 functions	feupdateenv	base	functions/feupdateenv.html#tag_17_153	open	open	
-functions	fflush	base	functions/fflush.html#tag_17_154	open	open	
+functions	fflush	base	functions/fflush.html#tag_17_154	partial	partial	scripts/qemu-libc-test.py#functional/memstream
 functions	ffs	XSI	functions/ffs.html#tag_17_155	open	open	
 functions	ffsl	XSI	functions/ffs.html#tag_17_155	open	open	
 functions	ffsll	XSI	functions/ffs.html#tag_17_155	open	open	
-functions	fgetc	base	functions/fgetc.html#tag_17_156	open	open	
+functions	fgetc	base	functions/fgetc.html#tag_17_156	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
 functions	fgetpos	base	functions/fgetpos.html#tag_17_157	open	open	
 functions	fgets	base	functions/fgets.html#tag_17_158	open	open	
 functions	fgetwc	base	functions/fgetwc.html#tag_17_159	open	open	
@@ -1173,7 +1173,7 @@ functions	fmal	base	functions/fma.html#tag_17_164	open	open
 functions	fmax	base	functions/fmax.html#tag_17_165	open	open	
 functions	fmaxf	base	functions/fmax.html#tag_17_165	open	open	
 functions	fmaxl	base	functions/fmax.html#tag_17_165	open	open	
-functions	fmemopen	base	functions/fmemopen.html#tag_17_166	open	open	
+functions	fmemopen	base	functions/fmemopen.html#tag_17_166	partial	partial	scripts/qemu-libc-test.py#functional/memstream
 functions	fmin	base	functions/fmin.html#tag_17_167	open	open	
 functions	fminf	base	functions/fmin.html#tag_17_167	open	open	
 functions	fminl	base	functions/fmin.html#tag_17_167	open	open	
@@ -1181,7 +1181,7 @@ functions	fmod	base	functions/fmod.html#tag_17_168	open	open
 functions	fmodf	base	functions/fmod.html#tag_17_168	open	open	
 functions	fmodl	base	functions/fmod.html#tag_17_168	open	open	
 functions	fmtmsg	XSI	functions/fmtmsg.html#tag_17_169	open	open	
-functions	fnmatch	base	functions/fnmatch.html#tag_17_170	open	open	
+functions	fnmatch	base	functions/fnmatch.html#tag_17_170	partial	partial	scripts/qemu-libc-test.py#functional/fnmatch
 functions	fopen	base	functions/fopen.html#tag_17_171	partial	partial	ports/musl/tests/libc.c
 functions	fork	base	functions/fork.html#tag_17_172	partial	partial	native-exec/examples/family.c
 functions	fpathconf	base	functions/fpathconf.html#tag_17_173	open	open	
@@ -1191,13 +1191,13 @@ functions	asprintf	base	functions/fprintf.html#tag_17_175	open	open
 functions	dprintf	base	functions/fprintf.html#tag_17_175	open	open	
 functions	fprintf	base	functions/fprintf.html#tag_17_175	partial	partial	ports/musl/tests/libc.c
 functions	printf	base	functions/fprintf.html#tag_17_175	open	open	
-functions	snprintf	base	functions/fprintf.html#tag_17_175	open	open	
+functions	snprintf	base	functions/fprintf.html#tag_17_175	partial	partial	scripts/qemu-libc-test.py#functional/snprintf
 functions	sprintf	base	functions/fprintf.html#tag_17_175	open	open	
 functions	fputc	base	functions/fputc.html#tag_17_176	open	open	
 functions	fputs	base	functions/fputs.html#tag_17_177	open	open	
 functions	fputwc	base	functions/fputwc.html#tag_17_178	open	open	
 functions	fputws	base	functions/fputws.html#tag_17_179	open	open	
-functions	fread	base	functions/fread.html#tag_17_180	open	open	
+functions	fread	base	functions/fread.html#tag_17_180	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
 functions	free	base	functions/free.html#tag_17_181	partial	partial	ports/musl/tests/libc.c
 functions	freeaddrinfo	base	functions/freeaddrinfo.html#tag_17_182	open	open	
 functions	getaddrinfo	base	functions/freeaddrinfo.html#tag_17_182	open	open	
@@ -1208,8 +1208,8 @@ functions	frexpf	base	functions/frexp.html#tag_17_185	open	open
 functions	frexpl	base	functions/frexp.html#tag_17_185	open	open	
 functions	fscanf	base	functions/fscanf.html#tag_17_186	open	open	
 functions	scanf	base	functions/fscanf.html#tag_17_186	open	open	
-functions	sscanf	base	functions/fscanf.html#tag_17_186	open	open	
-functions	fseek	base	functions/fseek.html#tag_17_187	open	open	
+functions	sscanf	base	functions/fscanf.html#tag_17_186	partial	partial	scripts/qemu-libc-test.py#functional/sscanf,scripts/qemu-libc-test.py#functional/sscanf_long
+functions	fseek	base	functions/fseek.html#tag_17_187	partial	partial	scripts/qemu-libc-test.py#functional/memstream
 functions	fseeko	base	functions/fseek.html#tag_17_187	open	open	
 functions	fsetpos	base	functions/fsetpos.html#tag_17_188	open	open	
 functions	fstat	base	functions/fstat.html#tag_17_189	partial	partial	ports/musl/tests/files.c
@@ -1219,7 +1219,7 @@ functions	stat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl
 functions	fstatvfs	base	functions/fstatvfs.html#tag_17_191	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c
 functions	statvfs	base	functions/fstatvfs.html#tag_17_191	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c
 functions	fsync	FSC	functions/fsync.html#tag_17_192	partial	partial	native-exec/examples/atcheck.c
-functions	ftell	base	functions/ftell.html#tag_17_193	open	open	
+functions	ftell	base	functions/ftell.html#tag_17_193	partial	partial	scripts/qemu-libc-test.py#functional/memstream
 functions	ftello	base	functions/ftell.html#tag_17_193	open	open	
 functions	ftok	XSI	functions/ftok.html#tag_17_194	open	open	
 functions	ftruncate	base	functions/ftruncate.html#tag_17_195	partial	partial	ports/musl/tests/files.c
@@ -1228,7 +1228,7 @@ functions	utimensat	base	functions/futimens.html#tag_17_196	partial	partial	nati
 functions	utimes	XSI	functions/futimens.html#tag_17_196	open	open	
 functions	fwide	base	functions/fwide.html#tag_17_197	open	open	
 functions	fwprintf	base	functions/fwprintf.html#tag_17_198	open	open	
-functions	swprintf	base	functions/fwprintf.html#tag_17_198	open	open	
+functions	swprintf	base	functions/fwprintf.html#tag_17_198	partial	partial	scripts/qemu-libc-test.py#functional/swprintf
 functions	wprintf	base	functions/fwprintf.html#tag_17_198	open	open	
 functions	fwrite	base	functions/fwrite.html#tag_17_199	open	open	
 functions	fwscanf	base	functions/fwscanf.html#tag_17_200	open	open	
@@ -1307,9 +1307,9 @@ functions	globfree	base	functions/glob.html#tag_17_242	open	open
 functions	gmtime	base	functions/gmtime.html#tag_17_243	open	open	
 functions	gmtime_r	base	functions/gmtime.html#tag_17_243	open	open	
 functions	grantpt	XSI	functions/grantpt.html#tag_17_244	open	open	
-functions	hcreate	XSI	functions/hcreate.html#tag_17_245	open	open	
+functions	hcreate	XSI	functions/hcreate.html#tag_17_245	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch
 functions	hdestroy	XSI	functions/hcreate.html#tag_17_245	open	open	
-functions	hsearch	XSI	functions/hcreate.html#tag_17_245	open	open	
+functions	hsearch	XSI	functions/hcreate.html#tag_17_245	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch
 functions	htonl	base	functions/htonl.html#tag_17_246	open	open	
 functions	htons	base	functions/htonl.html#tag_17_246	open	open	
 functions	ntohl	base	functions/htonl.html#tag_17_246	open	open	
@@ -1317,9 +1317,9 @@ functions	ntohs	base	functions/htonl.html#tag_17_246	open	open
 functions	hypot	base	functions/hypot.html#tag_17_247	open	open	
 functions	hypotf	base	functions/hypot.html#tag_17_247	open	open	
 functions	hypotl	base	functions/hypot.html#tag_17_247	open	open	
-functions	iconv	base	functions/iconv.html#tag_17_248	open	open	
-functions	iconv_close	base	functions/iconv_close.html#tag_17_249	open	open	
-functions	iconv_open	base	functions/iconv_open.html#tag_17_250	open	open	
+functions	iconv	base	functions/iconv.html#tag_17_248	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open
+functions	iconv_close	base	functions/iconv_close.html#tag_17_249	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open
+functions	iconv_open	base	functions/iconv_open.html#tag_17_250	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open
 functions	if_freenameindex	base	functions/if_freenameindex.html#tag_17_251	open	open	
 functions	if_indextoname	base	functions/if_indextoname.html#tag_17_252	open	open	
 functions	if_nameindex	base	functions/if_nameindex.html#tag_17_253	open	open	
@@ -1331,16 +1331,16 @@ functions	imaxabs	base	functions/imaxabs.html#tag_17_256	open	open
 functions	imaxdiv	base	functions/imaxdiv.html#tag_17_257	open	open	
 functions	in6addr_any	IP6	functions/in6addr_any.html#tag_17_258	open	open	
 functions	in6addr_loopback	IP6	functions/in6addr_any.html#tag_17_258	open	open	
-functions	inet_addr	base	functions/inet_addr.html#tag_17_259	open	open	
-functions	inet_ntoa	base	functions/inet_addr.html#tag_17_259	open	open	
-functions	inet_ntop	base	functions/inet_ntop.html#tag_17_260	open	open	
-functions	inet_pton	base	functions/inet_ntop.html#tag_17_260	open	open	
-functions	initstate	XSI	functions/initstate.html#tag_17_261	open	open	
-functions	random	XSI	functions/initstate.html#tag_17_261	open	open	
-functions	setstate	XSI	functions/initstate.html#tag_17_261	open	open	
-functions	srandom	XSI	functions/initstate.html#tag_17_261	open	open	
-functions	insque	XSI	functions/insque.html#tag_17_262	open	open	
-functions	remque	XSI	functions/insque.html#tag_17_262	open	open	
+functions	inet_addr	base	functions/inet_addr.html#tag_17_259	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	inet_ntoa	base	functions/inet_addr.html#tag_17_259	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	inet_ntop	base	functions/inet_ntop.html#tag_17_260	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	inet_pton	base	functions/inet_ntop.html#tag_17_260	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	initstate	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	random	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	setstate	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	srandom	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	insque	XSI	functions/insque.html#tag_17_262	partial	partial	scripts/qemu-libc-test.py#functional/search_insque
+functions	remque	XSI	functions/insque.html#tag_17_262	partial	partial	scripts/qemu-libc-test.py#functional/search_insque
 functions	isalnum	base	functions/isalnum.html#tag_17_263	open	open	
 functions	isalnum_l	base	functions/isalnum.html#tag_17_263	open	open	
 functions	isalpha	base	functions/isalpha.html#tag_17_264	open	open	
@@ -1449,15 +1449,15 @@ functions	log2l	base	functions/log2.html#tag_17_315	open	open
 functions	logb	base	functions/logb.html#tag_17_316	open	open	
 functions	logbf	base	functions/logb.html#tag_17_316	open	open	
 functions	logbl	base	functions/logb.html#tag_17_316	open	open	
-functions	longjmp	base	functions/longjmp.html#tag_17_317	open	open	
+functions	longjmp	base	functions/longjmp.html#tag_17_317	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
 functions	lrint	base	functions/lrint.html#tag_17_318	open	open	
 functions	lrintf	base	functions/lrint.html#tag_17_318	open	open	
 functions	lrintl	base	functions/lrint.html#tag_17_318	open	open	
 functions	lround	base	functions/lround.html#tag_17_319	open	open	
 functions	lroundf	base	functions/lround.html#tag_17_319	open	open	
 functions	lroundl	base	functions/lround.html#tag_17_319	open	open	
-functions	lsearch	XSI	functions/lsearch.html#tag_17_320	open	open	
-functions	lfind	XSI	functions/lsearch.html#tag_17_320	open	open	
+functions	lsearch	XSI	functions/lsearch.html#tag_17_320	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch
+functions	lfind	XSI	functions/lsearch.html#tag_17_320	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch
 functions	lseek	base	functions/lseek.html#tag_17_321	partial	partial	ports/musl/tests/files.c
 functions	malloc	base	functions/malloc.html#tag_17_322	open	open	
 functions	mblen	base	functions/mblen.html#tag_17_323	open	open	
@@ -1473,10 +1473,10 @@ functions	mbtowc	base	functions/mbtowc.html#tag_17_330	open	open
 functions	memccpy	XSI	functions/memccpy.html#tag_17_331	open	open	
 functions	memchr	base	functions/memchr.html#tag_17_332	open	open	
 functions	memcmp	base	functions/memcmp.html#tag_17_333	open	open	
-functions	memcpy	base	functions/memcpy.html#tag_17_334	open	open	
-functions	memmem	base	functions/memmem.html#tag_17_335	open	open	
+functions	memcpy	base	functions/memcpy.html#tag_17_334	partial	partial	scripts/qemu-libc-test.py#functional/string_memcpy
+functions	memmem	base	functions/memmem.html#tag_17_335	partial	partial	scripts/qemu-libc-test.py#functional/string_memmem
 functions	memmove	base	functions/memmove.html#tag_17_336	open	open	
-functions	memset	base	functions/memset.html#tag_17_337	open	open	
+functions	memset	base	functions/memset.html#tag_17_337	partial	partial	scripts/qemu-libc-test.py#functional/string_memset
 functions	mkdir	base	functions/mkdir.html#tag_17_338	partial	partial	ports/musl/tests/files.c
 functions	mkdirat	base	functions/mkdir.html#tag_17_338	partial	partial	ports/musl/tests/files.c
 functions	mkdtemp	base	functions/mkdtemp.html#tag_17_339	open	open	
@@ -1538,7 +1538,7 @@ functions	nl_langinfo	base	functions/nl_langinfo.html#tag_17_371	open	open
 functions	nl_langinfo_l	base	functions/nl_langinfo.html#tag_17_371	open	open	
 functions	open	base	functions/open.html#tag_17_372	partial	partial	ports/musl/tests/files.c
 functions	openat	base	functions/open.html#tag_17_372	partial	partial	ports/musl/tests/files.c
-functions	open_memstream	base	functions/open_memstream.html#tag_17_373	open	open	
+functions	open_memstream	base	functions/open_memstream.html#tag_17_373	partial	partial	scripts/qemu-libc-test.py#functional/memstream
 functions	open_wmemstream	base	functions/open_memstream.html#tag_17_373	open	open	
 functions	pause	base	functions/pause.html#tag_17_374	open	open	
 functions	pclose	base	functions/pclose.html#tag_17_375	open	open	
@@ -1697,11 +1697,11 @@ functions	ptsname	XSI	functions/ptsname.html#tag_17_465	open	open
 functions	ptsname_r	XSI	functions/ptsname.html#tag_17_465	open	open	
 functions	putc	base	functions/putc.html#tag_17_466	open	open	
 functions	putchar	base	functions/putchar.html#tag_17_467	open	open	
-functions	putenv	XSI	functions/putenv.html#tag_17_468	open	open	
+functions	putenv	XSI	functions/putenv.html#tag_17_468	partial	partial	scripts/qemu-libc-test.py#functional/env
 functions	puts	base	functions/puts.html#tag_17_469	open	open	
 functions	putwc	base	functions/putwc.html#tag_17_470	open	open	
 functions	putwchar	base	functions/putwchar.html#tag_17_471	open	open	
-functions	qsort	base	functions/qsort.html#tag_17_472	open	open	
+functions	qsort	base	functions/qsort.html#tag_17_472	partial	partial	scripts/qemu-libc-test.py#functional/qsort
 functions	qsort_r	base	functions/qsort.html#tag_17_472	open	open	
 functions	quick_exit	base	functions/quick_exit.html#tag_17_473	open	open	
 functions	raise	base	functions/raise.html#tag_17_474	open	open	
@@ -1776,10 +1776,10 @@ functions	sendmsg	base	functions/sendmsg.html#tag_17_517	open	open
 functions	sendto	base	functions/sendto.html#tag_17_518	open	open	
 functions	setbuf	base	functions/setbuf.html#tag_17_519	open	open	
 functions	setegid	base	functions/setegid.html#tag_17_520	open	open	
-functions	setenv	base	functions/setenv.html#tag_17_521	open	open	
+functions	setenv	base	functions/setenv.html#tag_17_521	partial	partial	scripts/qemu-libc-test.py#functional/env
 functions	seteuid	base	functions/seteuid.html#tag_17_522	open	open	
 functions	setgid	base	functions/setgid.html#tag_17_523	partial	partial	native-exec/examples/vfscheck.c
-functions	setjmp	base	functions/setjmp.html#tag_17_524	open	open	
+functions	setjmp	base	functions/setjmp.html#tag_17_524	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
 functions	setkey	OB XSI	functions/setkey.html#tag_17_525	open	open	
 functions	setlocale	base	functions/setlocale.html#tag_17_526	open	open	
 functions	setpgid	base	functions/setpgid.html#tag_17_527	partial	partial	native-exec/examples/family.c
@@ -1807,12 +1807,12 @@ functions	sigdelset	base	functions/sigdelset.html#tag_17_547	open	open
 functions	sigemptyset	base	functions/sigemptyset.html#tag_17_548	partial	partial	ports/musl/tests/libc.c
 functions	sigfillset	base	functions/sigfillset.html#tag_17_549	open	open	
 functions	sigismember	base	functions/sigismember.html#tag_17_550	partial	partial	ports/musl/tests/libc.c
-functions	siglongjmp	base	functions/siglongjmp.html#tag_17_551	open	open	
+functions	siglongjmp	base	functions/siglongjmp.html#tag_17_551	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
 functions	signal	base	functions/signal.html#tag_17_552	open	open	
 functions	signbit	base	functions/signbit.html#tag_17_553	open	open	
 functions	sigpending	base	functions/sigpending.html#tag_17_554	partial	partial	ports/musl/tests/libc.c
 functions	sigqueue	base	functions/sigqueue.html#tag_17_555	open	open	
-functions	sigsetjmp	base	functions/sigsetjmp.html#tag_17_556	open	open	
+functions	sigsetjmp	base	functions/sigsetjmp.html#tag_17_556	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
 functions	sigsuspend	base	functions/sigsuspend.html#tag_17_557	open	open	
 functions	sigtimedwait	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c
 functions	sigwaitinfo	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c
@@ -1838,13 +1838,13 @@ functions	strcasecmp_l	base	functions/strcasecmp.html#tag_17_568	open	open
 functions	strncasecmp	base	functions/strcasecmp.html#tag_17_568	open	open	
 functions	strncasecmp_l	base	functions/strcasecmp.html#tag_17_568	open	open	
 functions	strcat	base	functions/strcat.html#tag_17_569	open	open	
-functions	strchr	base	functions/strchr.html#tag_17_570	open	open	
+functions	strchr	base	functions/strchr.html#tag_17_570	partial	partial	scripts/qemu-libc-test.py#functional/string_strchr
 functions	strcmp	base	functions/strcmp.html#tag_17_571	open	open	
 functions	strcoll	base	functions/strcoll.html#tag_17_572	open	open	
 functions	strcoll_l	base	functions/strcoll.html#tag_17_572	open	open	
 functions	stpcpy	base	functions/strcpy.html#tag_17_573	open	open	
-functions	strcpy	base	functions/strcpy.html#tag_17_573	open	open	
-functions	strcspn	base	functions/strcspn.html#tag_17_574	open	open	
+functions	strcpy	base	functions/strcpy.html#tag_17_573	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strcspn	base	functions/strcspn.html#tag_17_574	partial	partial	scripts/qemu-libc-test.py#functional/string_strcspn
 functions	strdup	base	functions/strdup.html#tag_17_575	open	open	
 functions	strndup	base	functions/strdup.html#tag_17_575	open	open	
 functions	strerror	base	functions/strerror.html#tag_17_576	open	open	
@@ -1854,31 +1854,31 @@ functions	strfmon	base	functions/strfmon.html#tag_17_577	open	open
 functions	strfmon_l	base	functions/strfmon.html#tag_17_577	open	open	
 functions	strftime	base	functions/strftime.html#tag_17_578	open	open	
 functions	strftime_l	base	functions/strftime.html#tag_17_578	open	open	
-functions	strlcat	base	functions/strlcat.html#tag_17_579	open	open	
-functions	strlcpy	base	functions/strlcat.html#tag_17_579	open	open	
+functions	strlcat	base	functions/strlcat.html#tag_17_579	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strlcpy	base	functions/strlcat.html#tag_17_579	partial	partial	scripts/qemu-libc-test.py#functional/string
 functions	strlen	base	functions/strlen.html#tag_17_580	open	open	
 functions	strnlen	base	functions/strlen.html#tag_17_580	open	open	
-functions	strncat	base	functions/strncat.html#tag_17_581	open	open	
-functions	strncmp	base	functions/strncmp.html#tag_17_582	open	open	
+functions	strncat	base	functions/strncat.html#tag_17_581	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strncmp	base	functions/strncmp.html#tag_17_582	partial	partial	scripts/qemu-libc-test.py#functional/string
 functions	stpncpy	base	functions/strncpy.html#tag_17_583	open	open	
-functions	strncpy	base	functions/strncpy.html#tag_17_583	open	open	
-functions	strpbrk	base	functions/strpbrk.html#tag_17_584	open	open	
+functions	strncpy	base	functions/strncpy.html#tag_17_583	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strpbrk	base	functions/strpbrk.html#tag_17_584	partial	partial	scripts/qemu-libc-test.py#functional/string
 functions	strptime	XSI	functions/strptime.html#tag_17_585	open	open	
-functions	strrchr	base	functions/strrchr.html#tag_17_586	open	open	
+functions	strrchr	base	functions/strrchr.html#tag_17_586	partial	partial	scripts/qemu-libc-test.py#functional/string
 functions	strsignal	base	functions/strsignal.html#tag_17_587	open	open	
-functions	strspn	base	functions/strspn.html#tag_17_588	open	open	
-functions	strstr	base	functions/strstr.html#tag_17_589	open	open	
-functions	strtod	base	functions/strtod.html#tag_17_590	open	open	
-functions	strtof	base	functions/strtod.html#tag_17_590	open	open	
-functions	strtold	base	functions/strtod.html#tag_17_590	open	open	
+functions	strspn	base	functions/strspn.html#tag_17_588	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strstr	base	functions/strstr.html#tag_17_589	partial	partial	scripts/qemu-libc-test.py#functional/string_strstr
+functions	strtod	base	functions/strtod.html#tag_17_590	partial	partial	scripts/qemu-libc-test.py#functional/strtod,scripts/qemu-libc-test.py#functional/strtod_simple
+functions	strtof	base	functions/strtod.html#tag_17_590	partial	partial	scripts/qemu-libc-test.py#functional/strtof
+functions	strtold	base	functions/strtod.html#tag_17_590	partial	partial	scripts/qemu-libc-test.py#functional/strtold
 functions	strtoimax	base	functions/strtoimax.html#tag_17_591	open	open	
 functions	strtoumax	base	functions/strtoimax.html#tag_17_591	open	open	
-functions	strtok	base	functions/strtok.html#tag_17_592	open	open	
+functions	strtok	base	functions/strtok.html#tag_17_592	partial	partial	scripts/qemu-libc-test.py#functional/string
 functions	strtok_r	base	functions/strtok.html#tag_17_592	open	open	
-functions	strtol	base	functions/strtol.html#tag_17_593	open	open	
-functions	strtoll	base	functions/strtol.html#tag_17_593	open	open	
-functions	strtoul	base	functions/strtoul.html#tag_17_594	open	open	
-functions	strtoull	base	functions/strtoul.html#tag_17_594	open	open	
+functions	strtol	base	functions/strtol.html#tag_17_593	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strtoll	base	functions/strtol.html#tag_17_593	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strtoul	base	functions/strtoul.html#tag_17_594	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strtoull	base	functions/strtoul.html#tag_17_594	partial	partial	scripts/qemu-libc-test.py#functional/strtol
 functions	strxfrm	base	functions/strxfrm.html#tag_17_595	open	open	
 functions	strxfrm_l	base	functions/strxfrm.html#tag_17_595	open	open	
 functions	swab	XSI	functions/swab.html#tag_17_596	open	open	
@@ -1904,10 +1904,10 @@ functions	tcsendbreak	base	functions/tcsendbreak.html#tag_17_610	open	open
 functions	tcsetattr	base	functions/tcsetattr.html#tag_17_611	partial	partial	ports/musl/tests/terminal.c
 functions	tcsetpgrp	base	functions/tcsetpgrp.html#tag_17_612	partial	partial	ports/musl/tests/terminal.c
 functions	tcsetwinsize	base	functions/tcsetwinsize.html#tag_17_613	partial	partial	ports/musl/tests/terminal.c
-functions	tdelete	XSI	functions/tdelete.html#tag_17_614	open	open	
-functions	tfind	XSI	functions/tdelete.html#tag_17_614	open	open	
-functions	tsearch	XSI	functions/tdelete.html#tag_17_614	open	open	
-functions	twalk	XSI	functions/tdelete.html#tag_17_614	open	open	
+functions	tdelete	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	tfind	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	tsearch	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	twalk	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
 functions	telldir	XSI	functions/telldir.html#tag_17_615	open	open	
 functions	tgamma	base	functions/tgamma.html#tag_17_784	open	open	
 functions	tgammaf	base	functions/tgamma.html#tag_17_784	open	open	
@@ -1928,7 +1928,7 @@ functions	timer_gettime	base	functions/timer_getoverrun.html#tag_17_628	partial	
 functions	timer_settime	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
 functions	times	base	functions/times.html#tag_17_629	open	open	
 functions	timespec_get	base	functions/timespec_get.html#tag_17_630	open	open	
-functions	tmpfile	base	functions/tmpfile.html#tag_17_631	open	open	
+functions	tmpfile	base	functions/tmpfile.html#tag_17_631	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
 functions	tmpnam	base	functions/tmpnam.html#tag_17_632	open	open	
 functions	tolower	base	functions/tolower.html#tag_17_633	open	open	
 functions	tolower_l	base	functions/tolower.html#tag_17_633	open	open	
@@ -1956,12 +1956,12 @@ functions	tzname	base	functions/tzset.html#tag_17_644	open	open
 functions	tzset	base	functions/tzset.html#tag_17_644	open	open	
 functions	umask	base	functions/umask.html#tag_17_645	partial	partial	ports/musl/tests/files.c
 functions	uname	base	functions/uname.html#tag_17_646	partial	partial	tests/native-uts/names.c
-functions	ungetc	base	functions/ungetc.html#tag_17_647	open	open	
+functions	ungetc	base	functions/ungetc.html#tag_17_647	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
 functions	ungetwc	base	functions/ungetwc.html#tag_17_648	open	open	
 functions	unlink	base	functions/unlink.html#tag_17_649	partial	partial	ports/musl/tests/files.c
 functions	unlinkat	base	functions/unlink.html#tag_17_649	partial	partial	ports/musl/tests/files.c
 functions	unlockpt	XSI	functions/unlockpt.html#tag_17_650	open	open	
-functions	unsetenv	base	functions/unsetenv.html#tag_17_651	open	open	
+functions	unsetenv	base	functions/unsetenv.html#tag_17_651	partial	partial	scripts/qemu-libc-test.py#functional/env
 functions	uselocale	base	functions/uselocale.html#tag_17_652	open	open	
 functions	vasprintf	base	functions/vfprintf.html#tag_17_654	open	open	
 functions	vdprintf	base	functions/vfprintf.html#tag_17_654	open	open	
@@ -2009,17 +2009,17 @@ functions	wcsrchr	base	functions/wcsrchr.html#tag_17_676	open	open
 functions	wcsnrtombs	base	functions/wcsrtombs.html#tag_17_677	open	open	
 functions	wcsrtombs	base	functions/wcsrtombs.html#tag_17_677	open	open	
 functions	wcsspn	base	functions/wcsspn.html#tag_17_678	open	open	
-functions	wcsstr	base	functions/wcsstr.html#tag_17_679	open	open	
+functions	wcsstr	base	functions/wcsstr.html#tag_17_679	partial	partial	scripts/qemu-libc-test.py#functional/wcsstr
 functions	wcstod	base	functions/wcstod.html#tag_17_680	open	open	
 functions	wcstof	base	functions/wcstod.html#tag_17_680	open	open	
 functions	wcstold	base	functions/wcstod.html#tag_17_680	open	open	
 functions	wcstoimax	base	functions/wcstoimax.html#tag_17_681	open	open	
 functions	wcstoumax	base	functions/wcstoimax.html#tag_17_681	open	open	
 functions	wcstok	base	functions/wcstok.html#tag_17_682	open	open	
-functions	wcstol	base	functions/wcstol.html#tag_17_683	open	open	
+functions	wcstol	base	functions/wcstol.html#tag_17_683	partial	partial	scripts/qemu-libc-test.py#functional/wcstol
 functions	wcstoll	base	functions/wcstol.html#tag_17_683	open	open	
 functions	wcstombs	base	functions/wcstombs.html#tag_17_684	open	open	
-functions	wcstoul	base	functions/wcstoul.html#tag_17_685	open	open	
+functions	wcstoul	base	functions/wcstoul.html#tag_17_685	partial	partial	scripts/qemu-libc-test.py#functional/wcstol
 functions	wcstoull	base	functions/wcstoul.html#tag_17_685	open	open	
 functions	wcswidth	XSI	functions/wcswidth.html#tag_17_686	open	open	
 functions	wcsxfrm	base	functions/wcsxfrm.html#tag_17_687	open	open	
