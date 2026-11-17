@@ -83,13 +83,8 @@ def run(arch,work,proof,volume,archive):
     std_tools = volume is None and bool(os.environ.get("DOSRS_UUTILS_ARCHIVE"))
     if volume is None:
         data.mkdir()
-        source = qemu.ROOT / "tests/user-shell/control.sh"
-        shutil.copyfile(source, data / "control.sh")
-        reference = subprocess.run(["/bin/sh", source, "one", "two words"], cwd=work,
-                                   env=dict(os.environ, LC_ALL="C"), capture_output=True)
-        if reference.returncode != 13 or reference.stderr:
-            raise ValueError("shell fixture failed on the reference host")
-        expected.update({"subst.out": reference.stdout, "subst.rc": b"13\n"})
+        reference = shell.script_fixture(data, work)
+        expected.update({"subst.out": reference, "subst.rc": b"13\n"})
         if std_tools:
             expected.update({"encoded.txt": base64.encodebytes(shell.DATA), "decoded.bin": shell.DATA})
         (data/"a.txt").write_bytes(shell.DATA)
@@ -100,6 +95,10 @@ def run(arch,work,proof,volume,archive):
                     qemu.ROOT/"native-exec/examples/fdcheck.c"],check=True)
     fat=table[0x0c]
     subprocess.run(["mcopy","-i",f"{disk}@@{fat[0]*512}",app,"::FDCHECK.ELF"],check=True)
+    if volume is None:
+        probe = work / "execprog"
+        shell.build_script_probe(arch, probe)
+        subprocess.run(["mcopy", "-i", f"{disk}@@{fat[0]*512}", probe, "::execprog"], check=True)
     serial=proof/(arch+"-install.serial")
     shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,grammar=volume is None,std_tools=std_tools)
     second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)

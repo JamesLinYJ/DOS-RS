@@ -122,4 +122,10 @@ echo "expanded:$(( ${m} + $(echo 3) * $((1+1)) ))"
 echo "wide:$((4294967296 + 1))"
 echo "subshell:$( (echo grouped) )"
 if sh -c 'echo "$((1/0))"; echo wrong-zero' 2> arith.err; then echo wrong-status; else echo arithmetic-error; fi
+PATH=.:$PATH SCRIPT_VALUE=path plain "two words" ""
+echo "path-script:$?"
+SCRIPT_VALUE=direct ./plain direct
+echo "direct-script:$?"
+SCRIPT_VALUE=literal sh -- plain opt
+echo "shell-options:$?"
 exit 13

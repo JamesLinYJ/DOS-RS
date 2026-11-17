@@ -22,7 +22,7 @@ use syntax::{Condition, Part, Pipeline, Word};
 // POSIX process functions are exported by the native userspace ABI.
 unsafe extern "C" {
     fn fork() -> i32;
-    fn execve(path: *const i8, argv: *const *const i8, envp: *const *const i8) -> i32;
+    fn execvpe(path: *const i8, argv: *const *const i8, envp: *const *const i8) -> i32;
     fn waitpid(pid: i32, status: *mut i32, flags: i32) -> i32;
     fn getpid() -> i32;
     fn dup2(old: i32, new: i32) -> i32;
@@ -242,7 +242,7 @@ impl Shell {
         let mut attempt = |filename: &str| -> Option<i32> {
             let file = CString::new(filename).ok()?;
             unsafe {
-                execve(file.as_ptr(), av.as_ptr(), ev.as_ptr());
+                execvpe(file.as_ptr(), av.as_ptr(), ev.as_ptr());
             }
             match error() {
                 2 | 20 => None,
@@ -263,7 +263,7 @@ impl Shell {
         } else {
             for dir in path.split(':') {
                 let candidate = if dir.is_empty() {
-                    name.clone()
+                    format!("./{name}")
                 } else {
                     format!("{dir}/{name}")
                 };
@@ -677,9 +677,11 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         sh.run(text);
         return sh.last;
     }
+    let end_options = args.get(1).is_some_and(|s| s == "--");
+    let script_index = if end_options { 2 } else { 1 };
     let script = args
-        .get(1)
-        .filter(|s| s.as_str() != "-s" && s.as_str() != "-i");
+        .get(script_index)
+        .filter(|s| end_options || (s.as_str() != "-s" && s.as_str() != "-i"));
     let fd = if let Some(path) = script {
         let Ok(c) = CString::new(path.as_str()) else {
             return 2;
@@ -698,7 +700,9 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         || script.is_none() && !args.get(1).is_some_and(|s| s == "-s") && jobs::interactive();
     let mut sh = Shell::new(
         if script.is_some() {
-            args[1..].to_vec()
+            args[script_index..].to_vec()
+        } else if end_options {
+            vec![args[0].clone()]
         } else {
             args
         },

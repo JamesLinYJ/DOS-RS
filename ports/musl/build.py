@@ -25,6 +25,25 @@ def copy(source, dest):
         shutil.copyfile(source, dest)
 
 
+def prepare_exec(src, archive):
+    copy(PORT / "overlay/exec_script.c", src / "src/process/exec_script.c")
+    with tarfile.open(archive) as release:
+        original = release.extractfile("musl-1.2.6/src/process/execvp.c").read().decode()
+    declaration = "hidden int __dos_exec_script(const char *, char *const [], char *const []);"
+    original = original.replace("extern char **__environ;", "extern char **__environ;\n" + declaration)
+    original = original.replace(
+        "if (strchr(file, '/'))\n\t\treturn execve(file, argv, envp);",
+        "if (strchr(file, '/')) {\n"
+        "\t\texecve(file, argv, envp);\n"
+        "\t\treturn errno == ENOEXEC ? __dos_exec_script(file, argv, envp) : -1;\n\t}",
+    )
+    original = original.replace(
+        "switch (errno) {",
+        "if (errno == ENOEXEC) return __dos_exec_script(b, argv, envp);\n\t\tswitch (errno) {",
+    )
+    generated(src / "src/process/execvp.c", original)
+
+
 def prepare(src, target, cpu, archive):
     overlay = PORT / "overlay"
     copy(overlay / "syscall_arch.h", src / "arch" / target / "syscall_arch.h")
@@ -104,6 +123,7 @@ def install(arch, archive, work):
         with tempfile.TemporaryDirectory(dir=work) as tmp:
             subprocess.run(["tar", "-xzf", archive], cwd=tmp, check=True)
             (Path(tmp) / src.name).rename(src)
+    prepare_exec(src, archive)
     prepare(src, target, cpu, archive)
     obj = work / "obj"
     obj.mkdir(exist_ok=True)
