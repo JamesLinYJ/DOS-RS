@@ -1556,21 +1556,21 @@ functions	posix_madvise	ADV	functions/posix_madvise.html#tag_17_384	open	open
 functions	posix_mem_offset	TYM	functions/posix_mem_offset.html#tag_17_385	open	open	
 functions	posix_memalign	ADV	functions/posix_memalign.html#tag_17_386	open	open	
 functions	posix_openpt	XSI	functions/posix_openpt.html#tag_17_387	open	open	
-functions	posix_spawn	SPN	functions/posix_spawn.html#tag_17_388	open	open	
+functions	posix_spawn	SPN	functions/posix_spawn.html#tag_17_388	partial	partial	scripts/qemu-local-sockets.py
 functions	posix_spawnp	SPN	functions/posix_spawn.html#tag_17_388	open	open	
 functions	posix_spawn_file_actions_addchdir	SPN	functions/posix_spawn_file_actions_addchdir.html#tag_17_389	open	open	
 functions	posix_spawn_file_actions_addfchdir	SPN	functions/posix_spawn_file_actions_addchdir.html#tag_17_389	open	open	
-functions	posix_spawn_file_actions_addclose	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	open	open	
-functions	posix_spawn_file_actions_addopen	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	open	open	
-functions	posix_spawn_file_actions_adddup2	SPN	functions/posix_spawn_file_actions_adddup2.html#tag_17_391	open	open	
-functions	posix_spawn_file_actions_destroy	SPN	functions/posix_spawn_file_actions_destroy.html#tag_17_392	open	open	
-functions	posix_spawn_file_actions_init	SPN	functions/posix_spawn_file_actions_destroy.html#tag_17_392	open	open	
-functions	posix_spawnattr_destroy	SPN	functions/posix_spawnattr_destroy.html#tag_17_393	open	open	
-functions	posix_spawnattr_init	SPN	functions/posix_spawnattr_destroy.html#tag_17_393	open	open	
+functions	posix_spawn_file_actions_addclose	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_addopen	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_adddup2	SPN	functions/posix_spawn_file_actions_adddup2.html#tag_17_391	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_destroy	SPN	functions/posix_spawn_file_actions_destroy.html#tag_17_392	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_init	SPN	functions/posix_spawn_file_actions_destroy.html#tag_17_392	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_destroy	SPN	functions/posix_spawnattr_destroy.html#tag_17_393	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_init	SPN	functions/posix_spawnattr_destroy.html#tag_17_393	partial	partial	scripts/qemu-local-sockets.py
 functions	posix_spawnattr_getflags	SPN	functions/posix_spawnattr_getflags.html#tag_17_394	open	open	
-functions	posix_spawnattr_setflags	SPN	functions/posix_spawnattr_getflags.html#tag_17_394	open	open	
+functions	posix_spawnattr_setflags	SPN	functions/posix_spawnattr_getflags.html#tag_17_394	partial	partial	scripts/qemu-local-sockets.py
 functions	posix_spawnattr_getpgroup	SPN	functions/posix_spawnattr_getpgroup.html#tag_17_395	open	open	
-functions	posix_spawnattr_setpgroup	SPN	functions/posix_spawnattr_getpgroup.html#tag_17_395	open	open	
+functions	posix_spawnattr_setpgroup	SPN	functions/posix_spawnattr_getpgroup.html#tag_17_395	partial	partial	scripts/qemu-local-sockets.py
 functions	posix_spawnattr_getschedparam	SPN PS	functions/posix_spawnattr_getschedparam.html#tag_17_396	open	open	
 functions	posix_spawnattr_setschedparam	SPN PS	functions/posix_spawnattr_getschedparam.html#tag_17_396	open	open	
 functions	posix_spawnattr_getschedpolicy	SPN PS	functions/posix_spawnattr_getschedpolicy.html#tag_17_397	open	open	
@@ -1578,7 +1578,7 @@ functions	posix_spawnattr_setschedpolicy	SPN PS	functions/posix_spawnattr_getsch
 functions	posix_spawnattr_getsigdefault	SPN	functions/posix_spawnattr_getsigdefault.html#tag_17_398	open	open	
 functions	posix_spawnattr_setsigdefault	SPN	functions/posix_spawnattr_getsigdefault.html#tag_17_398	open	open	
 functions	posix_spawnattr_getsigmask	SPN	functions/posix_spawnattr_getsigmask.html#tag_17_399	open	open	
-functions	posix_spawnattr_setsigmask	SPN	functions/posix_spawnattr_getsigmask.html#tag_17_399	open	open	
+functions	posix_spawnattr_setsigmask	SPN	functions/posix_spawnattr_getsigmask.html#tag_17_399	partial	partial	scripts/qemu-local-sockets.py
 functions	posix_typed_mem_get_info	TYM	functions/posix_typed_mem_get_info.html#tag_17_400	open	open	
 functions	posix_typed_mem_open	TYM	functions/posix_typed_mem_open.html#tag_17_401	open	open	
 functions	pow	base	functions/pow.html#tag_17_402	open	open	
@@ -1717,7 +1717,7 @@ functions	readv	XSI	functions/readv.html#tag_17_479	open	open
 functions	realloc	base	functions/realloc.html#tag_17_480	partial	partial	ports/musl/tests/libc.c
 functions	reallocarray	base	functions/realloc.html#tag_17_480	open	open	
 functions	realpath	base	functions/realpath.html#tag_17_481	partial	partial	tests/native-df/mounts.c
-functions	recv	base	functions/recv.html#tag_17_482	open	open	
+functions	recv	base	functions/recv.html#tag_17_482	partial	partial	scripts/qemu-local-sockets.py
 functions	recvfrom	base	functions/recvfrom.html#tag_17_483	open	open	
 functions	recvmsg	base	functions/recvmsg.html#tag_17_484	open	open	
 functions	regcomp	base	functions/regcomp.html#tag_17_485	open	open	
@@ -1771,7 +1771,7 @@ functions	sem_unlink	base	functions/sem_unlink.html#tag_17_512	open	open
 functions	semctl	XSI	functions/semctl.html#tag_17_513	open	open	
 functions	semget	XSI	functions/semget.html#tag_17_514	open	open	
 functions	semop	XSI	functions/semop.html#tag_17_515	open	open	
-functions	send	base	functions/send.html#tag_17_516	open	open	
+functions	send	base	functions/send.html#tag_17_516	partial	partial	scripts/qemu-local-sockets.py
 functions	sendmsg	base	functions/sendmsg.html#tag_17_517	open	open	
 functions	sendto	base	functions/sendto.html#tag_17_518	open	open	
 functions	setbuf	base	functions/setbuf.html#tag_17_519	open	open	
@@ -1826,7 +1826,7 @@ functions	sinhl	base	functions/sinh.html#tag_17_561	open	open
 functions	sleep	base	functions/sleep.html#tag_17_562	open	open	
 functions	sockatmark	base	functions/sockatmark.html#tag_17_563	open	open	
 functions	socket	base	functions/socket.html#tag_17_710	open	open	
-functions	socketpair	base	functions/socketpair.html#tag_17_565	open	open	
+functions	socketpair	base	functions/socketpair.html#tag_17_565	partial	partial	scripts/qemu-local-sockets.py
 functions	sqrt	base	functions/sqrt.html#tag_17_713	open	open	
 functions	sqrtf	base	functions/sqrt.html#tag_17_713	open	open	
 functions	sqrtl	base	functions/sqrt.html#tag_17_713	open	open	
