@@ -180,3 +180,9 @@ utilities/env.html#tag_20_39	env	partial	partial	scripts/qemu-coreutils.py#307,3
 utilities/join.html#tag_20_63	join	partial	partial	scripts/qemu-coreutils.py#294,295,296,297	Sorted matching and unpaired rows, explicit field order, delimiters and stdin
 utilities/pr.html#tag_20_95	pr	partial	partial	scripts/qemu-coreutils.py#298,299,300,301,302,303,304,305,306	Page length, numbering and arbitrary bytes, horizontal and vertical columns, merge, separators, page width and indentation
 utilities/test.html#tag_20_121	test	partial	partial	scripts/qemu-coreutils.py#314,315,316,317,318,319,320,321,322,323,324	Status for empty, string, integer, inode identity, directory, file and size expressions
+functions/getgroups.html#tag_17_215	getgroups	partial	partial	scripts/qemu-groups.py	Process-wide list, size query, undersized buffer, IDs beyond 65535 and inheritance across pthread, fork and exec
+functions/getpwnam.html#tag_17_228	getpwnam_r	partial	partial	scripts/qemu-groups.py	Look up an installed account with a 70001 user ID and handle a named missing account through musl
+functions/getgrgid.html#tag_17_213	getgrgid_r	partial	partial	scripts/qemu-groups.py	Look up a 70002 group ID in the editable account database
+utilities/id.html#tag_20_59	id	partial	partial	scripts/qemu-groups.py	Real root and unprivileged credentials, named user, derived supplementary groups, NUL lists and missing-name diagnostics
+utilities/chgrp.html#tag_20_16	chgrp	partial	partial	scripts/qemu-groups.py	Named supplementary group, permitted ownership update and forbidden nonmember update, stopped inode verified
+utilities/chown.html#tag_20_18	chown	partial	partial	scripts/qemu-groups.py	Resolve named user and group and reject unprivileged ownership reassignment, stopped inode verified

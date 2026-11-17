@@ -1252,10 +1252,10 @@ functions	secure_getenv	base	functions/getenv.html#tag_17_210	open	open
 functions	geteuid	base	functions/geteuid.html#tag_17_211	open	open	
 functions	getgid	base	functions/getgid.html#tag_17_212	open	open	
 functions	getgrgid	base	functions/getgrgid.html#tag_17_213	open	open	
-functions	getgrgid_r	base	functions/getgrgid.html#tag_17_213	open	open	
+functions	getgrgid_r	base	functions/getgrgid.html#tag_17_213	partial	partial	scripts/qemu-groups.py
 functions	getgrnam	base	functions/getgrnam.html#tag_17_214	open	open	
 functions	getgrnam_r	base	functions/getgrnam.html#tag_17_214	open	open	
-functions	getgroups	base	functions/getgroups.html#tag_17_215	open	open	
+functions	getgroups	base	functions/getgroups.html#tag_17_215	partial	partial	scripts/qemu-groups.py
 functions	gethostid	XSI	functions/gethostid.html#tag_17_216	open	open	
 functions	gethostname	base	functions/gethostname.html#tag_17_217	partial	partial	tests/native-uts/names.c
 functions	getlocalename_l	base	functions/getlocalename_l.html#tag_17_218	open	open	
@@ -1275,7 +1275,7 @@ functions	getppid	base	functions/getppid.html#tag_17_226	partial	partial	native-
 functions	getpriority	XSI	functions/getpriority.html#tag_17_227	open	open	
 functions	setpriority	XSI	functions/getpriority.html#tag_17_227	open	open	
 functions	getpwnam	base	functions/getpwnam.html#tag_17_228	open	open	
-functions	getpwnam_r	base	functions/getpwnam.html#tag_17_228	open	open	
+functions	getpwnam_r	base	functions/getpwnam.html#tag_17_228	partial	partial	scripts/qemu-groups.py
 functions	getpwuid	base	functions/getpwuid.html#tag_17_229	open	open	
 functions	getpwuid_r	base	functions/getpwuid.html#tag_17_229	open	open	
 functions	getresgid	XSI	functions/getresgid.html#tag_17_230	open	open	
@@ -2176,9 +2176,9 @@ utilities	cal	XSI	utilities/cal.html#tag_20_12	open	open
 utilities	cat	base	utilities/cat.html#tag_20_13	partial	partial	qemu-coreutils.py#0..22
 utilities	cd	base	utilities/cd.html#tag_20_14	open	open	
 utilities	cflow	XSI	utilities/cflow.html#tag_20_15	open	open	
-utilities	chgrp	base	utilities/chgrp.html#tag_20_16	open	open	
+utilities	chgrp	base	utilities/chgrp.html#tag_20_16	partial	partial	scripts/qemu-groups.py
 utilities	chmod	base	utilities/chmod.html#tag_20_17	partial	partial	scripts/qemu-coreutils.py#248
-utilities	chown	base	utilities/chown.html#tag_20_18	open	open	
+utilities	chown	base	utilities/chown.html#tag_20_18	partial	partial	scripts/qemu-groups.py
 utilities	cksum	base	utilities/cksum.html#tag_20_19	partial	partial	scripts/qemu-coreutils.py#225,226
 utilities	cmp	base	utilities/cmp.html#tag_20_20	open	open	
 utilities	comm	base	utilities/comm.html#tag_20_21	partial	partial	scripts/qemu-coreutils.py#173,174
@@ -2222,7 +2222,7 @@ utilities	grep	base	utilities/grep.html#tag_20_55	open	open
 utilities	hash	base	utilities/hash.html#tag_20_56	open	open	
 utilities	head	base	utilities/head.html#tag_20_57	partial	partial	qemu-coreutils.py#84..103
 utilities	iconv	base	utilities/iconv.html#tag_20_58	open	open	
-utilities	id	base	utilities/id.html#tag_20_59	open	open	
+utilities	id	base	utilities/id.html#tag_20_59	partial	partial	scripts/qemu-groups.py
 utilities	ipcrm	XSI	utilities/ipcrm.html#tag_20_60	open	open	
 utilities	ipcs	XSI	utilities/ipcs.html#tag_20_61	open	open	
 utilities	jobs	UP	utilities/jobs.html#tag_20_62	open	open	
