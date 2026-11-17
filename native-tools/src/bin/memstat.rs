@@ -70,12 +70,12 @@ fn simultaneous(r: &mut Regs, x: u16, e: u16, u: u16, frame: u16) -> bool {
     buf = [0, 0];
     transfer(r, x, true, &mut buf) && buf[0] == 0x12ab && buf[1] == 0x9432 && byte(u, 8) == 0xa9
 }
-fn in_chain(seg: u16) -> bool {
+fn in_chain(seg: u16, owner: u16) -> bool {
     let mut at = dosrs_realmode::PROGRAM - 1;
     while at < seg {
         let tag = byte(at, 0);
         if at + 1 == seg {
-            return (tag == 77 || tag == 90) && w(at, 1) == dosrs_realmode::PROGRAM;
+            return (tag == 77 || tag == 90) && w(at, 1) == owner;
         }
         if tag != 77 {
             return false;
@@ -89,6 +89,10 @@ fn in_chain(seg: u16) -> bool {
     false
 }
 fn dos_upper(r: &mut Regs, other: u16) -> bool {
+    if !dos(r, 0x6200, 0, 0) {
+        return false;
+    }
+    let psp = r[1];
     if !dos(r, 0x5800, 0, 0) {
         return false;
     }
@@ -100,7 +104,7 @@ fn dos_upper(r: &mut Regs, other: u16) -> bool {
     let mut ok = false;
     if dos(r, 0x5803, 1, 0) && dos(r, 0x5801, 0x40, 0) && dos(r, 0x4800, 16, 0) {
         let seg = r[0];
-        ok = seg >= 0xa000 && seg != other && in_chain(seg) && byte(seg, 7) == 0;
+        ok = seg >= 0xa000 && seg != other && in_chain(seg, psp) && byte(seg, 7) == 0;
         store(seg, 7, 0x5a);
         ok = dos(r, 0x4a00, 24, seg) && byte(seg, 7) == 0x5a && ok;
         ok = dos(r, 0x4900, 0, seg) && ok;

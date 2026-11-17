@@ -13,10 +13,10 @@ fn valid_buffer(psp: u16, ds: u16, off: u16, count: u16) -> bool {
     let last = off.wrapping_add(count - 1);
     let start = ds.wrapping_add(off >> 4);
     let end = ds.wrapping_add(last >> 4);
-    if last < off || end < ds || end >= pc::font_workspace() {
+    if last < off || end < ds {
         return false;
     }
-    if start >= pc::PROGRAM {
+    if start >= pc::PROGRAM && end < pc::font_workspace() {
         return true;
     }
     let meta = psp + 16;

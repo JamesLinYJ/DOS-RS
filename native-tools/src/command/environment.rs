@@ -11,7 +11,16 @@ pub struct Environment {
 impl Environment {
     pub fn new(psp: u16, capacity: u16) -> Option<Self> {
         let source = dos::inherited_env(psp);
-        let seg = dos::service(0x4800, capacity >> 4, 0, 0).ok()?;
+        // Keep the resident environment out of the largest conventional block
+        // when the host has linked UMBs. DOS otherwise allocates low memory.
+        let strategy = dos::service(0x5800, 0, 0, 0).ok();
+        let upper_first =
+            strategy.is_some_and(|s| dos::service(0x5801, 0x80 | (s & 3), 0, 0).is_ok());
+        let allocation = dos::service(0x4800, capacity >> 4, 0, 0);
+        if upper_first {
+            dos::service(0x5801, strategy.unwrap_or(0), 0, 0).ok()?;
+        }
+        let seg = allocation.ok()?;
         let mut env = Self {
             segment: seg,
             end: 0,

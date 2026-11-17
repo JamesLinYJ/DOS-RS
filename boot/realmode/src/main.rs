@@ -100,7 +100,7 @@ fn boot() -> Option<()> {
     }
     bios::store(bios::COMMAND, 265, 0xa5);
     let file = media.lookup(b"MSDOS   SYS")?;
-    let seg = 0x3280;
+    let seg = bios::layout::KERNEL_HEADER;
     if !media.fetch(&file, 0, 16, seg, 0) || dw(seg, 0) != 0x4b534f44 {
         return None;
     }
@@ -122,7 +122,9 @@ fn boot() -> Option<()> {
         }
     } else {
         let banked = offset & 0x4000_0000 != 0;
-        if banked && n > 0x1e00 || !banked && end - pos > u32::from(u16::MAX) {
+        if banked && n > bios::layout::KERNEL_LIMIT - bios::KERNEL
+            || !banked && end - pos > u32::from(u16::MAX)
+        {
             return None;
         }
         let mut remaining = n;

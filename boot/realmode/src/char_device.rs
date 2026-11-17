@@ -277,16 +277,6 @@ fn service(ss: u16, sp: u16, psp: u16) -> u32 {
         return ERROR + 5;
     }
     let count = w(ss, sp + 4);
-    if count != 0 {
-        let first = u32::from(ds) * 16 + u32::from(off);
-        let limit = u32::from(pc::font_workspace()) * 16;
-        if u32::from(off) + u32::from(count) > 65536
-            || first < u32::from(pc::PROGRAM) * 16
-            || first + u32::from(count) > limit
-        {
-            return ERROR + 5;
-        }
-    }
     request(h, command, ds, off, count)
 }
 

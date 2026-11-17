@@ -209,3 +209,67 @@ pub fn discard(psp: u16) {
         m = n;
     }
 }
+
+/// Claim either the highest suitable conventional range or an exact previous
+/// address. A suspended interpreter must resume at its original CS:IP.
+pub(super) fn code_block(paragraphs: u16, previous: u16) -> Option<u16> {
+    let mut m = FIRST;
+    let mut chosen = 0;
+    let mut base = 0;
+    let mut bound = 0;
+    while m < end() {
+        let next_block = next(m);
+        if next_block == 0 {
+            return None;
+        }
+        if w(m, 1) != 0 {
+            m = next_block;
+            continue;
+        }
+        let room = limit(m);
+        if room == 0 {
+            return None;
+        }
+        if room - m > paragraphs {
+            let at = if previous == 0 {
+                room - paragraphs
+            } else {
+                previous
+            };
+            if at > m && at <= room - paragraphs {
+                chosen = m;
+                base = at;
+                bound = room;
+            }
+        }
+        m = room;
+    }
+    if base == 0 {
+        return None;
+    }
+    if base - 1 != chosen {
+        block(chosen, 0, base - 1);
+    }
+    split(base - 1, bound, paragraphs);
+    Some(base)
+}
+
+/// Try a process-owned upper-memory allocation without changing DOS allocation
+/// policy for the calling program. Only linked UMBs are eligible.
+pub(super) fn upper_block(paragraphs: u16) -> Option<u16> {
+    let mut room = 0;
+    if request(0x5802, 0, 0, &mut room) != 1 {
+        return None;
+    }
+    let previous = request(0x5800, 0, 0, &mut room);
+    if previous > 255 || request(0x5801, 0x40 | (previous as u16 & 3), 0, &mut room) != 0 {
+        return None;
+    }
+    let block = request(0x4800, paragraphs, 0, &mut room);
+    request(0x5801, previous as u16, 0, &mut room);
+    if block > u32::from(u16::MAX) {
+        None
+    } else {
+        Some(block as u16)
+    }
+}
