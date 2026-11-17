@@ -6,9 +6,9 @@ DOS 是用 Rust 实现的操作系统，提供三个原生内核目标。**16 �
 
 ## 在 286 或 386 上原生启动
 
-从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，再执行 `COMMAND.COM` 和启动配置。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/81775e8be657a7fefd7aaacfe5491156a416c2a7)
+从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，在引导阶段处理 `CONFIG.SYS`，随后启动 `COMMAND.COM /P`。首个 Shell 执行 `AUTOEXEC.BAT`，完成后显示当前驱动器和完整目录。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/2e9ef1f1a3caadb369c92f44fe3ea3d6192ddfde)
 
-在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建 1.44 MB 安装软盘和 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
+在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建包含完整字体和工具的 2.88 MB 安装软盘，并创建 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
 
 ```sh
 RAM_DISK=/Volumes/DOS-INSTALL-QA
@@ -18,13 +18,15 @@ qemu-system-i386 -m 16 -boot a -drive "if=floppy,format=raw,readonly=on,file=$RA
   -drive "if=ide,format=raw,file=$RAM_DISK/new-c.img"
 ```
 
-需要两张发行软盘时，构建命令可改为：
+使用两张标准 1.44 MB 软盘时，运行下面的命令。
 
 ```sh
 python3 scripts/realmode-image.py --toolchain ../rust16 --disk-set "$RAM_DISK/DISKS"
 ```
 
-从 `DISK1.IMG` 启动。只有一个软驱时，SETUP 会提示换入 `DISK2.IMG` 读取 Edit 和示例文档，再换回第一张继续。第二张也可以预先挂在另一软驱。两张盘都有发行套装标识，复制前会校验每个文件。
+从 `DISK1.IMG` 启动。只有一个软驱时，SETUP 会提示换入 `DISK2.IMG` 读取第二张上的文件，包括 Edit 和输入表。可用常规内存不足时会提示按需换盘。第二张也可以预先挂在另一软驱。两张盘都有发行套装标识，复制前会校验每个文件。
+
+16 位 `COMMAND.COM` 通过 DOS 的 `EXEC` 启动外部程序，也可由其他 DOS 程序用 `COMMAND /C` 调用。批处理、环境变量、管道和重定向在解释器进程中执行。当前批处理支持八层嵌套，管道需要可写的临时目录或当前目录。[命令与文件行为回归](scripts/realmode-command.py) · [批处理、管道和键盘回归](scripts/realmode-shell.py)
 
 在提示符输入 `SETUP`，选择语言、目标硬盘、安装动作和启动配置。写入前可看到 BIOS 磁盘号、分区起止扇区和文件总量。复制页显示正在写入的文件、大小、序号和进度，再读回已安装的系统文件。安装完成后关闭 QEMU，从同一块内存硬盘启动。
 
