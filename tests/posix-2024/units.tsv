@@ -2220,7 +2220,7 @@ utilities	gettext	base	utilities/gettext.html#tag_20_54	open	open
 utilities	ngettext	base	utilities/gettext.html#tag_20_54	open	open	
 utilities	grep	base	utilities/grep.html#tag_20_55	open	open	
 utilities	hash	base	utilities/hash.html#tag_20_56	open	open	
-utilities	head	base	utilities/head.html#tag_20_57	open	open	
+utilities	head	base	utilities/head.html#tag_20_57	partial	partial	qemu-coreutils.py#84..103
 utilities	iconv	base	utilities/iconv.html#tag_20_58	open	open	
 utilities	id	base	utilities/id.html#tag_20_59	open	open	
 utilities	ipcrm	XSI	utilities/ipcrm.html#tag_20_60	open	open	
@@ -2282,7 +2282,7 @@ utilities	strings	base	utilities/strings.html#tag_20_114	open	open
 utilities	strip	SD	utilities/strip.html#tag_20_115	open	open	
 utilities	stty	base	utilities/stty.html#tag_20_116	open	open	
 utilities	tabs	base	utilities/tabs.html#tag_20_117	open	open	
-utilities	tail	base	utilities/tail.html#tag_20_118	open	open	
+utilities	tail	base	utilities/tail.html#tag_20_118	partial	partial	qemu-coreutils.py#104..123
 utilities	talk	UP	utilities/talk.html#tag_20_119	open	open	
 utilities	tee	base	utilities/tee.html#tag_20_120	open	open	
 utilities	test	base	utilities/test.html#tag_20_121	open	open	

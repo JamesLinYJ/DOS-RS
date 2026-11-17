@@ -125,6 +125,30 @@ def catalog():
         add("basename", args)
     for flag in ["-cwmlL", "-m", "-L", "-w"]:
         add("wc", [flag], "utf8.txt", "C.UTF-8")
+    for name in ["head", "tail"]:
+        for options in [
+            [],
+            ["-n", "2"],
+            ["-n", "-2"],
+            ["-n", "+2"],
+            ["-c3"],
+            ["--bytes=-3"],
+            ["-c", "+5"],
+            ["-1"],
+            ["-n", "0"],
+            ["-n", "900"],
+            ["-v"],
+            ["-z", "-n", "2"],
+        ]:
+            add(name, options, "b.txt" if "-z" not in options else "a.txt")
+        for options in [["-q", "-n", "2"], ["-v", "-c", "2"], ["--lines=3"]]:
+            add(name, options + ["b.txt", "c.txt"])
+        add(name, ["-c", "-4097", "long.txt"])
+        add(name, ["-n", "-1", "long.txt"])
+        add(name, ["-n", "x"])
+        add(name, ["-n"])
+        add(name, ["missing", "-"], "b.txt")
+    add("cat", ["@stdout"])
     return cases
 
 
@@ -207,19 +231,30 @@ def run(arch, root, proof, gnubin):
         temp = Path(sandbox)
         for name, data in FIXTURES.items():
             (temp / name).write_bytes(data)
-        for name, args, stdin, locale in suite:
-            with (temp / stdin).open("rb") as input_file:
+        for i, (name, args, stdin, locale) in enumerate(suite):
+            stdout_name = f"q{i:03}.out"
+            append = "@stdout" in args
+            args = [stdout_name if a == "@stdout" else a for a in args]
+            if append:
+                seed = b"preserve the shared input and append target\n"
+                stage(disk, stdout_name, seed)
+                (temp / stdout_name).write_bytes(seed)
+            with (
+                (temp / stdin).open("rb") as input_file,
+                (temp / stdout_name).open("ab" if append else "wb") as output_file,
+            ):
                 result = subprocess.run(
                     [name, *args],
                     executable=gnubin / name,
                     stdin=input_file,
                     env=dict(env, LC_ALL=locale),
                     cwd=temp,
-                    stdout=subprocess.PIPE,
+                    stdout=output_file,
                     stderr=subprocess.PIPE,
                 )
+            result.stdout = (temp / stdout_name).read_bytes()
             expected.append(result)
-            config.append(len(args) + 1)
+            config.extend((len(args) + 1, int(append)))
             for field in [stdin, "LC_ALL=" + locale, "C:/bin/" + name, name, *args]:
                 config.extend(os.fsencode(field) + b"\0")
         for name, data in FIXTURES.items():
@@ -252,7 +287,8 @@ def run(arch, root, proof, gnubin):
             dict(
                 id=i,
                 tool=tool,
-                argv=args,
+                argv=[f"q{i:03}.out" if a == "@stdout" else a for a in args],
+                append_existing="@stdout" in args,
                 stdin=stdin,
                 locale=locale,
                 stdout=digest(out),

@@ -50,3 +50,15 @@ name = "basename"
 path = "tools/basename.rs"
 required-features = ["alloc"]
 crate-type = ["staticlib"]
+
+[[example]]
+name = "head"
+path = "tools/head.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "tail"
+path = "tools/tail.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]

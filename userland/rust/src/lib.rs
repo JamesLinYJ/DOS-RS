@@ -7,6 +7,8 @@ use core::slice;
 #[cfg(feature = "alloc")]
 mod allocator;
 pub mod cli;
+#[cfg(feature = "alloc")]
+pub mod ends;
 pub mod stat;
 
 pub mod ffi {

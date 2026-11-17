@@ -16,3 +16,5 @@ utilities/false.html#tag_20_43_03	shall:1	passed	passed	qemu-coreutils.py#49..51
 utilities/false.html#tag_20_43_14	shall:1	passed	passed	qemu-coreutils.py#49..51	Implemented failure code is 1
 utilities/echo.html#tag_20_37_05	implementation-defined:1	partial	partial	qemu-coreutils.py#54..59	-n suppresses newline; initial -e enables escapes and -E disables them
 utilities/basename.html#tag_20_07_03	implementation-defined:1	passed	passed	qemu-coreutils.py#71	The operand // produces one slash
+utilities/head.html#tag_20_57	head	partial	partial	qemu-coreutils.py#84..103	Line/byte selection, signed counts, NUL separator, multiple files, headers and errors
+utilities/tail.html#tag_20_118	tail	partial	partial	qemu-coreutils.py#104..123	Line/byte selection, signed counts, NUL separator, multiple files, headers and errors

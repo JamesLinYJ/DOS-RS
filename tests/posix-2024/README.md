@@ -12,7 +12,7 @@ The inventory covers the three normative volumes of Issue 8. Each named header, 
 
 `base` in a signature means the named interface is available in the base profile. Margin codes such as `XSI`, `SPN` and `FSC|SIO` retain their Issue 8 spelling. `CX` marks a POSIX extension to ISO C, and `OB` marks obsolescence. Individual paragraphs can have additional conditions. Conditions shared by only some overloads or imposed in prose require review against the linked text. DOS-RS currently declares no optional POSIX option group as fully implemented. [Issue 8 margin codes](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap01.html#tag_01_08_01)
 
-`open` means the entry lacks recorded acceptance. `partial` identifies specific exercised cases. `passed` on a clause records the listed behavior. A formal conformance review still needs to account for normative rules expressed without either indexed wording, subjects imposing obligations on applications, and all subclauses applicable to the implementation. Coreutils differential results cover the commands and inputs recorded in their JSON reports. The initial report covers seven Rust tools in the C and C.UTF-8 locales.
+`open` means the entry lacks recorded acceptance. `partial` identifies specific exercised cases. `passed` on a clause records the listed behavior. A formal conformance review still needs to account for normative rules expressed without either indexed wording, subjects imposing obligations on applications, and all subclauses applicable to the implementation. Coreutils differential results cover the commands and inputs recorded in their JSON reports. The report covers nine Rust tools in the C and C.UTF-8 locales.
 
 ## Regenerate
 

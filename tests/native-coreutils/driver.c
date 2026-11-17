@@ -21,8 +21,8 @@ static int string(int fd, char *p, int n) {
     }
     return -1;
 }
-static int redirect_to(const char *name, int dst) {
-    int fd = open(name, dst ? O_CREAT | O_TRUNC | O_WRONLY : O_RDONLY, 0600);
+static int redirect_to(const char *name, int dst, int append) {
+    int fd = open(name, dst ? O_CREAT | (append ? O_APPEND : O_TRUNC) | O_WRONLY : O_RDONLY, 0600);
     if (fd < 0 || dup2(fd, dst) != dst) return -1;
     return fd == dst ? 0 : close(fd);
 }
@@ -37,6 +37,8 @@ int main(void) {
             if (close(results) || close(cfg)) return 103;
             return write(1, "coreutils cases finished\n", 25) == 25 ? 0 : 104;
         }
+        unsigned char append;
+        if (exact(cfg, (char *)&append, 1)) return 105;
         char input[32], locale[32], values[24][160], path[100], *args[25];
         if (string(cfg, input, sizeof input) || string(cfg, locale, sizeof locale) || string(cfg, path, sizeof path)) return 105;
         for (int i = 0; i < count; i++) {
@@ -53,7 +55,7 @@ int main(void) {
         if (!child) {
             char *env[] = {locale, "LANG=C", "TZ=UTC", "PATH=/bin", 0};
             close(cfg); close(results);
-            if (redirect_to(input, 0) || redirect_to(out, 1) || redirect_to(err, 2)) _exit(108);
+            if (redirect_to(input, 0, 0) || redirect_to(out, 1, append) || redirect_to(err, 2, 0)) _exit(108);
             execve(path, args, env);
             _exit(109);
         }
