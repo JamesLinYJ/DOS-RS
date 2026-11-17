@@ -79,6 +79,15 @@ static int stream(void)
     CHECK(close(copy) == 0 && read(s[1], buf, sizeof buf) == 0);
     CHECK(send(s[1], buf, 1, MSG_NOSIGNAL) == -1 && errno == EPIPE && !broken_pipes);
     CHECK(send(s[1], buf, 1, 0) == -1 && errno == EPIPE && broken_pipes == 1);
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGPIPE);
+    CHECK(sigprocmask(SIG_BLOCK, &mask, NULL) == 0);
+    CHECK(send(s[1], buf, 1, 0) == -1 && errno == EPIPE && broken_pipes == 1);
+    siginfo_t info;
+    CHECK(sigwaitinfo(&mask, &info) == SIGPIPE);
+    CHECK(info.si_code == SI_USER && info.si_pid == getpid() && info.si_uid == getuid());
+    CHECK(sigprocmask(SIG_UNBLOCK, &mask, NULL) == 0 && broken_pipes == 1);
     close(s[1]);
     return 0;
 }

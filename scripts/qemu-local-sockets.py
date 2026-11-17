@@ -50,7 +50,8 @@ def check(arch, args):
         hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest()
                   for name, path in [("kernel", kernel), ("ELF", binary), ("disk", disk),
                                      ("libc", qemu.ROOT / "target/musl" / arch / "sysroot/lib/libc.a")]}
-        result = {"arch": arch, "firmware": mode, "sha256": hashes,
+        result = {"arch": arch, "kernel_bits": 32 if arch == "i686" else 64,
+                  "firmware": mode, "sha256": hashes,
                   "spawn_bytes": len(actual),
                   "qemu": subprocess.check_output(
                       ["qemu-system-" + qemu.ARCH[arch][0], "--version"], text=True).splitlines()[0]}

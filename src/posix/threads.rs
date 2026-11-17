@@ -518,9 +518,14 @@ impl Threads {
                 _ => file_call(image, p, cx, call, args, &mut self.0[i].tty_read),
             };
             if let Poll::Ready(value) = result {
-                if value == Err(-32) && sigpipe {
-                    let tid = self.0[i].tid;
-                    let _ = self.thread_signal(p.getpid(), p.uid, tid as i32, 13);
+                if value == Err(-32)
+                    && sigpipe
+                    && signals::disposition(p.getpid(), 13, false).handler != 1
+                {
+                    let _ = self.0[i].pending_signals.add(
+                        13,
+                        signals::Origin { code: 0, pid: p.getpid(), uid: p.uid, status: 0 },
+                    );
                 }
                 self.0[i].reply(value.map(|n| n as isize).unwrap_or_else(|e| e));
             }
