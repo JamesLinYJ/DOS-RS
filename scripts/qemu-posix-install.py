@@ -85,6 +85,7 @@ def run(arch,work,proof,volume,archive):
         data.mkdir()
         reference = shell.script_fixture(data, work)
         expected.update(reference)
+        expected.update({"cold.out": reference["here.out"], "cold.rc": reference["here.rc"]})
         if std_tools:
             expected.update({"encoded.txt": base64.encodebytes(shell.DATA), "decoded.bin": shell.DATA})
         (data/"a.txt").write_bytes(shell.DATA)
@@ -107,6 +108,9 @@ def run(arch,work,proof,volume,archive):
         second.wait(b"A:\\> ", timeout=180)
         second.command("sh",prompt=b"$ ")
         second.command("cat count.txt",prompt=b"$ ",expect=b"21254\r\n")
+        if volume is None:
+            second.command("sh here.sh > cold.out", prompt=b"$ ", timeout=300)
+            second.command("echo $? > cold.rc", prompt=b"$ ")
         second.command("exit",prompt=b"A:\\> ")
         second.command("hello.com",prompt=b"A:\\> ",expect=b"GUEST HELLO COM")
     finally:
