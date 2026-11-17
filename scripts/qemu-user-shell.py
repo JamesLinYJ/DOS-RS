@@ -2,6 +2,7 @@
 """Boot the native shell and verify its executable paths and redirected files on a stopped RAM disk."""
 import argparse
 import hashlib
+import json
 import os
 import shutil
 from pathlib import Path
@@ -50,6 +51,8 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $? > read.rc", prompt=b"$ ")
             vm.command("sh here.sh > here.out", prompt=b"$ ", timeout=300 if dual_volume else 180)
             vm.command("echo $? > here.rc", prompt=b"$ ")
+            vm.command("sh getopts.sh > opts.out", prompt=b"$ ", timeout=180)
+            vm.command("echo $? > opts.rc", prompt=b"$ ")
         if job_control:
             offset = serial.stat().st_size
             vm.enter("cat")
@@ -64,6 +67,8 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $?", prompt=b"$ ", expect=b"130\r\n")
         vm.command("exit 7")
         vm.command("echo $?", expect=b"7\r\n")
+        vm.command("a:", prompt=b"A:\\> ")
+        vm.command("hello.com", prompt=b"A:\\> ", expect=b"GUEST HELLO COM")
     finally:
         vm.close()
     qemu.check_native_boot(serial, arch, mode)
@@ -88,7 +93,7 @@ def script_fixture(fixture, work):
     (fixture / "SUB/TWO.TX").write_bytes(b"two")
     (fixture / "read.dat").write_bytes(READ_DATA)
     (fixture / "large.sh").write_bytes(b"cat <<'END'\n" + HERE_DATA + b"END\n")
-    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "here.sh", "plain"):
+    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "here.sh", "getopts.sh", "plain"):
         shutil.copyfile(qemu.ROOT / "tests/user-shell" / name, fixture / name)
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
@@ -123,15 +128,27 @@ def script_fixture(fixture, work):
         b"nul:0:[abc]\npartial:1:[last]:[fragment]\neof:1:[]:[]\n"
         b"pipe:[piped]:[value]\nremain:1:positional\n")
     expected["read.rc"] = b"31\n"
+    # Issue 8 requires an unset OPTARG and status >1 for assignment errors.
+    # The host dash and bash differ on these cases and on diagnostic identity.
+    expected["opts.out"] = (qemu.ROOT / "tests/user-shell/getopts.expected").read_bytes()
+    expected["opts.rc"] = b"43\n"
     return expected
 
 
-def check(arch, root, proof):
+def check(arch, root, proof, kernel=None, programs=None):
     mode = "bios" if arch == "i686" else "uefi"
-    kernel = qemu.build(arch, qemu.ROOT / "target", features="exec-trace")
-    programs = root / "bin"
-    subprocess.run([sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--arch", arch,
-                    "--output", programs], check=True)
+    source_kernel = kernel or qemu.build(arch, qemu.ROOT / "target", features="exec-trace")
+    kernel = root / "kernel.efi"
+    shutil.copyfile(source_kernel, kernel)
+    if programs is None:
+        programs = root / "bin"
+        subprocess.run([sys.executable, qemu.ROOT / "scripts/build-rust-tools.py", "--arch", arch,
+                        "--output", programs], check=True)
+    staged = root / "programs"
+    staged.mkdir()
+    for name in ("sh", "cat", "wc", "echo"):
+        shutil.copyfile(programs/name, staged/name)
+    programs = staged
     disk = root / "c.img"
     with disk.open("wb") as f:
         f.truncate(8 << 20)
@@ -146,12 +163,14 @@ def check(arch, root, proof):
     for name in PROBES:
         build_probe(arch, fixture / name)
     subprocess.run(["mcopy", "-s", "-i", disk, fixture / "SUB", "::"], check=True)
-    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "read.dat", "here.sh", "large.sh", "plain", *PROBES):
+    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "read.dat", "here.sh", "large.sh", "getopts.sh", "plain", *PROBES):
         subprocess.run(["mcopy", "-i", disk, fixture / name, "::" + name], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)
     exercise(args + ["-drive", f"if=ide,format=raw,file={disk}"], arch, mode, root, serial, job_control=True, grammar=True)
-    subprocess.run(["fsck.fat", "-n", disk], check=True)
+    with (proof / (arch+"-fsck.log")).open("wb") as log:
+        subprocess.run(["fsck.fat", "-n", disk], stdout=log, stderr=subprocess.STDOUT, check=True)
+    files = {}
     for name, expected in [("count.txt", f"{len(DATA)}\n".encode()), ("copy.bin", DATA),
                            *reference.items()]:
         result = subprocess.check_output(["mcopy","-i",disk,"::"+name,"-"])
@@ -159,7 +178,14 @@ def check(arch, root, proof):
         if result != expected:
             (proof/(arch+"-"+name+".expected")).write_bytes(expected)
             raise RuntimeError(f"{arch}: stopped {name} differs")
-        print(f"{arch}/{mode} {name}: {len(result)} bytes sha256 {hashlib.sha256(result).hexdigest()}")
+        digest = hashlib.sha256(result).hexdigest()
+        files[name] = {"bytes": len(result), "sha256": digest}
+        print(f"{arch}/{mode} {name}: {len(result)} bytes sha256 {digest}")
+    manifest = {"arch": arch, "kernel_bits": 32 if arch == "i686" else 64, "firmware": mode,
+                "kernel_sha256": hashlib.sha256(kernel.read_bytes()).hexdigest(),
+                "programs": {name: hashlib.sha256((programs/name).read_bytes()).hexdigest()
+                             for name in ("sh", "cat", "wc", "echo")}, "files": files}
+    (proof / (arch+".json")).write_text(json.dumps(manifest, indent=2)+"\n")
 
 
 if __name__ == "__main__":
@@ -167,8 +193,12 @@ if __name__ == "__main__":
     parser.add_argument("--ram-dir", required=True, type=Path)
     parser.add_argument("--proof", type=Path, default=qemu.ROOT/"target/user-shell-proof")
     parser.add_argument("--arch", choices=qemu.ARCH, action="append")
+    parser.add_argument("--kernel", type=Path, help="use this kernel for exactly one --arch")
+    parser.add_argument("--programs", type=Path, help="directory containing that architecture's sh, cat, wc and echo")
     options=parser.parse_args()
+    if (options.kernel or options.programs) and len(options.arch or ()) != 1:
+        parser.error("prebuilt inputs require exactly one --arch")
     options.proof.mkdir(parents=True, exist_ok=True)
     for arch in options.arch or qemu.ARCH:
         with tempfile.TemporaryDirectory(dir=options.ram_dir) as tmp:
-            check(arch,Path(tmp),options.proof)
+            check(arch,Path(tmp),options.proof,options.kernel,options.programs)

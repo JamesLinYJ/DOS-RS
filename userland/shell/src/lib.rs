@@ -3,6 +3,7 @@ extern crate alloc;
 mod arithmetic;
 mod compound;
 mod expansion;
+mod getopts;
 mod here_input;
 mod input;
 mod jobs;
@@ -110,6 +111,13 @@ impl Shell {
             }
         }
         vars.entry("IFS".into()).or_default().value = " \t\n".into();
+        vars.insert(
+            "OPTIND".into(),
+            Variable {
+                value: "1".into(),
+                exported: false,
+            },
+        );
         vars.entry("PATH".into()).or_insert(Variable {
             value: "/bin".into(),
             exported: true,
@@ -230,9 +238,8 @@ impl Shell {
             ":" | "break" | "continue" | "exec" | "exit" | "export" | "return" | "set"
             | "shift" | "unset" => CommandKind::Special,
             _ if self.functions.contains_key(name) => CommandKind::Function,
-            "true" | "false" | "cd" | "pwd" | "read" | "wait" | "jobs" | "fg" | "bg" => {
-                CommandKind::Builtin
-            }
+            "true" | "false" | "cd" | "pwd" | "read" | "getopts" | "wait" | "jobs" | "fg"
+            | "bg" => CommandKind::Builtin,
             _ => CommandKind::External,
         }
     }
@@ -270,6 +277,7 @@ impl Shell {
             ":" | "true" => 0,
             "false" => 1,
             "read" => self.read_variables(args),
+            "getopts" => self.get_options(args),
             "set" => self.set_arguments(args),
             "shift" => self.shift(args),
             "return" => {
