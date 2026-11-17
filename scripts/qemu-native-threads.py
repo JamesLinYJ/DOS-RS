@@ -17,10 +17,10 @@ from qemu_shell import Shell
 THREAD = re.compile(rb"THREAD pid=(\d+) tid=(\d+) cpu=(\d+) start=(\d+) end=(\d+)")
 FUTEX = re.compile(rb"FUTEX pid=(\d+) from=(\d+) to=(\d+) from_cpu=(\d+) to_cpu=(\d+)")
 HEADER = struct.Struct("<6I")
-WORKER = struct.Struct("<4I")
+WORKER = struct.Struct("<4Id")
 SAMPLE = struct.Struct("<QQII")
-SAMPLES = 64
-ITERATIONS = 524288
+SAMPLES = 512
+ITERATIONS = 65536
 
 
 def checksum(seed):
@@ -51,10 +51,11 @@ def verify(data, serial, cpus, sums):
     offset = HEADER.size
     results, tids, contained = [], [], []
     for i in range(workers):
-        tid, owner, value, err = WORKER.unpack_from(data, offset)
+        tid, owner, value, err, floating_sum = WORKER.unpack_from(data, offset)
         offset += WORKER.size
         checked(owner == pid and tid > 0 and tid not in (parent, *tids), "worker PID/TID mismatch")
         checked(value == sums[i] and err == (9, 35)[i], "worker computation or errno mismatch")
+        checked(floating_sum == count * samples * (0.5, 1.75)[i], "worker floating-point state mismatch")
         tids.append(tid)
         slices = [(cpu, start, end) for t, cpu, start, end in intervals if t == tid]
         complete = []
@@ -66,7 +67,8 @@ def verify(data, serial, cpus, sums):
                 complete.append((cpu, start, end))
         checked(complete, f"no complete ring-3 sample inside a matching CPU slice for TID {tid}")
         contained.append(complete)
-        results.append(dict(tid=tid, checksum=value, errno=err, contained_samples=len(complete)))
+        results.append(dict(tid=tid, checksum=value, floating_sum=floating_sum, errno=err,
+                            contained_samples=len(complete)))
     wakeups = [tuple(map(int, row)) for row in FUTEX.findall(serial)]
     wakeups = [(t, a, b) for p, f, t, a, b in wakeups if p == pid and f == parent and t in tids]
     checked({t for t, _, _ in wakeups} == set(tids), "missing positive futex wake for a worker")
@@ -113,7 +115,8 @@ def run(arch, firmware, cpus, kernel, work, proof, sums):
     loaded = work / "kernel.efi"
     shutil.copyfile(kernel, loaded)
     log = proof / (name + ".serial")
-    shell = Shell(qemu.boot_args(loaded, arch, work / "boot", cpus, firmware) +
+    esp_mib = max(36, (loaded.stat().st_size >> 20) + 8)
+    shell = Shell(qemu.boot_args(loaded, arch, work / "boot", cpus, firmware, esp_mib=esp_mib) +
                   ["-accel", "tcg,thread=multi", "-drive", f"if=ide,format=raw,file={disk}"], log, work)
     try:
         shell.wait(b"A:\\> ")

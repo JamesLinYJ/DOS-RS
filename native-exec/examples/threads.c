@@ -5,8 +5,8 @@
 #include <stdatomic.h>
 #include <unistd.h>
 
-#define SAMPLES 64
-#define ITERATIONS 524288
+#define SAMPLES 512
+#define ITERATIONS 65536
 #define STACK_BYTES 16384
 
 /* Fixed-width records shared with the host test on both x86 ABIs. */
@@ -16,10 +16,11 @@ struct sample {
 };
 struct worker_result {
     uint32_t tid, pid, checksum, error;
+    double floating_sum;
     struct sample samples[SAMPLES];
 };
 _Static_assert(sizeof(struct sample) == 24, "sample layout");
-_Static_assert(sizeof(struct worker_result) == 16 + SAMPLES * 24, "worker layout");
+_Static_assert(sizeof(struct worker_result) == 24 + SAMPLES * 24, "worker layout");
 
 static _Alignas(16) unsigned char stacks[2][STACK_BYTES];
 static struct worker_result results[2];
@@ -69,6 +70,8 @@ static int worker(void *argument) {
     __atomic_add_fetch(&arrived, 1, __ATOMIC_ACQ_REL);
     while (__atomic_load_n(&arrived, __ATOMIC_ACQUIRE) != 2) { }
     uint32_t value = 1 + i;
+    volatile double increment = i == 0 ? 0.5 : 1.75;
+    double total = 0;
     for (unsigned s = 0; s < SAMPLES; ++s) {
         struct sample *sample = &r->samples[s];
         stamp(&sample->start, &sample->first_cpu);
@@ -76,9 +79,11 @@ static int worker(void *argument) {
             value ^= value << 13;
             value ^= value >> 17;
             value ^= value << 5;
+            total += increment;
         }
         /* Publish the result before the ending hardware sample. */
         r->checksum = value;
+        r->floating_sum = total;
         stamp(&sample->end, &sample->last_cpu);
     }
     return 40 + i;
