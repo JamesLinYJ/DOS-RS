@@ -2105,7 +2105,7 @@ utilities	tag_19_09_01	chapter	utilities/V3_chap02.html#tag_19_09_01	open	open
 utilities	tag_19_09_01_01	chapter	utilities/V3_chap02.html#tag_19_09_01_01	open	open	
 utilities	tag_19_09_01_02	chapter	utilities/V3_chap02.html#tag_19_09_01_02	open	open	
 utilities	tag_19_09_01_03	chapter	utilities/V3_chap02.html#tag_19_09_01_03	open	open	
-utilities	tag_19_09_01_04	chapter	utilities/V3_chap02.html#tag_19_09_01_04	open	open	
+utilities	tag_19_09_01_04	chapter	utilities/V3_chap02.html#tag_19_09_01_04	partial	partial	tests/user-shell/variables.sh,scripts/qemu-user-shell.py
 utilities	tag_19_09_01_05	chapter	utilities/V3_chap02.html#tag_19_09_01_05	open	open	
 utilities	tag_19_09_01_06	chapter	utilities/V3_chap02.html#tag_19_09_01_06	open	open	
 utilities	tag_19_09_02	chapter	utilities/V3_chap02.html#tag_19_09_02	open	open	
@@ -2152,14 +2152,14 @@ utilities	dot	base	utilities/V3_chap02.html#tag_19_19	open	open
 utilities	eval	base	utilities/V3_chap02.html#tag_19_20	open	open	
 utilities	exec	base	utilities/V3_chap02.html#tag_19_21	open	open	
 utilities	exit	base	utilities/V3_chap02.html#tag_19_22	open	open	
-utilities	export	base	utilities/V3_chap02.html#tag_19_23	open	open	
-utilities	readonly	base	utilities/V3_chap02.html#tag_19_24	open	open	
+utilities	export	base	utilities/V3_chap02.html#tag_19_23	partial	partial	tests/user-shell/variables.sh
+utilities	readonly	base	utilities/V3_chap02.html#tag_19_24	partial	partial	tests/user-shell/variables.sh
 utilities	return	base	utilities/V3_chap02.html#tag_19_25	open	open	
 utilities	set	base	utilities/V3_chap02.html#tag_19_26	partial	partial	tests/user-shell/expand.sh
 utilities	shift	base	utilities/V3_chap02.html#tag_19_27	partial	partial	tests/user-shell/expand.sh
 utilities	times	base	utilities/V3_chap02.html#tag_19_28	open	open	
 utilities	trap	base	utilities/V3_chap02.html#tag_19_29	open	open	
-utilities	unset	base	utilities/V3_chap02.html#tag_19_30	open	open	
+utilities	unset	base	utilities/V3_chap02.html#tag_19_30	partial	partial	tests/user-shell/variables.sh
 utilities	tag_20	chapter	utilities/V3_chap03.html#tag_20	open	open	
 utilities	admin	XSI	utilities/admin.html#tag_20_01	open	open	
 utilities	alias	base	utilities/alias.html#tag_20_02	open	open	
@@ -2215,7 +2215,7 @@ utilities	fuser	XSI	utilities/fuser.html#tag_20_49	open	open
 utilities	gencat	base	utilities/gencat.html#tag_20_50	open	open	
 utilities	get	XSI	utilities/get.html#tag_20_51	open	open	
 utilities	getconf	base	utilities/getconf.html#tag_20_52	open	open	
-utilities	getopts	base	utilities/getopts.html#tag_20_53	partial	partial	tests/user-shell/getopts.sh
+utilities	getopts	base	utilities/getopts.html#tag_20_53	partial	partial	tests/user-shell/getopts.sh,tests/user-shell/variables.sh
 utilities	gettext	base	utilities/gettext.html#tag_20_54	open	open	
 utilities	ngettext	base	utilities/gettext.html#tag_20_54	open	open	
 utilities	grep	base	utilities/grep.html#tag_20_55	open	open	
@@ -2264,7 +2264,7 @@ utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qe
 utilities	prs	XSI	utilities/prs.html#tag_20_97	open	open	
 utilities	ps	base	utilities/ps.html#tag_20_98	open	open	
 utilities	pwd	base	utilities/pwd.html#tag_20_99	open	open	
-utilities	read	base	utilities/read.html#tag_20_100	partial	partial	tests/user-shell/read.sh
+utilities	read	base	utilities/read.html#tag_20_100	partial	partial	tests/user-shell/read.sh,tests/user-shell/variables.sh
 utilities	readlink	base	utilities/readlink.html#tag_20_101	partial	partial	scripts/qemu-coreutils.py#247
 utilities	realpath	base	utilities/realpath.html#tag_20_102	partial	partial	scripts/qemu-coreutils.py#280,281,282
 utilities	renice	base	utilities/renice.html#tag_20_103	open	open	

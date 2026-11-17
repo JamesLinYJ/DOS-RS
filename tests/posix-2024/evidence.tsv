@@ -1,5 +1,5 @@
 source	item	i686	x86_64	test	behavior
-utilities/getopts.html#tag_20_53	getopts	partial	partial	tests/user-shell/getopts.sh	Grouped options, attached/separate/empty arguments, silent errors, unset OPTARG, reset via assignment/export/read/arithmetic, subshell cursor, function and explicit operands; readonly variables and full locale coverage remain open
+utilities/getopts.html#tag_20_53	getopts	partial	partial	tests/user-shell/getopts.sh,tests/user-shell/variables.sh	Grouped options, attached/separate/empty arguments, silent errors, unset OPTARG, reset via assignment/export/read/arithmetic, subshell cursor, function and explicit operands; readonly destination errors preserve the value; full locale coverage remains open
 utilities/cat.html#tag_20_13	cat	partial	partial	qemu-coreutils.py#0..22	File operands, stdin, repeated operands, byte preservation and option/IO errors
 utilities/wc.html#tag_20_148	wc	partial	partial	qemu-coreutils.py#23..45,80..83	C and C.UTF-8, bytes/lines/words/characters/width, multiple operands, errors and totals
 utilities/true.html#tag_20_127	true	partial	partial	qemu-coreutils.py#46..48	Zero status and empty streams for normal and ignored operands
@@ -175,7 +175,7 @@ utilities/V3_chap02.html#tag_19_06_05	tag_19_06_05	partial	partial	tests/user-sh
 utilities/V3_chap02.html#tag_19_06_06	tag_19_06_06	partial	partial	tests/user-shell/expand.sh	Directory-relative glob, quoted patterns, unmatched patterns and the noglob option
 utilities/V3_chap02.html#tag_19_26	set	partial	partial	tests/user-shell/expand.sh	Replace positional arguments, set and clear noglob, enable nounset on invocation
 utilities/V3_chap02.html#tag_19_27	shift	partial	partial	tests/user-shell/expand.sh	Shift through two-digit positional arguments; default shift also covered by read.sh
-utilities/read.html#tag_20_100	read	partial	partial	tests/user-shell/read.sh	Read successive records from one descriptor, escaped IFS, continuation, raw input, delimiter, NUL, EOF and pipeline input
+utilities/read.html#tag_20_100	read	partial	partial	tests/user-shell/read.sh,tests/user-shell/variables.sh	Read successive records from one descriptor, escaped IFS, continuation, raw input, delimiter, NUL, EOF and pipeline input; readonly destination fails without terminating the caller
 utilities/csplit.html#tag_20_26	csplit	partial	partial	scripts/qemu-coreutils.py#291,292,293	Line and pattern operands, stdin, suppressed empty pieces and failed-match cleanup verified after shutdown
 utilities/env.html#tag_20_39	env	partial	partial	scripts/qemu-coreutils.py#307,308,309	Cleared environment, assignments with spaces and NUL-separated output
 utilities/join.html#tag_20_63	join	partial	partial	scripts/qemu-coreutils.py#294,295,296,297	Sorted matching and unpaired rows, explicit field order, delimiters and stdin
@@ -207,3 +207,7 @@ functions/timer_delete.html#tag_17_627	timer_delete	partial	partial	ports/musl/t
 functions/timer_getoverrun.html#tag_17_628	timer_getoverrun	partial	partial	ports/musl/tests/timers.c	Periodic blocked signal coalescing and delivered SI_TIMER overrun snapshot agree; 64-bit sigval and two timers sharing one standard signal
 functions/timer_getoverrun.html#tag_17_628	timer_gettime	partial	partial	ports/musl/tests/timers.c	Disarmed values, active periodic interval and remaining deadline, absolute expired timer and invalid timer IDs
 functions/timer_getoverrun.html#tag_17_628	timer_settime	partial	partial	ports/musl/tests/timers.c	Relative periodic and absolute realtime deadlines, past monotonic deadline immediately readable, old value and invalid nanosecond/flag errors
+utilities/V3_chap02.html#tag_19_23	export	partial	partial	tests/user-shell/variables.sh	Unset versus empty values, inherited environment and removal of export attributes, quoted -p roundtrip, invalid name/option and output errors
+utilities/V3_chap02.html#tag_19_24	readonly	partial	partial	tests/user-shell/variables.sh	Unset/empty/value attributes, quoted -p roundtrip, assignment/prefix/loop/arithmetic/default/read/getopts protection and interactive error survival
+utilities/V3_chap02.html#tag_19_30	unset	partial	partial	tests/user-shell/variables.sh	Absent names succeed, -v and -f select separate namespaces, variable attributes removed and readonly/name/option errors diagnosed
+utilities/V3_chap02.html#tag_19_09_01_04	tag_19_09_01_04	partial	partial	tests/user-shell/variables.sh,scripts/qemu-user-shell.py	Functions precede external lookup; search continues after a FAT candidate name is too long, missing command returns 127, trace records resolved independent ELF paths
