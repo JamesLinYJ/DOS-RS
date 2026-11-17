@@ -18,3 +18,5 @@ These DOS programs exercise the CPU, DOS ABI, and driver packet format of a fixe
 | architecture.com | architecture.asm | — | `c65de0c0c53c376f5af4a19e083c61ff92145a69a43f0224b1d738646c380eac` |
 
 ECHO.SYS includes the original 32-byte DOS MZ device header. PROBEVER.COM is loaded as PROBE.COM when testing SETVER. The architecture client remains at `tests/architecture.com`. These fixtures are excluded from the installation media.
+
+[PSPPLACE](pspplace.c) is built as a 386 real-mode COM with Smaller C. It checks the process and environment MCB owners, reads back its file and reports the PSP segment on standard output. Build the host Smaller C tools, then pass their checkout via `--smaller-c` to [the native EXEC placement test](../../../scripts/realmode-exec-placement.py), together with `--toolchain`, `--image`, `--ram-dir`, `--proof` and `--dosbox`. The 286 run uses a Rust16 MZ client and checks the granted paragraphs against its executable header. [Smaller C revision](https://github.com/alexfru/SmallerC/tree/1865d79ce7a5ad3f8a9515a571437cee084b8b1d)
