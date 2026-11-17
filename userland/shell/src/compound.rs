@@ -23,17 +23,7 @@ impl Shell {
         let mut positionals = alloc::vec![self.args.first().cloned().unwrap_or_default()];
         positionals.extend_from_slice(&words[1..]);
         let previous = core::mem::replace(&mut self.args, positionals);
-        let mut saved = Vec::new();
-        for (name, value) in assignments {
-            let old = self.vars.insert(
-                name.clone(),
-                super::Variable {
-                    value,
-                    exported: true,
-                },
-            );
-            saved.push((name, old));
-        }
+        let saved = self.prefix(assignments);
         self.function_depth += 1;
         let status = if matches!(body.compound, Some(Compound::Subshell(_))) {
             let pid = unsafe { super::fork() };
@@ -51,13 +41,7 @@ impl Shell {
         self.function_depth -= 1;
         self.returning = false;
         self.args = previous;
-        for (name, old) in saved.into_iter().rev() {
-            if let Some(var) = old {
-                self.vars.insert(name, var);
-            } else {
-                self.vars.remove(&name);
-            }
-        }
+        self.restore_prefix(saved);
         status
     }
 

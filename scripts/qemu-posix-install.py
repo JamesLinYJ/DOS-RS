@@ -111,6 +111,7 @@ def run(arch,work,proof,volume,archive):
         second.command("hello.com",prompt=b"A:\\> ",expect=b"GUEST HELLO COM")
     finally:
         second.close()
+    qemu.check_native_boot(proof / (arch+"-cold.serial"), arch, mode)
     with tempfile.TemporaryDirectory(dir=work) as temporary:
         tmp=Path(temporary)
         fat_copy=tmp/"fat.img"

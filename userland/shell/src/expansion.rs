@@ -113,7 +113,7 @@ fn scalar(pieces: Vec<Piece>) -> String {
 }
 
 impl Shell {
-    fn ifs(&self) -> &str {
+    pub(super) fn ifs(&self) -> &str {
         self.vars.get("IFS").map_or(" \t\n", |v| v.value.as_str())
     }
 

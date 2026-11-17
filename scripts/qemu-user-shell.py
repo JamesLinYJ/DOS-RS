@@ -13,6 +13,10 @@ import qemu
 from qemu_shell import Shell
 
 DATA = bytes(range(256)) * 83 + b"DOS-RS"
+READ_DATA = (b"   alpha  beta  gamma  \n" b"  x\\ y:z\\:q:  end \n"
+             b"left\\\nright tail\n" b"a\\b c\\ d\n"
+             b"field1:field2::field4:|two words|abc\0last fragment")
+
 
 
 def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=False, grammar=False, std_tools=False):
@@ -41,6 +45,8 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $? > exp.rc", prompt=b"$ ")
             vm.command("sh ifs.sh > ifs.out", prompt=b"$ ")
             vm.command("echo $? > ifs.rc", prompt=b"$ ")
+            vm.command("sh read.sh > read.out", prompt=b"$ ", timeout=120)
+            vm.command("echo $? > read.rc", prompt=b"$ ")
         if job_control:
             offset = serial.stat().st_size
             vm.enter("cat")
@@ -57,6 +63,7 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
         vm.command("echo $?", expect=b"7\r\n")
     finally:
         vm.close()
+    qemu.check_native_boot(serial, arch, mode)
     trace = serial.read_bytes()
     for path in (b"/bin/sh", b"/bin/cat", b"/bin/wc", b"/bin/echo"):
         if b"path=" + path + b"\r\n" not in trace:
@@ -76,7 +83,8 @@ def script_fixture(fixture, work):
     (fixture / "SUB").mkdir()
     (fixture / "SUB/ONE.TX").write_bytes(b"one")
     (fixture / "SUB/TWO.TX").write_bytes(b"two")
-    for name in ("control.sh", "expand.sh", "ifs.sh", "plain"):
+    (fixture / "read.dat").write_bytes(READ_DATA)
+    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "plain"):
         shutil.copyfile(qemu.ROOT / "tests/user-shell" / name, fixture / name)
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
@@ -99,6 +107,13 @@ def script_fixture(fixture, work):
     # Keep the Issue 8 examples independent of the chosen host interpreter.
     expected["ifs.out"] = b"2:[x]:[y]\n3:[x]:[:]:[y]\n"
     expected["ifs.rc"] = b"23\n"
+    expected["read.out"] = (
+        b"space:0:[alpha]:[beta  gamma]\nescaped:0:[x y]:[z:q]:[end]\n"
+        b"continued:0:[leftright]:[tail]\nraw:0:[a\\b c\\ d]:[]\n"
+        b"remainder:0:[field1]:[field2::field4:]\nnext:0:[two words]\n"
+        b"nul:0:[abc]\npartial:1:[last]:[fragment]\neof:1:[]:[]\n"
+        b"pipe:[piped]:[value]\nremain:1:positional\n")
+    expected["read.rc"] = b"31\n"
     return expected
 
 
@@ -122,7 +137,7 @@ def check(arch, root, proof):
     for name in PROBES:
         build_probe(arch, fixture / name)
     subprocess.run(["mcopy", "-s", "-i", disk, fixture / "SUB", "::"], check=True)
-    for name in ("control.sh", "expand.sh", "ifs.sh", "plain", *PROBES):
+    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "read.dat", "plain", *PROBES):
         subprocess.run(["mcopy", "-i", disk, fixture / name, "::" + name], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)

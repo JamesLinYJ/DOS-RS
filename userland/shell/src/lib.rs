@@ -3,6 +3,7 @@ extern crate alloc;
 mod arithmetic;
 mod compound;
 mod expansion;
+mod input;
 mod jobs;
 mod options;
 mod redirection;
@@ -59,6 +60,14 @@ fn wait(pid: i32) -> Result<i32, i32> {
 struct Variable {
     value: String,
     exported: bool,
+}
+
+#[derive(PartialEq)]
+enum CommandKind {
+    Special,
+    Function,
+    Builtin,
+    External,
 }
 
 struct Invocation {
@@ -215,12 +224,51 @@ impl Shell {
         ));
         if denied { 126 } else { 127 }
     }
+    fn command_kind(&self, name: &str) -> CommandKind {
+        match name {
+            ":" | "break" | "continue" | "exec" | "exit" | "export" | "return" | "set"
+            | "shift" | "unset" => CommandKind::Special,
+            _ if self.functions.contains_key(name) => CommandKind::Function,
+            "true" | "false" | "cd" | "pwd" | "read" | "wait" | "jobs" | "fg" | "bg" => {
+                CommandKind::Builtin
+            }
+            _ => CommandKind::External,
+        }
+    }
+
+    fn prefix(&mut self, assignments: Vec<(String, String)>) -> Vec<(String, Option<Variable>)> {
+        assignments
+            .into_iter()
+            .map(|(name, value)| {
+                let old = self.vars.insert(
+                    name.clone(),
+                    Variable {
+                        value,
+                        exported: true,
+                    },
+                );
+                (name, old)
+            })
+            .collect()
+    }
+
+    fn restore_prefix(&mut self, saved: Vec<(String, Option<Variable>)>) {
+        for (name, old) in saved.into_iter().rev() {
+            if let Some(var) = old {
+                self.vars.insert(name, var);
+            } else {
+                self.vars.remove(&name);
+            }
+        }
+    }
+
     fn builtin(&mut self, words: &[String]) -> Option<i32> {
         let name = words.first()?.as_str();
         let args = &words[1..];
         let code = match name {
             ":" | "true" => 0,
             "false" => 1,
+            "read" => self.read_variables(args),
             "set" => self.set_arguments(args),
             "shift" => self.shift(args),
             "return" => {
@@ -387,12 +435,23 @@ impl Shell {
                 self.set(k, v);
             }
             self.substitution_status.unwrap_or(0)
-        } else if let Some(body) = self.functions.get(&words[0]).cloned() {
-            self.call_function(&body, &words, assignments)
-        } else if let Some(code) = self.builtin(&words) {
-            code
         } else {
-            self.external(&words, &assignments)
+            let kind = self.command_kind(&words[0]);
+            match kind {
+                CommandKind::External => self.external(&words, &assignments),
+                CommandKind::Function => {
+                    let body = self.functions[&words[0]].clone();
+                    self.call_function(&body, &words, assignments)
+                }
+                CommandKind::Builtin | CommandKind::Special => {
+                    let old = self.prefix(assignments);
+                    let status = self.builtin(&words).unwrap();
+                    if kind == CommandKind::Builtin {
+                        self.restore_prefix(old);
+                    }
+                    status
+                }
+            }
         };
         redirection::finish(saved, !permanent);
         result
@@ -405,29 +464,7 @@ impl Shell {
             };
             let name = call.words.first().map(String::as_str);
             if !matches!(p.commands[0].compound, Some(syntax::Compound::Subshell(_)))
-                && name.is_none_or(|name| {
-                    self.functions.contains_key(name)
-                        || matches!(
-                            name,
-                            ":" | "true"
-                                | "false"
-                                | "break"
-                                | "continue"
-                                | "return"
-                                | "exit"
-                                | "export"
-                                | "set"
-                                | "shift"
-                                | "unset"
-                                | "cd"
-                                | "pwd"
-                                | "wait"
-                                | "exec"
-                                | "fg"
-                                | "bg"
-                                | "jobs"
-                        )
-                })
+                && name.is_none_or(|name| self.command_kind(name) != CommandKind::External)
             {
                 return self.invoke(&p.commands[0], false, call);
             }
