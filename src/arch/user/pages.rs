@@ -8,7 +8,7 @@ use core::arch::x86::__cpuid;
 use core::arch::x86_64::__cpuid;
 use core::ops::Range;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use dosrs_native_exec::{ANON_BASE, ANON_END, BASE, END, PAGE};
+use dosrs_native_exec::{ANON_BASE, ANON_END, BASE, END, PAGE, STACK_LIMIT, STACK_TOP};
 use x86::controlregs::*;
 
 #[repr(C, align(4096))]
@@ -39,6 +39,23 @@ impl AddressSpace {
     pub(crate) fn prepare(&mut self) -> Result<(), &'static str> {
         if self.table.is_none() {
             self.table = Some(UserPageTable::build(&self.image, 0..0, None)?);
+        }
+        Ok(())
+    }
+    pub(crate) fn ensure_stack(&mut self, address: usize) -> Result<(), &'static str> {
+        let previous = self.image.stack_bottom();
+        self.image.grow_stack(address)?;
+        if previous != self.image.stack_bottom() {
+            match UserPageTable::build(&self.image, 0..0, None) {
+                Ok(root) => {
+                    self.invalidate();
+                    self.table = Some(root);
+                }
+                Err(error) => {
+                    self.image.rollback_stack(previous);
+                    return Err(error);
+                }
+            }
         }
         Ok(())
     }
@@ -112,6 +129,7 @@ impl Drop for AddressSpace {
 fn identity_mapped(address: usize) -> bool {
     (address as u64) < 0x1_0000_0000
         && !(BASE..END).contains(&address)
+        && !(STACK_LIMIT..STACK_TOP).contains(&address)
         && !(ANON_BASE..ANON_END).contains(&address)
 }
 const RETIRED: usize = 1 << (usize::BITS - 1);

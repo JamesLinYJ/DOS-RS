@@ -10,7 +10,7 @@ use core::{
     future::poll_fn,
     task::{Context, Poll},
 };
-use dosrs_native_exec::{Call, END, Machine, STACK};
+use dosrs_native_exec::{Call, Machine, STACK, STACK_TOP};
 use dosrs_native_posix::{Errno, Open, Process, Whence};
 
 pub(super) struct Executable {
@@ -31,7 +31,7 @@ fn initial_stack<T: AsRef<[u8]>>(
     uid: u32,
     gid: u32,
 ) -> Result<(usize, usize), &'static str> {
-    let mut sp = END;
+    let mut sp = STACK_TOP;
     let mut pointers = Vec::new();
     pointers
         .try_reserve_exact(argv.len() + env.len())
@@ -343,7 +343,7 @@ pub(super) fn execve(
     args: [usize; 3],
 ) -> Result<Executable, isize> {
     let name = super::paths::string(image, args[0])?;
-    let mut remaining = END - STACK - 1024;
+    let mut remaining = STACK_TOP - STACK - 1024;
     let argv = strings(image, args[1], &mut remaining)?;
     let env = strings(image, args[2], &mut remaining)?;
     let file = p.open_executable(&name).map_err(errno)?;

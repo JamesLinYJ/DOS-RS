@@ -17,7 +17,7 @@ def verify(arch, root, proof):
     with disk.open("wb") as f:
         f.truncate(4 << 20)
     subprocess.run(["mformat", "-i", disk, "::"], check=True)
-    for name in ("family","signal","bigimage"):
+    for name in ("family","signal","bigimage","stack"):
         app = root / (name + ".elf")
         subprocess.run([sys.executable, qemu.ROOT / "scripts/native-cc.py", "--arch", arch,
                         *(["--text-base","0x61000000"] if name=="bigimage" else []),
@@ -30,6 +30,7 @@ def verify(arch, root, proof):
         vm.wait(b"A:\\> ")
         vm.command("c:")
         vm.command("bigimage.elf", expect=b"5 MiB ELF and disjoint anonymous mappings OK")
+        vm.command("stack.elf", expect=b"main stack: lazy 256 KiB, fork, limit and parent recovery OK")
         vm.command("family.elf", expect=b"fork exec wait OK")
         vm.command("signal.elf", expect=b"signal delivery stop continue wait OK")
     finally:

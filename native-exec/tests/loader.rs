@@ -1,5 +1,5 @@
 // Use real linker output to exercise both ELF header layouts and segment permissions.
-use dosrs_native_exec::{ANON_BASE, BASE, END, Frame, Machine, PAGE, STACK};
+use dosrs_native_exec::{ANON_BASE, BASE, Frame, Machine, PAGE, STACK, STACK_LIMIT, STACK_TOP};
 use std::{fs, process::Command};
 
 #[repr(align(4096))]
@@ -81,9 +81,9 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
     assert_eq!(data, [1, 2, 3]);
     assert!(image.write(STACK - 1, &[0, 0]).is_err());
     assert!(image.read(usize::MAX - 1, &mut data).is_err());
-    assert!(image.write(END - 1, &[1, 2]).is_err());
+    assert!(image.write(STACK_TOP - 1, &[1, 2]).is_err());
     let mut last = [1];
-    image.read(END - 1, &mut last).unwrap();
+    image.read(STACK_TOP - 1, &mut last).unwrap();
     assert_eq!(last, [0]);
     REMAINING.with(|left| {
         let saved = left.replace(2);
@@ -91,6 +91,25 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
         assert_eq!(left.replace(saved), 2);
         assert!(image.check(ANON_BASE, 1, false).is_err());
     });
+    let resident = image.pages().count();
+    REMAINING.with(|left| {
+        let saved = left.replace(2);
+        assert!(image.grow_stack(STACK - PAGE).is_err());
+        assert_eq!(left.replace(saved), 2);
+    });
+    assert_eq!(image.pages().count(), resident);
+    assert_eq!(image.stack_bottom(), STACK);
+    image.grow_stack(STACK - PAGE).unwrap();
+    assert!(image.pages().count() > resident);
+    image.write(STACK - 1, &[17]).unwrap();
+    let mut child = image.fork().unwrap();
+    assert_eq!(child.stack_bottom(), image.stack_bottom());
+    child.write(STACK - 1, &[19]).unwrap();
+    image.read(STACK - 1, &mut last).unwrap();
+    assert_eq!(last, [17]);
+    assert!(image.grow_stack(STACK_LIMIT - 1).is_err());
+    image.rollback_stack(STACK);
+    assert_eq!(image.pages().count(), resident);
     let base = image.map_anonymous(600).unwrap();
     assert_eq!(base, ANON_BASE);
     image.write(base + 575 * PAGE, &[44]).unwrap();

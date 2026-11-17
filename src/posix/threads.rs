@@ -20,7 +20,7 @@ use core::{
     ops::Range,
     task::{Context, Poll},
 };
-use dosrs_native_exec::{Call, END, PAGE, STACK};
+use dosrs_native_exec::{Call, PAGE, STACK_LIMIT, STACK_TOP};
 use dosrs_native_posix::Process;
 
 #[derive(Clone, Copy)]
@@ -113,7 +113,7 @@ type Outcome = Result<u8, (u8, String)>;
 
 impl Threads {
     pub fn new(main: Thread) -> Result<Self, &'static str> {
-        Self::from_caller(main, STACK..END, 0)
+        Self::from_caller(main, STACK_LIMIT..STACK_TOP, 0)
     }
     pub(super) fn from_caller(
         main: Thread,
@@ -224,11 +224,28 @@ impl Threads {
                 }
             }
             t.registers = Some(returned.thread);
-            match returned
+            let mut outcome = returned
                 .outcome
-                .map_err(|message| (126, format!("{message}\n")))?
-            {
-                Stop::Fault(vector) => {
+                .map_err(|message| (126, format!("{message}\n")))?;
+            let sp = t.registers.as_ref().unwrap().stack_pointer();
+            if t.stack.start == STACK_LIMIT && t.stack.contains(&sp) {
+                // A system call may be the first writer to an untouched local
+                // buffer. Materialize the live stack down to the ABI red zone.
+                let low = sp.saturating_sub(128).max(STACK_LIMIT);
+                if low < image.stack_bottom() && image.ensure_stack(low).is_err() {
+                    outcome = Stop::Fault(14, None);
+                }
+            }
+            match outcome {
+                // Compilers may probe below SP before moving it. The
+                // reserved stack is also addressable by sibling threads.
+                Stop::Fault(14, Some(address))
+                    if (STACK_LIMIT..STACK_TOP).contains(&address)
+                        && image.ensure_stack(address).is_ok() =>
+                {
+                    t.state = State::Ready;
+                }
+                Stop::Fault(vector, _) => {
                     let signo = signal::exception(vector);
                     let action = signals::disposition(pid, signo, true);
                     if action.handler > 1

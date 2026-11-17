@@ -72,6 +72,7 @@ struct Local {
     gdt: [u64; 8],
     tss: [u8; 104],
     host_stack: usize,
+    fault_address: usize,
     frame: *mut Frame,
     user_fp: *mut u8,
     host_fp: Floating,
@@ -81,6 +82,7 @@ impl Local {
         gdt: [0; 8],
         tss: [0; 104],
         host_stack: 0,
+        fault_address: 0,
         frame: ptr::null_mut(),
         user_fp: ptr::null_mut(),
         host_fp: Floating::INITIAL,
@@ -154,7 +156,7 @@ pub(crate) struct Thread {
 pub(crate) enum Stop {
     Call(usize),
     Slice,
-    Fault(usize),
+    Fault(usize, Option<usize>),
 }
 impl Thread {
     pub fn try_new(
@@ -264,6 +266,9 @@ impl Thread {
         self.signal_mask = mask;
         true
     }
+    pub(crate) fn stack_pointer(&self) -> usize {
+        self.regs.sp
+    }
     pub fn result(&mut self, value: isize) {
         self.regs.regs[cpu::AX] = value as usize;
     }
@@ -292,7 +297,7 @@ impl Thread {
         if self.regs.sp as u64 >= dosrs_native_exec::USER_END
             || self.regs.ip as u64 >= dosrs_native_exec::USER_END
         {
-            return Ok(Stop::Fault(13));
+            return Ok(Stop::Fault(13, None));
         }
         let (id, apic) = super::platform::boot_cpu();
         if !apic
@@ -305,6 +310,7 @@ impl Thread {
         }
         let _activation = table.acquire(slot)?;
         let host = pages::enter(table)?;
+        let fault_address;
         // The scheduler exclusively owns this thread until this CPU traps. RSP0
         // (ESP0 on i686) names its kernel stack for every privilege transition.
         unsafe {
@@ -344,6 +350,7 @@ impl Thread {
             cpu::save((&raw mut (*local).host_fp).cast());
             cpu::restore((*local).user_fp);
             cpu::swtch(&raw mut (*local).host_stack, context as usize);
+            fault_address = (*local).fault_address;
             #[cfg(target_arch = "x86_64")]
             {
                 seg::load_fs(host_fs.0);
@@ -360,7 +367,8 @@ impl Thread {
         Ok(match self.regs.vector {
             64 => Stop::Call(self.regs.regs[cpu::AX]),
             0xf0 | 0xf1 | 0xff => Stop::Slice,
-            fault => Stop::Fault(fault),
+            14 if matches!(self.regs.error, 4 | 6) => Stop::Fault(14, Some(fault_address)),
+            fault => Stop::Fault(fault, None),
         })
     }
 }
@@ -386,6 +394,11 @@ fn from_user(frame: *const Frame) -> ! {
         }
         cpu::save((*local).user_fp);
         cpu::restore((&raw const (*local).host_fp).cast());
+        if (*frame).vector == 14 {
+            // CR2 belongs to the trapping CPU; the scheduler can collect
+            // this thread on a different CPU after it returns.
+            (*local).fault_address = x86::controlregs::cr2();
+        }
         (*local).frame.write(frame.read());
         if matches!((*frame).vector, 0xf0 | 0xf1) {
             super::platform::user_eoi();

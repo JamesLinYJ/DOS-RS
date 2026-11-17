@@ -16,8 +16,12 @@ pub const END: usize = BASE + 0x20_0000;
 /// Sparse anonymous mappings keep the original ELF and stack ABI intact.
 pub const ANON_BASE: usize = 0x6100_0000;
 pub const ANON_END: usize = 0x8000_0000;
-pub const STACK: usize = END - 16 * PAGE;
-const LIMIT: usize = STACK - PAGE;
+// Keep legacy PT_LOAD addresses valid and give the main stack a disjoint
+// growing range. Both ends are aligned to the 2 MiB supervisor mappings.
+const LIMIT: usize = END - 17 * PAGE;
+pub const STACK_TOP: usize = ANON_BASE - (2 << 20);
+pub const STACK_LIMIT: usize = STACK_TOP - (8 << 20);
+pub const STACK: usize = STACK_TOP - 16 * PAGE;
 /// The kernel identity-maps the low four GiB. Sparse ELF64 segments can use
 /// the rest of the lower canonical half in four-level paging mode.
 pub const HIGH_USER_START: u64 = 1 << 32;
@@ -49,6 +53,7 @@ pub struct Mapping<F> {
 }
 pub struct Image<F: Frame> {
     pages: Vec<(usize, Mapping<F>)>,
+    stack_bottom: usize,
     pub entry: usize,
     pub phdr: Option<(usize, usize, usize)>,
 }
@@ -79,6 +84,7 @@ impl<F: Frame> Image<F> {
         let entry = usize::try_from(h.e_entry(le).into()).map_err(|_| "invalid ELF entry")?;
         let mut image = Self {
             pages: Vec::new(),
+            stack_bottom: STACK,
             entry,
             phdr: None,
         };
@@ -184,7 +190,7 @@ impl<F: Frame> Image<F> {
         if !executable_entry {
             return Err("entry is outside executable code");
         }
-        for addr in (STACK..END).step_by(PAGE) {
+        for addr in (STACK..STACK_TOP).step_by(PAGE) {
             image.append_page(addr)?.writable = true;
         }
         // Keep binary searches valid when the ABI stack precedes high segments.
@@ -238,6 +244,7 @@ impl<F: Frame> Image<F> {
         }
         Ok(Self {
             pages,
+            stack_bottom: self.stack_bottom,
             entry: self.entry,
             phdr: self.phdr,
         })
@@ -313,6 +320,39 @@ impl<F: Frame> Image<F> {
         if size > ANON_END - base {
             return Err("insufficient virtual memory");
         }
+        self.allocate_pages(base, count, true)?;
+        Ok(base)
+    }
+
+    pub fn stack_bottom(&self) -> usize {
+        self.stack_bottom
+    }
+
+    pub fn grow_stack(&mut self, address: usize) -> Result<()> {
+        if !(STACK_LIMIT..STACK_TOP).contains(&address) {
+            return Err("address outside the main stack");
+        }
+        if address < self.stack_bottom {
+            let base = address & !(16 * PAGE - 1);
+            self.allocate_pages(base, (self.stack_bottom - base) / PAGE, false)?;
+            self.stack_bottom = base;
+        }
+        Ok(())
+    }
+
+    /// Discard only the pages of an uncommitted stack extension after a table
+    /// rebuild failed. Existing frames still belong to the old hardware root.
+    pub fn rollback_stack(&mut self, old_bottom: usize) {
+        debug_assert!((self.stack_bottom..=STACK).contains(&old_bottom));
+        let start = self
+            .pages
+            .partition_point(|page| page.0 < self.stack_bottom);
+        let end = self.pages.partition_point(|page| page.0 < old_bottom);
+        self.pages.drain(start..end);
+        self.stack_bottom = old_bottom;
+    }
+
+    fn allocate_pages(&mut self, base: usize, count: usize, anonymous: bool) -> Result<()> {
         if count > F::available() {
             return Err("insufficient physical memory");
         }
@@ -320,10 +360,10 @@ impl<F: Frame> Image<F> {
             .try_reserve(count)
             .map_err(|_| "insufficient page metadata")?;
         let start = self.pages.len();
-        for address in (base..base + size).step_by(PAGE) {
+        for address in (base..base + count * PAGE).step_by(PAGE) {
             match Mapping::zero() {
                 Ok(mut mapping) => {
-                    mapping.anonymous = true;
+                    mapping.anonymous = anonymous;
                     mapping.writable = true;
                     self.pages.push((address, mapping));
                 }
@@ -336,7 +376,7 @@ impl<F: Frame> Image<F> {
         // Move the appended run into address order without a second allocation.
         let insert = self.pages[..start].partition_point(|page| page.0 < base);
         self.pages[insert..].rotate_right(count);
-        Ok(base)
+        Ok(())
     }
 
     fn unmap_range(&self, base: usize, count: usize) -> Result<core::ops::Range<usize>> {

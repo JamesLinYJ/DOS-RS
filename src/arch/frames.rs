@@ -3,7 +3,9 @@ mod bitmap;
 
 use crate::kernel_cell::KernelCell;
 use core::sync::atomic::{AtomicU8, Ordering};
-use dosrs_native_exec::{ANON_BASE, ANON_END, BASE, END, Frame, Image, PAGE, Result};
+use dosrs_native_exec::{
+    ANON_BASE, ANON_END, BASE, END, Frame, Image, PAGE, Result, STACK_LIMIT, STACK_TOP,
+};
 
 static FRAMES: KernelCell<bitmap::FreeFrames> = KernelCell::new(bitmap::FreeFrames::new());
 
@@ -22,7 +24,7 @@ where
     }
     // Low firmware pages include the IVT, option ROMs and AP startup code.
     frames.region(0, 1 << 20, false);
-    for &(start, end) in &[(BASE, END), (ANON_BASE, ANON_END)] {
+    for &(start, end) in &[(BASE, END), (STACK_LIMIT, STACK_TOP), (ANON_BASE, ANON_END)] {
         frames.region(start as u64, (end - start) as u64, false);
     }
     for &(start, length) in reserved {
