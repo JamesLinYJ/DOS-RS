@@ -27,7 +27,7 @@ def fat_tool(name):
     raise FileNotFoundError(name)
 
 
-def client(tools):
+def clients(tools):
     build = ROOT / "target/file-ownership"
     build.mkdir(parents=True, exist_ok=True)
     io, adapter = build / "io.obj", build / "client.obj"
@@ -40,8 +40,9 @@ def client(tools):
                RUST16_OBJECTS=os.pathsep.join(map(str, (io, adapter))))
     subprocess.run([tools / "scripts/cargo16.sh", "--locked", "--release", "--manifest-path",
                     ROOT / "native-tools/Cargo.toml", "--target-dir", build,
-                    "--example", "file_ownership"], check=True, env=env)
-    return build / "dos16/release/examples/file_ownership.exe"
+                    "--example", "file_ownership", "--example", "psp_jft"], check=True, env=env)
+    examples = build / "dos16/release/examples"
+    return (examples / "file_ownership.exe").read_bytes(), (examples / "psp_jft.exe").read_bytes()
 
 
 def mcopy(image, src, dest, data=None):
@@ -117,7 +118,7 @@ def fill_volume(disk):
         raise RuntimeError("expected exactly one free 512-byte cluster before the near-full write")
 
 
-def matrix(args, exe, cpu, fat):
+def matrix(args, owner, psp_jft, cpu, fat):
     # Full cylinders allow DOSBox-X and QEMU to expose identical sector counts.
     cyl = 16 if fat == 16 else 68
     prefix = f"{cpu}-fat{fat}"
@@ -128,9 +129,10 @@ def matrix(args, exe, cpu, fat):
         with disk.open("wb") as stream:
             stream.truncate(cyl * 16 * 63 * 512)
         subprocess.run([fat_tool("mkfs.fat"), "-F", str(fat), "-s", "1", disk], check=True)
-        mcopy(disk, "-", "::OWNER.EXE", exe)
+        mcopy(disk, "-", "::OWNER.EXE", owner)
         mcopy(disk, ROOT / "tests/fixtures/dos/FILES.COM", "::FILES.COM")
         if args.suite == "all":
+            mcopy(disk, "-", "::PSPJFT.EXE", psp_jft)
             # Input for the historical COM child, which also creates its own API.TXT.
             mcopy(disk, "-", "::BIG.BIN", bytes(65538) + b"ABCD")
             mcopy(disk, "-", "::SEQ.BIN", b"0123456789")
@@ -145,9 +147,11 @@ def matrix(args, exe, cpu, fat):
         if args.suite == "all":
             if b"INT21 7.10 FILE API OK" not in write:
                 failures.append("the COM child failed its DOS file API check")
-            advanced = run("handles-stream", ["OWNER HANDLES", "OWNER STREAM", "OWNER SHORT"])
+            advanced = run("handles-stream", ["OWNER HANDLES", "PSPJFT.EXE", "OWNER STREAM", "OWNER SHORT"])
             if advanced.count(b"OWN: OK") != 3 or b"OWN: child closed inherited handles" not in advanced:
                 failures.append(f"handle/stream DOS checks: {advanced!r}")
+            if b"PASS PSP/JFT" not in advanced.splitlines():
+                failures.append(f"new PSP / relocated JFT: {advanced!r}")
             fill_volume(disk)
             full = run("full", ["OWNER FULL"])
             if b"OWN: OK" not in full:
@@ -203,11 +207,11 @@ def main():
     args.proof.mkdir(parents=True, exist_ok=True)
     args.image = args.image.read_bytes()
     print("Boot image SHA-256", hashlib.sha256(args.image).hexdigest(), flush=True)
-    exe = client(args.toolchain.resolve()).read_bytes()
+    owner, psp_jft = clients(args.toolchain.resolve())
     failures = []
     for cpu in (("286", "386") if args.cpu == "both" else (args.cpu,)):
         for fat in ((16, 32) if args.fat == "both" else (int(args.fat),)):
-            for error in matrix(args, exe, cpu, fat):
+            for error in matrix(args, owner, psp_jft, cpu, fat):
                 failures.append(f"{cpu} FAT{fat}: {error}")
     for failure in failures:
         print("FAIL", failure, file=sys.stderr)
