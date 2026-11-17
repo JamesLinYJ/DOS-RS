@@ -57,12 +57,16 @@ pub fn diagnostic(tool: &[u8], path: &[u8], errno: i32) {
         9 => b"Bad file descriptor",
         12 => b"Cannot allocate memory",
         13 => b"Permission denied",
+        17 => b"File exists",
+        18 => b"Invalid cross-device link",
         20 => b"Not a directory",
         21 => b"Is a directory",
         22 => b"Invalid argument",
         28 => b"No space left on device",
         30 => b"Read-only file system",
         32 => b"Broken pipe",
+        39 => b"Directory not empty",
+        95 => b"Operation not supported",
         _ => b"Unknown error",
     };
     path_diagnostic(tool, path, message);

@@ -9,6 +9,8 @@ mod allocator;
 pub mod cli;
 #[cfg(feature = "alloc")]
 pub mod ends;
+#[cfg(feature = "alloc")]
+pub mod links;
 pub mod stat;
 
 pub mod ffi {

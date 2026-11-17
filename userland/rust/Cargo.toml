@@ -62,3 +62,16 @@ name = "tail"
 path = "tools/tail.rs"
 required-features = ["alloc"]
 crate-type = ["staticlib"]
+
+[[example]]
+name = "link"
+path = "tools/link.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "unlink"
+path = "tools/unlink.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
