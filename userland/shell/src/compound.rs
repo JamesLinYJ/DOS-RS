@@ -9,10 +9,6 @@ pub(super) struct LoopControl {
     levels: usize,
 }
 
-unsafe extern "C" {
-    fn fnmatch(pattern: *const i8, subject: *const i8, flags: i32) -> i32;
-}
-
 impl Shell {
     pub(super) fn call_function(
         &mut self,
@@ -111,25 +107,7 @@ impl Shell {
         word: &super::Word,
         subject: &core::ffi::CStr,
     ) -> Result<bool, ()> {
-        use super::Part;
-        let mut pattern = String::new();
-        for part in word {
-            let (text, quoted) = match part {
-                Part::Literal(text) => (text.clone(), false),
-                Part::Quoted(text) => (text.clone(), true),
-                Part::Parameter(key, quoted) => (self.parameter(key), *quoted),
-                Part::Substitution(body, quoted) => (self.capture(body)?, *quoted),
-                Part::Arithmetic(word, quoted) => (self.arithmetic(word)?, *quoted),
-            };
-            for ch in text.chars() {
-                if quoted {
-                    pattern.push('\\');
-                }
-                pattern.push(ch);
-            }
-        }
-        Ok(alloc::ffi::CString::new(pattern)
-            .is_ok_and(|p| unsafe { fnmatch(p.as_ptr(), subject.as_ptr(), 0) == 0 }))
+        Ok(super::expansion::matches(&self.pattern(word)?, subject))
     }
 
     pub(super) fn compound(&mut self, command: &Compound) -> i32 {

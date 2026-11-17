@@ -8,8 +8,22 @@ pub enum Part {
     Literal(String),
     Quoted(String),
     Parameter(String, bool),
+    Braced(String, Modifier, bool),
     Substitution(Vec<Pipeline>, bool),
     Arithmetic(Word, bool),
+}
+pub enum Modifier {
+    Length,
+    Select {
+        op: char,
+        colon: bool,
+        word: Word,
+    },
+    Trim {
+        prefix: bool,
+        longest: bool,
+        pattern: Word,
+    },
 }
 pub type Word = Vec<Part>;
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -165,30 +179,74 @@ fn dollar(parts: &mut Word, input: &mut Input<'_>, depth: u16, quoted: bool) -> 
         ));
         return Ok(());
     }
-    let mut name = String::new();
     if input.next_if_eq(&'{').is_some() {
-        loop {
-            match input.next() {
-                Some('}') => break,
-                Some(ch) => name.push(ch),
-                None => return Err(Error::Incomplete("unterminated parameter")),
-            }
-        }
-    } else if let Some(&ch) = input.peek() {
-        if ch == '_' || ch.is_ascii_alphabetic() {
-            while let Some(ch) = input.next_if(|v| *v == '_' || v.is_ascii_alphanumeric()) {
-                name.push(ch);
-            }
-        } else if "?$#!@*".contains(ch) || ch.is_ascii_digit() {
-            name.push(input.next().unwrap());
-        }
+        parts.push(braced(input, depth + 1, quoted)?);
+        return Ok(());
     }
+    let name = parameter_name(input, false);
     if name.is_empty() {
         literal(parts, '$', quoted);
     } else {
         parts.push(Part::Parameter(name, quoted));
     }
     Ok(())
+}
+
+fn parameter_name(input: &mut Input<'_>, braced: bool) -> String {
+    let mut name = String::new();
+    if let Some(&ch) = input.peek() {
+        if ch == '_' || ch.is_ascii_alphabetic() {
+            while let Some(ch) = input.next_if(|v| *v == '_' || v.is_ascii_alphanumeric()) {
+                name.push(ch);
+            }
+        } else if braced && ch.is_ascii_digit() {
+            while let Some(ch) = input.next_if(char::is_ascii_digit) {
+                name.push(ch);
+            }
+        } else if "?$#!@*-".contains(ch) || ch.is_ascii_digit() {
+            name.push(input.next().unwrap());
+        }
+    }
+    name
+}
+
+fn braced(input: &mut Input<'_>, depth: u16, quoted: bool) -> Result<Part, Error> {
+    let mut length = input.clone();
+    if length.next_if_eq(&'#').is_some() {
+        let name = parameter_name(&mut length, true);
+        if !name.is_empty() && length.next_if_eq(&'}').is_some() {
+            *input = length;
+            return Ok(Part::Braced(name, Modifier::Length, quoted));
+        }
+    }
+    if input.peek().is_none() {
+        return Err(Error::Incomplete("unterminated parameter"));
+    }
+    let name = parameter_name(input, true);
+    if name.is_empty() {
+        return Err(Error::Invalid("invalid parameter name"));
+    }
+    if input.next_if_eq(&'}').is_some() {
+        return Ok(Part::Parameter(name, quoted));
+    }
+    let colon = input.next_if_eq(&':').is_some();
+    let op = input
+        .next()
+        .ok_or(Error::Incomplete("unterminated parameter"))?;
+    let modifier = match op {
+        '-' | '+' | '=' | '?' => Modifier::Select {
+            op,
+            colon,
+            word: word_parts(input, depth, true, quoted)?.0,
+        },
+        '%' | '#' if !colon => Modifier::Trim {
+            prefix: op == '#',
+            longest: input.next_if_eq(&op).is_some(),
+            pattern: word_parts(input, depth, true, false)?.0,
+        },
+        _ => return Err(Error::Invalid("invalid parameter expansion")),
+    };
+    Ok(Part::Braced(name, modifier, quoted))
 }
 
 fn arithmetic_word(input: &mut Input<'_>, depth: u16) -> Result<Option<Word>, Error> {
@@ -224,18 +282,30 @@ fn arithmetic_word(input: &mut Input<'_>, depth: u16) -> Result<Option<Word>, Er
     Err(Error::Incomplete("unterminated arithmetic expansion"))
 }
 
-fn word(input: &mut Input<'_>, depth: u16) -> Result<(Word, bool), Error> {
+fn word_parts(
+    input: &mut Input<'_>,
+    depth: u16,
+    braced: bool,
+    double: bool,
+) -> Result<(Word, bool), Error> {
     let mut parts = Vec::new();
     let mut quoted = false;
     let mut quote = None;
+    let mut closed = false;
     while let Some(&c) = input.peek() {
-        if quote.is_none() && (c.is_ascii_whitespace() || "|&;<>()".contains(c)) {
+        if braced && quote.is_none() && c == '}' {
+            input.next();
+            closed = true;
+            break;
+        }
+        if !braced && quote.is_none() && (c.is_ascii_whitespace() || "|&;<>()".contains(c)) {
             break;
         }
         input.next();
+        let protected = double || quote.is_some();
         match c {
             '\'' | '"' if quote == Some(c) => quote = None,
-            '\'' | '"' if quote.is_none() => {
+            '\'' | '"' if quote.is_none() && (!double || c == '"') => {
                 quoted = true;
                 quote = Some(c);
                 if input.peek() == Some(&c) && !matches!(parts.last(), Some(Part::Quoted(_))) {
@@ -245,7 +315,10 @@ fn word(input: &mut Input<'_>, depth: u16) -> Result<(Word, bool), Error> {
             '\\' if quote != Some('\'') => {
                 quoted = true;
                 let escaped = input.next().ok_or(Error::Incomplete("unfinished escape"))?;
-                if quote == Some('"') && !"$`\"\\\n".contains(escaped) {
+                if (double || quote == Some('"'))
+                    && !(braced && escaped == '}')
+                    && !"$`\"\\\n".contains(escaped)
+                {
                     literal(&mut parts, '\\', true);
                 }
                 if escaped != '\n' {
@@ -255,19 +328,22 @@ fn word(input: &mut Input<'_>, depth: u16) -> Result<(Word, bool), Error> {
             '`' if quote != Some('\'') => {
                 quoted = true;
                 parts.push(Part::Substitution(
-                    backquote(input, depth, quote == Some('"'))?,
-                    quote.is_some(),
+                    backquote(input, depth, double || quote == Some('"'))?,
+                    protected,
                 ));
             }
             '$' if quote != Some('\'') => {
                 quoted = true;
-                dollar(&mut parts, input, depth, quote.is_some())?;
+                dollar(&mut parts, input, depth, protected)?;
             }
-            _ => literal(&mut parts, c, quote.is_some()),
+            _ => literal(&mut parts, c, protected),
         }
     }
     if quote.is_some() {
         return Err(Error::Incomplete("unterminated quote"));
+    }
+    if braced && !closed {
+        return Err(Error::Incomplete("unterminated parameter"));
     }
     Ok((parts, quoted))
 }
@@ -348,7 +424,7 @@ fn token(it: &mut Input<'_>, depth: u16) -> Result<Option<Token>, Error> {
                     *it = digits;
                     Token::Redirect(fd, mode)
                 } else {
-                    let (parts, quoted) = word(it, depth)?;
+                    let (parts, quoted) = word_parts(it, depth, false, false)?;
                     Token::Word(parts, quoted)
                 }
             }

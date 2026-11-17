@@ -84,7 +84,7 @@ def run(arch,work,proof,volume,archive):
     if volume is None:
         data.mkdir()
         reference = shell.script_fixture(data, work)
-        expected.update({"subst.out": reference, "subst.rc": b"13\n"})
+        expected.update(reference)
         if std_tools:
             expected.update({"encoded.txt": base64.encodebytes(shell.DATA), "decoded.bin": shell.DATA})
         (data/"a.txt").write_bytes(shell.DATA)
@@ -96,9 +96,10 @@ def run(arch,work,proof,volume,archive):
     fat=table[0x0c]
     subprocess.run(["mcopy","-i",f"{disk}@@{fat[0]*512}",app,"::FDCHECK.ELF"],check=True)
     if volume is None:
-        probe = work / "execprog"
-        shell.build_script_probe(arch, probe)
-        subprocess.run(["mcopy", "-i", f"{disk}@@{fat[0]*512}", probe, "::execprog"], check=True)
+        for name in shell.PROBES:
+            probe = work / name
+            shell.build_probe(arch, probe)
+            subprocess.run(["mcopy", "-i", f"{disk}@@{fat[0]*512}", probe, "::" + name], check=True)
     serial=proof/(arch+"-install.serial")
     shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,grammar=volume is None,std_tools=std_tools)
     second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)

@@ -32,10 +32,15 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("base64 a.txt > encoded.txt", prompt=b"$ ", timeout=240)
             vm.command("base64 -d encoded.txt > decoded.bin", prompt=b"$ ", timeout=240)
         if grammar:
-            probe = "/dos/c/execprog" if dual_volume else "./execprog"
-            vm.command(probe, prompt=b"$ ", expect=b"exec: ENOEXEC, PATH, argv and environment passed")
+            prefix = "/dos/c/" if dual_volume else "./"
+            vm.command(prefix + "dirprobe", prompt=b"$ ", expect=b"directory: enumeration, openat, fstatat, fchdir and root parent passed")
+            vm.command(prefix + "execprog", prompt=b"$ ", expect=b"exec: ENOEXEC, PATH, argv and environment passed")
             vm.command('sh control.sh one "two words" > subst.out', prompt=b"$ ", timeout=300 if dual_volume else 120)
             vm.command("echo $? > subst.rc", prompt=b"$ ")
+            vm.command("sh expand.sh > exp.out", prompt=b"$ ", timeout=300 if dual_volume else 120)
+            vm.command("echo $? > exp.rc", prompt=b"$ ")
+            vm.command("sh ifs.sh > ifs.out", prompt=b"$ ")
+            vm.command("echo $? > ifs.rc", prompt=b"$ ")
         if job_control:
             offset = serial.stat().st_size
             vm.enter("cat")
@@ -59,24 +64,42 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
     print(f"{arch}/{mode}: guest ran /bin/sh, /bin/cat, /bin/wc and /bin/echo", flush=True)
 
 
-def build_script_probe(arch, output):
+PROBES = {"execprog": "exec_script.c", "dirprobe": "working_dir.c"}
+
+
+def build_probe(arch, output):
     subprocess.run([sys.executable, qemu.ROOT / "ports/musl/cc.py", "--arch", arch,
-                    "-o", output, qemu.ROOT / "ports/musl/tests/exec_script.c"], check=True)
+                    "-o", output, qemu.ROOT / "ports/musl/tests" / PROBES[output.name]], check=True)
 
 
 def script_fixture(fixture, work):
-    for name in ("control.sh", "plain"):
+    (fixture / "SUB").mkdir()
+    (fixture / "SUB/ONE.TX").write_bytes(b"one")
+    (fixture / "SUB/TWO.TX").write_bytes(b"two")
+    for name in ("control.sh", "expand.sh", "ifs.sh", "plain"):
         shutil.copyfile(qemu.ROOT / "tests/user-shell" / name, fixture / name)
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
     with tempfile.TemporaryDirectory(dir=work) as temporary:
         refdir = Path(temporary)
         shutil.copy2(fixture / "plain", refdir / "plain")
-        reference = subprocess.run([reference_shell, fixture / "control.sh", "one", "two words"],
-                                   cwd=refdir, env=dict(os.environ, LC_ALL="C"), capture_output=True)
-    if reference.returncode != 13 or reference.stderr:
-        raise RuntimeError(f"host shell reference failed: {reference!r}")
-    return reference.stdout
+        shutil.copytree(fixture / "SUB", refdir / "SUB")
+        expected = {}
+        for script, args, output, status, code in [
+            ("control.sh", ["one", "two words"], "subst.out", "subst.rc", 13),
+            ("expand.sh", [], "exp.out", "exp.rc", 17),
+        ]:
+            ref = subprocess.run([reference_shell, fixture / script, *args], cwd=refdir,
+                                 env=dict(os.environ, LC_ALL="C"), capture_output=True)
+            if ref.returncode != code or ref.stderr:
+                raise RuntimeError(f"host shell reference failed: {ref!r}")
+            expected[output] = ref.stdout
+            expected[status] = f"{code}\n".encode()
+    # dash and bash disagree about adjacent IFS bytes from separate expansions.
+    # Keep the Issue 8 examples independent of the chosen host interpreter.
+    expected["ifs.out"] = b"2:[x]:[y]\n3:[x]:[:]:[y]\n"
+    expected["ifs.rc"] = b"23\n"
+    return expected
 
 
 def check(arch, root, proof):
@@ -96,15 +119,17 @@ def check(arch, root, proof):
     fixture = root / "fixture"
     fixture.mkdir()
     reference = script_fixture(fixture, root)
-    build_script_probe(arch, fixture / "execprog")
-    for name in ("control.sh", "plain", "execprog"):
+    for name in PROBES:
+        build_probe(arch, fixture / name)
+    subprocess.run(["mcopy", "-s", "-i", disk, fixture / "SUB", "::"], check=True)
+    for name in ("control.sh", "expand.sh", "ifs.sh", "plain", *PROBES):
         subprocess.run(["mcopy", "-i", disk, fixture / name, "::" + name], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)
     exercise(args + ["-drive", f"if=ide,format=raw,file={disk}"], arch, mode, root, serial, job_control=True, grammar=True)
     subprocess.run(["fsck.fat", "-n", disk], check=True)
     for name, expected in [("count.txt", f"{len(DATA)}\n".encode()), ("copy.bin", DATA),
-                           ("subst.out", reference), ("subst.rc", b"13\n")]:
+                           *reference.items()]:
         result = subprocess.check_output(["mcopy","-i",disk,"::"+name,"-"])
         (proof/(arch+"-"+name)).write_bytes(result)
         if result != expected:

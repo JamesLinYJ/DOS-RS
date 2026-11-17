@@ -2,7 +2,9 @@
 extern crate alloc;
 mod arithmetic;
 mod compound;
+mod expansion;
 mod jobs;
+mod options;
 mod redirection;
 mod substitution;
 mod syntax;
@@ -79,6 +81,8 @@ struct Shell {
     flow: Option<compound::LoopControl>,
     monitor: bool,
     interactive: bool,
+    noglob: bool,
+    nounset: bool,
     exiting: bool,
 }
 impl Shell {
@@ -95,6 +99,7 @@ impl Shell {
                 );
             }
         }
+        vars.entry("IFS".into()).or_default().value = " \t\n".into();
         vars.entry("PATH".into()).or_insert(Variable {
             value: "/bin".into(),
             exported: true,
@@ -114,32 +119,13 @@ impl Shell {
             flow: None,
             monitor: false,
             interactive: false,
+            noglob: false,
+            nounset: false,
             exiting: false,
         }
     }
     fn get(&self, key: &str) -> &str {
         self.vars.get(key).map_or("", |v| &v.value)
-    }
-    fn parameter(&self, key: &str) -> String {
-        match key {
-            "?" => self.last.to_string(),
-            "$" => self.shell_pid.to_string(),
-            "#" => self.args.len().saturating_sub(1).to_string(),
-            "!" => self
-                .jobs
-                .last()
-                .map(jobs::Job::last_pid)
-                .or_else(|| self.background.last().copied())
-                .map_or_else(String::new, |n| n.to_string()),
-            "*" | "@" => self.args.get(1..).unwrap_or_default().join(" "),
-            name => {
-                if let Ok(i) = name.parse::<usize>() {
-                    self.args.get(i).cloned().unwrap_or_default()
-                } else {
-                    self.get(name).into()
-                }
-            }
-        }
     }
     fn arithmetic(&mut self, word: &Word) -> Result<String, ()> {
         let text = self.expand(word, false)?.concat();
@@ -149,59 +135,6 @@ impl Shell {
                 diagnostic(&format!("arithmetic: {message}"));
                 self.exiting = !self.interactive;
             })
-    }
-    fn expand(&mut self, word: &Word, split: bool) -> Result<Vec<String>, ()> {
-        let mut fields = Vec::new();
-        let mut field = String::new();
-        let mut present = false;
-        for part in word {
-            match part {
-                Part::Literal(s) | Part::Quoted(s) => {
-                    field.push_str(s);
-                    present = true;
-                }
-                Part::Parameter(name, quoted) if name == "@" && *quoted => {
-                    for (i, text) in self.args.iter().skip(1).enumerate() {
-                        if i > 0 {
-                            fields.push(core::mem::take(&mut field));
-                        }
-                        field.push_str(text);
-                        present = true;
-                    }
-                }
-                Part::Parameter(_, quoted)
-                | Part::Substitution(_, quoted)
-                | Part::Arithmetic(_, quoted) => {
-                    let text = match part {
-                        Part::Parameter(name, _) => self.parameter(name),
-                        Part::Substitution(body, _) => self.capture(body)?,
-                        Part::Arithmetic(word, _) => self.arithmetic(word)?,
-                        _ => unreachable!(),
-                    };
-                    if *quoted || !split {
-                        field.push_str(&text);
-                        present = true;
-                        continue;
-                    }
-                    let ifs = self.vars.get("IFS").map_or(" \t\n", |v| v.value.as_str());
-                    for ch in text.chars() {
-                        if ifs.contains(ch) {
-                            if present {
-                                fields.push(core::mem::take(&mut field));
-                                present = false;
-                            }
-                        } else {
-                            field.push(ch);
-                            present = true;
-                        }
-                    }
-                }
-            }
-        }
-        if present {
-            fields.push(field);
-        }
-        Ok(fields)
     }
     fn set(&mut self, name: &str, value: &str) {
         self.vars.entry(name.into()).or_default().value = value.into();
@@ -288,6 +221,8 @@ impl Shell {
         let code = match name {
             ":" | "true" => 0,
             "false" => 1,
+            "set" => self.set_arguments(args),
+            "shift" => self.shift(args),
             "return" => {
                 if self.function_depth == 0 || args.len() > 1 {
                     diagnostic("return: expected a function and at most one status");
@@ -414,16 +349,19 @@ impl Shell {
         let mut assignments: Vec<(String, String)> = Vec::new();
         let mut words = Vec::new();
         for word in &command.words {
-            if words.is_empty()
+            if (words.is_empty() || words.first().is_some_and(|s| s == "export"))
                 && let Some(Part::Literal(first)) = word.first()
                 && let Some((key, _)) = first.split_once('=')
                 && syntax::identifier(key)
             {
-                let s = self.expand(word, false)?.concat();
-                if let Some((k, v)) = s.split_once('=') {
-                    assignments.push((k.into(), v.into()));
-                    continue;
+                let assigned = self.assignment(word)?;
+                if words.is_empty() {
+                    let (_, val) = assigned.split_once('=').unwrap();
+                    assignments.push((key.into(), val.into()));
+                } else {
+                    words.push(assigned);
                 }
+                continue;
             }
             words.extend(self.expand(word, true)?);
         }
@@ -478,6 +416,8 @@ impl Shell {
                                 | "return"
                                 | "exit"
                                 | "export"
+                                | "set"
+                                | "shift"
                                 | "unset"
                                 | "cd"
                                 | "pwd"
@@ -557,6 +497,7 @@ impl Shell {
                 .and_then(|word| word.first())
                 .map(|part| match part {
                     Part::Literal(s) | Part::Quoted(s) | Part::Parameter(s, _) => s.clone(),
+                    Part::Braced(name, ..) => name.clone(),
                     Part::Substitution(..) => "$(…)".into(),
                     Part::Arithmetic(..) => "$((…))".into(),
                 })
@@ -663,25 +604,32 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         );
         ptr = unsafe { ptr.add(1) };
     }
-    if args.get(1).is_some_and(|s| s == "-c") {
-        let Some(text) = args.get(2) else {
+    let mut sh = Shell::new(
+        vec![args.first().cloned().unwrap_or_else(|| "sh".into())],
+        &env,
+    );
+    let arguments = args.get(1..).unwrap_or_default();
+    let Ok(options) = sh.options(arguments, true) else {
+        return 2;
+    };
+    let operands = &arguments[options.first..];
+    if options.command {
+        let Some((text, positional)) = operands.split_first() else {
             diagnostic("-c requires a command");
             return 2;
         };
-        let positional = if args.len() > 3 {
-            args[3..].to_vec()
-        } else {
-            vec![args[0].clone()]
-        };
-        let mut sh = Shell::new(positional, &env);
+        if !positional.is_empty() {
+            sh.args = positional.to_vec();
+        }
+        sh.interactive = options.interactive;
         sh.run(text);
         return sh.last;
     }
-    let end_options = args.get(1).is_some_and(|s| s == "--");
-    let script_index = if end_options { 2 } else { 1 };
-    let script = args
-        .get(script_index)
-        .filter(|s| end_options || (s.as_str() != "-s" && s.as_str() != "-i"));
+    let script = if options.stdin {
+        None
+    } else {
+        operands.first()
+    };
     let fd = if let Some(path) = script {
         let Ok(c) = CString::new(path.as_str()) else {
             return 2;
@@ -696,18 +644,13 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
     } else {
         0
     };
-    let interactive = args.get(1).is_some_and(|s| s == "-i")
-        || script.is_none() && !args.get(1).is_some_and(|s| s == "-s") && jobs::interactive();
-    let mut sh = Shell::new(
-        if script.is_some() {
-            args[script_index..].to_vec()
-        } else if end_options {
-            vec![args[0].clone()]
-        } else {
-            args
-        },
-        &env,
-    );
+    let interactive =
+        options.interactive || (script.is_none() && !options.stdin && jobs::interactive());
+    if script.is_some() {
+        sh.args = operands.to_vec();
+    } else {
+        sh.args.extend_from_slice(operands);
+    }
     sh.interactive = interactive;
     sh.monitor = interactive && jobs::interactive();
     if sh.monitor {

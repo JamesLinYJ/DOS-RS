@@ -81,6 +81,7 @@ def build(arch, output, include_shell=True, uutils_archive=None):
                     "--",
                     "-Wl,--gc-sections,-s",
                     ROOT / "userland/rust/stat.c",
+                    *([shell / "paths.c"] if name == "sh" else []),
                     archive,
                 ],
                 check=True,
