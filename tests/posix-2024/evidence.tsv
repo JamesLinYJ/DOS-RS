@@ -1,4 +1,5 @@
 source	item	i686	x86_64	test	behavior
+utilities/getopts.html#tag_20_53	getopts	partial	partial	tests/user-shell/getopts.sh	Grouped options, attached/separate/empty arguments, silent errors, unset OPTARG, reset via assignment/export/read/arithmetic, subshell cursor, function and explicit operands; readonly variables and full locale coverage remain open
 utilities/cat.html#tag_20_13	cat	partial	partial	qemu-coreutils.py#0..22	File operands, stdin, repeated operands, byte preservation and option/IO errors
 utilities/wc.html#tag_20_148	wc	partial	partial	qemu-coreutils.py#23..45,80..83	C and C.UTF-8, bytes/lines/words/characters/width, multiple operands, errors and totals
 utilities/true.html#tag_20_127	true	partial	partial	qemu-coreutils.py#46..48	Zero status and empty streams for normal and ignored operands

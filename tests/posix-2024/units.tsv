@@ -2215,7 +2215,7 @@ utilities	fuser	XSI	utilities/fuser.html#tag_20_49	open	open
 utilities	gencat	base	utilities/gencat.html#tag_20_50	open	open	
 utilities	get	XSI	utilities/get.html#tag_20_51	open	open	
 utilities	getconf	base	utilities/getconf.html#tag_20_52	open	open	
-utilities	getopts	base	utilities/getopts.html#tag_20_53	open	open	
+utilities	getopts	base	utilities/getopts.html#tag_20_53	partial	partial	tests/user-shell/getopts.sh
 utilities	gettext	base	utilities/gettext.html#tag_20_54	open	open	
 utilities	ngettext	base	utilities/gettext.html#tag_20_54	open	open	
 utilities	grep	base	utilities/grep.html#tag_20_55	open	open	
