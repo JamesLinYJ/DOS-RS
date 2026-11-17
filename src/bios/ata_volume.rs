@@ -61,9 +61,18 @@ impl BlockDevice for AtaVolume {
         while !data.is_empty() {
             let lba = (offset / 512) as u32;
             let within = (offset % 512) as usize;
+            if within == 0 && data.len() >= 512 {
+                let n = data.len() / 512 * 512;
+                if !ata::write_sectors(lba, &data[..n]) {
+                    return Err(Error);
+                }
+                offset += n as u64;
+                data = &data[n..];
+                continue;
+            }
             let n = (512 - within).min(data.len());
             let mut sector = [0; 512];
-            if n != 512 && !ata::read(lba, &mut sector) {
+            if !ata::read(lba, &mut sector) {
                 return Err(Error);
             }
             sector[within..within + n].copy_from_slice(&data[..n]);

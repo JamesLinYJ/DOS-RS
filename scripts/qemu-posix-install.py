@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Cold-boot both installed partitions as a single disk and verify Btrfs with Linux."""
+import argparse
+import hashlib
+import gzip
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import struct
+import subprocess
+import sys
+import tempfile
+
+import qemu
+from qemu_shell import Shell
+
+
+def module(name):
+    spec=importlib.util.spec_from_file_location(name,qemu.ROOT/"scripts"/(name+".py"))
+    m=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+def boot(arch,disk,work):
+    machine=qemu.ARCH[arch][0]
+    args=["qemu-system-"+machine,"-m","384","-smp","4","-no-reboot",
+          "-drive",f"if=ide,index=0,format=raw,file={disk}","-boot","c"]
+    if arch=="x86_64":
+        code=qemu.firmware(machine)
+        template=Path(os.environ.get("DOS_RS_FIRMWARE_VARS",str(code.parent/"edk2-i386-vars.fd")))
+        var=work/"vars.fd"
+        shutil.copyfile(template,var)
+        args+=["-drive",f"if=pflash,unit=0,format=raw,readonly=on,file={code}",
+               "-drive",f"if=pflash,unit=1,format=raw,file={var}"]
+    return args
+
+def partitions(disk):
+    with disk.open("rb") as f: mbr=f.read(512)
+    return {mbr[450+16*i]:struct.unpack_from("<II",mbr,454+16*i)
+            for i in range(4) if mbr[450+16*i]}
+
+def extract(disk,part,target):
+    at,count=part
+    with disk.open("rb") as src,target.open("xb") as out:
+        src.seek(at*512)
+        size=count*512
+        while size:
+            data=src.read(min(size,1<<20))
+            if not data: raise ValueError("truncated partition")
+            out.write(data)
+            size-=len(data)
+
+def run(arch,work,proof,volume,archive):
+    installer=module("posix-install-image")
+    shell=module("qemu-user-shell")
+    mode="bios" if arch=="i686" else "uefi"
+    disk=work/"system.img"
+    data=work/"tree"
+    if volume is None:
+        data.mkdir()
+        (data/"a.txt").write_bytes(shell.DATA)
+    installer.assemble(arch,disk,work,volume,data if volume is None else None,trace=True)
+    table=partitions(disk)
+    app=work/"fdcheck.elf"
+    subprocess.run([sys.executable,qemu.ROOT/"scripts/native-cc.py","--arch",arch,"-o",app,
+                    qemu.ROOT/"native-exec/examples/fdcheck.c"],check=True)
+    fat=table[0x0c]
+    subprocess.run(["mcopy","-i",f"{disk}@@{fat[0]*512}",app,"::FDCHECK.ELF"],check=True)
+    serial=proof/(arch+"-install.serial")
+    shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True)
+    second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)
+    try:
+        second.wait(b"A:\\> ")
+        second.command("sh",prompt=b"$ ")
+        second.command("cat count.txt",prompt=b"$ ",expect=b"21254\r\n")
+        second.command("exit",prompt=b"A:\\> ")
+        second.command("hello.com",prompt=b"A:\\> ",expect=b"GUEST HELLO COM")
+    finally:
+        second.close()
+    with tempfile.TemporaryDirectory(dir=work) as temporary:
+        tmp=Path(temporary)
+        fat_copy=tmp/"fat.img"
+        extract(disk,fat,fat_copy)
+        fsck=subprocess.check_output(["fsck.fat","-n",fat_copy],text=True)
+        (proof/(arch+"-fat.log")).write_text(fsck)
+        # A DOS C: file must not alias a relative path on the POSIX root.
+        listing=subprocess.check_output(["mdir","-b","-i",fat_copy,"::"])
+        if b"fdcheck.elf" not in listing.lower() or b"count.txt" in listing.lower():
+            raise ValueError("incorrect DOS volume contents")
+        btrfs=tmp/"root.img"
+        extract(disk,table[0x83],btrfs)
+        restored=tmp/"restored"
+        cmd=[sys.executable,qemu.ROOT/"scripts/linux-btrfs.py","check","--image",btrfs,"--output",restored]
+        if shutil.which("btrfs"):
+            restored.mkdir()
+            checks=[["btrfs","check","--readonly","--check-data-csum",btrfs],["btrfs","restore",btrfs,restored]]
+        else:
+            checks=[cmd]
+        with (proof/(arch+"-linux.log")).open("wb") as log:
+            for cmd in checks:
+                subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,check=True)
+        if not shutil.which("btrfs"):
+            shutil.copyfile(restored/"check.log",proof/(arch+"-btrfs-check.log"))
+            restored=restored/"files"
+        result={}
+        for name,expected in [("count.txt",b"21254\n"),("copy.bin",shell.DATA),("a.txt",shell.DATA)]:
+            actual=(restored/name).read_bytes()
+            if actual!=expected: raise ValueError(f"Linux recovered different {name}")
+            result[name]={"bytes":len(actual),"sha256":hashlib.sha256(actual).hexdigest()}
+            (proof/(arch+"-"+name)).write_bytes(actual)
+        if (restored/"gone.tmp").exists():raise ValueError("unlinked file survived")
+        (proof/(arch+".json")).write_text(json.dumps({"arch":arch,"firmware":mode,"files":result,
+                "partitions":{hex(k):v for k,v in table.items()}},indent=2)+"\n")
+    if archive:
+        archive.parent.mkdir(parents=True,exist_ok=True)
+        with archive.open("xb") as out, gzip.GzipFile(filename="",mode="wb",fileobj=out,mtime=0) as gz:
+            with disk.open("rb") as src: shutil.copyfileobj(src,gz)
+        def digest(stream):
+            h=hashlib.sha256()
+            for chunk in iter(lambda:stream.read(1<<20),b""):h.update(chunk)
+            return h.hexdigest()
+        with gzip.open(archive,"rb") as src, disk.open("rb") as raw:
+            verified=digest(raw)
+            if digest(src)!=verified: raise ValueError("archived disk differs")
+        (proof/(arch+"-disk.sha256")).write_text(verified+"  system.img\n")
+    print(f"{arch}/{mode}: single-disk boot, native shell, unlink, cold read and Linux disk checks passed",flush=True)
+
+if __name__=="__main__":
+    cli=argparse.ArgumentParser(description=__doc__)
+    cli.add_argument("--arch",required=True,choices=qemu.ARCH)
+    cli.add_argument("--root-image",type=Path,help="Btrfs root with the target /bin and test a.txt")
+    cli.add_argument("--ram-dir",type=Path,required=True)
+    cli.add_argument("--proof",type=Path,default=qemu.ROOT/"target/posix-install-proof")
+    cli.add_argument("--archive",type=Path,help="retain the checked stopped disk as a new gzip archive")
+    args=cli.parse_args()
+    args.proof.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=args.ram_dir) as work:
+        run(args.arch,Path(work),args.proof,args.root_image,args.archive)

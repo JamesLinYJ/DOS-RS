@@ -48,6 +48,14 @@ Run [realmode-exec-placement.py](scripts/realmode-exec-placement.py) after chang
 
 Build with the rust16 revision pinned in the README. Use a RAM volume for all writable test images. Run the native FAT, installer and Edit scripts listed in the README. Retain serial logs, screenshots and host-side file comparisons with `--proof`. Use `rustc +stable --edition 2024 --test tests/edit_buffer.rs -o target/edit-buffer-test && target/edit-buffer-test` to exercise document offsets beyond 64 KiB on a wide host.
 
+## Installed i686 and x86_64 userspace
+
+Each installed wide-target disk boots its own kernel. Keep the native 16-bit DOS install set on its separate 286/386 build path. The BIOS image has a loader and kernel partition. The UEFI image has an ESP. Both have a FAT DOS C: and a separate Btrfs root. Use [posix-install-image.py](scripts/posix-install-image.py) on a RAM volume. A supplied root image must contain the target architecture's userspace.
+
+The userspace [shell](userland/shell/src/lib.rs) owns command interpretation, PATH search, pipeline children and redirections. The kernel [process table](src/posix/process.rs) owns parentage, groups, dispositions and wait status. The architecture module saves signal and floating-point state. File and executable path lookup use the process working directory. Keep open descriptions alive across unlink and fork. A successful exec releases close-on-exec descriptors after the replacement image is ready.
+
+Use [qemu-native-process.py](scripts/qemu-native-process.py) for fork, exec, wait and signal handling, [qemu-user-shell.py](scripts/qemu-user-shell.py) for the independent shell and [qemu-posix-install.py](scripts/qemu-posix-install.py) for a single installed disk, guest cold read and offline filesystem checks. Supply `--ram-dir` and `--proof`. The install test consumes a Btrfs root with `/bin/sh`, the corresponding tools and its documented input. Each test records the executing kernel architecture. Compare GNU behavior via [qemu-coreutils.py](scripts/qemu-coreutils.py) and maintain the [Issue 8 inventory](tests/posix-2024/README.md) against actual guest evidence.
+
 ## Checking a change
 
 Run `python3 scripts/prepare-cpu.py` before the first build. It verifies the upstream sources against the pinned manifests. The project-owned boot, kernel, scheduler and drivers are Rust. Keep compiler-generated instructions and pinned architecture-library sources distinct from project-owned files. Use Rust for new project-owned code and host-driven application tests.

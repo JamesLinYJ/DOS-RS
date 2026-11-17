@@ -29,20 +29,20 @@ class Shell:
             self.key("shift-" + c.lower() if "A" <= c <= "Z" else KEYS.get(c, c))
         self.key("ret")
 
-    def wait(self, text, since=0):
-        deadline = time.monotonic() + 40
+    def wait(self, text, since=0, timeout=40):
+        deadline = time.monotonic() + timeout
         while self.vm.poll() is None and time.monotonic() < deadline:
             if text in self.log.read_bytes()[since:]:
                 return
             time.sleep(0.06)
         raise RuntimeError(f"{self.log.name}: missing {text!r}: {self.log.read_bytes()[-1400:]!r}")
 
-    def command(self, line, prompt=b"C:\\> ", expect=None):
+    def command(self, line, prompt=b"C:\\> ", expect=None, timeout=40):
         start = self.log.stat().st_size
         self.enter(line)
-        self.wait(prompt, start)
+        self.wait(prompt, start, timeout)
         if expect is not None:
-            self.wait(expect, start)
+            self.wait(expect, start, timeout)
 
     def close(self):
         try:

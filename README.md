@@ -135,7 +135,26 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 | `NET`、`NET ARP 10.0.2.15 10.0.2.2` | 在挂有 e1000 的 QEMU 用户网络中，读出网卡地址并实际收发 ARP 帧。 |
 | `WIFI`、`BT` | Intel 无线适配器探测信息、标准 USB 蓝牙控制器状态或缺少设备的原因。 |
 
-## 原生 POSIX 文件和管道
+## 32 位和 64 位用户环境
+
+i686 BIOS 和 x86_64 UEFI 安装盘可以从同一块磁盘加载内核，挂载 Btrfs 根目录和独立的 FAT `C:`。在 DOS 提示符输入 `sh` 可进入磁盘上的 Rust `/bin/sh`，输入 `exit` 返回 DOS。下面的管道通过 `PATH` 运行两个独立的 Rust ELF。两架构均以 21,254 字节的二进制输入通过了停机核对、冷启动读回和 Linux Btrfs 数据校验。打开文件后再删除并同名重建，旧描述符仍读到原文件。[安装盘回归](scripts/qemu-posix-install.py)
+
+```sh
+cat a.txt | wc -c > count.txt
+cat count.txt
+```
+
+制盘需要 QEMU、mtools、目标架构交叉编译器和带 `mkfs.btrfs` 的构建环境。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。
+
+```sh
+python3 scripts/prepare-cpu.py
+python3 scripts/posix-install-image.py --arch i686 --ram-dir "$RAM_DISK" --output "$RAM_DISK/dos32.img"
+python3 scripts/posix-install-image.py --arch x86_64 --ram-dir "$RAM_DISK" --output "$RAM_DISK/dos64.img"
+```
+
+原生 16 位 DOS 的安装与命令解释器见上面的 286/386 章节。POSIX.1-2024 逐项验收仍在进行，GNU 工具的差分用例按架构记录。[规范清单与验证范围](tests/posix-2024/README.md)
+
+### DOS 提示符下的原生文件和管道
 
 i686 和 x86_64 的 Shell 可以运行内置 Rust 命令，也可以从挂载卷加载独立的静态 ELF 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
 
@@ -152,7 +171,7 @@ type count.txt
 
 BIOS 从 E820、UEFI 从退出启动服务时的内存图交付空闲物理页。帧分配器使用 4 GiB 以下可由内核直接访问的物理内存，扣除固件、内核及保留区。程序可以按 4 KiB 页申请匿名内存，物理页耗尽时收到 `ENOMEM`。未映射页访问触发进程异常，进程退出后释放其页帧。双架构在单核及四核 QEMU 上都测试了耗尽、重新分配和跨线程撤销映射。[内存接口](native-exec/libc/include/dos_memory.h) · [内存盘回归](scripts/qemu-native-frames.py)
 
-C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。动态链接、通用 ELF TLS、`fork` 和完整 POSIX 接口仍待实现。[独立 ELF 多核回归](scripts/qemu-native-threads.py)
+C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。静态 musl 1.2.6 程序支持 ELF TLS、pthread、`fork`、`execve` 和 `waitpid`。动态链接和完整 POSIX 验收仍待完成。[musl 复测](ports/musl/test.py) [独立 ELF 多核回归](scripts/qemu-native-threads.py)
 
 用目标架构的 `i686-elf-gcc` 或 `x86_64-elf-gcc` 和配套 binutils 构建程序。以下示例把程序放进已有的 FAT 内存盘镜像。启动同架构内核后在提示符输入 `C:`、`HELLO.ELF 7`，可看到 `hello from native C`。
 
