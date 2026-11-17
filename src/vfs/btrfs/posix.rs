@@ -231,6 +231,28 @@ pub(crate) fn getcwd(cwd: PosixDir) -> Result<Vec<u8>> {
         Ok(out)
     })
 }
+pub(crate) fn capacity() -> Result<crate::vfs::capacity::Capacity> {
+    mounted(|m| {
+        let sb = m.fs.superblock();
+        let unit = u64::from(sb.sectorsize);
+        let readonly = !m.fs.is_writable();
+        Ok(crate::vfs::capacity::Capacity {
+            block_size: unit,
+            unit,
+            blocks: sb.total_bytes / unit,
+            free: sb.total_bytes.saturating_sub(sb.bytes_used) / unit,
+            available: if readonly {
+                0
+            } else {
+                m.fs.available_data_bytes().map_err(err)? / unit
+            },
+            fsid: u64::from_le_bytes(sb.fsid[..8].try_into().unwrap()),
+            flags: 2 | u64::from(readonly),
+            name_max: 255,
+            fs_type: 0x9123683e,
+        })
+    })
+}
 pub(crate) fn stat(cwd: PosixDir, path: &[u8], who: Credentials, follow: bool) -> Result<Metadata> {
     mounted(|m| Ok(metadata(&resolve(m, cwd, path, who, follow)?)))
 }

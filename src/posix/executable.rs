@@ -185,7 +185,7 @@ pub(super) fn file_call(
         return Poll::Ready(Ok(count));
     }
     if matches!(call, Call::Read | Call::Write) {
-        let length = length.min(4096);
+        let length = length.min(p.transfer_limit(fd));
         image
             .check(address, length, call == Call::Read)
             .map_err(|_| -14isize)?;

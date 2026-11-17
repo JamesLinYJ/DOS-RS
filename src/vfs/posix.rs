@@ -25,8 +25,8 @@ pub(crate) enum Attribute {
     Times(Times),
 }
 pub(crate) use btrfs::posix::{
-    change_at, chdir, check_access, chmod, chown, getcwd, link, link_at, mkdir, pin_directory,
-    readlink, rename, rename_at, rmdir, stat, symlink, unlink,
+    capacity, change_at, chdir, check_access, chmod, chown, getcwd, link, link_at, mkdir,
+    pin_directory, readlink, rename, rename_at, rmdir, stat, symlink, unlink,
 };
 pub(crate) fn native(path: &[u8]) -> bool {
     btrfs::is_mounted()

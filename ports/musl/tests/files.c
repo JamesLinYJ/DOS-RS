@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 int main(void)
@@ -62,6 +63,14 @@ int main(void)
         fsync(relative) || fchmod(relative, 0600) || fstatat(dirfd, "relative", &after, 0) ||
         after.st_size != 3 || (after.st_mode & 0777) != 0600)
         return 12;
+    struct statvfs root, volume, dos;
+    if (statvfs(".", &root) || fstatvfs(relative, &volume) || statvfs("/dos/c/", &dos) ||
+        root.f_fsid != volume.f_fsid || root.f_fsid == dos.f_fsid || root.f_namemax != 255 ||
+        dos.f_namemax != 12 || root.f_bavail == 0 || root.f_bavail > root.f_bfree ||
+        root.f_bfree > root.f_blocks || !(root.f_flag & ST_NOSUID) || (dos.f_flag & ST_RDONLY) ||
+        fstatvfs(-1, &volume) != -1 || errno != EBADF || statvfs("absent", &volume) != -1 ||
+        errno != ENOENT)
+        return 21;
     int copy = fcntl(relative, F_DUPFD, 8);
     if (copy < 8 || lseek(copy, 0, SEEK_SET) || read(relative, buf, 3) != 3 ||
         memcmp(buf, "abc", 3) || close(copy))

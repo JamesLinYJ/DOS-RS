@@ -15,6 +15,7 @@ _Static_assert(sizeof(struct termios) == 60 && offsetof(struct termios, c_cc) ==
 #include <stdarg.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include <sys/statfs.h>
 #undef sys_open
 #include "dos_calls.h"
 
@@ -115,6 +116,26 @@ static long signal_action(long sig, struct k_sigaction *sa, struct k_sigaction *
         old->restorer = (void *)(uintptr_t)out.restorer;
 #endif
         memcpy(old->mask, &out.mask, 8);
+    }
+    return r;
+}
+
+/* DOS-RS counts allocation units in 64 bits on both ELF architectures. */
+static long filesystem_stats(long object, int descriptor, struct statfs *out)
+{
+    struct {
+        uint64_t bsize, frsize, blocks, free, available, files, ffree, fsid, flags, names, type;
+    } v;
+    if (!out)
+        return -EFAULT;
+    long r = descriptor ? sys_fstatvfs(object, (long)&v) : sys_statvfs(object, (long)&v);
+    if (!r) {
+        *out = (struct statfs){
+            .f_type = v.type, .f_bsize = v.bsize, .f_frsize = v.frsize,
+            .f_blocks = v.blocks, .f_bfree = v.free, .f_bavail = v.available,
+            .f_files = v.files, .f_ffree = v.ffree, .f_flags = v.flags, .f_namelen = v.names,
+            .f_fsid = {{(int)(uint32_t)v.fsid, (int)(uint32_t)(v.fsid >> 32)}},
+        };
     }
     return r;
 }
@@ -436,6 +457,17 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
             return -EINVAL;
         return n == SYS_munmap ? sys_unmapmem(a, ((unsigned long)b + 4095) / 4096)
                                : sys_protectmem(a, ((unsigned long)b + 4095) / 4096, c);
+#ifdef SYS_statfs64
+    case SYS_statfs64:
+    case SYS_fstatfs64:
+        if (b != sizeof(struct statfs))
+            return -EINVAL;
+        return filesystem_stats(a, n == SYS_fstatfs64, (struct statfs *)c);
+#else
+    case SYS_statfs:
+    case SYS_fstatfs:
+        return filesystem_stats(a, n == SYS_fstatfs, (struct statfs *)b);
+#endif
     case SYS_futex:
 #if defined(SYS_futex_time64) && SYS_futex_time64 != SYS_futex
     case SYS_futex_time64:

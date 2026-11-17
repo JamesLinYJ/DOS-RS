@@ -183,6 +183,31 @@ impl ProcessContext {
             _ => Err(Errno::NotSupported),
         }
     }
+    pub(in crate::posix) fn transfer_limit(&self, fd: usize) -> usize {
+        // A regular-file transfer is one VFS operation and, on Btrfs, one commit.
+        // Streams stay short so a writer cannot occupy the terminal scheduler.
+        if self
+            .get(fd)
+            .is_ok_and(|h| matches!(&*h.borrow(), Description::File { .. }))
+        {
+            256 * 1024
+        } else {
+            4096
+        }
+    }
+    pub(in crate::posix) fn file_capacity(&self, fd: usize) -> Result<vfs::capacity::Capacity> {
+        match &*self.get(fd)?.borrow() {
+            Description::File { object, .. } => object.capacity(),
+            _ => Err(Errno::Invalid),
+        }
+    }
+    pub(in crate::posix) fn path_capacity(&self, path: &[u8]) -> Result<vfs::capacity::Capacity> {
+        if vfs::posix::native(path) {
+            vfs::posix::stat(self.directory, path, self.credentials(), true)?;
+            return vfs::posix::capacity();
+        }
+        vfs::capacity::dos_path(self.cwd, path)
+    }
     pub(in crate::posix) fn fd_times(&self, fd: usize, times: vfs::posix::Times) -> Result<()> {
         match &*self.get(fd)?.borrow() {
             Description::File { object, .. } => object.set_times(times, self.credentials()),

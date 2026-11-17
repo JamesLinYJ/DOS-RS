@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 #[path = "vfs/btrfs.rs"]
 mod btrfs;
+#[path = "vfs/capacity.rs"]
+pub(crate) mod capacity;
 #[path = "vfs/dos.rs"]
 pub(crate) mod dos;
 #[path = "vfs/driver.rs"]
@@ -34,6 +36,9 @@ pub(crate) trait Node: Send {
     fn write(&self, offset: u64, data: &[u8]) -> Result<()>;
     fn sync(&self) -> Result<()>;
     fn identity(&self) -> (u32, u64);
+    fn capacity(&self) -> Result<capacity::Capacity> {
+        capacity::dos_volume(self.identity().0)
+    }
     fn directory(&self) -> Result<posix::PosixDir> {
         Err(Errno::NotDirectory)
     }

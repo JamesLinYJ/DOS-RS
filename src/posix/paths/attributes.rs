@@ -61,8 +61,7 @@ fn positioned(
     {
         return Err(-27);
     }
-    // As for ordinary read/write, transfer at most one page per syscall.
-    let length = count.min(4096) as usize;
+    let length = count.min(p.transfer_limit(fd) as u64) as usize;
     let mut buf = Vec::new();
     buf.try_reserve_exact(length).map_err(|_| -12isize)?;
     buf.resize(length, 0);
@@ -84,7 +83,9 @@ pub(super) fn dispatch(
 ) -> Option<Result<usize>> {
     if !matches!(
         call,
-        Call::Fchdir
+        Call::Statvfs
+            | Call::Fstatvfs
+            | Call::Fchdir
             | Call::Faccessat
             | Call::Fchmodat
             | Call::Fchownat
@@ -97,6 +98,15 @@ pub(super) fn dispatch(
     }
     Some((|| {
         match call {
+            Call::Statvfs | Call::Fstatvfs => {
+                let s = if call == Call::Fstatvfs {
+                    p.file_capacity(a)
+                } else {
+                    p.path_capacity(&string(image, a)?)
+                }
+                .map_err(errno)?;
+                image.write(b, &s.bytes()).map_err(|_| -14isize)?;
+            }
             Call::Fchdir => {
                 if a as i32 == -100 {
                     return Err(-9);

@@ -86,7 +86,7 @@ pub fn resolve_dir(path: &[u8]) -> Option<u32> {
     let (base, path) = path_start(path)?;
     walk(base, path)
 }
-fn walk(mut dir: u32, path: &[u8]) -> Option<u32> {
+pub(super) fn walk(mut dir: u32, path: &[u8]) -> Option<u32> {
     for part in path.split(|b| matches!(*b, b'/' | b'\\')) {
         if part.is_empty() || part == b"." {
             continue;

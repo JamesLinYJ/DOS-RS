@@ -216,3 +216,22 @@ ssize_t pwrite(int fd,const void *buf,size_t count,off_t pos) {
 extern long sys_dup3(int,int,int), sys_pipe2(int *,int);
 int dup3(int old,int next,int flags) {return (int)result(sys_dup3(old,next,flags));}
 int pipe2(int endpoints[2],int flags) {return (int)result(sys_pipe2(endpoints,flags));}
+
+#include <sys/statvfs.h>
+extern long sys_statvfs(const char *, uint64_t *), sys_fstatvfs(int, uint64_t *);
+static int capacity(long ret, const uint64_t wire[11], struct statvfs *out) {
+    if (ret < 0) return (int)result(ret);
+    *out=(struct statvfs){wire[0], wire[1], wire[2], wire[3], wire[4],
+                          wire[5], wire[6], wire[6], wire[7], wire[8], wire[9]};
+    return 0;
+}
+int statvfs(const char *path, struct statvfs *out) {
+    uint64_t wire[11];
+    if (!out) return (int)result(-EFAULT);
+    return capacity(sys_statvfs(path,wire),wire,out);
+}
+int fstatvfs(int fd, struct statvfs *out) {
+    uint64_t wire[11];
+    if (!out) return (int)result(-EFAULT);
+    return capacity(sys_fstatvfs(fd,wire),wire,out);
+}

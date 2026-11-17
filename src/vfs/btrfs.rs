@@ -69,6 +69,7 @@ pub(super) fn is_writable() -> bool {
 }
 fn err(e: Error) -> Errno {
     match e {
+        Error::NoSpace | Error::DataGroupFull(_) => Errno::NoSpace,
         Error::NotFound => Errno::NoEntry,
         Error::NotADirectory => Errno::NotDirectory,
         Error::NotAFile => Errno::IsDirectory,
@@ -523,6 +524,9 @@ impl super::Node for File {
     }
     fn set_times(&self, times: super::posix::Times, who: super::posix::Credentials) -> Result<()> {
         posix::futimens(self.0, times, who)
+    }
+    fn capacity(&self) -> Result<super::capacity::Capacity> {
+        posix::capacity()
     }
     fn metadata(&self) -> Result<super::posix::Metadata> {
         mounted(|m| Ok(posix::metadata(&m.fs.read_inode(self.0).map_err(err)?)))
