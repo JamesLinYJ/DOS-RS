@@ -104,3 +104,21 @@ utilities/sort.html#tag_20_112	sort	partial	partial	scripts/qemu-coreutils.py#19
 utilities/tr.html#tag_20_126	tr	partial	partial	scripts/qemu-coreutils.py#194,195,196	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
 utilities/unexpand.html#tag_20_136	unexpand	partial	partial	scripts/qemu-coreutils.py#197,198	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
 utilities/uniq.html#tag_20_138	uniq	partial	partial	scripts/qemu-coreutils.py#199,200,201	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+functions/access.html#tag_17_07	faccessat	partial	partial	native-exec/examples/attrcheck.c	Check read, write and execute from an open directory, including denial on a file with no execute bits
+functions/chmod.html#tag_17_72	fchmodat	partial	partial	native-exec/examples/attrcheck.c	Follow a relative symlink from a directory descriptor and change the mode on its target
+functions/chown.html#tag_17_73	fchownat	partial	partial	native-exec/examples/attrcheck.c	Update the owner of a symlink with AT_SYMLINK_NOFOLLOW while the regular inode retains its owner
+functions/fchdir.html#tag_17_135	fchdir	partial	partial	native-exec/examples/attrcheck.c	Change cwd by directory descriptor including later rename or unlink, reject regular and invalid descriptors
+functions/fchmod.html#tag_17_136	fchmod	partial	partial	native-exec/examples/atcheck.c	Change permissions via an open regular file and recover the mode via fstat
+functions/fchown.html#tag_17_137	fchown	partial	partial	native-exec/examples/atcheck.c	Set regular file owner and group via a descriptor
+functions/fcntl.html#tag_17_139	fcntl	partial	partial	native-exec/examples/lockcheck.c	Check per-descriptor flags, shared OFD and per-process advisory locks, conflicting ranges, inherited aliases, final close and wakeup
+functions/fsync.html#tag_17_192	fsync	partial	partial	native-exec/examples/atcheck.c	Flush a changed Btrfs descriptor and compare its bytes after cold boot with Linux btrfs-progs
+functions/read.html#tag_17_476	pread	partial	partial	native-exec/examples/attrcheck.c	Read a regular file at the requested offset without moving the shared file position, reject negative offsets and pipes
+functions/write.html#tag_17_699	pwrite	partial	partial	native-exec/examples/attrcheck.c	Overwrite at the requested offset with O_APPEND active, preserve descriptor position and verify bytes from the stopped disk
+functions/futimens.html#tag_17_196	utimensat	partial	partial	native-exec/examples/attrcheck.c	Set pre-epoch and post-2038 timestamps on a relative symlink without following it, preserve a regular file time using UTIME_OMIT
+functions/futimens.html#tag_17_196	futimens	partial	partial	native-exec/examples/attrcheck.c	Write seconds and nanoseconds through a descriptor, preserve both times for UTIME_OMIT and reject invalid nanoseconds
+functions/dup.html#tag_17_116	dup3	partial	partial	native-exec/examples/lockcheck.c	Create an alias with close-on-exec and close-on-fork flags, retain flags in the parent and omit the alias in the child
+functions/pipe.html#tag_17_377	pipe2	partial	partial	native-exec/examples/lockcheck.c	Set nonblocking and descriptor inheritance flags on a new pair atomically, verify EAGAIN on an empty pipe and exclusion at fork
+utilities/link.html#tag_20_66	link	partial	partial	scripts/qemu-coreutils.py#125,126,127,128,129	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+utilities/unlink.html#tag_20_139	unlink	partial	partial	scripts/qemu-coreutils.py#131,133,134,135	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+utilities/mkdir.html#tag_20_79	mkdir	partial	partial	scripts/qemu-coreutils.py#136,137,138,139,140,141,142,143,144,145	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+utilities/rmdir.html#tag_20_106	rmdir	partial	partial	scripts/qemu-coreutils.py#146,147,148,149,150,151,152	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
