@@ -49,8 +49,11 @@ int main(void)
     CHECK(tcsetpgrp(1, getpgrp()) == 0);
     CHECK(ioctl(1, TIOCGPGRP, (void *)0) == -1 && errno == EFAULT);
     CHECK(ioctl(1, TIOCSPGRP, (void *)0) == -1 && errno == EFAULT);
-    CHECK(ioctl(1, TIOCGWINSZ, &win) == 0 && win.ws_row == 25 && win.ws_col == 80);
-    CHECK(ioctl(0, TIOCSWINSZ, &win) == 0);
+    CHECK(tcgetwinsize(1, &win) == 0 && win.ws_row == 25 && win.ws_col == 80);
+    CHECK(tcsetwinsize(0, &win) == 0);
+    win.ws_row++;
+    CHECK(tcsetwinsize(0, &win) == -1 && errno == EINVAL);
+    CHECK(tcgetwinsize(0, &win) == 0 && win.ws_row == 25);
     CHECK(tcdrain(1) == 0 && tcflush(0, TCIFLUSH) == 0);
     struct pollfd writeable = {1, POLLOUT, 0};
     CHECK(tcflow(1, TCOOFF) == 0 && poll(&writeable, 1, 0) == 0);

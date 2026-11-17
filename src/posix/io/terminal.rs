@@ -593,7 +593,7 @@ impl ProcessContext {
                 } else {
                     let mut requested = [0; 8];
                     image.read(arg, &mut requested).map_err(|_| -14isize)?;
-                    if requested == b { Ok(()) } else { Err(-95) }
+                    if requested == b { Ok(()) } else { Err(-22) }
                 }
             }
             0x5409 => {
