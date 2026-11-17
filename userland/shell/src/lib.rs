@@ -11,6 +11,7 @@ mod options;
 mod redirection;
 mod substitution;
 mod syntax;
+mod variables;
 
 use alloc::{
     collections::BTreeMap,
@@ -60,8 +61,9 @@ fn wait(pid: i32) -> Result<i32, i32> {
 
 #[derive(Clone, Default)]
 struct Variable {
-    value: String,
+    value: Option<String>,
     exported: bool,
+    readonly: bool,
 }
 
 #[derive(PartialEq)]
@@ -104,23 +106,26 @@ impl Shell {
                 vars.insert(
                     name.into(),
                     Variable {
-                        value: val.into(),
+                        value: Some(val.into()),
                         exported: true,
+                        readonly: false,
                     },
                 );
             }
         }
-        vars.entry("IFS".into()).or_default().value = " \t\n".into();
+        vars.entry("IFS".into()).or_default().value = Some(" \t\n".into());
         vars.insert(
             "OPTIND".into(),
             Variable {
-                value: "1".into(),
+                value: Some("1".into()),
                 exported: false,
+                readonly: false,
             },
         );
         vars.entry("PATH".into()).or_insert(Variable {
-            value: "/bin".into(),
+            value: Some("/bin".into()),
             exported: true,
+            readonly: false,
         });
         Self {
             shell_pid: unsafe { getpid() },
@@ -143,7 +148,7 @@ impl Shell {
         }
     }
     fn get(&self, key: &str) -> &str {
-        self.vars.get(key).map_or("", |v| &v.value)
+        self.variable_value(key).unwrap_or("")
     }
     fn arithmetic(&mut self, word: &Word) -> Result<String, ()> {
         let text = self.expand(word, false)?.concat();
@@ -154,16 +159,13 @@ impl Shell {
                 self.exiting = !self.interactive;
             })
     }
-    fn set(&mut self, name: &str, value: &str) {
-        self.vars.entry(name.into()).or_default().value = value.into();
-    }
     fn external(&self, words: &[String], assignments: &[(String, String)]) -> i32 {
         let name = &words[0];
         let variables = self
             .vars
             .iter()
             .filter(|(k, v)| v.exported && !assignments.iter().any(|(a, _)| a == *k))
-            .map(|(k, v)| format!("{k}={}", v.value))
+            .filter_map(|(k, v)| v.value.as_ref().map(|value| format!("{k}={value}")))
             .chain(assignments.iter().map(|(k, v)| format!("{k}={v}")));
         let Ok(env) = variables.map(CString::new).collect::<Result<Vec<_>, _>>() else {
             return 126;
@@ -197,6 +199,9 @@ impl Shell {
             }
             match error() {
                 2 | 20 => None,
+                // A PATH entry may be on a filesystem with a shorter name limit
+                // than a later entry. This candidate did not resolve to a file.
+                36 if !name.contains('/') => None,
                 13 => {
                     denied = true;
                     None
@@ -235,8 +240,8 @@ impl Shell {
     }
     fn command_kind(&self, name: &str) -> CommandKind {
         match name {
-            ":" | "break" | "continue" | "exec" | "exit" | "export" | "return" | "set"
-            | "shift" | "unset" => CommandKind::Special,
+            ":" | "break" | "continue" | "exec" | "exit" | "export" | "readonly" | "return"
+            | "set" | "shift" | "unset" => CommandKind::Special,
             _ if self.functions.contains_key(name) => CommandKind::Function,
             "true" | "false" | "cd" | "pwd" | "read" | "getopts" | "wait" | "jobs" | "fg"
             | "bg" => CommandKind::Builtin,
@@ -244,20 +249,27 @@ impl Shell {
         }
     }
 
-    fn prefix(&mut self, assignments: Vec<(String, String)>) -> Vec<(String, Option<Variable>)> {
-        assignments
+    fn prefix(
+        &mut self,
+        assignments: Vec<(String, String)>,
+    ) -> Result<Vec<(String, Option<Variable>)>, ()> {
+        for (name, _) in &assignments {
+            self.check_variable(name)?;
+        }
+        Ok(assignments
             .into_iter()
             .map(|(name, value)| {
                 let old = self.vars.insert(
                     name.clone(),
                     Variable {
-                        value,
+                        value: Some(value),
                         exported: true,
+                        readonly: false,
                     },
                 );
                 (name, old)
             })
-            .collect()
+            .collect())
     }
 
     fn restore_prefix(&mut self, saved: Vec<(String, Option<Variable>)>) {
@@ -303,29 +315,8 @@ impl Shell {
                     s.parse::<i64>().map_or(2, |n| (n & 255) as i32)
                 })
             }
-            "export" => {
-                for arg in args {
-                    let (name, val) = arg
-                        .split_once('=')
-                        .map_or((arg.as_str(), None), |(k, v)| (k, Some(v)));
-                    if !syntax::identifier(name) {
-                        diagnostic("invalid variable name");
-                        return Some(1);
-                    }
-                    let var = self.vars.entry(name.into()).or_default();
-                    var.exported = true;
-                    if let Some(v) = val {
-                        var.value = v.into();
-                    }
-                }
-                0
-            }
-            "unset" => {
-                for k in args {
-                    self.vars.remove(k);
-                }
-                0
-            }
+            "export" | "readonly" => self.declare_variables(name, args),
+            "unset" => self.unset(args),
             "cd" => {
                 let dest = args.first().map_or(self.get("HOME"), String::as_str);
                 let Ok(path) = CString::new(dest) else {
@@ -336,7 +327,9 @@ impl Shell {
                     1
                 } else {
                     if let Some(cwd) = cwd() {
-                        self.set("PWD", &cwd);
+                        if self.set("PWD", &cwd).is_err() {
+                            return Some(1);
+                        }
                     }
                     0
                 }
@@ -406,7 +399,10 @@ impl Shell {
         let mut assignments: Vec<(String, String)> = Vec::new();
         let mut words = Vec::new();
         for word in &command.words {
-            if (words.is_empty() || words.first().is_some_and(|s| s == "export"))
+            if (words.is_empty()
+                || words
+                    .first()
+                    .is_some_and(|s| s == "export" || s == "readonly"))
                 && let Some(Part::Literal(first)) = word.first()
                 && let Some((key, _)) = first.split_once('=')
                 && syntax::identifier(key)
@@ -421,6 +417,15 @@ impl Shell {
                 continue;
             }
             words.extend(self.expand(word, true)?);
+        }
+        // Validate in the parent shell, including assignments before an external
+        // command. Detecting a readonly error only after fork would let a script
+        // incorrectly continue executing its next command.
+        for (name, _) in &assignments {
+            if self.check_variable(name).is_err() {
+                self.exiting = !self.interactive;
+                return Err(());
+            }
         }
         Ok(Invocation { words, assignments })
     }
@@ -440,10 +445,15 @@ impl Shell {
         let result = if let Some(compound) = &command.compound {
             self.compound(compound)
         } else if words.is_empty() {
+            let mut status = self.substitution_status.unwrap_or(0);
             for (k, v) in &assignments {
-                self.set(k, v);
+                if self.set(k, v).is_err() {
+                    self.exiting = !self.interactive;
+                    status = 1;
+                    break;
+                }
             }
-            self.substitution_status.unwrap_or(0)
+            status
         } else {
             let kind = self.command_kind(&words[0]);
             match kind {
@@ -452,14 +462,19 @@ impl Shell {
                     let body = self.functions[&words[0]].clone();
                     self.call_function(&body, &words, assignments)
                 }
-                CommandKind::Builtin | CommandKind::Special => {
-                    let old = self.prefix(assignments);
-                    let status = self.builtin(&words).unwrap();
-                    if kind == CommandKind::Builtin {
-                        self.restore_prefix(old);
+                CommandKind::Builtin | CommandKind::Special => match self.prefix(assignments) {
+                    Ok(old) => {
+                        let status = self.builtin(&words).unwrap();
+                        if kind == CommandKind::Builtin {
+                            self.restore_prefix(old);
+                        }
+                        status
                     }
-                    status
-                }
+                    Err(()) => {
+                        self.exiting = !self.interactive;
+                        1
+                    }
+                },
             }
         };
         redirection::finish(saved, !permanent);
@@ -588,7 +603,7 @@ impl Shell {
                 continue;
             }
             let status = self.pipeline(p);
-            self.last = if p.negate {
+            self.last = if p.negate && !self.exiting {
                 i32::from(status == 0)
             } else {
                 status

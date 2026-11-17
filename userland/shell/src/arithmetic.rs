@@ -206,7 +206,9 @@ impl<'a> Parser<'a> {
                     binary(&op[..op.len() - 1], a, b)?
                 };
                 if active {
-                    shell.set(name, &n.to_string());
+                    shell
+                        .set(name, &n.to_string())
+                        .map_err(|_| "readonly variable")?;
                 }
                 left = Operand::Number(n);
             } else {

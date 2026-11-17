@@ -1,0 +1,41 @@
+export-unset:
+child-unset:
+export-empty:x:[]
+child-empty:x:[]
+child-value:[two words]
+child-unexported:
+readonly-unset:
+readonly-empty:x:[]
+readonly-value:[two words * ? 中文]
+child-readonly:[two words * ? 中文]:
+subshell:[inner]
+outside:
+restored-readonly::x:[two words * ? 中文]:[a'b * ? 中文]:[$(echo BAD) $HOME ; \ end]
+readonly-restored-protected
+restored-export::[a'b * ? 中文]
+unset-absent:0
+function-present
+variable-removed:
+function-removed:127:[kept]
+path-search-continues
+read-protected:[two words * ? 中文]
+getopts-protected:[two words * ? 中文]
+reject:assignment
+reject:external-prefix
+reject:builtin-prefix
+reject:function-prefix
+reject:export
+reject:readonly
+reject:unset
+reject:loop
+reject:arithmetic
+reject:default
+reject:negated
+reject:export-name
+reject:readonly-name
+reject:unset-name
+reject:export-option
+reject:readonly-option
+reject:unset-option
+reject:export-output
+reject:readonly-output

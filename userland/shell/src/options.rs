@@ -87,7 +87,10 @@ impl Shell {
     pub(super) fn set_arguments(&mut self, args: &[String]) -> i32 {
         if args.is_empty() {
             for (key, var) in &self.vars {
-                let value = var.value.replace('\'', "'\\''");
+                let Some(value) = &var.value else {
+                    continue;
+                };
+                let value = value.replace('\'', "'\\''");
                 if write_all(1, format!("{key}='{value}'\n").as_bytes()).is_err() {
                     return 1;
                 }

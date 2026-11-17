@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import time
 
-KEYS = {" ": "spc", ".": "dot", "-": "minus", ":": "shift-semicolon",
+KEYS = {" ": "spc", ".": "dot", "-": "minus", "=": "equal", ":": "shift-semicolon",
         "$": "shift-4", "?": "shift-slash", "|": "shift-backslash",
         ">": "shift-dot", "<": "shift-comma", "/": "slash", '"': "shift-apostrophe"}
 

@@ -114,7 +114,7 @@ fn scalar(pieces: Vec<Piece>) -> String {
 
 impl Shell {
     pub(super) fn ifs(&self) -> &str {
-        self.vars.get("IFS").map_or(" \t\n", |v| v.value.as_str())
+        self.variable_value("IFS").unwrap_or(" \t\n")
     }
 
     fn positional_value(&self) -> String {
@@ -143,7 +143,7 @@ impl Shell {
                 .parse::<usize>()
                 .ok()
                 .and_then(|i| self.args.get(i).cloned()),
-            _ => self.vars.get(name).map(|v| v.value.clone()),
+            _ => self.variable_value(name).map(String::from),
         }
     }
 
@@ -181,9 +181,9 @@ impl Shell {
 
     fn home(&self, login: &str) -> Option<String> {
         if login.is_empty()
-            && let Some(home) = self.vars.get("HOME")
+            && let Some(home) = self.variable_value("HOME")
         {
-            return Some(home.value.clone());
+            return Some(home.into());
         }
         let name = CString::new(login).ok()?;
         let ptr = unsafe {
@@ -314,7 +314,10 @@ impl Shell {
                         return Err(());
                     }
                     let text = scalar(replacement);
-                    self.set(name, &text);
+                    if self.set(name, &text).is_err() {
+                        self.exiting = !self.interactive;
+                        return Err(());
+                    }
                     out.push(value(text, quoted));
                 }
                 _ => {

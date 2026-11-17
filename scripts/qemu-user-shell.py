@@ -53,6 +53,15 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $? > here.rc", prompt=b"$ ")
             vm.command("sh getopts.sh > opts.out", prompt=b"$ ", timeout=180)
             vm.command("echo $? > opts.rc", prompt=b"$ ")
+            vm.command("sh vars.sh > vars.out", prompt=b"$ ", timeout=300 if dual_volume else 180)
+            vm.command("echo $? > vars.rc", prompt=b"$ ")
+            vm.command("readonly retained=original", prompt=b"$ ")
+            vm.command("retained=changed", prompt=b"$ ", expect=b"retained: readonly variable")
+            vm.command("echo $?", prompt=b"$ ", expect=b"1\r\n")
+            vm.command("read retained < read.dat", prompt=b"$ ", expect=b"retained: readonly variable")
+            vm.command("getopts a retained -a", prompt=b"$ ", expect=b"retained: readonly variable")
+            vm.command("echo $?", prompt=b"$ ", expect=b"2\r\n")
+            vm.command('echo "$retained"', prompt=b"$ ", expect=b"original\r\n")
         if job_control:
             offset = serial.stat().st_size
             vm.enter("cat")
@@ -95,6 +104,7 @@ def script_fixture(fixture, work):
     (fixture / "large.sh").write_bytes(b"cat <<'END'\n" + HERE_DATA + b"END\n")
     for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "here.sh", "getopts.sh", "plain"):
         shutil.copyfile(qemu.ROOT / "tests/user-shell" / name, fixture / name)
+    shutil.copyfile(qemu.ROOT / "tests/user-shell/variables.sh", fixture / "vars.sh")
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
     with tempfile.TemporaryDirectory(dir=work) as temporary:
@@ -132,6 +142,8 @@ def script_fixture(fixture, work):
     # The host dash and bash differ on these cases and on diagnostic identity.
     expected["opts.out"] = (qemu.ROOT / "tests/user-shell/getopts.expected").read_bytes()
     expected["opts.rc"] = b"43\n"
+    expected["vars.out"] = (qemu.ROOT / "tests/user-shell/variables.expected").read_bytes()
+    expected["vars.rc"] = b"47\n"
     return expected
 
 
@@ -154,26 +166,28 @@ def check(arch, root, proof, kernel=None, programs=None):
         f.truncate(8 << 20)
     subprocess.run(["mformat", "-i", disk, "::"], check=True)
     subprocess.run(["mmd", "-i", disk, "::bin"], check=True)
-    for name in ("sh","cat","wc","echo"):
-        subprocess.run(["mcopy", "-i", disk, programs/name, "::bin/"+name], check=True)
-    subprocess.run(["mcopy", "-i", disk, "-", "::a.txt"], input=DATA, check=True)
+    subprocess.run(["mcopy", "-i", disk,
+                    *(programs/name for name in ("sh", "cat", "wc", "echo")), "::bin/"], check=True)
     fixture = root / "fixture"
     fixture.mkdir()
     reference = script_fixture(fixture, root)
+    (fixture / "a.txt").write_bytes(DATA)
     for name in PROBES:
         build_probe(arch, fixture / name)
-    subprocess.run(["mcopy", "-s", "-i", disk, fixture / "SUB", "::"], check=True)
-    for name in ("control.sh", "expand.sh", "ifs.sh", "read.sh", "read.dat", "here.sh", "large.sh", "getopts.sh", "plain", *PROBES):
-        subprocess.run(["mcopy", "-i", disk, fixture / name, "::" + name], check=True)
+    subprocess.run(["mcopy", "-s", "-i", disk, *sorted(fixture.iterdir()), "::"], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)
     exercise(args + ["-drive", f"if=ide,format=raw,file={disk}"], arch, mode, root, serial, job_control=True, grammar=True)
     with (proof / (arch+"-fsck.log")).open("wb") as log:
         subprocess.run(["fsck.fat", "-n", disk], stdout=log, stderr=subprocess.STDOUT, check=True)
     files = {}
-    for name, expected in [("count.txt", f"{len(DATA)}\n".encode()), ("copy.bin", DATA),
-                           *reference.items()]:
-        result = subprocess.check_output(["mcopy","-i",disk,"::"+name,"-"])
+    expected_files = {"count.txt": f"{len(DATA)}\n".encode(), "copy.bin": DATA, **reference}
+    recovered = root / "recovered"
+    recovered.mkdir()
+    subprocess.run(["mcopy", "-i", disk,
+                    *("::" + name for name in expected_files), recovered], check=True)
+    for name, expected in expected_files.items():
+        result = (recovered / name).read_bytes()
         (proof/(arch+"-"+name)).write_bytes(result)
         if result != expected:
             (proof/(arch+"-"+name+".expected")).write_bytes(expected)

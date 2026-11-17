@@ -185,7 +185,7 @@ impl Shell {
             return 2;
         };
         let prompt = if self.interactive && unsafe { isatty(0) } != 0 {
-            Some(self.vars.get("PS2").map_or("> ", |v| v.value.as_str()))
+            Some(self.variable_value("PS2").unwrap_or("> "))
         } else {
             None
         };
@@ -197,7 +197,9 @@ impl Shell {
                 diagnostic("read: invalid variable name");
                 return 2;
             }
-            self.set(name, &value);
+            if self.set(name, &value).is_err() {
+                return 1;
+            }
         }
         i32::from(!complete)
     }

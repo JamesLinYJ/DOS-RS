@@ -96,6 +96,11 @@ impl Shell {
             diagnostic("getopts: invalid variable name");
             return 2;
         }
+        for name in ["OPTIND", "OPTARG", name.as_str()] {
+            if self.check_variable(name).is_err() {
+                return 2;
+            }
+        }
         let mut cursor = Cursor::new(self.get("OPTIND"));
         let parameters = if rest.is_empty() {
             &self.args[1..]
@@ -118,13 +123,17 @@ impl Shell {
                 0,
             ),
         };
-        self.set("OPTIND", &cursor.value());
-        if let Some(value) = argument {
-            self.set("OPTARG", &value);
+        let argument_result = if let Some(value) = argument {
+            self.set("OPTARG", &value)
         } else {
-            self.vars.remove("OPTARG");
+            self.unset_variable("OPTARG")
+        };
+        if argument_result.is_err()
+            || self.set("OPTIND", &cursor.value()).is_err()
+            || self.set(name, &option.to_string()).is_err()
+        {
+            return 2;
         }
-        self.set(name, &option.to_string());
         if let Some(message) = message {
             let program = self.args.first().map_or("sh", String::as_str);
             let _ = write_all(2, format!("{program}: getopts: {message}\n").as_bytes());

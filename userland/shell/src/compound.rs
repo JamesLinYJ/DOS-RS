@@ -22,8 +22,11 @@ impl Shell {
         }
         let mut positionals = alloc::vec![self.args.first().cloned().unwrap_or_default()];
         positionals.extend_from_slice(&words[1..]);
+        let Ok(saved) = self.prefix(assignments) else {
+            self.exiting = !self.interactive;
+            return 1;
+        };
         let previous = core::mem::replace(&mut self.args, positionals);
-        let saved = self.prefix(assignments);
         self.function_depth += 1;
         let status = if matches!(body.compound, Some(Compound::Subshell(_))) {
             let pid = unsafe { super::fork() };
@@ -195,7 +198,11 @@ impl Shell {
                 self.loop_depth += 1;
                 let mut status = 0;
                 for value in values {
-                    self.set(name, &value);
+                    if self.set(name, &value).is_err() {
+                        self.exiting = !self.interactive;
+                        status = 1;
+                        break;
+                    }
                     status = self.run_list(body);
                     if self.leave_loop() {
                         break;
