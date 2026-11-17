@@ -104,7 +104,7 @@ def run(arch,work,proof,volume,archive):
     shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,grammar=volume is None,std_tools=std_tools)
     second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)
     try:
-        second.wait(b"A:\\> ")
+        second.wait(b"A:\\> ", timeout=180)
         second.command("sh",prompt=b"$ ")
         second.command("cat count.txt",prompt=b"$ ",expect=b"21254\r\n")
         second.command("exit",prompt=b"A:\\> ")

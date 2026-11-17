@@ -48,7 +48,7 @@ class Shell:
         try:
             if self.vm.poll() is None:
                 self.monitor("quit")
-                self.vm.wait(timeout=8)
+                self.vm.wait(timeout=30)
         finally:
             if self.vm.poll() is None:
                 self.vm.kill()

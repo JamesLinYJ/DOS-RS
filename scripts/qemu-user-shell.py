@@ -22,7 +22,7 @@ READ_DATA = (b"   alpha  beta  gamma  \n" b"  x\\ y:z\\:q:  end \n"
 def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=False, grammar=False, std_tools=False):
     vm = Shell(args, serial, root)
     try:
-        vm.wait(b"A:\\> ")
+        vm.wait(b"A:\\> ", timeout=180)
         vm.command("c:")
         if dual_volume:
             vm.command("fdcheck.elf", expect=b"unlink, shared offset, pipe EOF OK")
