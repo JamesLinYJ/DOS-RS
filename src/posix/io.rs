@@ -317,6 +317,14 @@ impl ProcessContext {
         }
     }
     pub(super) fn unlink_path(&self, path: &[u8]) -> Result<()> {
+        let name = vfs::mounts::qualify(self.directory, path);
+        let path = name.as_ref();
+        if vfs::posix::is_mount_point(self.directory, path) {
+            return Err(Errno::Busy);
+        }
+        if vfs::posix::mount_namespace(path) && vfs::dos::mount_path(path).is_none() {
+            return Err(Errno::NoEntry);
+        }
         if vfs::posix::native(path) {
             return vfs::posix::unlink(self.directory, path, self.credentials());
         }

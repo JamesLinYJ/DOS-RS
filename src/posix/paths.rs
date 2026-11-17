@@ -33,6 +33,31 @@ fn root_path(image: &AddressSpace, at: usize) -> Result<Vec<u8>> {
     }
     Ok(path)
 }
+fn directory_change(
+    image: &AddressSpace,
+    p: &ProcessContext,
+    fd: usize,
+    address: usize,
+    create: Option<u32>,
+) -> Result<usize> {
+    let path = string(image, address)?;
+    let dir = p.at(fd, &path).map_err(errno)?;
+    let name = crate::vfs::mounts::qualify(dir, &path);
+    if fs::is_mount_point(dir, &name) {
+        return Err(if create.is_some() { -17 } else { -16 });
+    }
+    if !fs::native(&name) {
+        return Err(-95);
+    }
+    let who = p.credentials();
+    if let Some(mode) = create {
+        fs::mkdir(dir, &name, mode & !p.mask, who)
+    } else {
+        fs::rmdir(dir, &name, who)
+    }
+    .map(|_| 0)
+    .map_err(errno)
+}
 fn same_root(image: &AddressSpace, a: usize, b: usize) -> Result<(Vec<u8>, Vec<u8>)> {
     let old = string(image, a)?;
     let new = string(image, b)?;
@@ -137,12 +162,8 @@ pub(super) fn dispatch(
                 image.write(b, &meta.bytes()).map_err(|_| -14isize)?;
                 Ok(0)
             }
-            Call::Mkdir => fs::mkdir(dir, &root_path(image, a)?, b as u32 & !p.mask, who)
-                .map(|_| 0)
-                .map_err(errno),
-            Call::Rmdir => fs::rmdir(dir, &root_path(image, a)?, who)
-                .map(|_| 0)
-                .map_err(errno),
+            Call::Mkdir => directory_change(image, p, (-100isize) as usize, a, Some(b as u32)),
+            Call::Rmdir => directory_change(image, p, (-100isize) as usize, a, None),
             Call::Link => {
                 let (old, new) = same_root(image, a, b)?;
                 fs::link(dir, &old, &new, who).map(|_| 0).map_err(errno)

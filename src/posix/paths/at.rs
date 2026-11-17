@@ -142,26 +142,23 @@ pub(super) fn dispatch(
                 if c & !REMOVEDIR != 0 {
                     return Err(-22);
                 }
+                if c & REMOVEDIR != 0 {
+                    return directory_change(image, p, a, b, None);
+                }
                 let path = string(image, b)?;
                 let dir = p.at(a, &path).map_err(errno)?;
-                if c & REMOVEDIR != 0 {
-                    if !fs::native(&path) {
-                        return Err(-95);
-                    }
-                    fs::rmdir(dir, &path, who)
-                } else if fs::native(&path) {
-                    fs::unlink(dir, &path, who)
-                } else {
-                    p.unlink_path(&path)
+                let name = crate::vfs::mounts::qualify(dir, &path);
+                if fs::is_mount_point(dir, &name) {
+                    return Err(-16);
                 }
-                .map_err(errno)?;
+                if fs::native(&name) {
+                    fs::unlink(dir, &name, who).map_err(errno)?;
+                } else {
+                    p.unlink_path(&name).map_err(errno)?;
+                }
                 Ok(0)
             }
-            Call::Mkdirat => {
-                let (dir, path) = native_dir(image, p, a, b)?;
-                fs::mkdir(dir, &path, c as u32 & !p.mask, who).map_err(errno)?;
-                Ok(0)
-            }
+            Call::Mkdirat => directory_change(image, p, a, b, Some(c as u32)),
             Call::Renameat | Call::Linkat => {
                 let [newfd, newpath] = words(image, c)?;
                 let (old, new) = same_root(image, b, newpath)?;

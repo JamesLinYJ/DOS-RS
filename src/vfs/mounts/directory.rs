@@ -33,6 +33,14 @@ impl MountDir {
             }
         }
     }
+    pub(crate) fn mount_point(self) -> bool {
+        match self {
+            Self::Hub => true,
+            Self::Drive {
+                letter, cluster, ..
+            } => dos::drive_root(letter) == Some(cluster),
+        }
+    }
     pub(crate) fn from_path(path: &[u8]) -> Option<Self> {
         let trimmed = path.strip_suffix(b"/").unwrap_or(path);
         if trimmed == b"/dos" {

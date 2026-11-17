@@ -43,6 +43,9 @@ int main(void)
     struct dirent *root_entry;
     while ((root_entry=readdir(root))) hubs+=!strcmp(root_entry->d_name,"dos");
     CHECK(hubs==1 && closedir(root)==0);
+    CHECK(mkdir("/dos",0700)<0 && errno==EEXIST);
+    CHECK(rmdir("/dos")<0 && errno==EBUSY);
+    CHECK(unlink("/dos/c")<0 && errno==EBUSY);
     int old=open("/",O_RDONLY|O_DIRECTORY);
     CHECK(old>=0 && chdir("/dos")==0);
     char cwd[64];
@@ -57,6 +60,7 @@ int main(void)
         if (!strcmp(de->d_name,"c")) found|=4;
     }
     CHECK(found==7 && !closedir(shares));
+    CHECK(unlinkat(AT_FDCWD,"c",AT_REMOVEDIR)<0 && errno==EBUSY);
     int child=open("c",O_RDONLY|O_DIRECTORY);
     CHECK(child>=0 && fchdir(child)==0 && getcwd(cwd,sizeof cwd) && !strcmp(cwd,"/dos/c"));
     int self=openat(child,"DF.ELF",O_RDONLY);

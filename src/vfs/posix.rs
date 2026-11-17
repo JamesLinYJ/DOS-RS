@@ -91,6 +91,10 @@ pub(crate) fn readlink(dir: PosixDir, path: &[u8], who: Credentials) -> Result<V
     }
     btrfs::posix::readlink(dir, &path, who)
 }
+pub(crate) fn is_mount_point(dir: PosixDir, path: &[u8]) -> bool {
+    super::mounts::MountDir::from_path(&super::mounts::qualify(dir, path))
+        .is_some_and(super::mounts::MountDir::mount_point)
+}
 pub(crate) fn mount_namespace(path: &[u8]) -> bool {
     path == b"/dos" || path.starts_with(b"/dos/")
 }

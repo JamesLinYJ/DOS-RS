@@ -154,6 +154,10 @@ fn parent<'a>(
     if dir.nlink == 0 {
         return Err(Errno::NoEntry);
     }
+    // The mount namespace shadows any on-disk entry with the same name.
+    if dir.ino == ROOT_INODE && name == b"dos" {
+        return Err(Errno::Busy);
+    }
     access(&dir, who, 3)?;
     Ok((dir, name))
 }
