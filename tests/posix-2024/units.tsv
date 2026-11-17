@@ -2188,7 +2188,7 @@ utilities	uncompress	XSI	utilities/compress.html	open	open
 utilities	zcat	XSI	utilities/compress.html	open	open	
 utilities	cp	base	utilities/cp.html#tag_20_24	partial	partial	scripts/qemu-coreutils.py#244,257,258
 utilities	crontab	base	utilities/crontab.html#tag_20_25	open	open	
-utilities	csplit	base	utilities/csplit.html#tag_20_26	open	open	
+utilities	csplit	base	utilities/csplit.html#tag_20_26	partial	partial	scripts/qemu-coreutils.py#291,292,293
 utilities	ctags	CD SD	utilities/ctags.html#tag_20_27	open	open	
 utilities	cut	base	utilities/cut.html#tag_20_28	partial	partial	scripts/qemu-coreutils.py#175,176,177
 utilities	cxref	XSI	utilities/cxref.html#tag_20_29	open	open	
@@ -2201,7 +2201,7 @@ utilities	dirname	base	utilities/dirname.html#tag_20_35	partial	partial	qemu-cor
 utilities	du	base	utilities/du.html#tag_20_36	partial	partial	scripts/qemu-coreutils.py#254
 utilities	echo	base	utilities/echo.html#tag_20_37	partial	partial	qemu-coreutils.py#52..60
 utilities	ed	base	utilities/ed.html#tag_20_38	open	open	
-utilities	env	base	utilities/env.html#tag_20_39	open	open	
+utilities	env	base	utilities/env.html#tag_20_39	partial	partial	scripts/qemu-coreutils.py#307,308,309
 utilities	ex	UP	utilities/ex.html#tag_20_40	open	open	
 utilities	expand	base	utilities/expand.html#tag_20_41	partial	partial	scripts/qemu-coreutils.py#178,179
 utilities	expr	base	utilities/expr.html#tag_20_42	partial	partial	scripts/qemu-coreutils.py#229,230,231
@@ -2226,7 +2226,7 @@ utilities	id	base	utilities/id.html#tag_20_59	open	open
 utilities	ipcrm	XSI	utilities/ipcrm.html#tag_20_60	open	open	
 utilities	ipcs	XSI	utilities/ipcs.html#tag_20_61	open	open	
 utilities	jobs	UP	utilities/jobs.html#tag_20_62	open	open	
-utilities	join	base	utilities/join.html#tag_20_63	open	open	
+utilities	join	base	utilities/join.html#tag_20_63	partial	partial	scripts/qemu-coreutils.py#294,295,296,297
 utilities	kill	base	utilities/kill.html#tag_20_64	open	open	
 utilities	lex	CD	utilities/lex.html#tag_20_65	open	open	
 utilities	link	XSI	utilities/link.html#tag_20_66	partial	partial	scripts/qemu-coreutils.py#125,126,127,128,129
@@ -2259,7 +2259,7 @@ utilities	paste	base	utilities/paste.html#tag_20_91	partial	partial	scripts/qemu
 utilities	patch	base	utilities/patch.html#tag_20_92	open	open	
 utilities	pathchk	base	utilities/pathchk.html#tag_20_93	partial	partial	scripts/qemu-coreutils.py#283,284
 utilities	pax	base	utilities/pax.html#tag_20_94	open	open	
-utilities	pr	base	utilities/pr.html#tag_20_95	open	open	
+utilities	pr	base	utilities/pr.html#tag_20_95	partial	partial	scripts/qemu-coreutils.py#298,299,300,301,302,303,304,305,306
 utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qemu-coreutils.py#186,187
 utilities	prs	XSI	utilities/prs.html#tag_20_97	open	open	
 utilities	ps	base	utilities/ps.html#tag_20_98	open	open	
@@ -2285,7 +2285,7 @@ utilities	tabs	base	utilities/tabs.html#tag_20_117	open	open
 utilities	tail	base	utilities/tail.html#tag_20_118	partial	partial	qemu-coreutils.py#104..123
 utilities	talk	UP	utilities/talk.html#tag_20_119	open	open	
 utilities	tee	base	utilities/tee.html#tag_20_120	partial	partial	scripts/qemu-coreutils.py#255,256
-utilities	test	base	utilities/test.html#tag_20_121	open	open	
+utilities	test	base	utilities/test.html#tag_20_121	partial	partial	scripts/qemu-coreutils.py#314,315,316,317,318,319,320,321,322,323,324
 utilities	time	base	utilities/time.html#tag_20_122	open	open	
 utilities	timeout	base	utilities/timeout.html#tag_20_123	open	open	
 utilities	touch	base	utilities/touch.html#tag_20_124	partial	partial	scripts/qemu-coreutils.py#261

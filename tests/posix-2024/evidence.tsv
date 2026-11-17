@@ -175,3 +175,8 @@ utilities/V3_chap02.html#tag_19_06_06	tag_19_06_06	partial	partial	tests/user-sh
 utilities/V3_chap02.html#tag_19_26	set	partial	partial	tests/user-shell/expand.sh	Replace positional arguments, set and clear noglob, enable nounset on invocation
 utilities/V3_chap02.html#tag_19_27	shift	partial	partial	tests/user-shell/expand.sh	Shift through two-digit positional arguments; default shift also covered by read.sh
 utilities/read.html#tag_20_100	read	partial	partial	tests/user-shell/read.sh	Read successive records from one descriptor, escaped IFS, continuation, raw input, delimiter, NUL, EOF and pipeline input
+utilities/csplit.html#tag_20_26	csplit	partial	partial	scripts/qemu-coreutils.py#291,292,293	Line and pattern operands, stdin, suppressed empty pieces and failed-match cleanup verified after shutdown
+utilities/env.html#tag_20_39	env	partial	partial	scripts/qemu-coreutils.py#307,308,309	Cleared environment, assignments with spaces and NUL-separated output
+utilities/join.html#tag_20_63	join	partial	partial	scripts/qemu-coreutils.py#294,295,296,297	Sorted matching and unpaired rows, explicit field order, delimiters and stdin
+utilities/pr.html#tag_20_95	pr	partial	partial	scripts/qemu-coreutils.py#298,299,300,301,302,303,304,305,306	Page length, numbering and arbitrary bytes, horizontal and vertical columns, merge, separators, page width and indentation
+utilities/test.html#tag_20_121	test	partial	partial	scripts/qemu-coreutils.py#314,315,316,317,318,319,320,321,322,323,324	Status for empty, string, integer, inode identity, directory, file and size expressions
