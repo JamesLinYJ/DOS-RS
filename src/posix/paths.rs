@@ -1,4 +1,6 @@
 //! Native VFS syscall boundary. Paths are NUL-terminated byte strings.
+#[path = "paths/at.rs"]
+mod at;
 use super::{executable::errno, io::ProcessContext};
 use crate::{arch::user::AddressSpace, vfs::posix as fs};
 use alloc::vec::Vec;
@@ -47,7 +49,7 @@ fn open_flags(b: usize) -> Result<Open> {
         2 => Access::ReadWrite,
         _ => return Err(-22),
     };
-    if b & !(0x6c3 | 0x10000 | 0x80000) != 0 {
+    if b & !(0x6c3 | 0x800 | 0x10000 | 0x20000 | 0x80000) != 0 {
         return Err(-22);
     }
     Ok(Open {
@@ -64,6 +66,9 @@ pub(super) fn dispatch(
     call: Call,
     [a, b, c]: [usize; 3],
 ) -> Option<Result<usize>> {
+    if let Some(result) = at::dispatch(image, p, call, [a, b, c]) {
+        return Some(result);
+    }
     if !matches!(
         call,
         Call::Open
@@ -92,33 +97,14 @@ pub(super) fn dispatch(
         let dir = p.directory;
         let who = p.credentials();
         match call {
-            Call::Open | Call::Openmode => {
-                let path = string(image, a)?;
-                let flags = open_flags(b)?;
-                if b & 0x10000 != 0 {
-                    if flags.create {
-                        return Err(-22);
-                    }
-                    if !fs::native(&path) {
-                        return Err(-20);
-                    }
-                    let meta = fs::stat(dir, &path, who, true).map_err(errno)?;
-                    if meta.mode & 0o170000 != 0o040000 {
-                        return Err(-20);
-                    }
-                }
-                let fd = p
-                    .open_mode(
-                        &path,
-                        flags,
-                        if call == Call::Open { 0o666 } else { c as u32 },
-                    )
-                    .map_err(errno)?;
-                if b & 0x80000 != 0 {
-                    p.mark_cloexec(fd);
-                }
-                Ok(fd)
-            }
+            Call::Open | Call::Openmode => at::open(
+                image,
+                p,
+                (-100isize) as usize,
+                a,
+                b,
+                if call == Call::Open { 0o666 } else { c as u32 },
+            ),
             Call::Unlink => p.unlink_path(&string(image, a)?).map(|_| 0).map_err(errno),
             Call::Chdir => {
                 p.directory = fs::chdir(dir, &root_path(image, a)?, who).map_err(errno)?;

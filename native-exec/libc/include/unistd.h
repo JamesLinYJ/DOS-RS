@@ -39,5 +39,19 @@ int setgid(unsigned int);
 int chown(const char *,unsigned int,unsigned int);
 unsigned int getgid(void);
 off_t lseek(int, off_t, int);
+int unlinkat(int,const char *,int);
+int renameat(int,const char *,int,const char *);
+int linkat(int,const char *,int,const char *,int);
+int symlinkat(const char *,int,const char *);
+ssize_t readlinkat(int,const char *,char *,size_t);
+int ftruncate(int,off_t);
+int truncate(const char *,off_t);
+int fsync(int);
+int fchown(int,unsigned int,unsigned int);
+#define F_OK 0
+#define X_OK 1
+#define W_OK 2
+#define R_OK 4
+int access(const char *,int);
 _Noreturn void _exit(int status);
 #endif

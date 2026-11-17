@@ -125,3 +125,52 @@ extern long sys_setuid(unsigned int), sys_setgid(unsigned int), sys_chown(const 
 int setuid(unsigned int id) { return (int)result(sys_setuid(id)); }
 int setgid(unsigned int id) { return (int)result(sys_setgid(id)); }
 int chown(const char *p, unsigned int uid, unsigned int gid) { return (int)result(sys_chown(p,uid,gid)); }
+
+extern long sys_openat(int,const char *,const uint32_t *);
+extern long sys_fstatat(int,const char *,const uintptr_t *), sys_unlinkat(int,const char *,int);
+extern long sys_mkdirat(int,const char *,mode_t),sys_renameat(int,const char *,const uintptr_t *);
+extern long sys_linkat(int,const char *,const uintptr_t *), sys_fcntl(int,int,uintptr_t);
+extern long sys_ftruncate(int,const off_t *), sys_truncate(const char *,const off_t *);
+extern long sys_fsync(int), sys_fchmod(int,mode_t), sys_fchown(int,unsigned int,unsigned int);
+extern long sys_access(const char *,int), sys_readlinkat(int,const char *,const uintptr_t *);
+extern long sys_symlinkat(const char *,int,const char *);
+
+int openat(int dir,const char *name,int flags,...) {
+    uint32_t options[2]={(uint32_t)flags,0};
+    if (flags & O_CREAT) {
+        va_list ap; va_start(ap,flags);options[1]=va_arg(ap,unsigned int);va_end(ap);
+    }
+    return (int)result(sys_openat(dir,name,options));
+}
+int fstatat(int dir,const char *name,struct stat *buf,int flags) {
+    uintptr_t options[]={(uintptr_t)buf,(uintptr_t)flags};
+    return (int)result(sys_fstatat(dir,name,options));
+}
+int unlinkat(int dir,const char *name,int flags) { return (int)result(sys_unlinkat(dir,name,flags)); }
+int mkdirat(int dir,const char *name,mode_t mode) { return (int)result(sys_mkdirat(dir,name,mode)); }
+int renameat(int dir,const char *old,int newdir,const char *next) {
+    uintptr_t options[]={(uintptr_t)(intptr_t)newdir,(uintptr_t)next};
+    return (int)result(sys_renameat(dir,old,options));
+}
+int linkat(int dir,const char *old,int newdir,const char *next,int flags) {
+    uintptr_t options[]={(uintptr_t)(intptr_t)newdir,(uintptr_t)next,(uintptr_t)flags};
+    return (int)result(sys_linkat(dir,old,options));
+}
+ssize_t readlinkat(int dir,const char *name,char *out,size_t len) {
+    uintptr_t options[]={(uintptr_t)out,len};
+    return result(sys_readlinkat(dir,name,options));
+}
+int symlinkat(const char *target,int dir,const char *name) { return (int)result(sys_symlinkat(target,dir,name)); }
+int fcntl(int fd,int cmd,...) {
+    uintptr_t arg=0;
+    if (cmd==F_DUPFD || cmd==F_DUPFD_CLOEXEC || cmd==F_SETFD || cmd==F_SETFL) {
+        va_list ap;va_start(ap,cmd);arg=(uintptr_t)va_arg(ap,int);va_end(ap);
+    }
+    return (int)result(sys_fcntl(fd,cmd,arg));
+}
+int ftruncate(int fd,off_t size) {return (int)result(sys_ftruncate(fd,&size));}
+int truncate(const char *path,off_t size) {return (int)result(sys_truncate(path,&size));}
+int fsync(int fd) {return (int)result(sys_fsync(fd));}
+int fchmod(int fd,mode_t mode) {return (int)result(sys_fchmod(fd,mode));}
+int fchown(int fd,unsigned int uid,unsigned int gid) {return (int)result(sys_fchown(fd,uid,gid));}
+int access(const char *path,int mode) {return (int)result(sys_access(path,mode));}

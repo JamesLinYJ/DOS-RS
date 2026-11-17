@@ -25,4 +25,7 @@ int fstat(int, struct stat *);
 int mkdir(const char *, mode_t);
 int chmod(const char *, mode_t);
 mode_t umask(mode_t);
+int mkdirat(int,const char *,mode_t);
+int fstatat(int,const char *,struct stat *,int);
+int fchmod(int,mode_t);
 #endif

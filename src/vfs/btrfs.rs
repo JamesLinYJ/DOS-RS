@@ -498,6 +498,21 @@ impl super::Node for File {
     fn sync(&self) -> Result<()> {
         Ok(())
     } // Every mutating operation commits and flushes.
+    fn directory(&self) -> Result<super::posix::PosixDir> {
+        mounted(|m| {
+            if m.fs.read_inode(self.0).map_err(err)?.is_dir() {
+                Ok(super::posix::PosixDir(self.0))
+            } else {
+                Err(Errno::NotDirectory)
+            }
+        })
+    }
+    fn chmod(&self, mode: u32, who: super::posix::Credentials) -> Result<()> {
+        posix::fchmod(self.0, mode, who)
+    }
+    fn chown(&self, uid: u32, gid: u32, who: super::posix::Credentials) -> Result<()> {
+        posix::fchown(self.0, uid, gid, who)
+    }
     fn metadata(&self) -> Result<super::posix::Metadata> {
         mounted(|m| Ok(posix::metadata(&m.fs.read_inode(self.0).map_err(err)?)))
     }

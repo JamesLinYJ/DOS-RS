@@ -34,6 +34,18 @@ pub(crate) trait Node: Send {
     fn write(&self, offset: u64, data: &[u8]) -> Result<()>;
     fn sync(&self) -> Result<()>;
     fn identity(&self) -> (u32, u64);
+    fn directory(&self) -> Result<posix::PosixDir> {
+        Err(Errno::NotDirectory)
+    }
+    fn chmod(&self, _mode: u32, _who: posix::Credentials) -> Result<()> {
+        Err(Errno::NotSupported)
+    }
+    fn chown(&self, _uid: u32, _gid: u32, _who: posix::Credentials) -> Result<()> {
+        Err(Errno::NotSupported)
+    }
+    fn resize(&self, length: u64) -> Result<()> {
+        self.write(length, &[])
+    }
     fn metadata(&self) -> Result<posix::Metadata> {
         let (volume, ino) = self.identity();
         Ok(posix::Metadata {

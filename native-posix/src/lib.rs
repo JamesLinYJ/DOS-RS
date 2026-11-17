@@ -34,6 +34,7 @@ pub enum Errno {
     CrossDevice,
     Range,
     Busy,
+    Again,
 }
 impl Errno {
     pub fn message(self) -> &'static str {
@@ -59,6 +60,7 @@ impl Errno {
             Self::NotEmpty => "directory not empty",
             Self::CrossDevice => "cross-device link",
             Self::Range => "buffer too small",
+            Self::Again => "resource temporarily unavailable",
             Self::Busy => "resource busy",
         }
     }

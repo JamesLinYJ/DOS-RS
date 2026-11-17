@@ -118,7 +118,9 @@ fn console(bytes: &[u8]) {
     }
 }
 
-pub(super) type Handle = Arc<KernelCell<Description>>;
+#[path = "io/descriptor.rs"]
+mod descriptor;
+pub(super) type Handle = Arc<descriptor::Shared>;
 pub(super) enum Description {
     Input(Arc<KernelCell<Terminal>>),
     Output,
@@ -197,7 +199,7 @@ pub(super) fn pipe_handles() -> (Handle, Handle) {
     (handle(Description::Pipe(r)), handle(Description::Pipe(w)))
 }
 fn handle(desc: Description) -> Handle {
-    Arc::new(KernelCell::new(desc))
+    Arc::new(descriptor::Shared::new(desc))
 }
 
 pub(super) const OPEN_MAX: usize = 32;
@@ -336,10 +338,19 @@ impl ProcessContext {
         }
     }
     pub(super) fn open_mode(&mut self, path: &[u8], flags: Open, mode: u32) -> Result<Fd> {
+        self.open_at(self.directory, path, flags, mode)
+    }
+    pub(super) fn open_at(
+        &mut self,
+        dir: vfs::posix::PosixDir,
+        path: &[u8],
+        flags: Open,
+        mode: u32,
+    ) -> Result<Fd> {
         let fd = self.available()?;
         let (object, dirty) = vfs::posix::open(
             self.cwd,
-            self.directory,
+            dir,
             path,
             flags,
             mode & !self.mask,
@@ -502,10 +513,11 @@ impl ProcessContext {
                 return tty.waiting.wait(cx);
             }
         }
-        handle.borrow().read(cx, out)
+        handle.blocking(handle.borrow().read(cx, out))
     }
     pub(super) fn poll_write(&self, fd: Fd, cx: &Context, bytes: &[u8]) -> Poll<Result<usize>> {
-        self.get(fd)?.borrow().write(cx, bytes)
+        let handle = self.get(fd)?;
+        handle.blocking(handle.borrow().write(cx, bytes))
     }
     pub fn redirect(&mut self, target: Fd, path: &str, flags: Open) -> Result<()> {
         let fd = self.open(path, flags)?;

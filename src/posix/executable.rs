@@ -286,6 +286,7 @@ pub(super) fn errno(error: Errno) -> isize {
         Errno::CrossDevice => 18,
         Errno::Range => 34,
         Errno::Busy => 16,
+        Errno::Again => 11,
     }
 }
 

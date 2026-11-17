@@ -38,6 +38,8 @@ def helper(command, *args):
 
 def verify(root, output):
     helper("check","--image",root,"--output",output)
+    if (output/"files/at-hard").read_bytes()!=b"abc\x00":
+        raise RuntimeError("Linux restored incorrect truncated data")
     files = output / "files/work"
     if (files/"result").read_bytes()!=b"newdata" or (files/"alias").read_bytes()!=b"newdata" or (files/"dst").read_bytes()!=b"swap":
         raise RuntimeError("Linux restored different file bytes")
@@ -89,9 +91,10 @@ def run(arch, ram, proof, prepared, musl):
         fat=work/"fat.img"
         with fat.open("xb") as out: out.truncate(4*MIB)
         subprocess.run(["mformat","-i",fat,"::"],check=True)
-        elf=work/"vfsc.elf"
-        subprocess.run([sys.executable,qemu.ROOT/"scripts/native-cc.py","--arch",arch,"-o",elf,qemu.ROOT/"native-exec/examples/vfscheck.c"],check=True)
-        subprocess.run(["mcopy","-i",fat,elf,"::vfsc.elf"],check=True)
+        for name,source in [("vfsc","vfscheck"),("atcheck","atcheck")]:
+            elf=work/(name+".elf")
+            subprocess.run([sys.executable,qemu.ROOT/"scripts/native-cc.py","--arch",arch,"-o",elf,qemu.ROOT/"native-exec/examples"/(source+".c")],check=True)
+            subprocess.run(["mcopy","-i",fat,elf,"::"],check=True)
         disk=work/"data.img";layout(disk,fat,root)
         for phase in ("first","cold"):
             vm=Shell(qemu.boot_args(kernel,arch,work/"boot",4,"bios" if arch=="i686" else "uefi",esp_mib=36)
@@ -103,6 +106,7 @@ def run(arch, ram, proof, prepared, musl):
                 vm.command("c:")
                 if phase=="first" and musl:
                     command(vm,"/bin/fstest.elf",b"musl Btrfs directory enumeration permissions links and unlink OK")
+                if phase=="first": command(vm,"atcheck.elf",b"directory fd and file flags OK")
                 command(vm,"vfsc.elf" if phase=="first" else "vfsc.elf cold",
                         b"Btrfs root VFS OK" if phase=="first" else b"cold root OK")
             finally:

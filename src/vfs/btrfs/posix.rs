@@ -321,12 +321,22 @@ pub(crate) fn symlink(cwd: PosixDir, target: &[u8], path: &[u8], who: Credential
     })
 }
 pub(crate) fn link(cwd: PosixDir, old: &[u8], new: &[u8], who: Credentials) -> Result<()> {
+    link_at(cwd, old, cwd, new, false, who)
+}
+pub(crate) fn link_at(
+    cwd: PosixDir,
+    old: &[u8],
+    dest: PosixDir,
+    new: &[u8],
+    follow: bool,
+    who: Credentials,
+) -> Result<()> {
     mounted(|m| {
-        let n = resolve(m, cwd, old, who, false)?;
+        let n = resolve(m, cwd, old, who, follow)?;
         if n.is_dir() {
             return Err(Errno::Permission);
         }
-        let (dir, name) = parent(m, cwd, new, who)?;
+        let (dir, name) = parent(m, dest, new, who)?;
         absent(m, dir.ino, name)?;
         if new.ends_with(b"/") {
             return Err(Errno::NoEntry);
@@ -370,6 +380,44 @@ pub(crate) fn rmdir(cwd: PosixDir, path: &[u8], who: Credentials) -> Result<()> 
         Ok(())
     })
 }
+pub(crate) fn check_access(cwd: PosixDir, path: &[u8], mask: u32, who: Credentials) -> Result<()> {
+    if mask & !7 != 0 {
+        return Err(Errno::Invalid);
+    }
+    mounted(|m| {
+        let n = resolve(m, cwd, path, who, true)?;
+        if mask & 2 != 0 && !m.fs.is_writable() {
+            return Err(Errno::ReadOnly);
+        }
+        access(&n, who, mask)
+    })
+}
+fn owner(m: &mut Mount, n: &Inode, uid: u32, gid: u32, who: Credentials) -> Result<()> {
+    if who.uid != 0
+        && (who.uid != n.uid
+            || uid != u32::MAX && uid != n.uid
+            || gid != u32::MAX && gid != who.gid && gid != n.gid)
+    {
+        return Err(Errno::Permission);
+    }
+    m.fs.set_owner(
+        n.ino,
+        (uid != u32::MAX).then_some(uid),
+        (gid != u32::MAX).then_some(gid),
+    )
+    .map_err(err)
+}
+fn permissions(m: &mut Mount, n: &Inode, mode: u32, who: Credentials) -> Result<()> {
+    if who.uid != 0 && who.uid != n.uid {
+        return Err(Errno::Permission);
+    }
+    let mask = if who.uid != 0 && who.gid != n.gid {
+        0o5777
+    } else {
+        0o7777
+    };
+    m.fs.set_mode(n.ino, mode & mask).map_err(err)
+}
 pub(crate) fn chown(
     cwd: PosixDir,
     path: &[u8],
@@ -379,36 +427,40 @@ pub(crate) fn chown(
 ) -> Result<()> {
     mounted(|m| {
         let n = resolve(m, cwd, path, who, true)?;
-        if who.uid != 0
-            && (who.uid != n.uid
-                || uid != u32::MAX && uid != n.uid
-                || gid != u32::MAX && gid != who.gid && gid != n.gid)
-        {
-            return Err(Errno::Permission);
-        }
-        let owner = (uid != u32::MAX).then_some(uid);
-        let group = (gid != u32::MAX).then_some(gid);
-        m.fs.set_owner(n.ino, owner, group).map_err(err)
+        owner(m, &n, uid, gid, who)
+    })
+}
+pub(super) fn fchown(ino: u64, uid: u32, gid: u32, who: Credentials) -> Result<()> {
+    mounted(|m| {
+        let n = m.fs.read_inode(ino).map_err(err)?;
+        owner(m, &n, uid, gid, who)
     })
 }
 pub(crate) fn chmod(cwd: PosixDir, path: &[u8], mode: u32, who: Credentials) -> Result<()> {
     mounted(|m| {
         let n = resolve(m, cwd, path, who, true)?;
-        if who.uid != 0 && who.uid != n.uid {
-            return Err(Errno::Permission);
-        }
-        let mask = if who.uid != 0 && who.gid != n.gid {
-            0o5777
-        } else {
-            0o7777
-        };
-        m.fs.set_mode(n.ino, mode & mask).map_err(err)
+        permissions(m, &n, mode, who)
+    })
+}
+pub(super) fn fchmod(ino: u64, mode: u32, who: Credentials) -> Result<()> {
+    mounted(|m| {
+        let n = m.fs.read_inode(ino).map_err(err)?;
+        permissions(m, &n, mode, who)
     })
 }
 pub(crate) fn rename(cwd: PosixDir, old: &[u8], new: &[u8], who: Credentials) -> Result<()> {
+    rename_at(cwd, old, cwd, new, who)
+}
+pub(crate) fn rename_at(
+    cwd: PosixDir,
+    old: &[u8],
+    dest: PosixDir,
+    new: &[u8],
+    who: Credentials,
+) -> Result<()> {
     mounted(|m| {
         let (src, a) = parent(m, cwd, old, who)?;
-        let (dst, b) = parent(m, cwd, new, who)?;
+        let (dst, b) = parent(m, dest, new, who)?;
         let source = m.fs.lookup(src.ino, a).map_err(err)?;
         check_remove(&src, &source, who)?;
         if (old.ends_with(b"/") || new.ends_with(b"/")) && !source.is_dir() {
