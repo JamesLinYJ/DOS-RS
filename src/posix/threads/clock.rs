@@ -68,13 +68,13 @@ struct Alarm {
 }
 static ALARMS: KernelCell<Vec<Alarm>> = KernelCell::new(Vec::new());
 static ARMED: AtomicBool = AtomicBool::new(false);
-pub(super) struct Timer {
+pub(in crate::posix) struct Timer {
     tid: u32,
     deadline: u64,
     pub(super) remainder: usize,
 }
 impl Timer {
-    pub(super) fn after(tid: u32, delta: u64, cx: &Context) -> Result<Self, isize> {
+    pub(in crate::posix) fn after(tid: u32, delta: u64, cx: &Context) -> Result<Self, isize> {
         let now = source()?.ticks_ns();
         Self::arm(tid, now.checked_add(delta).ok_or(-75isize)?, 0, cx)
     }
@@ -93,7 +93,7 @@ impl Timer {
             remainder,
         })
     }
-    pub(super) fn expired(&self) -> bool {
+    pub(in crate::posix) fn expired(&self) -> bool {
         source().is_ok_and(|s| s.ticks_ns() >= self.deadline)
     }
     pub(super) fn remaining(&self) -> u64 {

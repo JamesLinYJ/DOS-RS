@@ -189,6 +189,7 @@ pub(super) fn vectors(
     cx: &core::task::Context,
     call: Call,
     [fd, vector, count]: [usize; 3],
+    tty_read: &mut crate::posix::io::ReadClock,
 ) -> core::task::Poll<Result<usize, isize>> {
     use alloc::vec::Vec;
     use core::task::{Poll, ready};
@@ -222,7 +223,7 @@ pub(super) fn vectors(
     let mut bytes = [0; 4096];
     let buf = &mut bytes[..size.min(4096)];
     let transfer = if reading {
-        ready!(p.poll_read(fd, cx, buf)).map_err(super::super::executable::errno)?
+        ready!(p.poll_read(fd, cx, buf, tty_read)).map_err(super::super::executable::errno)?
     } else {
         buf.len()
     };
