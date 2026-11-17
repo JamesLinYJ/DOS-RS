@@ -42,6 +42,10 @@ Keep the conventional arena bound fixed across the Windows VMM handoff. Reserve 
 
 Run the same Windows test with `--kernel i686` and `--kernel x86_64` against one installed Windows FAT volume to check the two wide kernels. Each boot creates a fresh RAM overlay. The serial banner identifies the kernel and firmware. [The conventional memory probe](scripts/realmode-command-memory.py) takes `--toolchain`, `--baseline`, `--candidate`, `--ram-dir` and `--proof`. Build the install disk first to prepare its 286 DOS ABI objects. The probe records the initial PSP extent, shrinks its own block, unlinks UMBs and tests both ends of the largest conventional allocation. Compare identical probe binaries and CONFIG.SYS files.
 
+Use [realmode-windows-disk.py](scripts/realmode-windows-disk.py) to prepare bootable copies from the same privately installed Windows FAT disk. Supply `--seed`, a DOS install `--image`, a unique `--name`, `--ram-dir` and `--proof`. DOS Setup creates a fresh C drive with its own boot files and EMM386 configuration. The script copies the Windows directory and checks the Windows loader, VMM, Program Manager and SYSTEM.INI against the source. Keep all Microsoft files outside Git.
+
+Run [realmode-exec-placement.py](scripts/realmode-exec-placement.py) after changes to EXEC, MCBs, UMBs or the Shell's transient allocation. Inspect the PSP and environment owners, inherited handles and MZ allocation limits on the 286 and 386 paths. For the interpreted 386, include the protected-mode POPF and IRET privilege checks in [tests/pc386.rs](tests/pc386.rs) when changing saved FLAGS or interrupt returns.
+
 Build with the rust16 revision pinned in the README. Use a RAM volume for all writable test images. Run the native FAT, installer and Edit scripts listed in the README. Retain serial logs, screenshots and host-side file comparisons with `--proof`. Use `rustc +stable --edition 2024 --test tests/edit_buffer.rs -o target/edit-buffer-test && target/edit-buffer-test` to exercise document offsets beyond 64 KiB on a wide host.
 
 ## Checking a change

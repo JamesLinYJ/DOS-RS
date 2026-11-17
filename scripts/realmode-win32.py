@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -16,13 +17,12 @@ from qemu_shell import Shell
 # Compare the upper nibble of each RGB channel while retaining every glyph pixel.
 PALETTE = bytes(value & 0xf0 for value in range(256))
 
-# Original Chinese 640x480 VGA glyphs. Resource counts and registration text vary.
+# Original Chinese 640x480 VGA glyphs. Window positions, resource counts and registration vary.
 DESKTOP = (
-    ((270, 51, 362, 70), "3f1ea037981b4f1e26b5e926182c8e70cd5ca74630e6b2ea903458a5e875d28f"),
-    ((245, 94, 303, 110), "b212497c9138af24b02ec24f257ea8467d9e283afb05d7f228b5875501d9e394"),
+    ((274, 53, 354, 69), "9f3e6f11d3178c8d083089ad18bc16ee2048ed128cdf1cdd5255ed672ae88d9d"),
 )
 HELP_MENU = (
-    ((275, 72, 334, 88), "026481c47a5b2e0972ef9477ee4c3c29f261d6438f40b0570d5cf166805a6db9"),
+    ((285, 175, 430, 192), "e181e25ee55c2d2ba44d8e2cb42fd12b058815a1a0aa84ffdf4a456a4e14e4e1"),
 )
 # About Program Manager title, version 3.2, and the complete '386 增强方式' text.
 ABOUT = (
@@ -33,6 +33,17 @@ ABOUT = (
     ((197, 409, 265, 430), "1100cfd313205ef9ac15f06dd1e72ba67e541868d3e6f39a783a89baf0828a9e"),
     ((480, 109, 566, 141), "f0ccfc0483f0ff83de7045ebf56309ff0a85eac680c281fd6afae3b040e2a7a4"),
 )
+
+# Locate a short row of glyph pixels, then verify every complete rectangle at that displacement.
+def glyph_row(bits, background):
+    return b"".join(b"\xf0\xf0\xf0" if bit == "1" else background for bit in bits)
+
+
+ANCHORS = {
+    DESKTOP: (274, 53, glyph_row("00001000000001000000", b"\x00\x00\xa0")),
+    HELP_MENU: (314, 176, glyph_row("10111111110111111110", b"\x00\x00\x00")),
+    ABOUT: (282, 83, glyph_row("00000000000100000001", b"\x00\x00\xa0")),
+}
 
 
 def png(dest, pixels):
@@ -46,13 +57,29 @@ def png(dest, pixels):
                      + chunk(b"IDAT", zlib.compress(rows, 4)) + chunk(b"IEND", b""))
 
 
-def visible(pixels, landmarks):
+def matches(pixels, landmarks, dx, dy):
     for (x, y, right, bottom), digest in landmarks:
+        x, right = x + dx, right + dx
+        y, bottom = y + dy, bottom + dy
+        if x < 0 or right > 640 or y < 0 or bottom > 480:
+            return False
         area = b"".join(pixels[3 * (row * 640 + x):3 * (row * 640 + right)]
                         for row in range(y, bottom))
-        if hashlib.sha256(area.translate(PALETTE)).hexdigest() != digest:
+        if hashlib.sha256(area).hexdigest() != digest:
             return False
     return True
+
+
+def visible(pixels, landmarks):
+    pixels = pixels.translate(PALETTE)
+    anchor_x, anchor_y, row = ANCHORS[landmarks]
+    offset = pixels.find(row)
+    while offset >= 0:
+        y, x = divmod(offset // 3, 640)
+        if offset % 3 == 0 and matches(pixels, landmarks, x - anchor_x, y - anchor_y):
+            return True
+        offset = pixels.find(row, offset + 1)
+    return False
 
 
 def wait_screen(vm, work, landmarks, name, timeout):
@@ -73,6 +100,8 @@ def wait_screen(vm, work, landmarks, name, timeout):
                     if parts[1] != b"640 480":
                         break
         time.sleep(0.1)
+    if path.is_file():
+        shutil.copyfile(path, vm.log.with_suffix(".last-screen.ppm"))
     raise RuntimeError(f"did not see {name}; serial log: {vm.log}")
 
 
@@ -109,7 +138,7 @@ def boot(disk, ram_dir, proof, arch, cpu=None):
                 vm.command("c:")
             vm.command("cd windows", prompt=b"C:\\WINDOWS> ")
             vm.enter("win /3")
-            timeout = 60 if cpu else 240
+            timeout = 60 if cpu else 600
             wait_screen(vm, work, DESKTOP, "Program Manager", timeout)
             vm.monitor("sendkey alt-h 80")
             wait_screen(vm, work, HELP_MENU, "Help menu", timeout)

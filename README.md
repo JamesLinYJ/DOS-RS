@@ -28,6 +28,8 @@ python3 scripts/realmode-image.py --toolchain ../rust16 --disk-set "$RAM_DISK/DI
 
 16 位 `COMMAND.COM` 通过 DOS 的 `EXEC` 启动外部程序，也可由其他 DOS 程序用 `COMMAND /C` 调用。批处理、环境变量、管道和重定向在解释器进程中执行。当前批处理支持八层嵌套，管道需要可写的临时目录或当前目录。[命令与文件行为回归](scripts/realmode-command.py) · [批处理、管道和键盘回归](scripts/realmode-shell.py)
 
+外部程序运行时，Shell 释放可重载的解释器代码，子程序返回后再从盘上读回。在同一套 16 MiB QEMU 配置、同一份 Windows 安装和相同启动配置下，DOS 子程序缩小自身 PSP 后可申请、写入并读回的最大连续常规内存为 253,328 字节。第一阶段的常驻 Shell 为 253,680 字节。两台虚拟机均启动原生 16 位内核。[常规内存复测](scripts/realmode-command-memory.py)
+
 在提示符输入 `SETUP`，选择语言、目标硬盘、安装动作和启动配置。写入前可看到 BIOS 磁盘号、分区起止扇区和文件总量。复制页显示正在写入的文件、大小、序号和进度，再读回已安装的系统文件。安装完成后关闭 QEMU，从同一块内存硬盘启动。
 
 ```sh
