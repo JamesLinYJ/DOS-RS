@@ -8,6 +8,11 @@
 #include <sys/statvfs.h>
 #include <unistd.h>
 
+#if __SIZEOF_LONG__ == 4
+/* Link the pre-time64 ELF symbol as a binary built against an older musl does. */
+extern int legacy_fstat(int, void *) __asm__("fstat");
+#endif
+
 int main(void)
 {
     char cwd[256], dir[64], target[32], buf[16] = {0};
@@ -83,6 +88,13 @@ int main(void)
         pread(relative, buf, 3, 0) != 3 || memcmp(buf, "aXc", 3) ||
         lseek(relative, 0, SEEK_CUR) != 3)
         return 17;
+#if __SIZEOF_LONG__ == 4
+    const struct timespec early[2] = {{1073012644, 10}, {1073012645, 11}};
+    if (futimens(relative, early) || legacy_fstat(relative, &after) ||
+        after.__st_atim32.tv_sec != 1073012644 || after.__st_atim32.tv_nsec != 10 ||
+        after.__st_mtim32.tv_sec != 1073012645 || after.__st_mtim32.tv_nsec != 11)
+        return 20;
+#endif
     const struct timespec times[2] = {{2200000000LL, 7654321}, {2200000001LL, 123456789}};
     if (futimens(relative, times) || fstatat(dirfd, "relative", &after, 0) ||
         after.st_atim.tv_sec != times[0].tv_sec || after.st_atim.tv_nsec != times[0].tv_nsec ||

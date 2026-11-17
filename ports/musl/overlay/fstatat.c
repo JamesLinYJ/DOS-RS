@@ -40,6 +40,15 @@ int __fstatat(int fd, const char *restrict path, struct stat *restrict dst, int 
                          .st_atim = {v.access.seconds, v.access.nanos},
                          .st_mtim = {v.change_data.seconds, v.change_data.nanos},
                          .st_ctim = {v.change_inode.seconds, v.change_inode.nanos}};
+#if _REDIR_TIME64
+    /* musl's legacy i386 stat symbols copy the prefix containing these time32 fields. */
+    dst->__st_atim32.tv_sec = v.access.seconds;
+    dst->__st_atim32.tv_nsec = v.access.nanos;
+    dst->__st_mtim32.tv_sec = v.change_data.seconds;
+    dst->__st_mtim32.tv_nsec = v.change_data.nanos;
+    dst->__st_ctim32.tv_sec = v.change_inode.seconds;
+    dst->__st_ctim32.tv_nsec = v.change_inode.nanos;
+#endif
     return 0;
 }
 weak_alias(__fstatat, fstatat);
