@@ -106,7 +106,7 @@ class Session:
 
 
 @contextlib.contextmanager
-def vm(boot, drives, proof, tag, arch="i386"):
+def vm(boot, drives, proof, tag, arch="i386", second=None):
     log = proof / (tag + ".txt")
     log.unlink(missing_ok=True)
     args = [
@@ -132,6 +132,8 @@ def vm(boot, drives, proof, tag, arch="i386"):
             "-drive",
             "if=floppy,id=setupfd,format=raw,readonly=on,file=" + str(boot),
         ]
+    if second:
+        args += ["-drive", f"if=floppy,index=1,format=raw,readonly=on,file={second}"]
     for i, disk in enumerate(drives):
         args += ["-drive", f"if=ide,index={i},format=raw,file={disk}"]
     p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)

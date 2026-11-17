@@ -207,14 +207,16 @@ pub fn partition(src: &Package, t: &Target) -> bool {
     }
     // Keep existing boot records on shared disks. On a new disk check the gap before the partition too.
     let first = if t.shared { t.first } else { 1 };
-    if !partition::is_blank(first, t.first + t.size - first)
-        || !template(&src.boot, 0)
-    {
+    if !partition::is_blank(first, t.first + t.size - first) || !template(&src.boot, 0) {
         return false;
     }
     partition::publish(t, BUF)
 }
 pub fn install(src: &Package, t: &Target, settings: &crate::startup::Settings) -> bool {
+    let success = write_installation(src, t, settings);
+    src.home() && success
+}
+fn write_installation(src: &Package, t: &Target, settings: &crate::startup::Settings) -> bool {
     if t.state != partition::PREPARED || !t.same(&partition::inspect()) {
         return false;
     }
@@ -392,6 +394,10 @@ pub fn number(mut n: u32) {
 }
 
 pub fn verify(src: &Package, t: &Target, repair: bool) -> bool {
+    let success = check_files(src, t, repair);
+    src.home() && success
+}
+fn check_files(src: &Package, t: &Target, repair: bool) -> bool {
     let Some(dst) = Media::partition(dosrs_realmode::hard_unit(), t.first, t.size) else {
         return false;
     };
@@ -477,6 +483,10 @@ fn sum_mod(a: u16, b: u16) -> u16 {
     }
 }
 pub fn preflight(src: &Package) -> u32 {
+    let bytes = check_manifest(src);
+    if src.home() { bytes } else { 0 }
+}
+fn check_manifest(src: &Package) -> u32 {
     let Some(manifest) = src.lookup(SYSTEM_COUNT - 1) else {
         return 0;
     };

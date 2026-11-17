@@ -150,8 +150,6 @@ def main():
                 util / "dos16/release" / (name + ".exe"),
                 d / (name.upper() + "." + extension),
             )
-        if (d / "COMMAND.COM").stat().st_size > 0x7000:
-            raise ValueError("COMMAND.COM exceeds its 28 KiB resident image cache")
         run(bios, "--mbr", d / "mbr")
         run(bios, "--vbr-at", "100", d / "vbr")
         (d / "BOOT.BIN").write_bytes(
@@ -231,10 +229,22 @@ def main():
         if not any(f.name.upper() == "CONFIG.SYS" for f in args.file):
             files.append(d / "CONFIG.SYS")
 
-        def floppy(disk, payload, volume, bootable):
-            with disk.open("xb") as stream:
-                stream.truncate(1474560)
-            run("mformat", "-i", disk, "-f", "1440", "-v", volume, "::")
+        def floppy(disk, payload, volume, bootable, capacities):
+            for kib in capacities:
+                with disk.open("wb") as stream:
+                    stream.truncate(kib * 1024)
+                run("mformat", "-i", disk, "-f", str(kib), "-v", volume, "::")
+                with disk.open("rb") as stream:
+                    bpb = stream.read(512)
+                reserved, fats, entries, sectors = struct.unpack_from("<HBHH", bpb, 14)
+                root_sectors = (entries + 15) // 16
+                data_sectors = sectors - reserved - fats * struct.unpack_from("<H", bpb, 22)[0] - root_sectors
+                cluster_bytes = 512 * bpb[13]
+                required = sum((item.stat().st_size + cluster_bytes - 1) // cluster_bytes for item in payload)
+                if required <= data_sectors // bpb[13] and len(payload) + 1 <= entries:
+                    break
+            else:
+                raise ValueError(f"{volume} files exceed the FAT12 capacity of the distribution medium")
             for f in payload:
                 run("mcopy", "-i", disk, f, "::" + f.name)
             if not bootable:
@@ -268,23 +278,21 @@ def main():
         ready = []
         if output:
             single = d / "system.img"
-            floppy(single, files + args.file, "DOS_SETUP", True)
+            floppy(single, files + args.file, "DOS_SETUP", True, (1440, 2880))
             ready.append((single, output))
         if disk_set:
-            apps = [d / "EDIT.EXE", d / "WELCOME.TXT"]
-            if sum(f.stat().st_size for f in apps) > 65520:
-                raise ValueError("disk 2 payload exceeds the setup transfer arena")
+            # Keep the boot font and message catalogue at identical sector addresses
+            # while a single-drive, low-memory SETUP streams files from disk 2.
+            common = [d / n for n in ("IO.SYS", "GLYPHS.FNT", "LANG.DAT", "LICENSE.TXT", "NOTICE.TXT")]
+            tools2 = [d / n for n in ("WELCOME.TXT", "SMARTDRV.EXE", "INPUT.DAT", "EDIT.EXE")]
             identity = hashlib.sha256(manifest).digest()[:16]
             for number in (1, 2):
                 mark = d / f"DISK{number}.ID"
                 mark.write_bytes(identity)
                 part = d / f"DISK{number}.IMG"
-                payload = (
-                    ([f for f in files if f not in apps] + args.file)
-                    if number == 1
-                    else apps
-                )
-                floppy(part, payload + [mark], f"DOS_SETUP{number}", number == 1)
+                payload = common + ([f for f in files if f not in common and f not in tools2] + args.file
+                                    if number == 1 else tools2)
+                floppy(part, payload + [mark], f"DOS_SETUP{number}", number == 1, (1440,))
                 ready.append((part, disk_set / part.name))
         for image, destination in ready:
             image.replace(destination)

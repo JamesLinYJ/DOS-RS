@@ -9,10 +9,24 @@ pub mod ui;
 unsafe extern "Rust" {
     fn putch(c: u16) -> u16;
     fn dos_key() -> u16;
+    fn dos_memory_call(regs: *mut u16);
     fn dos_drive() -> u16;
     fn dos_ui(op: u16, a: u16, b: u16) -> u16;
     fn arg(index: u16, at: u16) -> u16;
     fn disk_size(unit: u16) -> u32;
+}
+/// End paragraph of this executable's DOS allocation (PSP:0002h).
+fn allocation_end() -> u16 {
+    let mut regs = [0u16; 12];
+    regs[0] = 0x6200;
+    regs[9] = 3;
+    // The architecture library executes INT 21h with this register frame.
+    unsafe { dos_memory_call(regs.as_mut_ptr()) };
+    if regs[10] & 1 != 0 {
+        0
+    } else {
+        dosrs_realmode::system::w(regs[1], 2)
+    }
 }
 pub fn put(c: u16) {
     unsafe {

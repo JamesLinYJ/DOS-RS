@@ -351,7 +351,7 @@ pub fn run() -> u16 {
         return 1;
     }
     let heap = unsafe { edit_heap() };
-    let limit = dosrs_realmode::system::w(dosrs_realmode::PROGRAM, 2);
+    let limit = crate::allocation_end();
     if heap >= limit {
         lang.message(Message::Memory);
         text("\r\n");
