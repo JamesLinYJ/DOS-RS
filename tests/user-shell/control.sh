@@ -65,4 +65,26 @@ echo "parent:$?"
 isolated() ( item=hidden; echo "$item"; return 4 )
 isolated
 echo "isolated:$?:$item"
+if ( true ); then echo conditional-subshell; fi
+exec 3> redir.tmp
+echo saved >&3
+{ echo scoped; } 4>&1 1>&3 4>&-
+exec 3>&-
+exec 3< redir.tmp
+cat <&3
+exec 3<&-
+echo restored
+for item in abc foobar '*' z; do
+    case "$item" in
+        (a?c|123) echo first ;;
+        'foo*') echo wrong-literal ;;
+        foo*) echo wildcard ;;
+        "*") echo literal-star ;;
+        [x-z]) echo range ;;
+    esac
+done
+case miss in hit) echo wrong; esac
+echo "no-match:$?"
+case x in x) ;; esac
+echo "empty:$?"
 exit 13

@@ -2,6 +2,7 @@
 extern crate alloc;
 mod compound;
 mod jobs;
+mod redirection;
 mod syntax;
 
 use alloc::{
@@ -14,7 +15,7 @@ use alloc::{
 };
 use core::ffi::CStr;
 use dosrs_user::{Args, close, exit, open, read, write_all};
-use syntax::{Condition, Mode, Part, Pipeline, Word};
+use syntax::{Condition, Part, Pipeline, Word};
 
 // POSIX process functions are exported by the native userspace ABI.
 unsafe extern "C" {
@@ -22,7 +23,6 @@ unsafe extern "C" {
     fn execve(path: *const i8, argv: *const *const i8, envp: *const *const i8) -> i32;
     fn waitpid(pid: i32, status: *mut i32, flags: i32) -> i32;
     fn getpid() -> i32;
-    fn dup(fd: i32) -> i32;
     fn dup2(old: i32, new: i32) -> i32;
     fn pipe(fds: *mut i32) -> i32;
     fn sys_chdir(path: *const i8) -> isize;
@@ -134,7 +134,7 @@ impl Shell {
         let mut present = false;
         for part in word {
             match part {
-                Part::Literal(s) => {
+                Part::Literal(s) | Part::Quoted(s) => {
                     field.push_str(s);
                     present = true;
                 }
@@ -397,67 +397,26 @@ impl Shell {
             }
             words.extend(self.expand(word, true));
         }
-        let mut saved = Vec::new();
-        let mut result = 0;
-        for r in &command.redirects {
-            if !child && !saved.iter().any(|(fd, _)| *fd == r.fd) {
-                let old = unsafe { dup(r.fd) };
-                if old < 0 && error() != 9 {
-                    result = 1;
-                    break;
-                }
-                saved.push((r.fd, old));
+        let permanent = words.as_slice() == ["exec"];
+        let saved = match redirection::apply(self, &command.redirects, !child) {
+            Ok(saved) => saved,
+            Err(()) => return 1,
+        };
+        let result = if let Some(compound) = &command.compound {
+            self.compound(compound)
+        } else if words.is_empty() {
+            for (k, v) in &assignments {
+                self.set(k, v);
             }
-            let names = self.expand(&r.target, false);
-            let flags = match r.mode {
-                Mode::Read => 0,
-                Mode::Write => 1 | 64 | 512,
-                Mode::Append => 1 | 64 | 1024,
-            };
-            let Some(path) = names.first().and_then(|s| CString::new(s.as_str()).ok()) else {
-                result = 1;
-                break;
-            };
-            match open(&path, flags) {
-                Ok(fd) if fd != r.fd => {
-                    let ok = unsafe { dup2(fd, r.fd) } >= 0;
-                    let _ = close(fd);
-                    if !ok {
-                        result = 1;
-                        break;
-                    }
-                }
-                Err(e) => {
-                    diagnostic(&format!("{}: open error {e}", names[0]));
-                    result = 1;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        if result == 0 {
-            if let Some(compound) = &command.compound {
-                result = self.compound(compound);
-            } else if words.is_empty() {
-                for (k, v) in &assignments {
-                    self.set(k, v);
-                }
-            } else if let Some(body) = self.functions.get(&words[0]).cloned() {
-                result = self.call_function(&body, &words, assignments);
-            } else if let Some(code) = self.builtin(&words) {
-                result = code;
-            } else {
-                result = self.external(&words, &assignments);
-            }
-        }
-        for (fd, old) in saved.into_iter().rev() {
-            if old >= 0 {
-                unsafe { dup2(old, fd) };
-                let _ = close(old);
-            } else {
-                let _ = close(fd);
-            }
-        }
+            0
+        } else if let Some(body) = self.functions.get(&words[0]).cloned() {
+            self.call_function(&body, &words, assignments)
+        } else if let Some(code) = self.builtin(&words) {
+            code
+        } else {
+            self.external(&words, &assignments)
+        };
+        redirection::finish(saved, !permanent);
         result
     }
     fn pipeline(&mut self, p: &Pipeline) -> i32 {
@@ -676,7 +635,7 @@ pub unsafe extern "C" fn main(argc: i32, argv: *const *const u8) -> i32 {
         let Ok(c) = CString::new(path.as_str()) else {
             return 2;
         };
-        match open(&c, 0) {
+        match open(&c, 0).and_then(redirection::script_descriptor) {
             Ok(n) => n,
             Err(e) => {
                 diagnostic(&format!("{path}: open error {e}"));

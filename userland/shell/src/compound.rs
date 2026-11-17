@@ -9,6 +9,10 @@ pub(super) struct LoopControl {
     levels: usize,
 }
 
+unsafe extern "C" {
+    fn fnmatch(pattern: *const i8, subject: *const i8, flags: i32) -> i32;
+}
+
 impl Shell {
     pub(super) fn call_function(
         &mut self,
@@ -102,8 +106,56 @@ impl Shell {
         }
     }
 
+    fn matches_pattern(&self, word: &super::Word, subject: &core::ffi::CStr) -> bool {
+        use super::Part;
+        let mut pattern = String::new();
+        for part in word {
+            let (text, quoted) = match part {
+                Part::Literal(text) => (text.clone(), false),
+                Part::Quoted(text) => (text.clone(), true),
+                Part::Parameter(key, quoted) => (self.parameter(key), *quoted),
+            };
+            for ch in text.chars() {
+                if quoted {
+                    pattern.push('\\');
+                }
+                pattern.push(ch);
+            }
+        }
+        alloc::ffi::CString::new(pattern)
+            .is_ok_and(|p| unsafe { fnmatch(p.as_ptr(), subject.as_ptr(), 0) == 0 })
+    }
+
     pub(super) fn compound(&mut self, command: &Compound) -> i32 {
         match command {
+            Compound::Case { value, arms } => {
+                let Ok(subject) = alloc::ffi::CString::new(self.expand(value, false).concat())
+                else {
+                    return 1;
+                };
+                let mut fall = false;
+                let mut status = 0;
+                for arm in arms {
+                    if !fall
+                        && !arm
+                            .patterns
+                            .iter()
+                            .any(|p| self.matches_pattern(p, &subject))
+                    {
+                        continue;
+                    }
+                    status = if arm.body.is_empty() {
+                        0
+                    } else {
+                        self.run_list(&arm.body)
+                    };
+                    fall = arm.fall_through;
+                    if !fall || self.exiting || self.returning || self.flow.is_some() {
+                        break;
+                    }
+                }
+                status
+            }
             Compound::Function { name, body } => {
                 self.functions.insert(name.clone(), body.clone());
                 0

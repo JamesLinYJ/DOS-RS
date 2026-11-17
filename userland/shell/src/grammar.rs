@@ -4,6 +4,13 @@ use super::{
 };
 use alloc::{collections::VecDeque, string::String, vec::Vec};
 
+#[derive(Clone, Copy, PartialEq)]
+enum End {
+    List,
+    Group,
+    Case,
+}
+
 struct Parser(VecDeque<Token>);
 
 impl Parser {
@@ -51,7 +58,7 @@ impl Parser {
             _ => unreachable!(),
         }
     }
-    fn list(&mut self, ends: &[&str], group: bool, depth: u16) -> Result<Vec<Pipeline>, Error> {
+    fn list(&mut self, ends: &[&str], end: End, depth: u16) -> Result<Vec<Pipeline>, Error> {
         if depth > 64 {
             return Err(Error::Invalid("compound commands nested too deeply"));
         }
@@ -61,9 +68,12 @@ impl Parser {
             self.newlines();
             let stop = self.0.is_empty()
                 || self.keyword().is_some_and(|s| ends.contains(&s))
-                || group && matches!(self.0.front(), Some(Token::RightParen));
+                || end == End::Group && matches!(self.0.front(), Some(Token::RightParen))
+                || end == End::Case && matches!(self.0.front(), Some(Token::CaseEnd(_)));
             if stop {
-                if when != Condition::Always || out.is_empty() && (!ends.is_empty() || group) {
+                if when != Condition::Always
+                    || out.is_empty() && end != End::Case && (!ends.is_empty() || end == End::Group)
+                {
                     return Err(self.expected("expected command"));
                 }
                 return Ok(out);
@@ -87,7 +97,8 @@ impl Parser {
             });
             when = match self.0.front() {
                 None => Condition::Always,
-                Some(Token::RightParen) if group => Condition::Always,
+                Some(Token::RightParen) if end == End::Group => Condition::Always,
+                Some(Token::CaseEnd(_)) if end == End::Case => Condition::Always,
                 Some(Token::Newline | Token::Background) => {
                     self.0.pop_front();
                     Condition::Always
@@ -111,7 +122,10 @@ impl Parser {
             .keyword()
             .filter(|name| identifier(name))
             .map(String::from)
-            .filter(|_| matches!(self.0.get(1), Some(Token::LeftParen)));
+            .filter(|_| {
+                matches!(self.0.get(1), Some(Token::LeftParen))
+                    && matches!(self.0.get(2), Some(Token::RightParen))
+            });
         cmd.compound = if let Some(name) = function {
             self.0.pop_front();
             self.0.pop_front();
@@ -129,29 +143,31 @@ impl Parser {
             })
         } else if matches!(self.0.front(), Some(Token::LeftParen)) {
             self.0.pop_front();
-            let body = self.list(&[], true, nested)?;
+            let body = self.list(&[], End::Group, nested)?;
             if !matches!(self.0.front(), Some(Token::RightParen)) {
                 return Err(self.expected("expected )"));
             }
             self.0.pop_front();
             Some(Compound::Subshell(body))
         } else if self.take("{") {
-            let body = self.list(&["}"], false, nested)?;
+            let body = self.list(&["}"], End::List, nested)?;
             self.need("}")?;
             Some(Compound::Group(body))
+        } else if self.take("case") {
+            Some(self.case(nested)?)
         } else if self.take("if") {
             let mut arms = Vec::new();
             loop {
-                let test = self.list(&["then"], false, nested)?;
+                let test = self.list(&["then"], End::List, nested)?;
                 self.need("then")?;
-                let body = self.list(&["elif", "else", "fi"], false, nested)?;
+                let body = self.list(&["elif", "else", "fi"], End::List, nested)?;
                 arms.push((test, body));
                 if !self.take("elif") {
                     break;
                 }
             }
             let otherwise = if self.take("else") {
-                self.list(&["fi"], false, nested)?
+                self.list(&["fi"], End::List, nested)?
             } else {
                 Vec::new()
             };
@@ -162,7 +178,7 @@ impl Parser {
             if !until {
                 self.need("while")?;
             }
-            let test = self.list(&["do"], false, nested)?;
+            let test = self.list(&["do"], End::List, nested)?;
             let body = self.do_group(nested)?;
             Some(Compound::While { until, test, body })
         } else if self.take("for") {
@@ -226,14 +242,60 @@ impl Parser {
             Ok(cmd)
         }
     }
+    fn case(&mut self, depth: u16) -> Result<Compound, Error> {
+        let value = self
+            .word()
+            .ok_or_else(|| self.expected("expected case word"))?;
+        self.newlines();
+        self.need("in")?;
+        let mut arms = Vec::new();
+        loop {
+            self.newlines();
+            if self.take("esac") {
+                break;
+            }
+            if matches!(self.0.front(), Some(Token::LeftParen)) {
+                self.0.pop_front();
+            }
+            let mut patterns = Vec::new();
+            loop {
+                patterns.push(
+                    self.word()
+                        .ok_or_else(|| self.expected("expected case pattern"))?,
+                );
+                if !matches!(self.0.front(), Some(Token::Pipe)) {
+                    break;
+                }
+                self.0.pop_front();
+            }
+            if !matches!(self.0.front(), Some(Token::RightParen)) {
+                return Err(self.expected("expected ) after case pattern"));
+            }
+            self.0.pop_front();
+            let body = self.list(&["esac"], End::Case, depth)?;
+            let fall_through = if let Some(Token::CaseEnd(fall)) = self.0.front() {
+                let fall = *fall;
+                self.0.pop_front();
+                fall
+            } else {
+                false
+            };
+            arms.push(super::CaseArm {
+                patterns,
+                body,
+                fall_through,
+            });
+        }
+        Ok(Compound::Case { value, arms })
+    }
     fn do_group(&mut self, depth: u16) -> Result<Vec<Pipeline>, Error> {
         self.need("do")?;
-        let body = self.list(&["done"], false, depth)?;
+        let body = self.list(&["done"], End::List, depth)?;
         self.need("done")?;
         Ok(body)
     }
 }
 
 pub fn parse(line: &str) -> Result<Vec<Pipeline>, Error> {
-    Parser(super::tokens(line)?.into()).list(&[], false, 0)
+    Parser(super::tokens(line)?.into()).list(&[], End::List, 0)
 }

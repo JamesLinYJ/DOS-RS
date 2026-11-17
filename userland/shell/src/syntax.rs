@@ -7,16 +7,29 @@ pub use grammar::parse;
 #[derive(PartialEq, Debug)]
 pub enum Part {
     Literal(String),
+    Quoted(String),
     Parameter(String, bool),
 }
 pub type Word = Vec<Part>;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
+    Duplicate,
+    ReadWrite,
     Read,
     Write,
     Append,
 }
+pub struct CaseArm {
+    pub patterns: Vec<Word>,
+    pub body: Vec<Pipeline>,
+    pub fall_through: bool,
+}
+
 pub enum Compound {
+    Case {
+        value: Word,
+        arms: Vec<CaseArm>,
+    },
     Function {
         name: String,
         body: alloc::rc::Rc<Command>,
@@ -78,6 +91,7 @@ pub struct Pipeline {
 
 enum Token {
     Word(Word, bool),
+    CaseEnd(bool),
     Newline,
     LeftParen,
     RightParen,
@@ -87,11 +101,11 @@ enum Token {
     Background,
 }
 
-fn literal(word: &mut Word, ch: char) {
-    if let Some(Part::Literal(s)) = word.last_mut() {
-        s.push(ch);
-    } else {
-        word.push(Part::Literal(String::from(ch)));
+fn literal(word: &mut Word, ch: char, quoted: bool) {
+    match (word.last_mut(), quoted) {
+        (Some(Part::Literal(text)), false) | (Some(Part::Quoted(text)), true) => text.push(ch),
+        (_, true) => word.push(Part::Quoted(String::from(ch))),
+        (_, false) => word.push(Part::Literal(String::from(ch))),
     }
 }
 pub fn identifier(s: &str) -> bool {
@@ -116,18 +130,18 @@ fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<(Word,
             '\'' | '"' if quote.is_none() => {
                 quoted = true;
                 quote = Some(c);
-                if input.peek() == Some(&c) && !matches!(parts.last(), Some(Part::Literal(_))) {
-                    parts.push(Part::Literal(String::new()));
+                if input.peek() == Some(&c) && !matches!(parts.last(), Some(Part::Quoted(_))) {
+                    parts.push(Part::Quoted(String::new()));
                 }
             }
             '\\' if quote != Some('\'') => {
                 quoted = true;
                 let escaped = input.next().ok_or(Error::Incomplete("unfinished escape"))?;
                 if quote == Some('"') && !"$`\"\\\n".contains(escaped) {
-                    literal(&mut parts, '\\');
+                    literal(&mut parts, '\\', true);
                 }
                 if escaped != '\n' {
-                    literal(&mut parts, escaped);
+                    literal(&mut parts, escaped, true);
                 }
             }
             '$' if quote != Some('\'') => {
@@ -153,12 +167,12 @@ fn word(input: &mut core::iter::Peekable<core::str::Chars<'_>>) -> Result<(Word,
                     }
                 }
                 if name.is_empty() {
-                    literal(&mut parts, '$');
+                    literal(&mut parts, '$', quote.is_some());
                 } else {
                     parts.push(Part::Parameter(name, quote.is_some()));
                 }
             }
-            _ => literal(&mut parts, c),
+            _ => literal(&mut parts, c, quote.is_some()),
         }
     }
     if quote.is_some() {
@@ -186,7 +200,13 @@ fn tokens(line: &str) -> Result<Vec<Token>, Error> {
             }
             ';' => {
                 it.next();
-                tokens.push(Token::End(Condition::Always));
+                tokens.push(if it.next_if_eq(&';').is_some() {
+                    Token::CaseEnd(false)
+                } else if it.next_if_eq(&'&').is_some() {
+                    Token::CaseEnd(true)
+                } else {
+                    Token::End(Condition::Always)
+                });
             }
             c if c.is_ascii_whitespace() => {
                 it.next();
@@ -220,11 +240,16 @@ fn tokens(line: &str) -> Result<Vec<Token>, Error> {
                             .parse()
                             .map_err(|_| Error::Invalid("invalid redirection descriptor"))?
                     };
-                    let mode = if op == '<' {
+                    let mode = if digits.next_if_eq(&'&').is_some() {
+                        Mode::Duplicate
+                    } else if op == '<' && digits.next_if_eq(&'>').is_some() {
+                        Mode::ReadWrite
+                    } else if op == '<' {
                         Mode::Read
                     } else if digits.next_if_eq(&'>').is_some() {
                         Mode::Append
                     } else {
+                        digits.next_if_eq(&'|');
                         Mode::Write
                     };
                     it = digits;
