@@ -103,3 +103,4 @@ getrandom 160 3
 uname 161 1
 sethostname 162 2
 getaffinity 163 3
+mountinfo 164 3

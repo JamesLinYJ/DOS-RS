@@ -36,7 +36,7 @@ pub(super) fn open(
     if bits & 0x10000 != 0 && flags.create {
         return Err(-22);
     }
-    if bits & (0x10000 | 0x20000) != 0 && fs::native(&path) {
+    if bits & (0x10000 | 0x20000) != 0 && (fs::native(&path) || fs::mount_namespace(&path)) {
         match fs::stat(dir, &path, p.credentials(), bits & 0x20000 == 0) {
             Ok(meta) if meta.mode & 0o170000 == 0o120000 => {
                 return Err(if flags.create && flags.exclusive {
@@ -218,7 +218,8 @@ pub(super) fn dispatch(
                 if len == 0 {
                     return Err(-22);
                 }
-                let (dir, path) = native_dir(image, p, a, b)?;
+                let path = string(image, b)?;
+                let dir = p.at(a, &path).map_err(errno)?;
                 let bytes = fs::readlink(dir, &path, who).map_err(errno)?;
                 let n = len.min(bytes.len());
                 image.write(out, &bytes[..n]).map_err(|_| -14isize)?;

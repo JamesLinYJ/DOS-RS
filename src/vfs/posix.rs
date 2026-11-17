@@ -3,9 +3,21 @@ use super::{Directories, File, btrfs};
 use alloc::vec::Vec;
 use dosrs_native_posix::{Errno, Open, Result};
 
-#[derive(Clone, Copy)]
-pub(crate) struct PosixDir(pub u64);
-pub(crate) const ROOT: PosixDir = PosixDir(256);
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum PosixDir {
+    Btrfs(u64),
+    Mount(super::mounts::MountDir),
+}
+impl PosixDir {
+    pub(crate) fn inode(self) -> Result<u64> {
+        match self {
+            Self::Btrfs(n) => Ok(n),
+            Self::Mount(_) => Err(Errno::CrossDevice),
+        }
+    }
+}
+pub(crate) const ROOT_INODE: u64 = 256;
+pub(crate) const ROOT: PosixDir = PosixDir::Btrfs(ROOT_INODE);
 #[derive(Clone, Copy)]
 pub(crate) struct Credentials {
     pub uid: u32,
@@ -25,12 +37,66 @@ pub(crate) enum Attribute {
     Times(Times),
 }
 pub(crate) use btrfs::posix::{
-    capacity, change_at, chdir, check_access, chmod, chown, getcwd, link, link_at, mkdir,
-    pin_directory, readlink, rename, rename_at, rmdir, stat, symlink, unlink,
+    capacity, change_at, check_access, chmod, chown, link, link_at, mkdir, rename, rename_at,
+    rmdir, symlink, unlink,
 };
+
+pub(crate) fn pin_directory(dir: PosixDir) -> Result<File> {
+    if let PosixDir::Mount(node) = dir {
+        return Ok(alloc::boxed::Box::new(node));
+    }
+    btrfs::posix::pin_directory(dir)
+}
+pub(crate) fn getcwd(dir: PosixDir) -> Result<Vec<u8>> {
+    if let PosixDir::Mount(node) = dir {
+        return Ok(node.path());
+    }
+    btrfs::posix::getcwd(dir)
+}
+pub(crate) fn chdir(dir: PosixDir, path: &[u8], who: Credentials) -> Result<PosixDir> {
+    let path = super::mounts::qualify(dir, path);
+    if let Some(node) = super::mounts::MountDir::from_path(&path) {
+        return Ok(PosixDir::Mount(node));
+    }
+    if mount_namespace(&path) {
+        stat(dir, &path, who, true)?;
+        return Err(Errno::NotDirectory);
+    }
+    btrfs::posix::chdir(dir, &path, who)
+}
+pub(crate) fn stat(dir: PosixDir, path: &[u8], who: Credentials, follow: bool) -> Result<Metadata> {
+    let path = super::mounts::qualify(dir, path);
+    if let Some(node) = super::mounts::MountDir::from_path(&path) {
+        return super::Node::metadata(&node);
+    }
+    if super::dos::mount_path(&path).is_some() {
+        return super::open_dos(
+            Directories::ROOTS,
+            core::str::from_utf8(&path).map_err(|_| Errno::Invalid)?,
+            Open::READ,
+        )?
+        .0
+        .metadata();
+    }
+    if mount_namespace(&path) {
+        return Err(Errno::NoEntry);
+    }
+    btrfs::posix::stat(dir, &path, who, follow)
+}
+pub(crate) fn readlink(dir: PosixDir, path: &[u8], who: Credentials) -> Result<Vec<u8>> {
+    let path = super::mounts::qualify(dir, path);
+    if mount_namespace(&path) {
+        stat(dir, &path, who, false)?;
+        return Err(Errno::Invalid);
+    }
+    btrfs::posix::readlink(dir, &path, who)
+}
+pub(crate) fn mount_namespace(path: &[u8]) -> bool {
+    path == b"/dos" || path.starts_with(b"/dos/")
+}
 pub(crate) fn native(path: &[u8]) -> bool {
     btrfs::is_mounted()
-        && super::dos::mount_path(path).is_none()
+        && !mount_namespace(path)
         && !(path.len() >= 2 && path[0].is_ascii_alphabetic() && path[1] == b':')
 }
 pub(crate) fn initial(dos: Directories) -> PosixDir {
@@ -53,6 +119,20 @@ pub(crate) fn open(
     credentials: Credentials,
     executable: bool,
 ) -> Result<(File, bool)> {
+    let name = super::mounts::qualify(cwd, path);
+    let path = name.as_ref();
+    if let Some(node) = super::mounts::MountDir::from_path(path) {
+        if flags.create && flags.exclusive {
+            return Err(Errno::Exists);
+        }
+        if flags.access.writable() || flags.truncate {
+            return Err(Errno::IsDirectory);
+        }
+        return Ok((alloc::boxed::Box::new(node), false));
+    }
+    if mount_namespace(path) && super::dos::mount_path(path).is_none() {
+        return Err(Errno::NoEntry);
+    }
     if native(path) {
         let (object, dirty) = btrfs::posix::open(cwd, path, flags, mode, credentials, executable)?;
         return Ok((alloc::boxed::Box::new(object), dirty));

@@ -216,6 +216,17 @@ fn immediate(
         return result;
     }
     match call {
+        Call::Mountinfo => {
+            let mut record = [0u8; crate::vfs::mounts::RECORD_SIZE];
+            let n = p.mount_info(a, &mut record).map_err(errno)?;
+            if n > c {
+                return Err(-34);
+            }
+            if n != 0 {
+                image.write(b, &record[..n]).map_err(|_| -14isize)?;
+            }
+            Ok(n)
+        }
         Call::Uname => super::uts::uname(image, a),
         Call::Sethostname => super::uts::sethostname(image, p.uid, a, b),
         Call::Pipe | Call::Pipe2 => {

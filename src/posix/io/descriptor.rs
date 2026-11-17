@@ -195,6 +195,13 @@ impl ProcessContext {
             4096
         }
     }
+    pub(in crate::posix) fn mount_info(
+        &self,
+        index: usize,
+        out: &mut [u8; vfs::mounts::RECORD_SIZE],
+    ) -> Result<usize> {
+        vfs::mounts::entry(index, self.cwd, out)
+    }
     pub(in crate::posix) fn file_capacity(&self, fd: usize) -> Result<vfs::capacity::Capacity> {
         match &*self.get(fd)?.borrow() {
             Description::File { object, .. } => object.capacity(),
@@ -202,6 +209,15 @@ impl ProcessContext {
         }
     }
     pub(in crate::posix) fn path_capacity(&self, path: &[u8]) -> Result<vfs::capacity::Capacity> {
+        let name = vfs::mounts::qualify(self.directory, path);
+        let path = name.as_ref();
+        if vfs::mounts::MountDir::from_path(path) == Some(vfs::mounts::MountDir::Hub) {
+            return if vfs::posix::native(b"/") {
+                vfs::posix::capacity()
+            } else {
+                vfs::capacity::dos_path(self.cwd, b"/")
+            };
+        }
         if vfs::posix::native(path) {
             vfs::posix::stat(self.directory, path, self.credentials(), true)?;
             return vfs::posix::capacity();

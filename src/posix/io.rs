@@ -139,7 +139,7 @@ impl ProcessContext {
     ) -> Self {
         let output = handle(Description::Output(input.clone()));
         let directory = vfs::posix::initial(cwd);
-        let cwd_pin = if directory.0 == vfs::posix::ROOT.0 {
+        let cwd_pin = if directory == vfs::posix::ROOT {
             None
         } else {
             vfs::posix::pin_directory(directory)
@@ -267,7 +267,7 @@ impl ProcessContext {
     }
     pub(super) fn chdir(&mut self, from: vfs::posix::PosixDir, path: &[u8]) -> Result<()> {
         let next = vfs::posix::chdir(from, path, self.credentials())?;
-        let pin = if next.0 == vfs::posix::ROOT.0 {
+        let pin = if next == vfs::posix::ROOT {
             None
         } else {
             Some(Arc::new(KernelCell::new(vfs::posix::pin_directory(next)?)))
@@ -326,7 +326,9 @@ impl ProcessContext {
         )
     }
     pub(super) fn path_metadata(&self, path: &[u8], follow: bool) -> Result<vfs::posix::Metadata> {
-        if vfs::posix::native(path) {
+        let qualified = vfs::mounts::qualify(self.directory, path);
+        let path = qualified.as_ref();
+        if vfs::posix::native(path) || vfs::posix::mount_namespace(path) {
             return vfs::posix::stat(self.directory, path, self.credentials(), follow);
         }
         let name = core::str::from_utf8(path).map_err(|_| Errno::Invalid)?;

@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 #[path = "vfs/btrfs.rs"]
 mod btrfs;
+#[path = "vfs/mounts.rs"]
+pub(crate) mod mounts;
 #[path = "vfs/capacity.rs"]
 pub(crate) mod capacity;
 #[path = "vfs/dos.rs"]

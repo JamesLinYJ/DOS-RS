@@ -112,7 +112,7 @@ pub(super) fn dispatch(
             ),
             Call::Unlink => p.unlink_path(&string(image, a)?).map(|_| 0).map_err(errno),
             Call::Chdir => {
-                p.chdir(dir, &root_path(image, a)?).map_err(errno)?;
+                p.chdir(dir, &string(image, a)?).map_err(errno)?;
                 Ok(0)
             }
             Call::Getcwd => {
@@ -154,7 +154,7 @@ pub(super) fn dispatch(
                 if c == 0 {
                     return Err(-22);
                 }
-                let data = fs::readlink(dir, &root_path(image, a)?, who).map_err(errno)?;
+                let data = fs::readlink(dir, &string(image, a)?, who).map_err(errno)?;
                 let n = c.min(data.len());
                 image.write(b, &data[..n]).map_err(|_| -14isize)?;
                 Ok(n)

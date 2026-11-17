@@ -104,7 +104,7 @@ pub fn path_start(path: &[u8]) -> Option<(u32, &[u8])> {
 }
 
 /// POSIX-visible absolute names for mounted DOS drives.
-pub(super) fn mount_path(path: &[u8]) -> Option<(u8, &[u8])> {
+pub(crate) fn mount_path(path: &[u8]) -> Option<(u8, &[u8])> {
     let tail = path.strip_prefix(b"/dos/")?;
     let (&letter, rest) = tail.split_first()?;
     if !(b'a'..=b'c').contains(&letter) || !(rest.is_empty() || rest.starts_with(b"/")) {

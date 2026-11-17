@@ -1,6 +1,6 @@
 //! POSIX paths use byte names and inode-valued working directories.
 use super::{File, Mount, err, mounted};
-use crate::vfs::posix::{Attribute, Credentials, DirEntry, Metadata, PosixDir, ROOT, Times};
+use crate::vfs::posix::{Attribute, Credentials, DirEntry, Metadata, PosixDir, ROOT_INODE, Times};
 use alloc::{collections::VecDeque, vec::Vec};
 use dosrs_btrfs::{Error, inode::Inode};
 use dosrs_native_posix::{Errno, Open, Result};
@@ -66,9 +66,9 @@ fn lookup(
 ) -> Result<Lookup> {
     valid(path)?;
     let mut here = if path.starts_with(b"/") {
-        ROOT.0
+        ROOT_INODE
     } else {
-        cwd.0
+        cwd.inode()?
     };
     let mut todo = components(path);
     let mut links = 0;
@@ -105,7 +105,7 @@ fn lookup(
                 return Err(Errno::NameTooLong);
             }
             if target.starts_with(b"/") {
-                here = ROOT.0;
+                here = ROOT_INODE;
             }
             let mut expanded = components(&target);
             expanded.append(&mut todo);
@@ -186,7 +186,7 @@ pub(crate) fn metadata(n: &Inode) -> Metadata {
 }
 #[cfg(not(test))]
 pub(crate) fn from_dos(dir: u32) -> Result<PosixDir> {
-    mounted(|m| Ok(PosixDir(m.dirs.get(dir)?.id)))
+    mounted(|m| Ok(PosixDir::Btrfs(m.dirs.get(dir)?.id)))
 }
 pub(crate) fn chdir(cwd: PosixDir, path: &[u8], who: Credentials) -> Result<PosixDir> {
     mounted(|m| {
@@ -195,24 +195,25 @@ pub(crate) fn chdir(cwd: PosixDir, path: &[u8], who: Credentials) -> Result<Posi
             return Err(Errno::NotDirectory);
         }
         access(&n, who, 1)?;
-        Ok(PosixDir(n.ino))
+        Ok(PosixDir::Btrfs(n.ino))
     })
 }
 pub(crate) fn pin_directory(dir: PosixDir) -> Result<super::super::File> {
     mounted(|m| {
-        if !m.fs.read_inode(dir.0).map_err(err)?.is_dir() {
+        let inode = dir.inode()?;
+        if !m.fs.read_inode(inode).map_err(err)?.is_dir() {
             return Err(Errno::NotDirectory);
         }
-        *m.opens.entry(dir.0).or_default() += 1;
-        Ok(alloc::boxed::Box::new(File(dir.0, false)) as super::super::File)
+        *m.opens.entry(inode).or_default() += 1;
+        Ok(alloc::boxed::Box::new(File(inode, false)) as super::super::File)
     })
 }
 pub(crate) fn getcwd(cwd: PosixDir) -> Result<Vec<u8>> {
     mounted(|m| {
         let mut path = VecDeque::new();
         let mut len = 1;
-        let mut ino = cwd.0;
-        while ino != ROOT.0 {
+        let mut ino = cwd.inode()?;
+        while ino != ROOT_INODE {
             let (parent, name) = m.fs.directory_parent(ino).map_err(err)?;
             len += name.len() + 1;
             if len > PATH_MAX {
@@ -579,10 +580,22 @@ pub(crate) fn dirent(ino: u64, index: u64) -> Result<Option<DirEntry>> {
                 kind: 4,
             }));
         }
+        let mut offset = index - 2;
+        if ino == ROOT_INODE {
+            if offset == 0 {
+                return Ok(Some(DirEntry {
+                    ino: 1,
+                    name: b"dos".to_vec(),
+                    kind: 4,
+                }));
+            }
+            offset -= 1;
+        }
         let entries = m.fs.read_dir(ino).map_err(err)?;
         let Some(e) = entries
             .into_iter()
-            .nth(usize::try_from(index - 2).map_err(|_| Errno::Invalid)?)
+            .filter(|entry| ino != ROOT_INODE || entry.name != b"dos")
+            .nth(usize::try_from(offset).map_err(|_| Errno::Invalid)?)
         else {
             return Ok(None);
         };

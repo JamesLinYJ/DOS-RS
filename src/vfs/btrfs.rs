@@ -379,6 +379,9 @@ pub fn replace(dir: u32, name: &[u8; 11], data: &[u8], attr: u8) -> bool {
     })();
     result.is_ok()
 }
+pub(super) fn mount_identity() -> Option<([u8; 16], bool)> {
+    mounted(|m| Ok((m.fs.superblock().fsid, m.fs.is_writable()))).ok()
+}
 pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
     mounted(|m| {
         let sb = m.fs.superblock();
@@ -510,7 +513,7 @@ impl super::Node for File {
     fn directory(&self) -> Result<super::posix::PosixDir> {
         mounted(|m| {
             if m.fs.read_inode(self.0).map_err(err)?.is_dir() {
-                Ok(super::posix::PosixDir(self.0))
+                Ok(super::posix::PosixDir::Btrfs(self.0))
             } else {
                 Err(Errno::NotDirectory)
             }
