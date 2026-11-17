@@ -23,3 +23,5 @@ The text utility differential set covers comm, cut, expand, fold, nl, paste, pri
 Use `--filesystem btrfs --data-tools` for 42 GNU comparisons covering 17 additional numerical, text and checksum commands. The default installer selection includes these programs. The entropy-dependent commands use native getrandom. The Btrfs suite verifies long executable names on disk.
 
 The arch and uname ELF programs query the running DOS-RS kernel. The uname OS field comes from that kernel, the machine field follows its 32-bit or 64-bit build, and the nodename can be updated by root for the current boot. scripts/qemu-uname.py checks the fields independently with musl, then verifies GNU field ordering.
+
+Use `--filesystem btrfs --file-tools` for the 27 cases that exercise chmod, cp, du, install, ln, ls, mv, readlink, rm, split, stat, tee, touch and truncate. Both target kernels run the individual ELF programs. A Linux recovery guest reads the stopped Btrfs volume, and the host compares modes, file bytes, symlink targets and the explicit modification timestamp with GNU's results. On i686 the Rust libc dependency uses musl 1.2's 64-bit time layout.

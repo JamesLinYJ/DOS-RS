@@ -81,7 +81,39 @@ def upstream_data_cases():
     return cases + [(name, args, stdin, "C") for name, pairs in groups.items() for args, stdin in pairs]
 
 
-UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases}
+def upstream_file_cases():
+    return [(name, args, source, "C") for name, args, source in [
+        ("cp", ["b.txt", "ops/copied"], "z.txt"),
+        ("ln", ["ops/copied", "ops/hard"], "z.txt"),
+        ("ln", ["-s", "copied", "ops/soft"], "z.txt"),
+        ("readlink", ["ops/soft"], "z.txt"),
+        ("chmod", ["0640", "ops/hard"], "z.txt"),
+        ("stat", ["-c", "%s %a %h", "ops/copied"], "z.txt"),
+        ("ls", ["-1", "ops"], "z.txt"),
+        ("mv", ["ops/copied", "ops/renamed"], "z.txt"),
+        ("truncate", ["-s", "7", "ops/renamed"], "z.txt"),
+        ("stat", ["-c", "%s %a %h", "ops/hard"], "z.txt"),
+        ("du", ["-b", "ops/renamed"], "z.txt"),
+        ("tee", ["ops/tee"], "b.txt"),
+        ("tee", ["-a", "ops/tee"], "c.txt"),
+        ("cp", ["ops/tee", "ops/twice"], "z.txt"),
+        ("cp", ["s1.txt", "ops/replaced"], "z.txt"),
+        ("mv", ["ops/twice", "ops/replaced"], "z.txt"),
+        ("truncate", ["-s", "100", "ops/hard"], "z.txt"),
+        ("touch", ["-t", "200401020304.05", "ops/stamp"], "z.txt"),
+        ("stat", ["-c", "%Y %s", "ops/stamp"], "z.txt"),
+        ("split", ["-l", "2", "s1.txt", "ops/part"], "z.txt"),
+        ("split", ["-b", "10000", "a.txt", "ops/bin-"], "z.txt"),
+        ("install", ["-m", "0710", "s2.txt", "ops/install"], "z.txt"),
+        ("rm", ["ops/soft", "ops/tee"], "z.txt"),
+        ("ln", ["-s", "renamed", "ops/soft"], "z.txt"),
+        ("rm", ["-f", "ops/missing"], "z.txt"),
+        ("rm", ["ops/missing"], "z.txt"),
+        ("ls", ["-1", "ops"], "z.txt"),
+    ]]
+
+
+UPSTREAM_CASES = {"encoding": upstream_cases, "text": upstream_text_cases, "data": upstream_data_cases, "files": upstream_file_cases}
 
 
 def catalog():
@@ -266,24 +298,28 @@ NAMESPACE_PATHS = [
 ]
 
 
-def namespace_state(tree, archive=None):
+def namespace_state(tree, archive=None, paths=NAMESPACE_PATHS):
     # btrfs restore -m records Linux permission bits in the capture archive.
     # Host extraction need not apply guest directory modes to a macOS RAM disk.
-    modes = {}
+    records = {}
     if archive is not None:
-        modes = {row["path"]: row["mode"] for row in json.loads(archive.read_text())}
+        records = {row["path"]: row for row in json.loads(archive.read_text())}
     result = {}
-    for name in NAMESPACE_PATHS:
+    for name in paths:
         path = tree / name
-        if not path.exists():
+        if path.is_symlink():
+            result[name] = dict(kind="symlink", target=os.readlink(path))
+        elif not path.exists():
             result[name] = None
         else:
             result[name] = dict(
                 kind="directory" if path.is_dir() else "file",
-                mode=oct((modes["files/" + name] if archive is not None else path.stat().st_mode) & 0o7777),
+                mode=oct((records["files/" + name]["mode"] if archive is not None else path.stat().st_mode) & 0o7777),
             )
             if path.is_file():
                 result[name]["sha256"] = digest(path.read_bytes())
+            if name == "ops/stamp":
+                result[name]["mtime"] = records["files/" + name]["mtime"] if archive is not None else int(path.stat().st_mtime)
     return result
 
 
@@ -432,10 +468,15 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
     config = bytearray()
     expected = []
     expected_effects = {}
-    check_namespace = fs == "btrfs" and not upstream
+    file_suite = upstream_set == "files"
+    check_namespace = fs == "btrfs" and (not upstream or file_suite)
+    paths = NAMESPACE_PATHS
     guest_bin = "/bin/" if fs == "btrfs" else "C:/bin/"
     with tempfile.TemporaryDirectory(dir=root) as sandbox:
         temp = Path(sandbox)
+        if file_suite:
+            (temp / "ops").mkdir(mode=0o755)
+            (tree / "ops").mkdir(mode=0o755)
         for name, data in fixtures.items():
             (temp / name).write_bytes(data)
         for i, (name, args, stdin, locale) in enumerate(suite):
@@ -466,7 +507,9 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
             for field in [stdin, "LC_ALL=" + locale, guest_bin + name, name, *args]:
                 config.extend(os.fsencode(field) + b"\0")
         if check_namespace:
-            expected_effects = namespace_state(temp)
+            if file_suite:
+                paths = sorted("ops/" + p.name for p in (temp / "ops").iterdir())
+            expected_effects = namespace_state(temp, paths=paths)
         for name, data in fixtures.items():
             if (temp / name).read_bytes() != data:
                 raise RuntimeError("reference modified " + name)
@@ -533,7 +576,9 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
             raise RuntimeError("missing guest execve trace for " + name)
     if check_namespace:
         capture = root / "restored"
-        effects = namespace_state(capture / "files", capture / "archive.json")
+        if file_suite:
+            paths = sorted("ops/" + p.name for p in (capture / "files/ops").iterdir())
+        effects = namespace_state(capture / "files", capture / "archive.json", paths)
         (proof / (arch + "-namespace.json")).write_text(json.dumps(effects, indent=2) + "\n")
         if effects != expected_effects:
             raise RuntimeError(
@@ -599,13 +644,13 @@ if __name__ == "__main__":
         help="run the Btrfs link/directory cases in isolation",
     )
     selection = cli.add_mutually_exclusive_group()
-    for flag, name in [("--text-tools","text"), ("--data-tools","data")]:
+    for flag, name in [("--text-tools","text"), ("--data-tools","data"), ("--file-tools","files")]:
         selection.add_argument(flag, action="store_const", const=name, dest="upstream_set")
     cli.add_argument("--upstream-archive", type=Path, help="test Rust std utilities built from the pinned uutils archive")
     args = cli.parse_args()
     if args.upstream_set and not args.upstream_archive:
         cli.error("upstream test groups require --upstream-archive")
-    if args.upstream_set == "data" and args.filesystem != "btrfs":
+    if args.upstream_set in ("data", "files") and args.filesystem != "btrfs":
         cli.error("this utility group needs the POSIX Btrfs root")
     if args.upstream_archive and args.namespace_only:
         cli.error("select either upstream encoders or namespace tools")

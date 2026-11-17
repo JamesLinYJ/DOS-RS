@@ -136,3 +136,21 @@ functions/tcflush.html#tag_17_605	tcflush	partial	partial	ports/musl/tests/termi
 functions/tcflow.html#tag_17_604	tcflow	partial	partial	ports/musl/tests/terminal.c	Stop and resume output and observe POLLOUT readiness change on the output descriptor
 functions/pthread_kill.html#tag_17_437	pthread_kill	partial	partial	ports/musl/tests/libc.c	Send SIGUSR2 to the selected worker, observe its pending signal while blocked and deliver it in that thread only
 functions/pthread_sigmask.html#tag_17_461	pthread_sigmask	partial	partial	ports/musl/tests/libc.c	Block and restore a worker signal mask, observe SIGUSR2 pending in that thread and run its handler after unblocking
+utilities/cksum.html#tag_20_19	cksum	partial	partial	scripts/qemu-coreutils.py#225,226	POSIX CRC and lengths on standard input and multiple operands
+utilities/expr.html#tag_20_42	expr	partial	partial	scripts/qemu-coreutils.py#229,230,231	Arithmetic, comparison status and substring evaluation
+utilities/od.html#tag_20_90	od	partial	partial	scripts/qemu-coreutils.py#238,239	Byte formats, skip and length with standard input and file operands
+utilities/tsort.html#tag_20_128	tsort	partial	partial	scripts/qemu-coreutils.py#242,243	Ordered edge stream and empty input
+utilities/cp.html#tag_20_24	cp	partial	partial	scripts/qemu-coreutils.py#244,257,258	Copy binary and text file contents, including buffered tee output
+utilities/ln.html#tag_20_67	ln	partial	partial	scripts/qemu-coreutils.py#245,246,267	Create hard links and relative symbolic links before and after rename
+utilities/readlink.html#tag_20_101	readlink	partial	partial	scripts/qemu-coreutils.py#247	Read the text of a relative symbolic link
+utilities/chmod.html#tag_20_17	chmod	partial	partial	scripts/qemu-coreutils.py#248	Change a file mode through its hard link; confirm mode on the other name
+utilities/ls.html#tag_20_73	ls	partial	partial	scripts/qemu-coreutils.py#250,270	List directory entries before and after mutations
+utilities/mv.html#tag_20_83	mv	partial	partial	scripts/qemu-coreutils.py#251,259	Rename while preserving hard-link contents and replace an existing destination
+utilities/du.html#tag_20_36	du	partial	partial	scripts/qemu-coreutils.py#254	Report apparent byte size after truncation
+utilities/tee.html#tag_20_120	tee	partial	partial	scripts/qemu-coreutils.py#255,256	Write standard input to a file and append; check both output and final bytes
+utilities/touch.html#tag_20_124	touch	partial	partial	scripts/qemu-coreutils.py#261	Set a fixed UTC file modification time and compare it after cold volume restoration
+utilities/split.html#tag_20_113	split	partial	partial	scripts/qemu-coreutils.py#263,264	Line-based and byte-based parts with complete contents checked from the stopped volume
+utilities/rm.html#tag_20_104	rm	partial	partial	scripts/qemu-coreutils.py#266,268,269	Remove files and symbolic links, distinguish a missing name with and without force
+utilities/uname.html#tag_20_134	uname	partial	partial	scripts/qemu-uname.py	Single and combined field order, architecture and boot-local node identity on both kernels
+functions/uname.html#tag_17_646	uname	partial	partial	tests/native-uts/names.c	Return kernel system name, nodename, release, version and machine fields
+functions/gethostname.html#tag_17_217	gethostname	partial	partial	tests/native-uts/names.c	Read the boot and renamed hostname across fork with the maximum supported length

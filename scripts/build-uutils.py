@@ -22,6 +22,11 @@ DATA_TOOLS = (
 
 
 SYSTEM_TOOLS = ("arch", "uname")
+FILE_TOOLS = (
+    "chmod", "cp", "du", "install", "ln", "ls", "mv", "readlink", "rm", "split",
+    "stat", "tee", "touch", "truncate",
+)
+DEFAULT_TOOLS = TOOLS + DATA_TOOLS + SYSTEM_TOOLS + FILE_TOOLS
 
 
 def digest(path):
@@ -64,13 +69,18 @@ def build(arch, archive, output, names, offline):
     compiler_headers = subprocess.check_output(
         [arch + "-elf-gcc", "-print-file-name=include"], text=True
     ).strip()
+    rustflags = ["--cfg", "rustix_use_libc"]
+    # musl 1.2 uses 64-bit time_t on i686, including the timespecs in stat.
+    if arch == "i686":
+        rustflags.extend(["--cfg", "libc_unstable_musl_v1_2"])
+    rustflags.extend([
+        "-C", "relocation-model=static", "-C", "no-redzone=yes",
+        "-C", "link-self-contained=no", "-C", "linker=" + str(linker),
+    ])
     env = dict(os.environ)
     env.update({
         "DOSRS_RUST_ARCH": arch,
-        "CARGO_ENCODED_RUSTFLAGS": "\x1f".join([
-            "--cfg", "rustix_use_libc", "-C", "relocation-model=static", "-C", "no-redzone=yes",
-            "-C", "link-self-contained=no", "-C", "linker=" + str(linker)
-        ]),
+        "CARGO_ENCODED_RUSTFLAGS": "\x1f".join(rustflags),
         "CC_" + key: arch + "-elf-gcc",
         "AR_" + key: arch + "-elf-ar",
         "CFLAGS_" + key: "-nostdinc -isystem " + str(sysroot / "include") + " -isystem " + compiler_headers,
@@ -100,6 +110,6 @@ if __name__ == "__main__":
     cli.add_argument("--offline", action="store_true")
     cli.add_argument("tools", nargs="*", metavar="TOOL")
     args = cli.parse_args()
-    if set(args.tools) - set(TOOLS + DATA_TOOLS + SYSTEM_TOOLS):
+    if set(args.tools) - set(DEFAULT_TOOLS):
         cli.error("unknown utility in requested build")
-    build(args.arch, args.archive, args.output, args.tools or (TOOLS + DATA_TOOLS + SYSTEM_TOOLS), args.offline)
+    build(args.arch, args.archive, args.output, args.tools or DEFAULT_TOOLS, args.offline)
