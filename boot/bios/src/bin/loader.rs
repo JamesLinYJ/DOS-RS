@@ -17,11 +17,10 @@ mod mode {
         "/bios/stage-2/src/protected_mode.rs"
     ));
 }
+#[path = "../e820_record.rs"]
+mod e820_record;
 mod e820 {
-    include!(concat!(env!("BIOS_CPU"), "/bios/stage-2/src/memory_map.rs"));
-}
-fn split_array_ref<const N: usize, T>(slice: &[T]) -> (&[T; N], &[T]) {
-    slice.split_first_chunk().unwrap()
+    include!(concat!(env!("OUT_DIR"), "/bios-memory-map.rs"));
 }
 const SECTOR: usize = 512;
 #[repr(align(16))]
@@ -62,9 +61,7 @@ pub extern "C" fn _start(drive: u16, table: *const u8) -> ! {
         .next_multiple_of(4096);
     let end = staging.checked_add(file.next_multiple_of(512)).unwrap();
     let memory = unsafe { e820::query_memory_map() }.unwrap();
-    assert!(memory.iter().any(|r| r.region_type == 1
-        && r.start_addr <= 0x100000
-        && r.start_addr.saturating_add(r.len) >= u64::from(end)));
+    assert!(e820_record::can_stage(memory, 0x100000, u64::from(end)));
     lba += 1;
     for (start, bytes) in [(0x100000u32, stub), (staging, file)] {
         let mut left = bytes.div_ceil(512);

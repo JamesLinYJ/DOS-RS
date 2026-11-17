@@ -58,7 +58,7 @@ pub extern "efiapi" fn dos_rs_bios_entry(info: &BiosInfo) -> ! {
         )
     };
     let regions = memory.iter().map(|r| {
-        let usable = r.region_type == 1 && r.acpi_extended_attributes & 2 == 0;
+        let usable = r.is_usable();
         (r.start_addr, r.len, usable)
     });
     // The 1 MiB transition stub includes live GDT and long-mode page tables.

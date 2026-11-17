@@ -17,6 +17,14 @@ pub struct E820MemoryRegion {
     pub acpi_extended_attributes: u32,
 }
 
+impl E820MemoryRegion {
+    pub fn is_usable(&self) -> bool {
+        // Donate ordinary enabled RAM. Persistent/slow memory, firmware error
+        // logs and ranges with unknown extended attributes stay reserved.
+        self.region_type == 1 && self.acpi_extended_attributes == 1
+    }
+}
+
 // The real-mode producer and either kernel consumer must agree on the layout.
 const _: () = {
     assert!(core::mem::size_of::<BiosInfo>() == 20);

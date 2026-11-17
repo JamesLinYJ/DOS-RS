@@ -4,6 +4,23 @@ fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let bios = root.join("target/bios-cpu");
     println!("cargo:rustc-env=BIOS_CPU={}", bios.display());
+    // Keep the pinned upstream BIOS register/interrupt sequence, and decode
+    // its actual returned byte count before handing descriptors to either PE.
+    let upstream = bios.join("bios/stage-2/src/memory_map.rs");
+    let patch = root.join("boot/bios/e820.patch");
+    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("bios-memory-map.rs");
+    assert!(
+        Command::new("patch")
+            .args(["-s", "-F", "0", "-o"])
+            .arg(out)
+            .arg(&upstream)
+            .arg(&patch)
+            .status()
+            .expect("applying the BIOS E820 adapter")
+            .success()
+    );
+    println!("cargo:rerun-if-changed={}", patch.display());
+    println!("cargo:rerun-if-changed={}", upstream.display());
     for (bin, path) in [
         ("mbr", bios.join("bios/boot_sector/boot-sector-link.ld")),
         ("loader", root.join("boot/bios/loader.ld")),

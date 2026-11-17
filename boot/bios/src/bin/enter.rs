@@ -5,6 +5,7 @@ use core::{mem::size_of, ptr};
 use x86::dtables::{DescriptorTablePointer, lgdt};
 const BASE: usize = 0x1000000;
 const STACK: usize = 0x300000;
+#[allow(dead_code, reason = "this stage forwards the E820 table to the kernel")]
 #[path = "../handoff.rs"]
 mod handoff;
 use handoff::BiosInfo;
