@@ -20,7 +20,8 @@ pub const ANON_END: usize = 0x8000_0000;
 // growing range. Both ends are aligned to the 2 MiB supervisor mappings.
 const LIMIT: usize = END - 17 * PAGE;
 pub const STACK_TOP: usize = ANON_BASE - (2 << 20);
-pub const STACK_LIMIT: usize = STACK_TOP - (8 << 20);
+pub const STACK_MAX: usize = 8 << 20;
+pub const STACK_LIMIT: usize = STACK_TOP - STACK_MAX;
 pub const STACK: usize = STACK_TOP - 16 * PAGE;
 /// The kernel identity-maps the low four GiB. Sparse ELF64 segments can use
 /// the rest of the lower canonical half in four-level paging mode.
@@ -54,6 +55,7 @@ pub struct Mapping<F> {
 pub struct Image<F: Frame> {
     pages: Vec<(usize, Mapping<F>)>,
     stack_bottom: usize,
+    stack_size_limit: usize,
     pub entry: usize,
     pub phdr: Option<(usize, usize, usize)>,
 }
@@ -61,13 +63,28 @@ pub type Result<T> = core::result::Result<T, &'static str>;
 
 impl<F: Frame> Image<F> {
     pub fn load(file: &[u8], machine: Machine) -> Result<Self> {
+        Self::load_with_stack_limit(file, machine, STACK_MAX)
+    }
+
+    pub fn load_with_stack_limit(file: &[u8], machine: Machine, limit: usize) -> Result<Self> {
+        if limit > STACK_MAX {
+            return Err("unsupported stack limit");
+        }
         match machine {
-            Machine::I386 => Self::parse::<elf::FileHeader32<LittleEndian>>(file, elf::EM_386),
-            Machine::Amd64 => Self::parse::<elf::FileHeader64<LittleEndian>>(file, elf::EM_X86_64),
+            Machine::I386 => {
+                Self::parse::<elf::FileHeader32<LittleEndian>>(file, elf::EM_386, limit)
+            }
+            Machine::Amd64 => {
+                Self::parse::<elf::FileHeader64<LittleEndian>>(file, elf::EM_X86_64, limit)
+            }
         }
     }
 
-    fn parse<E: FileHeader<Endian = LittleEndian>>(file: &[u8], machine: u16) -> Result<Self> {
+    fn parse<E: FileHeader<Endian = LittleEndian>>(
+        file: &[u8],
+        machine: u16,
+        limit: usize,
+    ) -> Result<Self> {
         let le = LittleEndian;
         let h = E::parse(file).map_err(|_| "invalid ELF header")?;
         if h.e_ident().data != elf::ELFDATA2LSB
@@ -84,7 +101,8 @@ impl<F: Frame> Image<F> {
         let entry = usize::try_from(h.e_entry(le).into()).map_err(|_| "invalid ELF entry")?;
         let mut image = Self {
             pages: Vec::new(),
-            stack_bottom: STACK,
+            stack_bottom: STACK.max(STACK_TOP - limit / PAGE * PAGE),
+            stack_size_limit: limit,
             entry,
             phdr: None,
         };
@@ -190,7 +208,7 @@ impl<F: Frame> Image<F> {
         if !executable_entry {
             return Err("entry is outside executable code");
         }
-        for addr in (STACK..STACK_TOP).step_by(PAGE) {
+        for addr in (image.stack_bottom..STACK_TOP).step_by(PAGE) {
             image.append_page(addr)?.writable = true;
         }
         // Keep binary searches valid when the ABI stack precedes high segments.
@@ -245,6 +263,7 @@ impl<F: Frame> Image<F> {
         Ok(Self {
             pages,
             stack_bottom: self.stack_bottom,
+            stack_size_limit: self.stack_size_limit,
             entry: self.entry,
             phdr: self.phdr,
         })
@@ -328,12 +347,24 @@ impl<F: Frame> Image<F> {
         self.stack_bottom
     }
 
+    pub fn set_stack_limit(&mut self, bytes: usize) -> Result<()> {
+        if bytes > STACK_MAX {
+            return Err("unsupported stack limit");
+        }
+        self.stack_size_limit = bytes;
+        Ok(())
+    }
+
     pub fn grow_stack(&mut self, address: usize) -> Result<()> {
         if !(STACK_LIMIT..STACK_TOP).contains(&address) {
             return Err("address outside the main stack");
         }
         if address < self.stack_bottom {
-            let base = address & !(16 * PAGE - 1);
+            let limit = STACK_TOP - self.stack_size_limit / PAGE * PAGE;
+            if address < limit {
+                return Err("main stack limit exceeded");
+            }
+            let base = (address & !(16 * PAGE - 1)).max(limit);
             self.allocate_pages(base, (self.stack_bottom - base) / PAGE, false)?;
             self.stack_bottom = base;
         }
@@ -343,7 +374,7 @@ impl<F: Frame> Image<F> {
     /// Discard only the pages of an uncommitted stack extension after a table
     /// rebuild failed. Existing frames still belong to the old hardware root.
     pub fn rollback_stack(&mut self, old_bottom: usize) {
-        debug_assert!((self.stack_bottom..=STACK).contains(&old_bottom));
+        debug_assert!((self.stack_bottom..=STACK_TOP).contains(&old_bottom));
         let start = self
             .pages
             .partition_point(|page| page.0 < self.stack_bottom);

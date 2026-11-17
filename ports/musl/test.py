@@ -28,6 +28,8 @@ def check(arch, archive, ram, proof):
         compile(arch, [PORT / "tests/sigwait.c"], sig_test)
         timers_test = work / "timers.elf"
         compile(arch, [PORT / "tests/timers.c"], timers_test)
+        limits_test = work / "limtest.elf"
+        compile(arch, [PORT / "tests/limits.c"], limits_test)
         tty_test = work / "ttytest.elf"
         compile(arch, [PORT / "tests/terminal.c"], tty_test)
         compile(arch, [ROOT / "tests/native-poll/poll.c"], poll_test)
@@ -40,7 +42,7 @@ def check(arch, archive, ram, proof):
         with disk.open("wb") as f:
             f.truncate(4 << 20)
         subprocess.run(["mformat", "-i", disk, "::"], check=True)
-        subprocess.run(["mcopy", "-i", disk, binary, poll_test, tty_test, sig_test, timers_test, socket_test, "::"], check=True)
+        subprocess.run(["mcopy", "-i", disk, binary, poll_test, tty_test, sig_test, timers_test, limits_test, socket_test, "::"], check=True)
         mode = "bios" if arch == "i686" else "uefi"
         launch = qemu.boot_args(kernel, arch, work / "boot", 4, mode, esp_mib=36)
         launch += ["-accel", "tcg,thread=multi", "-drive", "if=ide,format=raw,file=" + str(disk)]
@@ -78,6 +80,8 @@ def check(arch, archive, ram, proof):
             shell.command("sigtest.elf", expect=b"sigwait: process, targeted thread, competing waiters, realtime order, sender, child and timeout passed")
             shell.command("echo $?", expect=b"\r\n0\r\n")
             shell.command("timers.elf", expect=b"timers: values, overruns, shared signal, absolute clock, fork, exec, exit and handler passed")
+            shell.command("echo $?", expect=b"\r\n0\r\n")
+            shell.command("limtest.elf", expect=b"limits: stack growth, syscall entry, fork, exec and failed exec passed")
             shell.command("echo $?", expect=b"\r\n0\r\n")
             shell.command("socktest.elf issue8", expect=b"local sockets and posix_spawn passed")
             shell.command("echo $?", expect=b"\r\n0\r\n")

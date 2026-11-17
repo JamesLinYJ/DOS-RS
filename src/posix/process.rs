@@ -1,5 +1,6 @@
 //! Process relationships live past exit until the parent collects the wait status.
 //! Ready children enter their terminal's group between scheduler rounds.
+pub(super) mod limits;
 pub(super) mod signals;
 pub(super) mod timers;
 use super::{Waiters, executable::Executable, io::ProcessContext};
@@ -14,6 +15,7 @@ struct Record {
     uid: u32,
     signals: signals::Signals,
     timers: timers::Timers,
+    limits: limits::Limits,
     parent: u32,
     group: u32,
     session: u32,
@@ -36,12 +38,17 @@ pub fn register(pid: u32, parent: u32, uid: u32) -> Result<(), isize> {
         .map(|p| p.signals.inherit())
         .transpose()?
         .unwrap_or_default();
+    let limits = records
+        .iter()
+        .find(|p| p.pid == parent)
+        .map_or_else(limits::Limits::default, |p| p.limits);
     records.try_reserve(1).map_err(|_| -12isize)?;
     records.push(Record {
         pid,
         uid,
         signals,
         timers: timers::Timers::default(),
+        limits,
         parent,
         group,
         session,

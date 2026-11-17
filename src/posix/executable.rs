@@ -10,7 +10,7 @@ use core::{
     future::poll_fn,
     task::{Context, Poll},
 };
-use dosrs_native_exec::{Call, Machine, STACK, STACK_TOP};
+use dosrs_native_exec::{Call, Machine, STACK, STACK_MAX, STACK_TOP};
 use dosrs_native_posix::{Errno, Open, Process, Whence};
 
 pub(super) struct Executable {
@@ -20,7 +20,7 @@ pub(super) struct Executable {
 fn push_stack(image: &mut Image, sp: &mut usize, data: &[u8]) -> Result<(), &'static str> {
     *sp = sp
         .checked_sub(data.len())
-        .filter(|&v| v >= STACK)
+        .filter(|&v| v >= image.stack_bottom())
         .ok_or("program arguments exceed user stack")?;
     image.write(*sp, data)
 }
@@ -79,7 +79,7 @@ fn initial_stack<T: AsRef<[u8]>>(
 impl Executable {
     pub fn load(cwd: Directories, path: &str, argv: &[String]) -> Result<Self, &'static str> {
         let (file, _) = vfs::open(cwd, path, Open::READ).map_err(|e| e.message())?;
-        Self::from_file(file, argv, &[], 0, 0)
+        Self::from_file(file, argv, &[], 0, 0, STACK_MAX)
     }
 
     pub(super) fn from_file<T: AsRef<[u8]>>(
@@ -88,6 +88,7 @@ impl Executable {
         env: &[T],
         uid: u32,
         gid: u32,
+        stack_limit: usize,
     ) -> Result<Self, &'static str> {
         let length = usize::try_from(file.len().map_err(|e| e.message())?)
             .map_err(|_| "ELF file too large")?;
@@ -106,13 +107,14 @@ impl Executable {
             }
             at += n;
         }
-        let mut image = Image::load(
+        let mut image = Image::load_with_stack_limit(
             &bytes,
             if cfg!(target_arch = "x86") {
                 Machine::I386
             } else {
                 Machine::Amd64
             },
+            stack_limit,
         )?;
         let (sp, vector) = initial_stack(&mut image, argv, env, uid, gid)?;
         let cpu = Thread::try_new(image.entry, sp, argv.len(), vector)?;
@@ -361,19 +363,21 @@ pub(super) fn execve(
     args: [usize; 3],
 ) -> Result<Executable, isize> {
     let name = super::paths::string(image, args[0])?;
-    let mut remaining = STACK_TOP - STACK - 1024;
+    let stack_limit = super::process::limits::stack(p.getpid())?;
+    let mut remaining = (STACK_TOP - STACK).min(stack_limit).saturating_sub(1024);
     let argv = strings(image, args[1], &mut remaining)?;
     let env = strings(image, args[2], &mut remaining)?;
     let file = p.open_executable(&name).map_err(errno)?;
-    let task = Executable::from_file(file, &argv, &env, p.uid, p.gid).map_err(|e| {
-        if e.contains("insufficient") {
-            -12isize
-        } else if e.contains("exceed user stack") {
-            -7
-        } else {
-            -8
-        }
-    })?;
+    let task =
+        Executable::from_file(file, &argv, &env, p.uid, p.gid, stack_limit).map_err(|e| {
+            if e.contains("insufficient") {
+                -12isize
+            } else if e.contains("exceed user stack") {
+                -7
+            } else {
+                -8
+            }
+        })?;
     #[cfg(feature = "exec-trace")]
     for byte in alloc::format!(
         "EXEC pid={} path={}\r\n",

@@ -115,3 +115,4 @@ timerget 172 2
 timerdelete 173 1
 timeroverrun 174 1
 sigwaitinfo 175 3
+resource 176 3

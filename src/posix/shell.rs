@@ -118,6 +118,7 @@ pub(super) fn parse(line: &str, cwd: crate::vfs::Directories) -> Result<Vec<Stag
                 &[],
                 0,
                 0,
+                dosrs_native_exec::STACK_MAX,
             )?)
         };
         stages.push(Stage {

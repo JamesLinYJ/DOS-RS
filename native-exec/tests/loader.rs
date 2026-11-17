@@ -121,6 +121,26 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
     image.unmap_anonymous(base, 600).unwrap();
     assert!(image.check(base, 1, false).is_err());
     assert!(Image::load(&elf[..50], machine).is_err());
+    let mut limited = Image::load_with_stack_limit(elf, machine, 100 * 1024).unwrap();
+    limited.grow_stack(STACK_TOP - 80 * 1024).unwrap();
+    assert_eq!(limited.stack_bottom(), STACK_TOP - 100 * 1024);
+    assert!(limited.grow_stack(STACK_TOP - 120 * 1024).is_err());
+    assert!(
+        limited
+            .fork()
+            .unwrap()
+            .grow_stack(STACK_TOP - 120 * 1024)
+            .is_err()
+    );
+    let mapped = limited.pages().count();
+    limited.set_stack_limit(16 * 1024).unwrap();
+    assert_eq!(limited.pages().count(), mapped);
+    limited.grow_stack(STACK_TOP - 90 * 1024).unwrap();
+    limited.rollback_stack(STACK);
+    assert!(limited.grow_stack(STACK - PAGE).is_err());
+    let small = Image::load_with_stack_limit(elf, machine, 16 * 1024).unwrap();
+    assert_eq!(small.stack_bottom(), STACK_TOP - 16 * 1024);
+    assert!(small.check(STACK_TOP - 16 * 1024 - 1, 1, true).is_err());
 }
 #[test]
 fn i686_static_c_image() {

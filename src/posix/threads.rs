@@ -231,7 +231,8 @@ impl Threads {
             if t.stack.start == STACK_LIMIT && t.stack.contains(&sp) {
                 // A system call may be the first writer to an untouched local
                 // buffer. Materialize the live stack down to the ABI red zone.
-                let low = sp.saturating_sub(128).max(STACK_LIMIT);
+                let red_zone = if cfg!(target_arch = "x86_64") { 128 } else { 0 };
+                let low = sp.saturating_sub(red_zone).max(STACK_LIMIT);
                 if low < image.stack_bottom() && image.ensure_stack(low).is_err() {
                     outcome = Stop::Fault(14, None);
                 }
@@ -430,6 +431,9 @@ impl Threads {
                 Call::Setsid => Poll::Ready(super::process::new_session(p.getpid())),
                 Call::Setpgid => {
                     Poll::Ready(super::process::set_group(p.getpid(), a as i32, b as i32))
+                }
+                Call::Resource => {
+                    Poll::Ready(super::process::limits::call(image, p.getpid(), args))
                 }
                 Call::Sigwait | Call::Sigwaitinfo => signal::wait(&mut self.0[i], image, p.getpid(), args, call == Call::Sigwaitinfo, cx),
                 Call::Timercreate | Call::Timerset | Call::Timerget | Call::Timerdelete | Call::Timeroverrun => {

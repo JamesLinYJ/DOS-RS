@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check native musl timers, then recover the report from a stopped RAM disk."""
 import argparse
+from contextlib import ExitStack
+import fcntl
 import hashlib
 import json
 from pathlib import Path
@@ -31,16 +33,24 @@ def check(arch, args):
             "polltest": qemu.ROOT / "tests/native-poll/poll.c",
             "sigtest": qemu.ROOT / "ports/musl/tests/sigwait.c",
             "socktest": qemu.ROOT / "ports/musl/tests/socket_spawn.c",
+            "limtest": qemu.ROOT / "ports/musl/tests/limits.c",
         }
-        for name, source in {"timers": qemu.ROOT / "ports/musl/tests/timers.c", **regressions}.items():
-            output = work / (name + ".elf")
-            if args.elf_dir:
-                shutil.copyfile(args.elf_dir / arch / output.name, output)
-            else:
-                subprocess.run([sys.executable, qemu.ROOT / "ports/musl/cc.py", "--arch", arch,
-                                "-o", output, "--", *link, source], check=True)
-            (proof / "elf").mkdir(exist_ok=True)
-            shutil.copyfile(output, proof / "elf" / output.name)
+        libc_digest = None
+        with ExitStack() as resources:
+            if not args.elf_dir:
+                sysroot = qemu.ROOT / "target/musl" / arch / "sysroot"
+                lock = resources.enter_context((sysroot.parent / "build.lock").open("a"))
+                fcntl.flock(lock, fcntl.LOCK_SH)
+                libc_digest = hashlib.sha256((sysroot / "lib/libc.a").read_bytes()).hexdigest()
+            for name, source in {"timers": qemu.ROOT / "ports/musl/tests/timers.c", **regressions}.items():
+                output = work / (name + ".elf")
+                if args.elf_dir:
+                    shutil.copyfile(args.elf_dir / arch / output.name, output)
+                else:
+                    subprocess.run([sys.executable, qemu.ROOT / "ports/musl/cc.py", "--arch", arch,
+                                    "-o", output, "--", *link, source], check=True)
+                (proof / "elf").mkdir(exist_ok=True)
+                shutil.copyfile(output, proof / "elf" / output.name)
         disk = work / "c.img"
         with disk.open("wb") as file:
             file.truncate(4 << 20)
@@ -59,6 +69,7 @@ def check(arch, args):
                 ("polltest.elf", b"poll: descriptors, blocking pipe, peer close, timeout and signal mask passed"),
                 ("sigtest.elf", b"sigwait: process, targeted thread, competing waiters, realtime order, sender, child and timeout passed"),
                 ("socktest.elf issue8", b"local sockets and posix_spawn passed"),
+                ("limtest.elf", b"limits: stack growth, syscall entry, fork, exec and failed exec passed"),
             ]:
                 guest.command(command, timeout=240, expect=marker)
                 guest.command("echo $?", expect=b"\r\n0\r\n")
@@ -83,10 +94,9 @@ def check(arch, args):
         with (proof / "fsck.log").open("wb") as log:
             subprocess.run([checker, "-n", disk], stdout=log, stderr=subprocess.STDOUT, check=True)
         hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest()
-                  for name, path in [("kernel", kernel), ("ELF", binary), ("disk", disk),
-                                     ("libc", qemu.ROOT / "target/musl" / arch / "sysroot/lib/libc.a")]}
-        if args.elf_dir:
-            del hashes["libc"]
+                  for name, path in [("kernel", kernel), ("ELF", binary), ("disk", disk)]}
+        if libc_digest is not None:
+            hashes["libc"] = libc_digest
         result = {"arch": arch, "kernel_bits": 32 if arch == "i686" else 64,
                   "firmware": mode, "sha256": hashes, "sigval": value,
                   "linker_options": link,
@@ -108,7 +118,7 @@ if __name__ == "__main__":
     cli.add_argument("--proof", type=Path, default=qemu.ROOT / "target/posix-timers-proof")
     cli.add_argument("--kernel", type=Path, help="frozen kernel for exactly one --arch")
     cli.add_argument("--linker-dir", type=Path)
-    cli.add_argument("--elf-dir", type=Path, help="replay prebuilt ARCH/{timers,polltest,sigtest,socktest}.elf")
+    cli.add_argument("--elf-dir", type=Path, help="replay prebuilt ARCH/{timers,polltest,sigtest,socktest,limtest}.elf")
     args = cli.parse_args()
     if args.kernel and len(args.arch or ()) != 1:
         cli.error("--kernel requires one --arch")

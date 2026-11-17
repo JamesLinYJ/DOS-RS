@@ -59,6 +59,9 @@ impl AddressSpace {
         }
         Ok(())
     }
+    pub(crate) fn set_stack_limit(&mut self, bytes: usize) -> Result<(), &'static str> {
+        self.image.set_stack_limit(bytes)
+    }
     pub(crate) fn map_anonymous(&mut self, pages: usize) -> Result<usize, &'static str> {
         self.map_protected(pages, 3)
     }

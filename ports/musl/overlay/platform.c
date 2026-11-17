@@ -16,6 +16,7 @@ _Static_assert(sizeof(struct termios) == 60 && offsetof(struct termios, c_cc) ==
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <sys/statfs.h>
+#include <sys/resource.h>
 #undef sys_open
 #include "dos_calls.h"
 
@@ -93,6 +94,30 @@ static long clock_sleep(long clk, long flags, long ptr, long rem, int wide)
         put_time(rem, remain, wide);
     return r;
 }
+
+static long resource_limit(long pid, long resource, long next, long previous, int wide)
+{
+    uint64_t request[2], result[2];
+    if (next) {
+        if (wide) memcpy(request, (void *)next, sizeof request);
+        else {
+            unsigned long *old = (void *)next;
+            request[0] = old[0] == (unsigned long)-1 ? UINT64_MAX : old[0];
+            request[1] = old[1] == (unsigned long)-1 ? UINT64_MAX : old[1];
+        }
+    }
+    uintptr_t pointers[] = {next ? (uintptr_t)request : 0, previous ? (uintptr_t)result : 0};
+    long r = sys_resource(pid, resource, (long)pointers);
+    if (!r && previous) {
+        if (wide) memcpy((void *)previous, result, sizeof result);
+        else {
+            unsigned long *old = (void *)previous;
+            old[0] = result[0] > (unsigned long)-1 ? (unsigned long)-1 : result[0];
+            old[1] = result[1] > (unsigned long)-1 ? (unsigned long)-1 : result[1];
+        }
+    }
+    return r;
+}
 static long timer_time(long id, long flags, long ptr, long old, int wide, int set)
 {
     if (!ptr) return -EFAULT;
@@ -161,6 +186,18 @@ static long filesystem_stats(long object, int descriptor, struct statfs *out)
 long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
 {
     switch (n) {
+    case SYS_prlimit64:
+        return resource_limit(a, b, c, d, 1);
+    case SYS_getrlimit:
+#if defined(__NR_getrlimit) && __NR_getrlimit != SYS_getrlimit
+    case __NR_getrlimit:
+#endif
+#if defined(SYS_ugetrlimit) && SYS_ugetrlimit != SYS_getrlimit
+    case SYS_ugetrlimit:
+#endif
+        return resource_limit(0, a, 0, b, sizeof(long) == 8);
+    case SYS_setrlimit:
+        return resource_limit(0, a, b, 0, sizeof(long) == 8);
     case SYS_uname:
         return sys_uname(a);
     case SYS_sethostname:

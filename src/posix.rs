@@ -97,7 +97,9 @@ impl Job {
                 };
                 let (file, _path) = find_utility(cwd, "sh").map_err(|e| e.message())?;
                 let env = [alloc::string::String::from("PATH=/bin:/dos/a/bin")];
-                let task = executable::Executable::from_file(file, &argv, &env, 0, 0)?;
+                let task = executable::Executable::from_file(
+                    file, &argv, &env, 0, 0, dosrs_native_exec::STACK_MAX,
+                )?;
                 #[cfg(feature = "exec-trace")]
                 for byte in alloc::format!("EXEC foreground path={_path}\r\n").bytes() {
                     crate::bios::pc::serial_write(0x3f8, byte);
