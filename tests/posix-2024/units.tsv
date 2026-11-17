@@ -2253,7 +2253,7 @@ utilities	ngettext	base	utilities/ngettext.html#tag_20_54	open	open
 utilities	nice	base	utilities/nice.html#tag_20_86	open	open	
 utilities	nl	XSI	utilities/nl.html#tag_20_87	partial	partial	scripts/qemu-coreutils.py#182,183
 utilities	nm	SD | XSI	utilities/nm.html#tag_20_88	open	open	
-utilities	nohup	base	utilities/nohup.html#tag_20_89	open	open	
+utilities	nohup	base	utilities/nohup.html#tag_20_89	partial	partial	scripts/qemu-coreutils.py#338..341
 utilities	od	base	utilities/od.html#tag_20_90	partial	partial	scripts/qemu-coreutils.py#238,239
 utilities	paste	base	utilities/paste.html#tag_20_91	partial	partial	scripts/qemu-coreutils.py#184,185
 utilities	patch	base	utilities/patch.html#tag_20_92	open	open	
@@ -2275,7 +2275,7 @@ utilities	sact	XSI	utilities/sact.html#tag_20_107	open	open
 utilities	sccs	XSI	utilities/sccs.html#tag_20_108	open	open	
 utilities	sed	base	utilities/sed.html#tag_20_109	open	open	
 utilities	sh	base	utilities/sh.html#tag_20_110	open	open	
-utilities	sleep	base	utilities/sleep.html#tag_20_111	open	open	
+utilities	sleep	base	utilities/sleep.html#tag_20_111	partial	partial	scripts/qemu-coreutils.py#325..330
 utilities	sort	base	utilities/sort.html#tag_20_112	partial	partial	scripts/qemu-coreutils.py#191,192,193
 utilities	split	base	utilities/split.html#tag_20_113	partial	partial	scripts/qemu-coreutils.py#263,264
 utilities	strings	base	utilities/strings.html#tag_20_114	open	open	

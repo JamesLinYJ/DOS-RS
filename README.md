@@ -189,6 +189,8 @@ C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_c
 
 原生 32 位和 64 位程序可创建实时或单调时钟定时器，使用周期、相对期限或绝对期限。双架构内存盘回归验证了信号值、过期次数、过去期限立即通知和进程生命周期回收，64 位信号值完整保留到 `sigtimedwait`。当前支持 `SIGEV_SIGNAL`、`SIGEV_NONE` 和单参数信号处理器，`SIGEV_THREAD` 与 `SA_SIGINFO` 处理器仍待实现。[定时器回归](scripts/qemu-posix-timers.py)
 
+独立 Rust `sleep`、`nohup` 和 `timeout` 在 32 位 BIOS 与 64 位 UEFI 内核上各通过了 17 项 GNU coreutils 9.12 差分，覆盖输出、错误、退出状态和客体单调时钟计时。程序从 Btrfs 的 `/bin` 加载，关机后由 Linux 工具恢复并检查输出。[构建与复测](userland/uutils/README.md)
+
 用目标架构的 `i686-elf-gcc` 或 `x86_64-elf-gcc` 和配套 binutils 构建程序。以下示例把程序放进已有的 FAT 内存盘镜像。启动同架构内核后在提示符输入 `C:`、`HELLO.ELF 7`，可看到 `hello from native C`。
 
 ```sh

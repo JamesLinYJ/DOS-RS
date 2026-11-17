@@ -506,6 +506,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
         for name in names:
             source = retained.get(name, children / name)
             shutil.copy2(source, tree / "bin" / name)
+            (tree / "bin" / name).chmod(0o755)
             child_info[name] = digest(source.read_bytes())
     driver = root / "probe.elf"
     subprocess.run(
@@ -726,6 +727,7 @@ def run(arch, root, proof, gnubin, fs, helper_args, namespace_only, upstream, up
         filesystem=fs,
         tools=build_info,
         child_elf=child_info,
+        child_modes={name: oct((tree / "bin" / name).stat().st_mode & 0o777) for name in child_info},
         upstream_archive=digest(upstream.read_bytes()) if upstream else None,
         locales=sorted({case[3] for case in suite}),
         timezone="UTC",
