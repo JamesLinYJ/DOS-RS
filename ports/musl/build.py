@@ -138,7 +138,9 @@ def install(arch, archive, work):
             "CROSS_COMPILE=" + arch + "-elf-", "CPPFLAGS=-I" + str(cpu), "CFLAGS=" + flags,
         ], cwd=obj, check=True)
     make = shutil.which("gmake") or "make"
-    subprocess.run([make, "-j" + str(min(12, os.cpu_count() or 1)),
+    tools = [f"{name}={os.environ['DOSRS_' + name]}" for name in ("AR", "RANLIB")
+             if os.environ.get("DOSRS_" + name)]
+    subprocess.run([make, *tools, "-j" + str(min(12, os.cpu_count() or 1)),
                     "lib/libc.a", "lib/crt1.o", "install-headers"], cwd=obj, check=True)
     lib = sysroot / "lib"
     lib.mkdir(exist_ok=True)
