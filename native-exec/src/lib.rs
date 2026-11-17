@@ -3,7 +3,6 @@
 #![forbid(unsafe_code)]
 extern crate alloc;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use object::{
     LittleEndian, elf,
     read::elf::{FileHeader, ProgramHeader},
@@ -14,6 +13,9 @@ include!(concat!(env!("OUT_DIR"), "/calls.rs"));
 pub const PAGE: usize = 4096;
 pub const BASE: usize = 0x6000_0000;
 pub const END: usize = BASE + 0x20_0000;
+/// Sparse anonymous mappings keep the original ELF and stack ABI intact.
+pub const ANON_BASE: usize = 0x6100_0000;
+pub const ANON_END: usize = 0x8000_0000;
 pub const STACK: usize = END - 16 * PAGE;
 const LIMIT: usize = STACK - PAGE;
 /// The kernel identity-maps the low four GiB. Sparse ELF64 segments can use
@@ -27,24 +29,29 @@ pub enum Machine {
     Amd64,
 }
 
-#[repr(C, align(4096))]
-struct Frame([u8; PAGE]);
+/// A page is owned by exactly one mapping. Releasing it must return its frame
+/// to the provider. A live mapping may also be accessed by another user CPU.
+pub trait Frame: Sized {
+    fn allocate_zeroed() -> Result<Self>;
+    /// A snapshot for rejecting oversized requests before reserving metadata.
+    fn available() -> usize;
+    fn frame_address(&self) -> usize;
+    fn read(&self, offset: usize, out: &mut [u8]);
+    fn write(&mut self, offset: usize, input: &[u8]);
+}
 
-// Leave kernel heap space for descriptors, pending I/O and filesystem transactions.
-const MAX_RESIDENT_PAGES: usize = (2 << 20) / PAGE;
-static RESIDENT: AtomicUsize = AtomicUsize::new(0);
-pub struct Mapping {
-    frame: Vec<Frame>,
+pub struct Mapping<F> {
+    frame: F,
     pub writable: bool,
     pub executable: bool,
 }
-pub struct Image {
-    pages: Vec<(usize, Mapping)>,
+pub struct Image<F: Frame> {
+    pages: Vec<(usize, Mapping<F>)>,
     pub entry: usize,
 }
 pub type Result<T> = core::result::Result<T, &'static str>;
 
-impl Image {
+impl<F: Frame> Image<F> {
     pub fn load(file: &[u8], machine: Machine) -> Result<Self> {
         match machine {
             Machine::I386 => Self::parse::<elf::FileHeader32<LittleEndian>>(file, elf::EM_386),
@@ -120,8 +127,8 @@ impl Image {
                 let first = start.max(base);
                 let last = (base + PAGE).min(start + contents.len());
                 if first < last {
-                    m.frame[0].0[first - base..last - base]
-                        .copy_from_slice(&contents[first - start..last - start]);
+                    m.frame
+                        .write(first - base, &contents[first - start..last - start]);
                 }
             }
             executable_entry |= exec && (start..end).contains(&entry);
@@ -139,7 +146,7 @@ impl Image {
 
     // PT_LOAD segments are already checked for monotonically increasing addresses.
     // Adjacent segments may share their boundary page.
-    fn append_page(&mut self, addr: usize) -> Result<&mut Mapping> {
+    fn append_page(&mut self, addr: usize) -> Result<&mut Mapping<F>> {
         if self.pages.last().map(|p| p.0) != Some(addr) {
             self.pages
                 .try_reserve(1)
@@ -153,10 +160,10 @@ impl Image {
             .binary_search_by_key(&base, |p| p.0)
             .map_err(|_| "unmapped user address")
     }
-    pub fn pages(&self) -> impl Iterator<Item = (usize, &Mapping)> {
+    pub fn pages(&self) -> impl Iterator<Item = (usize, &Mapping<F>)> {
         self.pages.iter().map(|(addr, mapping)| (*addr, mapping))
     }
-    pub fn pages_mut(&mut self) -> impl Iterator<Item = (usize, &mut Mapping)> {
+    pub fn pages_mut(&mut self) -> impl Iterator<Item = (usize, &mut Mapping<F>)> {
         self.pages
             .iter_mut()
             .map(|(addr, mapping)| (*addr, mapping))
@@ -178,9 +185,10 @@ impl Image {
         while !out.is_empty() {
             let offset = addr % PAGE;
             let n = out.len().min(PAGE - offset);
-            out[..n].copy_from_slice(
-                &self.pages[self.index(addr - offset)?].1.bytes()[offset..offset + n],
-            );
+            self.pages[self.index(addr - offset)?]
+                .1
+                .frame
+                .read(offset, &mut out[..n]);
             addr += n;
             out = &mut out[n..];
         }
@@ -192,42 +200,96 @@ impl Image {
             let offset = addr % PAGE;
             let n = input.len().min(PAGE - offset);
             let index = self.index(addr - offset)?;
-            self.pages[index].1.frame[0].0[offset..offset + n].copy_from_slice(&input[..n]);
+            self.pages[index].1.frame.write(offset, &input[..n]);
             addr += n;
             input = &input[n..];
         }
         Ok(())
     }
+
+    /// Allocate the first suitably sized hole. Keep existing mappings untouched
+    /// even if the backing store runs out partway through the request.
+    pub fn map_anonymous(&mut self, count: usize) -> Result<usize> {
+        if count == 0 {
+            return Err("invalid anonymous mapping");
+        }
+        let size = count
+            .checked_mul(PAGE)
+            .ok_or("insufficient virtual memory")?;
+        let mut base = ANON_BASE;
+        for &(address, _) in &self.pages {
+            if address < base {
+                continue;
+            }
+            if address >= ANON_END || size <= address - base {
+                break;
+            }
+            base = address + PAGE;
+        }
+        if size > ANON_END - base {
+            return Err("insufficient virtual memory");
+        }
+        if count > F::available() {
+            return Err("insufficient physical memory");
+        }
+        self.pages
+            .try_reserve(count)
+            .map_err(|_| "insufficient page metadata")?;
+        let start = self.pages.len();
+        for address in (base..base + size).step_by(PAGE) {
+            match Mapping::zero() {
+                Ok(mut mapping) => {
+                    mapping.writable = true;
+                    self.pages.push((address, mapping));
+                }
+                Err(error) => {
+                    self.pages.truncate(start);
+                    return Err(error);
+                }
+            }
+        }
+        // Move the appended run into address order without a second allocation.
+        let insert = self.pages[..start].partition_point(|page| page.0 < base);
+        self.pages[insert..].rotate_right(count);
+        Ok(base)
+    }
+
+    fn unmap_range(&self, base: usize, count: usize) -> Result<core::ops::Range<usize>> {
+        if count == 0
+            || base % PAGE != 0
+            || !(ANON_BASE..ANON_END).contains(&base)
+            || count > (ANON_END - base) / PAGE
+        {
+            return Err("invalid anonymous mapping");
+        }
+        let i = self.index(base)?;
+        let end = i.checked_add(count).ok_or("invalid anonymous mapping")?;
+        if self.pages.get(end - 1).map(|p| p.0) != Some(base + (count - 1) * PAGE) {
+            return Err("unmapped user address");
+        }
+        Ok(i..end)
+    }
+
+    pub fn validate_unmap(&self, base: usize, count: usize) -> Result<()> {
+        self.unmap_range(base, count).map(|_| ())
+    }
+
+    /// Caller has retired all hardware page tables that still name these frames.
+    pub fn unmap_anonymous(&mut self, base: usize, count: usize) -> Result<()> {
+        let range = self.unmap_range(base, count)?;
+        self.pages.drain(range);
+        Ok(())
+    }
 }
-impl Mapping {
+impl<F: Frame> Mapping<F> {
     fn zero() -> Result<Self> {
-        RESIDENT
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                (n < MAX_RESIDENT_PAGES).then_some(n + 1)
-            })
-            .map_err(|_| "native process memory limit reached")?;
-        let mut mapping = Self {
-            frame: Vec::new(),
+        Ok(Self {
+            frame: F::allocate_zeroed()?,
             writable: false,
             executable: false,
-        };
-        mapping
-            .frame
-            .try_reserve_exact(1)
-            .map_err(|_| "insufficient physical memory")?;
-        mapping.frame.push(Frame([0; PAGE]));
-        Ok(mapping)
+        })
     }
-    /// Hardware may write this frame only during the exclusive activation of its image.
-    pub fn frame_address(&mut self) -> usize {
-        self.frame.as_mut_ptr().addr()
-    }
-    pub fn bytes(&self) -> &[u8; PAGE] {
-        &self.frame[0].0
-    }
-}
-impl Drop for Mapping {
-    fn drop(&mut self) {
-        RESIDENT.fetch_sub(1, Ordering::Relaxed);
+    pub fn frame_address(&self) -> usize {
+        self.frame.frame_address()
     }
 }

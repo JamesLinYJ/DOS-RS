@@ -1,4 +1,5 @@
 //! Privileged operations used only by the kernel's device owners.
+pub(crate) mod frames;
 pub(crate) mod io_memory;
 pub(crate) mod platform;
 mod traps;

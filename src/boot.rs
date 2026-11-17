@@ -2,7 +2,8 @@
 mod legacy;
 mod secondary;
 use crate::platform::MAX_CPUS;
-use uefi::boot::{AllocateType, MemoryType};
+use uefi::boot::{AllocateType, MemoryAttribute, MemoryType};
+use uefi::mem::memory_map::MemoryMap;
 use uefi::proto::{
     console::gop::{GraphicsOutput, PixelFormat},
     pi::mp::MpServices,
@@ -50,12 +51,12 @@ fn processors() -> Handoff {
     }
     out
 }
-fn video() {
+fn video() -> Option<(u64, u64)> {
     let Ok(h) = boot::get_handle_for_protocol::<GraphicsOutput>() else {
-        return;
+        return None;
     };
     let Ok(mut gop) = boot::open_protocol_exclusive::<GraphicsOutput>(h) else {
-        return;
+        return None;
     };
     // 640×480 gives DOS text its native 8×16 pixel cell on a PC display.
     let mode = gop.modes().find(|m| {
@@ -68,7 +69,7 @@ fn video() {
     }
     let info = gop.current_mode_info();
     if !matches!(info.pixel_format(), PixelFormat::Rgb | PixelFormat::Bgr) {
-        return;
+        return None;
     }
     let (w, h) = info.resolution();
     let mut fb = gop.frame_buffer();
@@ -80,12 +81,13 @@ fn video() {
         info.stride(),
         info.pixel_format() == PixelFormat::Rgb,
     );
+    Some((fb.as_mut_ptr() as usize as u64, fb.size() as u64))
 }
 #[entry]
 fn main() -> Status {
     let _ = boot::set_watchdog_timer(0, 0x10000, None);
     let mut handoff = processors();
-    video();
+    let framebuffer = video();
     if handoff.count > 1 {
         let Ok(low) = boot::allocate_pages(
             AllocateType::MaxAddress(0xfffff),
@@ -103,6 +105,18 @@ fn main() -> Status {
     // All protocol guards have been dropped. Kernel stacks, code, handoff pages,
     // framebuffer and the current paging structures are retained for kernel lifetime.
     let map = unsafe { boot::exit_boot_services(Some(MemoryType::LOADER_DATA)) };
+    // Loader/firmware allocations, runtime pages, ACPI, MMIO and the memory
+    // map itself remain reserved. Donate only ordinary conventional RAM.
+    let regions = map.entries().map(|d| {
+        let usable = d.ty == MemoryType::CONVENTIONAL
+            && !d.att.intersects(
+                MemoryAttribute::RUNTIME
+                    | MemoryAttribute::NON_VOLATILE
+                    | MemoryAttribute::SPECIAL_PURPOSE,
+            );
+        (d.phys_start, d.page_count.saturating_mul(4096), usable)
+    });
+    crate::arch::frames::initialize(regions, framebuffer.as_slice());
     core::mem::forget(map);
     unsafe {
         x86::irq::disable();

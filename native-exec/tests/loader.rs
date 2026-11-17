@@ -1,6 +1,45 @@
 // Use real linker output to exercise both ELF header layouts and segment permissions.
-use dosrs_native_exec::{BASE, END, Image, Machine, PAGE, STACK};
+use dosrs_native_exec::{ANON_BASE, BASE, END, Frame, Machine, PAGE, STACK};
 use std::{fs, process::Command};
+
+#[repr(align(4096))]
+struct Page([u8; PAGE]);
+
+thread_local! {
+    static REMAINING: std::cell::Cell<usize> = const { std::cell::Cell::new(usize::MAX) };
+}
+struct TestFrame(Box<Page>);
+impl Drop for TestFrame {
+    fn drop(&mut self) {
+        REMAINING.with(|left| left.set(left.get() + 1));
+    }
+}
+impl Frame for TestFrame {
+    fn allocate_zeroed() -> dosrs_native_exec::Result<Self> {
+        REMAINING.with(|left| {
+            let n = left
+                .get()
+                .checked_sub(1)
+                .ok_or("insufficient physical memory")?;
+            left.set(n);
+            Ok(Self(Box::new(Page([0; PAGE]))))
+        })
+    }
+    // Simulate a stale availability snapshot, as another CPU can claim pages.
+    fn available() -> usize {
+        usize::MAX
+    }
+    fn frame_address(&self) -> usize {
+        self.0.as_ref() as *const Page as usize
+    }
+    fn read(&self, offset: usize, out: &mut [u8]) {
+        out.copy_from_slice(&self.0.0[offset..offset + out.len()]);
+    }
+    fn write(&mut self, offset: usize, input: &[u8]) {
+        self.0.0[offset..offset + input.len()].copy_from_slice(input);
+    }
+}
+type Image = dosrs_native_exec::Image<TestFrame>;
 
 fn build(target: &str) -> Vec<u8> {
     let dir = std::env::temp_dir().join(format!("dosrs-elf-{}-{target}", std::process::id()));
@@ -46,6 +85,22 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
     let mut last = [1];
     image.read(END - 1, &mut last).unwrap();
     assert_eq!(last, [0]);
+    REMAINING.with(|left| {
+        let saved = left.replace(2);
+        assert_eq!(image.map_anonymous(3), Err("insufficient physical memory"));
+        assert_eq!(left.replace(saved), 2);
+        assert!(image.check(ANON_BASE, 1, false).is_err());
+    });
+    let base = image.map_anonymous(600).unwrap();
+    assert_eq!(base, ANON_BASE);
+    image.write(base + 575 * PAGE, &[44]).unwrap();
+    image.unmap_anonymous(base + 575 * PAGE, 1).unwrap();
+    assert!(image.unmap_anonymous(base + 574 * PAGE, 2).is_err());
+    assert_eq!(image.map_anonymous(1).unwrap(), base + 575 * PAGE);
+    image.read(base + 575 * PAGE, &mut last).unwrap();
+    assert_eq!(last, [0]);
+    image.unmap_anonymous(base, 600).unwrap();
+    assert!(image.check(base, 1, false).is_err());
     assert!(Image::load(&elf[..50], machine).is_err());
 }
 #[test]

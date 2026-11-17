@@ -7,6 +7,9 @@ pub(crate) fn kmain(handoff: boot::Handoff, firmware: &str) -> ! {
     bios::pc::color(attr);
     puts(firmware);
     puts("\n");
+    puts("Physical frames available: ");
+    platform::number(arch::frames::counts().0 as u32);
+    puts("\n");
     platform::initialize(handoff);
     #[cfg(feature = "tlb-selftest")]
     if let Err(error) = arch::user::tlb_test::run() {

@@ -1,7 +1,10 @@
 //! SeaBIOS/PC BIOS entry with a flat low 4 GiB map and VGA text mode.
+#[path = "../../boot/bios/src/handoff.rs"]
+mod handoff;
 use super::{Handoff, secondary};
 use crate::platform::MAX_CPUS;
 use core::ptr::NonNull;
+use handoff::{BiosInfo, E820MemoryRegion};
 
 fn physical(addr: usize, len: usize) -> Option<&'static [u8]> {
     // BIOS memory and ACPI reclaimable pages stay reserved for kernel lifetime.
@@ -45,7 +48,27 @@ fn madt() -> Option<&'static [u8]> {
     None
 }
 #[unsafe(no_mangle)]
-pub extern "efiapi" fn dos_rs_bios_entry() -> ! {
+pub extern "efiapi" fn dos_rs_bios_entry(info: &BiosInfo) -> ! {
+    // The BIOS loader keeps both its static E820 table and the handoff in low
+    // memory until kernel entry. Consume them before the AP trampoline starts.
+    let memory = unsafe {
+        core::slice::from_raw_parts(
+            info.e820_address as *const E820MemoryRegion,
+            info.e820_count as usize,
+        )
+    };
+    let regions = memory.iter().map(|r| {
+        let usable = r.region_type == 1 && r.acpi_extended_attributes & 2 == 0;
+        (r.start_addr, r.len, usable)
+    });
+    // The 1 MiB transition stub includes live GDT and long-mode page tables.
+    // Its new BSP stack grows down from 3 MiB. The mapped PE includes all BSS,
+    // kernel heap, CPU stacks, and DMA. The source PE is no longer in use.
+    crate::arch::frames::initialize(
+        regions,
+        &[(0, 0x30_0000), (0x100_0000, u64::from(info.image_capacity))],
+    );
+
     let bsp = crate::arch::platform::boot_cpu().0;
     let mut h = Handoff {
         ids: [0; MAX_CPUS],

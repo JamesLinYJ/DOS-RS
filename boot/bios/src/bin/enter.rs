@@ -5,12 +5,9 @@ use core::{mem::size_of, ptr};
 use x86::dtables::{DescriptorTablePointer, lgdt};
 const BASE: usize = 0x1000000;
 const STACK: usize = 0x300000;
-#[repr(C)]
-pub struct BiosInfo {
-    len: u32,
-    capacity: u32,
-    staging: u32,
-}
+#[path = "../handoff.rs"]
+mod handoff;
+use handoff::BiosInfo;
 static GDT: [u64; 4] = [
     0,
     0x00cf9a000000ffff,
@@ -80,10 +77,11 @@ pub extern "C" fn _start(info: &BiosInfo) -> ! {
     // E820 validated the staging, stack and destination ranges. They do not overlap.
     let (entry, wide) = unsafe {
         map(
-            core::slice::from_raw_parts(info.staging as *const u8, info.len as usize),
-            core::slice::from_raw_parts_mut(BASE as *mut u8, info.capacity as usize),
+            core::slice::from_raw_parts(info.staging as *const u8, info.image_len as usize),
+            core::slice::from_raw_parts_mut(BASE as *mut u8, info.image_capacity as usize),
         )
     };
+    let context = info as *const BiosInfo as usize;
     unsafe {
         InitializeFloatingPointUnits();
         lgdt(&DescriptorTablePointer {
@@ -91,7 +89,7 @@ pub extern "C" fn _start(info: &BiosInfo) -> ! {
             limit: (size_of::<[u64; 4]>() - 1) as u16,
         });
         if !wide {
-            InternalSwitchStack(entry, 0, 0, STACK);
+            InternalSwitchStack(entry, context, 0, STACK);
         }
         let tables = &mut *(&raw mut TABLES);
         tables.0.fill([0; 512]);
@@ -103,7 +101,7 @@ pub extern "C" fn _start(info: &BiosInfo) -> ! {
             }
         }
         x86::controlregs::cr3_write(ptr::addr_of!(TABLES) as u64);
-        InternalX86EnablePaging64(24, entry as u64, 0, 0, STACK as u64)
+        InternalX86EnablePaging64(24, entry as u64, context as u64, 0, STACK as u64)
     }
 }
 #[panic_handler]

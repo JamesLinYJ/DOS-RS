@@ -2,20 +2,9 @@
 #![no_std]
 #![no_main]
 extern crate self as bootloader_x86_64_bios_common;
-#[repr(C)]
-pub struct BiosInfo {
-    image_len: u32,
-    image_capacity: u32,
-    staging: u32,
-}
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct E820MemoryRegion {
-    start_addr: u64,
-    len: u64,
-    region_type: u32,
-    acpi_extended_attributes: u32,
-}
+#[path = "../handoff.rs"]
+mod handoff;
+pub use handoff::{BiosInfo, E820MemoryRegion};
 pub mod racy_cell {
     include!(concat!(env!("BIOS_CPU"), "/bios/common/src/racy_cell.rs"));
 }
@@ -95,6 +84,8 @@ pub extern "C" fn _start(drive: u16, table: *const u8) -> ! {
         image_len: file,
         image_capacity: capacity,
         staging,
+        e820_address: memory.as_ptr() as u32,
+        e820_count: memory.len() as u32,
     };
     mode::enter_protected_mode_and_jump_to_stage_3(0x100000 as *const u8, &mut info);
     fail(b'R')
