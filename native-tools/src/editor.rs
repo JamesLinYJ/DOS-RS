@@ -351,7 +351,7 @@ pub fn run() -> u16 {
         return 1;
     }
     let heap = unsafe { edit_heap() };
-    let limit = crate::allocation_end();
+    let limit = crate::workspace_end();
     if heap >= limit {
         lang.message(Message::Memory);
         text("\r\n");

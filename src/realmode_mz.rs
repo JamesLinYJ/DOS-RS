@@ -59,6 +59,33 @@ impl Source {
             && self.first == dw(COMMAND, SHELL_SOURCE + 2)
             && self.size == dw(COMMAND, SHELL_SOURCE + 6)
     }
+    fn requirements(&self, maximum: &mut u16) -> u32 {
+        if self.size == 0 || self.size >= 2 && !self.read(0, 2, HEADER) {
+            return FORMAT;
+        }
+        let n = if self.size >= 2 && w(HEADER, 0) == 0x5a4d {
+            let Some(mz) = Mz::read(self) else {
+                return FORMAT;
+            };
+            let base = 16 + mz.paras();
+            if mz.min != 0 || mz.max != 0 {
+                let extra = if mz.max < mz.min { mz.min } else { mz.max };
+                let requested = base + u32::from(extra);
+                *maximum = if requested > u32::from(u16::MAX) {
+                    u16::MAX
+                } else {
+                    requested as u16
+                };
+            }
+            base + u32::from(mz.min)
+        } else {
+            if self.size > 0xff00 {
+                return FORMAT;
+            }
+            (self.size + 0x102 + 15) >> 4
+        };
+        if n > u32::from(u16::MAX) { MEMORY } else { n }
+    }
     fn run(&self, volume: &mut Volume, psp: u16, paragraphs: u16) -> u32 {
         if self.size == 0 {
             return FORMAT;
@@ -229,8 +256,8 @@ fn run_transient(source: &Source, mz: &Mz, vol: &mut Volume, psp: u16) -> u32 {
     let metadata = psp + 16;
     let previous_data = w(COMMAND, SHELL_DATA_END);
     let reserved = previous_data >= pc::KERNEL
-        && previous_data <= pc::layout::KERNEL_LIMIT
-        && mz.min <= pc::layout::KERNEL_LIMIT - previous_data;
+        && previous_data <= pc::BUFFER
+        && mz.min <= pc::BUFFER - previous_data;
     let mut largest = 0;
     if mz.min > 0xffee {
         return MEMORY;
@@ -375,14 +402,23 @@ fn spawn(
     es: u16,
     param: u16,
 ) -> u32 {
+    let mut maximum = u16::MAX;
+    let minimum = source.requirements(&mut maximum);
+    if minimum > u32::from(u16::MAX) {
+        return minimum;
+    }
     let Some(env) = environment::child(parent, w(es, param), ds, path) else {
         return MEMORY;
     };
-    let Some((child, paragraphs)) = arena::child_block() else {
-        sw(env - 1, 1, 0);
+    let Some((child, paragraphs)) = arena::child_block(minimum as u16, maximum) else {
+        arena::request(0x4900, 0, env, &mut 0);
         return MEMORY;
     };
-    sw(env - 1, 1, child);
+    if !arena::adopt_environment(env, child) {
+        arena::discard(child);
+        arena::request(0x4900, 0, env, &mut 0);
+        return MEMORY;
+    }
     pc::control(25, child, parent, child + paragraphs);
     sw(child, 0x2c, env);
     let tail = w(es, param + 2);

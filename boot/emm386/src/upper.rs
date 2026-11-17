@@ -44,17 +44,49 @@ impl Arena {
             .unwrap_or(self.end)
             .saturating_sub(at)
     }
+    fn free_spans(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
+        core::iter::once(self.first)
+            .chain(
+                self.blocks
+                    .iter()
+                    .filter(|b| b.size != 0)
+                    .map(|b| b.start + b.size),
+            )
+            .map(|at| (at, self.room(at).saturating_sub(1)))
+    }
+
+    fn set_owner(&mut self, start: u16, old: u16, new: u16) -> Result<(), MemoryError> {
+        let block = self
+            .blocks
+            .iter_mut()
+            .find(|b| b.size != 0 && b.start == start && b.owner == old)
+            .ok_or(MemoryError::InvalidBlock)?;
+        block.owner = new;
+        Ok(())
+    }
+
+    fn owns(&self, owner: u16, first: u16, last: u16) -> bool {
+        first <= last
+            && self.blocks.iter().any(|b| {
+                b.owner == owner && b.size != 0 && first >= b.start && last < b.start + b.size
+            })
+    }
+
+    fn executable(&mut self, minimum: u16, maximum: u16, owner: u16) -> Result<u16, MemoryError> {
+        let largest = self.free_spans().map(|(_, n)| n).max().unwrap_or(0);
+        if largest < minimum || !self.linked {
+            return Err(MemoryError::NoRoom(largest));
+        }
+        let seg = self.alloc(owner, largest.min(maximum), self.strategy as u8)?;
+        self.set_owner(seg, owner, seg)?;
+        Ok(seg)
+    }
+
     pub fn alloc(&mut self, owner: u16, size: u16, strategy: u8) -> Result<u16, MemoryError> {
         let mut largest = 0;
         let mut chosen = None;
         let mut best = u16::MAX;
-        for at in core::iter::once(self.first).chain(
-            self.blocks
-                .iter()
-                .filter(|b| b.size != 0)
-                .map(|b| b.start + b.size),
-        ) {
-            let room = self.room(at).saturating_sub(1);
+        for (at, room) in self.free_spans() {
             largest = largest.max(room);
             if size != 0 && room >= size {
                 let dest = if strategy & 3 == 2 {
@@ -235,6 +267,9 @@ impl Arena {
                     self.resize(owner, target, size).map(|_| Some(0))
                 }
             }
+            super::layout::UMB_EXEC => self.executable(size, target, owner).map(Some),
+            super::layout::UMB_SET_OWNER => self.set_owner(target, owner, size).map(|_| Some(0)),
+            super::layout::UMB_OWNS_RANGE => Ok(Some(u16::from(self.owns(owner, target, size)))),
             0xf000 => {
                 let owner = if target == 0 { owner } else { target };
                 for b in &mut self.blocks {
@@ -246,7 +281,18 @@ impl Arena {
             }
             _ => Ok(None),
         };
-        if result.is_ok() && matches!(f.cx as u16, 0x5803 | 0x4800 | 0x4900 | 0x4a00 | 0xf000) {
+        if result.is_ok()
+            && matches!(
+                f.cx as u16,
+                0x5803
+                    | 0x4800
+                    | 0x4900
+                    | 0x4a00
+                    | 0xf000
+                    | super::layout::UMB_EXEC
+                    | super::layout::UMB_SET_OWNER
+            )
+        {
             self.headers();
         }
         (f.ax, f.dx) = match result {

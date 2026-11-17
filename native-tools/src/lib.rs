@@ -15,17 +15,33 @@ unsafe extern "Rust" {
     fn arg(index: u16, at: u16) -> u16;
     fn disk_size(unit: u16) -> u32;
 }
-/// End paragraph of this executable's DOS allocation (PSP:0002h).
-fn allocation_end() -> u16 {
+/// Extend this process's block into adjacent free paragraphs for file or media buffers.
+fn workspace_end() -> u16 {
     let mut regs = [0u16; 12];
     regs[0] = 0x6200;
     regs[9] = 3;
     // The architecture library executes INT 21h with this register frame.
     unsafe { dos_memory_call(regs.as_mut_ptr()) };
     if regs[10] & 1 != 0 {
-        0
+        return 0;
+    }
+    let psp = regs[1];
+    let initial = dosrs_realmode::system::w(psp, 2);
+    regs[0] = 0x4a00;
+    regs[1] = u16::MAX;
+    regs[6] = psp;
+    unsafe { dos_memory_call(regs.as_mut_ptr()) };
+    let available = regs[1];
+    if regs[10] & 1 == 0 || regs[0] != 8 || available <= initial - psp {
+        return initial;
+    }
+    regs[0] = 0x4a00;
+    regs[6] = psp;
+    unsafe { dos_memory_call(regs.as_mut_ptr()) };
+    if regs[10] & 1 == 0 {
+        psp + available
     } else {
-        dosrs_realmode::system::w(regs[1], 2)
+        initial
     }
 }
 pub fn put(c: u16) {

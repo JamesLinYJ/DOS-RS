@@ -1,6 +1,6 @@
 //! Conventional memory ends just below the resident font workspace.
 use dosrs_realmode::{
-    PROGRAM, byte, store,
+    PROGRAM, byte, layout, store,
     system::{sw, w},
 };
 const FIRST: u16 = PROGRAM - 1;
@@ -148,6 +148,9 @@ pub fn request(ax: u16, size: u16, target: u16, room: &mut u16) -> u32 {
             if ax == 0x5801 {
                 store(dosrs_realmode::COMMAND, 273, size & 3);
             }
+            if ax == 0x4a00 && target == current() {
+                sw(target, 2, target + size);
+            }
             return r >> 16;
         }
         if code != 0 {
@@ -178,20 +181,53 @@ pub fn request(ax: u16, size: u16, target: u16, room: &mut u16) -> u32 {
     }
 }
 
-/// Allocate the largest contiguous conventional block for a child process.
-pub fn child_block() -> Option<(u16, u16)> {
-    let mut largest = 0;
-    low(0x48, 0xffff, 0, &mut largest);
-    if largest < 16 {
+fn upper_child(minimum: u16, maximum: u16) -> Option<(u16, u16)> {
+    let result = unsafe { dos_upper_request(layout::UMB_EXEC, minimum, maximum, 0) };
+    if result as u16 != 1 {
         return None;
     }
-    let child = low(0x48, largest, 0, &mut largest);
-    if child > 65535 {
+    let psp = (result >> 16) as u16;
+    Some((psp, w(psp - 1, 3)))
+}
+
+fn conventional_child(minimum: u16, maximum: u16) -> Option<(u16, u16)> {
+    let mut largest = 0;
+    low(0x48, u16::MAX, 0, &mut largest);
+    if largest < minimum {
+        return None;
+    }
+    let granted = if largest > maximum { maximum } else { largest };
+    let child = low(0x48, granted, 0, &mut largest);
+    if child > u32::from(u16::MAX) {
         return None;
     }
     let psp = child as u16;
     sw(psp - 1, 1, psp);
-    Some((psp, largest))
+    Some((psp, granted))
+}
+
+/// Apply the caller's DOS allocation strategy to the entire executable image.
+/// Each arena reports its own contiguous capacity; free space cannot be combined.
+pub fn child_block(minimum: u16, maximum: u16) -> Option<(u16, u16)> {
+    let mut room = 0;
+    let strategy = request(0x5800, 0, 0, &mut room);
+    match strategy & 0xc0 {
+        0x40 => upper_child(minimum, maximum),
+        0x80 => upper_child(minimum, maximum).or_else(|| conventional_child(minimum, maximum)),
+        _ => conventional_child(minimum, maximum).or_else(|| upper_child(minimum, maximum)),
+    }
+}
+
+pub fn adopt_environment(seg: u16, child: u16) -> bool {
+    if seg < end() {
+        sw(seg - 1, 1, child);
+        return true;
+    }
+    unsafe { dos_upper_request(layout::UMB_SET_OWNER, child, seg, 0) == 1 }
+}
+
+pub(super) fn owns_upper(first: u16, last: u16) -> bool {
+    unsafe { dos_upper_request(layout::UMB_OWNS_RANGE, last, first, 0) == 0x10001 }
 }
 pub fn discard(psp: u16) {
     unsafe {

@@ -144,7 +144,7 @@ impl Package {
         if entries[0].size == 0 || entries[COUNT - 1].size == 0 {
             return false;
         }
-        let end = crate::allocation_end();
+        let end = crate::workspace_end();
         let dest = arena();
         let cache =
             disk.unit == self.boot.unit && dest < end && total <= u32::from(end - dest) * 16;

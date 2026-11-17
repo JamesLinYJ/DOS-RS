@@ -19,6 +19,9 @@ fn valid_buffer(psp: u16, ds: u16, off: u16, count: u16) -> bool {
     if start >= pc::PROGRAM && end < pc::font_workspace() {
         return true;
     }
+    if start >= 0xa000 {
+        return super::super::arena::owns_upper(start, end);
+    }
     let meta = psp + 16;
     let data = w(meta, 4);
     w(pc::COMMAND, pc::layout::ACTIVE_SHELL) == psp && start >= data && end - data < w(meta, 6)

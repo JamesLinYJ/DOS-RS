@@ -15,3 +15,8 @@ pub const FONT_WORKSPACE_SEGMENT: u16 = 28;
 pub const fn arena_limit(base_kib: u16) -> u16 {
     if base_kib >= 560 { 0x82ff } else { 0x6fff }
 }
+
+// Kernel-to-EMM requests over the native DOS memory multiplex.
+pub const UMB_EXEC: u16 = 0xf001;
+pub const UMB_SET_OWNER: u16 = 0xf002;
+pub const UMB_OWNS_RANGE: u16 = 0xf003;
