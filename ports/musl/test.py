@@ -22,6 +22,8 @@ def check(arch, archive, ram, proof):
         work = Path(temporary)
         binary = work / "libtest.elf"
         poll_test = work / "polltest.elf"
+        tty_test = work / "ttytest.elf"
+        compile(arch, [PORT / "tests/terminal.c"], tty_test)
         compile(arch, [ROOT / "tests/native-poll/poll.c"], poll_test)
         compile(arch, [PORT / "tests/libc.c"], binary)
         headers = subprocess.check_output([arch + "-elf-readelf", "-lW", binary])
@@ -32,7 +34,7 @@ def check(arch, archive, ram, proof):
         with disk.open("wb") as f:
             f.truncate(4 << 20)
         subprocess.run(["mformat", "-i", disk, "::"], check=True)
-        subprocess.run(["mcopy", "-i", disk, binary, poll_test, "::"], check=True)
+        subprocess.run(["mcopy", "-i", disk, binary, poll_test, tty_test, "::"], check=True)
         mode = "bios" if arch == "i686" else "uefi"
         launch = qemu.boot_args(kernel, arch, work / "boot", 4, mode, esp_mib=36)
         launch += ["-accel", "tcg,thread=multi", "-drive", "if=ide,format=raw,file=" + str(disk)]
@@ -45,6 +47,28 @@ def check(arch, archive, ram, proof):
             report = shell.log.read_bytes()
             if PASSED not in report or b"echo $?\r\n0\r\n" not in report:
                 raise RuntimeError("libc assertions failed: " + repr(report[-500:]))
+            at = shell.log.stat().st_size
+            shell.enter("ttytest.elf")
+            shell.wait(b"TTY RAW READY\n", at)
+            shell.key("ctrl-c")
+            shell.key("ctrl-d")
+            shell.wait(b"TTY INTERBYTE READY\n", at)
+            shell.key("x")
+            shell.key("y")
+            shell.wait(b"TTY CANONICAL READY\r\n", at)
+            for key in ("a", "b", "backspace", "c", "ret"):
+                shell.key(key)
+            shell.wait(b"TTY SIGNAL READY\r\n", at)
+            shell.key("ctrl-w")
+            shell.wait(b"TTY EOF READY\r\n", at)
+            for key in ("d", "e", "ctrl-d", "ctrl-d"):
+                shell.key(key)
+            shell.wait(b"tty: descriptors, VGA 80x25, canonical, raw, timers, echo, signals and EOF passed", at)
+            shell.wait(b"C:\\> ", at)
+            trace = shell.log.read_bytes()[at:]
+            if b"ab\x08 \x08c\r\n" not in trace or b"^C" in trace or b"^D" in trace:
+                raise RuntimeError("incorrect keyboard echo: " + repr(trace))
+            shell.command("echo $?", expect=b"\r\n0\r\n")
             shell.command("polltest.elf > poll.out")
             shell.command("echo $?", expect=b"\r\n0\r\n")
         finally:

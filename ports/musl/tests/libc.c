@@ -1,16 +1,16 @@
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <poll.h>
-#include <stdatomic.h>
+#include <pthread.h>
 #include <signal.h>
-#include <time.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 static _Thread_local int initialized = 37;
@@ -49,6 +49,28 @@ static int blocked_pipe[2];
 static atomic_int cancel_ready;
 static int cleaned;
 static void cleanup(void *data) { *(int *)data = 1; }
+static atomic_int mask_ready, signal_sent;
+static _Thread_local volatile sig_atomic_t delivery;
+static void thread_handler(int sig)
+{
+    if (sig == SIGUSR2)
+        delivery = 1;
+}
+static void *masked_worker(void *argument)
+{
+    sigset_t set, old, pending;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR2);
+    if (pthread_sigmask(SIG_BLOCK, &set, &old))
+        return 0;
+    atomic_store(&mask_ready, 1);
+    while (!atomic_load(&signal_sent))
+        sched_yield();
+    if (delivery || sigpending(&pending) || sigismember(&pending, SIGUSR2) != 1 ||
+        pthread_sigmask(SIG_SETMASK, &old, 0) || delivery != 1)
+        return 0;
+    return argument;
+}
 static void *cancel_worker(void *unused)
 {
     (void)unused;
@@ -90,6 +112,18 @@ int main(int argc, char **argv)
         if (pthread_join(tids[i], &value) || value != &ids[i])
             return 5;
     }
+    struct sigaction targeted = {0};
+    targeted.sa_handler = thread_handler;
+    void *delivered = 0;
+    if (sigaction(SIGUSR2, &targeted, 0) || pthread_create(&tids[0], 0, masked_worker, &ids[0]))
+        return 32;
+    while (!atomic_load(&mask_ready))
+        sched_yield();
+    if (pthread_kill(tids[0], SIGUSR2))
+        return 33;
+    atomic_store(&signal_sent, 1);
+    if (pthread_join(tids[0], &delivered) || delivered != &ids[0] || delivery)
+        return 34;
     if (sum != 21 || initialized != 37 || addresses[0] == addresses[1] ||
         addresses[0] == &initialized || addresses[1] == &initialized)
         return 6;
@@ -180,7 +214,8 @@ int main(int argc, char **argv)
     if (pthread_cancel(cancelled) || pthread_join(cancelled, &result) ||
         result != PTHREAD_CANCELED || !cleaned || close(blocked_pipe[0]) || close(blocked_pipe[1]))
         return 25;
-    puts("musl static TLS pthreads condvar malloc stdio fork exec wait sleep signal OK");
+    puts("musl static TLS pthreads condvar malloc stdio fork exec wait sleep "
+         "signal OK");
 
     return 0;
 }

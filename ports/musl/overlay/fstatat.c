@@ -24,12 +24,8 @@ int __fstatat(int fd, const char *restrict path, struct stat *restrict dst, int 
         return __syscall_ret(-EINVAL);
     struct metadata v;
     long r;
-    if ((flags & AT_EMPTY_PATH) && path && !*path && fd != AT_FDCWD)
-        r = sys_fstat(fd, (long)&v);
-    else if (fd == AT_FDCWD || (path && *path == '/'))
-        r = sys_stat((long)path, (long)&v, !!(flags & AT_SYMLINK_NOFOLLOW));
-    else
-        r = -ENOTSUP;
+    uintptr_t options[] = {(uintptr_t)&v, (uintptr_t)flags};
+    r = sys_fstatat(fd, (long)path, (long)options);
     if (r < 0)
         return __syscall_ret(r);
     *dst = (struct stat){.st_dev = v.dev,

@@ -1,17 +1,20 @@
 #define _GNU_SOURCE
-#include <stdint.h>
 #include <dirent.h>
-#include <string.h>
-#include <stddef.h>
 #include <signal.h>
-#include <time.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 #include <sys/ioctl.h>
+#include <termios.h>
+#include <time.h>
+_Static_assert(sizeof(struct termios) == 60 && offsetof(struct termios, c_cc) == 17,
+               "terminal wire ABI");
 #include "ksigaction.h"
+#include "pthread_impl.h"
+#include <fcntl.h>
 #include <stdarg.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
-#include <fcntl.h>
-#include "pthread_impl.h"
 #undef sys_open
 #include "dos_calls.h"
 
@@ -119,6 +122,8 @@ static long signal_action(long sig, struct k_sigaction *sa, struct k_sigaction *
 long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
 {
     switch (n) {
+    case SYS_getrandom:
+        return sys_getrandom(a, b, c);
     case SYS_clock_gettime:
         return clock_read(a, b, 0, sizeof(long) == 8);
     case SYS_clock_getres:
@@ -154,7 +159,116 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
         }
         if (b == TIOCSPGRP)
             return sys_tcsetpgrp(a, *(int *)c);
-        return -ENOTTY;
+        return sys_ttyio(a, b, c);
+    case SYS_fcntl: {
+        int ofd = b == F_OFD_GETLK || b == F_OFD_SETLK || b == F_OFD_SETLKW;
+        if (!ofd && b != F_GETLK && b != F_SETLK && b != F_SETLKW)
+            return sys_fcntl(a, b, c);
+        if (!c)
+            return -EFAULT;
+        struct flock *lock = (struct flock *)c;
+        if (ofd && lock->l_pid != 0)
+            return -EINVAL;
+        struct {
+            int16_t kind, whence;
+            uint32_t pad;
+            int64_t start, len;
+            int32_t pid;
+            uint32_t reserved;
+        } wire = {lock->l_type, lock->l_whence, 0, lock->l_start, lock->l_len, 0, 0};
+        _Static_assert(sizeof(wire) == 32, "native record lock layout");
+        long cmd = ofd ? b : b == F_GETLK ? 5 : b == F_SETLK ? 6 : 7;
+        long result = sys_fcntl(a, cmd, (long)&wire);
+        if (result == 0 && (b == F_GETLK || b == F_OFD_GETLK)) {
+            lock->l_type = wire.kind;
+            lock->l_whence = wire.whence;
+            lock->l_start = wire.start;
+            lock->l_len = wire.len;
+            lock->l_pid = wire.pid;
+        }
+        return result;
+    }
+    case SYS_ftruncate:
+    case SYS_truncate: {
+#if __SIZEOF_LONG__ == 4
+        int64_t len = (uint64_t)(uint32_t)c << 32 | (uint32_t)b;
+#else
+        int64_t len = b;
+#endif
+        return n == SYS_ftruncate ? sys_ftruncate(a, (long)&len) : sys_truncate(a, (long)&len);
+    }
+    case SYS_fdatasync:
+    case SYS_fsync:
+        return sys_fsync(a);
+    case SYS_fchmod:
+        return sys_fchmod(a, b);
+    case SYS_fchown:
+        return sys_fchown(a, b, c);
+    case SYS_access:
+        return sys_access(a, b);
+    case SYS_fchdir:
+        return sys_fchdir(a);
+    case SYS_faccessat:
+    case SYS_faccessat2: {
+        uintptr_t options[] = {c, n == SYS_faccessat2 ? d : 0};
+        return sys_faccessat(a, b, (long)options);
+    }
+    case SYS_fchmodat:
+    case SYS_fchmodat2: {
+        uintptr_t options[] = {c, n == SYS_fchmodat2 ? d : 0};
+        return sys_fchmodat(a, b, (long)options);
+    }
+    case SYS_fchownat: {
+        uintptr_t options[] = {c, d, e};
+        return sys_fchownat(a, b, (long)options);
+    }
+    case SYS_utimensat:
+#if defined(SYS_utimensat_time64) && SYS_utimensat_time64 != SYS_utimensat
+    case SYS_utimensat_time64:
+#endif
+    {
+        int wide = sizeof(long) == 8;
+#ifdef SYS_utimensat_time64
+        if (n == SYS_utimensat_time64)
+            wide = 1;
+#endif
+        int64_t times[4];
+        if (c) {
+            get_time(times, c, wide);
+            get_time(times + 2, c + (wide ? 16 : 2 * sizeof(long)), wide);
+        }
+        uintptr_t ptr = c ? (uintptr_t)times : 0;
+        if (!b)
+            return d ? -EINVAL : sys_futimens(a, ptr);
+        uintptr_t options[] = {ptr, d};
+        return sys_utimensat(a, b, (long)options);
+    }
+    case SYS_pread:
+    case SYS_pwrite: {
+#if __SIZEOF_LONG__ == 4
+        uint64_t offset = (uint64_t)(uint32_t)e << 32 | (uint32_t)d;
+#else
+        uint64_t offset = d;
+#endif
+        uint64_t options[] = {offset, (unsigned long)c};
+        return n == SYS_pread ? sys_pread(a, b, (long)options) : sys_pwrite(a, b, (long)options);
+    }
+    case SYS_mkdirat:
+        return sys_mkdirat(a, b, c);
+    case SYS_renameat: {
+        uintptr_t to[] = {c, d};
+        return sys_renameat(a, b, (long)to);
+    }
+    case SYS_linkat: {
+        uintptr_t to[] = {c, d, e};
+        return sys_linkat(a, b, (long)to);
+    }
+    case SYS_readlinkat: {
+        uintptr_t out[] = {c, d};
+        return sys_readlinkat(a, b, (long)out);
+    }
+    case SYS_symlinkat:
+        return sys_symlinkat(a, b, c);
     case SYS_setuid:
         return sys_setuid(a);
     case SYS_setgid:
@@ -263,7 +377,9 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
     case SYS_pipe:
         return sys_pipe(a);
     case SYS_pipe2:
-        return b ? -ENOTSUP : sys_pipe(a);
+        return sys_pipe2(a, b);
+    case SYS_dup3:
+        return sys_dup3(a, b, c);
     case SYS_dup:
         return sys_dup(a);
     case SYS_dup2:
@@ -271,11 +387,13 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
     case SYS_unlink:
         return sys_unlink(a);
     case SYS_unlinkat:
-        return a == AT_FDCWD && !c ? sys_unlink(b) : -ENOTSUP;
+        return sys_unlinkat(a, b, c);
     case SYS_open:
         return sys_openmode(a, b & ~O_LARGEFILE, c);
-    case SYS_openat:
-        return a == AT_FDCWD ? sys_openmode(b, c & ~O_LARGEFILE, d) : -ENOTSUP;
+    case SYS_openat: {
+        uint32_t options[] = {(uint32_t)c & ~O_LARGEFILE, (uint32_t)d};
+        return sys_openat(a, b, (long)options);
+    }
     case SYS_getuid:
     case SYS_geteuid:
         return sys_getuid();

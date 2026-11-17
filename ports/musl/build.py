@@ -34,6 +34,7 @@ def prepare(src, target, cpu, archive):
         ("fstatat.c", "src/stat/fstatat.c"),
         ("cancel.c", "src/thread/dos_cancel.c"),
         ("setxid.c", "src/unistd/setxid.c"),
+        ("pwrite.c", "src/unistd/pwrite.c"),
     ):
         copy(overlay / port, src / upstream)
     for path in (
@@ -52,6 +53,9 @@ def prepare(src, target, cpu, archive):
     with tarfile.open(archive) as release:
         member = release.extractfile("musl-1.2.6/src/thread/pthread_cancel.c")
         body = member.read().decode()
+        header = release.extractfile("musl-1.2.6/include/fcntl.h").read().decode()
+    header = header.replace("#define FD_CLOEXEC 1", "#define FD_CLOEXEC 1\n#define FD_CLOFORK 2\n#define O_CLOFORK 0x04000000\n#define F_DUPFD_CLOFORK 1100")
+    generated(src / "include/fcntl.h", header)
     begin = body.index("static void _sigaddset(")
     end = body.index("void __testcancel()", begin)
     body = body[:begin] + "hidden void __dos_cancel_signal(int);\n\n" + body[end:]

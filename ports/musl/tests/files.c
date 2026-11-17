@@ -52,8 +52,49 @@ int main(void)
         lseek(fd, 0, SEEK_SET) || read(fd, buf, sizeof buf) != 9 || memcmp(buf, "old bytes", 9) ||
         close(other) || close(fd))
         return 9;
-    if (unlink("old") || unlink("alias") || chdir(cwd) || rmdir(dir))
+    if (unlink("old") || unlink("alias"))
         return 10;
+    int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (dirfd < 0 || !(fcntl(dirfd, F_GETFD) & FD_CLOEXEC))
+        return 11;
+    int relative = openat(dirfd, "relative", O_CREAT | O_EXCL | O_RDWR, 0644);
+    if (relative < 0 || write(relative, "abcdef", 6) != 6 || ftruncate(relative, 3) ||
+        fsync(relative) || fchmod(relative, 0600) || fstatat(dirfd, "relative", &after, 0) ||
+        after.st_size != 3 || (after.st_mode & 0777) != 0600)
+        return 12;
+    int copy = fcntl(relative, F_DUPFD, 8);
+    if (copy < 8 || lseek(copy, 0, SEEK_SET) || read(relative, buf, 3) != 3 ||
+        memcmp(buf, "abc", 3) || close(copy))
+        return 13;
+    if (fchdir(dirfd) || faccessat(dirfd, "relative", R_OK | W_OK, 0) ||
+        fchmodat(dirfd, "relative", 0644, 0) || fchownat(dirfd, "relative", getuid(), getgid(), 0))
+        return 16;
+    if (fcntl(relative, F_SETFL, fcntl(relative, F_GETFL) | O_APPEND) ||
+        pwrite(relative, "X", 1, 1) != 1 || lseek(relative, 0, SEEK_CUR) != 3 ||
+        pread(relative, buf, 3, 0) != 3 || memcmp(buf, "aXc", 3) ||
+        lseek(relative, 0, SEEK_CUR) != 3)
+        return 17;
+    const struct timespec times[2] = {{2200000000LL, 7654321}, {2200000001LL, 123456789}};
+    if (futimens(relative, times) || fstatat(dirfd, "relative", &after, 0) ||
+        after.st_atim.tv_sec != times[0].tv_sec || after.st_atim.tv_nsec != times[0].tv_nsec ||
+        after.st_mtim.tv_sec != times[1].tv_sec || after.st_mtim.tv_nsec != times[1].tv_nsec)
+        return 18;
+    const struct timespec modify[2] = {{0, UTIME_OMIT}, {2200000002LL, 321}};
+    if (utimensat(dirfd, "relative", modify, 0) || fstat(relative, &after) ||
+        after.st_atim.tv_sec != times[0].tv_sec || after.st_mtim.tv_sec != modify[1].tv_sec ||
+        after.st_mtim.tv_nsec != 321)
+        return 19;
+    if (mkdirat(dirfd, "sub", 0700) || linkat(dirfd, "relative", dirfd, "sub/hard", 0) ||
+        symlinkat("relative", dirfd, "sym") ||
+        readlinkat(dirfd, "sym", target, sizeof target) != 8 || memcmp(target, "relative", 8) ||
+        fstatat(dirfd, "sym", &after, AT_SYMLINK_NOFOLLOW) || !S_ISLNK(after.st_mode) ||
+        renameat(dirfd, "relative", dirfd, "renamed") || truncate("renamed", 0) ||
+        fstat(relative, &after) || after.st_size || access("renamed", R_OK | W_OK))
+        return 14;
+    if (unlinkat(dirfd, "sub/hard", 0) || unlinkat(dirfd, "sub", AT_REMOVEDIR) ||
+        unlinkat(dirfd, "sym", 0) || unlinkat(dirfd, "renamed", 0) || close(relative) ||
+        close(dirfd) || chdir(cwd) || rmdir(dir))
+        return 15;
     puts("musl Btrfs directory enumeration permissions links and unlink OK");
     return 0;
 }

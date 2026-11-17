@@ -148,3 +148,59 @@ fn x86_64_static_c_image() {
         );
     }
 }
+
+#[test]
+fn static_tls_template_and_program_headers() {
+    use std::path::Path;
+    for (arch, machine, word) in [
+        ("i686", Machine::I386, 4usize),
+        ("x86_64", Machine::Amd64, 8usize),
+    ] {
+        let temp = std::env::temp_dir().join(format!("dosrs-tls-{}-{arch}", std::process::id()));
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("tls.c"),
+            "_Thread_local int value=37; _Thread_local char zero[113]; void _start(void){ zero[3]=(char)value; }").unwrap();
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ports/musl/user.ld");
+        assert!(
+            Command::new(format!("{arch}-elf-gcc"))
+                .current_dir(&temp)
+                .args([
+                    "-fno-pie",
+                    "-ffreestanding",
+                    "-nostdlib",
+                    "-Wl,-z,max-page-size=4096",
+                    "-T",
+                ])
+                .arg(script)
+                .args(["tls.c", "-o", "tls.elf"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let mut file = fs::read(temp.join("tls.elf")).unwrap();
+        fs::remove_dir_all(temp).unwrap();
+        let (offset, phsize, n) = if word == 4 { (52, 32, 4) } else { (64, 56, 4) };
+        let image = Image::load(&file, machine).unwrap();
+        let ph = &file[offset..offset + phsize];
+        let addr = if word == 4 {
+            u32::from_le_bytes(ph[8..12].try_into().unwrap()) as usize
+        } else {
+            u64::from_le_bytes(ph[16..24].try_into().unwrap()) as usize
+        };
+        assert_eq!(image.phdr, Some((addr, phsize, n)));
+        let mut headers = vec![0; phsize * n];
+        image.read(addr, &mut headers).unwrap();
+        assert_eq!(headers, file[offset..offset + phsize * n]);
+        let off = headers
+            .chunks_exact(phsize)
+            .position(|p| p[..4] == 7u32.to_le_bytes())
+            .unwrap();
+        // The copied TLS initializer must belong to the same writable load image.
+        let filesize = offset + off * phsize + if word == 4 { 16 } else { 32 };
+        file[filesize..filesize + word].fill(0xff);
+        assert_eq!(
+            Image::load(&file, machine).err(),
+            Some("invalid ELF TLS template")
+        );
+    }
+}
