@@ -1,6 +1,7 @@
 //! Process relationships live past exit until the parent collects the wait status.
 //! Ready children enter their terminal's group between scheduler rounds.
 pub(super) mod signals;
+pub(super) mod timers;
 use super::{Waiters, executable::Executable, io::ProcessContext};
 use crate::kernel_cell::KernelCell;
 use alloc::vec::Vec;
@@ -12,6 +13,7 @@ struct Record {
     pid: u32,
     uid: u32,
     signals: signals::Signals,
+    timers: timers::Timers,
     parent: u32,
     group: u32,
     session: u32,
@@ -39,6 +41,7 @@ pub fn register(pid: u32, parent: u32, uid: u32) -> Result<(), isize> {
         pid,
         uid,
         signals,
+        timers: timers::Timers::default(),
         parent,
         group,
         session,
@@ -60,6 +63,7 @@ pub fn exec(pid: u32) {
     if let Some(caller) = TABLE.borrow().iter_mut().find(|p| p.pid == pid) {
         caller.execed = true;
         caller.signals.exec();
+        caller.timers.clear(&mut caller.signals);
     }
 }
 
@@ -67,6 +71,7 @@ pub fn exited(pid: u32, status: i32) {
     let mut table = TABLE.borrow();
     if let Some(me) = table.iter_mut().find(|p| p.pid == pid) {
         me.status = Some(status);
+        me.timers.clear(&mut me.signals);
         let parent = me.parent;
         let uid = me.uid;
         if let Some(parent) = table.iter_mut().find(|p| p.pid == parent) {
@@ -83,6 +88,7 @@ pub fn exited(pid: u32, status: i32) {
                     } else {
                         (status >> 8) & 255
                     },
+                    timer: None,
                 },
             );
         }

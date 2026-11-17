@@ -3,11 +3,18 @@ use super::bit;
 use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Default)]
+pub(in crate::posix) struct TimerInfo {
+    pub id: u32,
+    pub overruns: u32,
+    pub value: u64,
+}
+#[derive(Clone, Copy, Default)]
 pub(in crate::posix) struct Origin {
     pub code: i32,
     pub pid: u32,
     pub uid: u32,
     pub status: i32,
+    pub timer: Option<TimerInfo>,
 }
 impl Origin {
     pub(super) const KERNEL: Self = Self {
@@ -15,6 +22,7 @@ impl Origin {
         pid: 0,
         uid: 0,
         status: 0,
+        timer: None,
     };
 }
 pub(in crate::posix) struct Pending {
@@ -36,17 +44,48 @@ impl Pending {
         self.mask
     }
     pub(in crate::posix) fn add(&mut self, n: u8, origin: Origin) -> Result<(), isize> {
+        if origin.timer.is_some_and(|timer| self.has_timer(timer.id)) {
+            return Ok(());
+        }
         if self.mask & bit(n) == 0 {
             self.first[usize::from(n - 1)] = origin;
             self.mask |= bit(n);
-        } else if n >= 32 {
-            if self.realtime.len() >= 128 {
+        } else if n >= 32 || origin.code == -2 {
+            if origin.code != -2
+                && self.realtime.iter().filter(|(_, o)| o.code != -2).count() >= 128
+            {
                 return Err(-11);
             }
             self.realtime.try_reserve(1).map_err(|_| -11isize)?;
             self.realtime.push((n, origin));
         }
         Ok(())
+    }
+    pub(in crate::posix::process) fn reserve_timers(&mut self) -> Result<(), isize> {
+        self.realtime
+            .try_reserve(256usize.saturating_sub(self.realtime.len()))
+            .map_err(|_| -11)
+    }
+    pub(in crate::posix::process) fn has_timer(&self, id: u32) -> bool {
+        (1..=64).any(|n| {
+            self.mask & bit(n) != 0
+                && self.first[usize::from(n - 1)]
+                    .timer
+                    .is_some_and(|t| t.id == id)
+        }) || self
+            .realtime
+            .iter()
+            .any(|(_, o)| o.timer.is_some_and(|t| t.id == id))
+    }
+    pub(in crate::posix::process) fn clear_timer(&mut self, id: u32) {
+        self.realtime
+            .retain(|(_, o)| o.timer.is_none_or(|t| t.id != id));
+        for n in 1..=64 {
+            let origin = self.first[usize::from(n - 1)];
+            if self.mask & bit(n) != 0 && origin.timer.is_some_and(|t| t.id == id) {
+                self.take(bit(n));
+            }
+        }
     }
     pub(super) fn clear(&mut self, mask: u64) {
         self.mask &= !mask;
@@ -64,9 +103,7 @@ impl Pending {
         };
         let slot = usize::from(n - 1);
         let first = self.first[slot];
-        if n >= 32
-            && let Some(next) = self.realtime.iter().position(|(s, _)| *s == n)
-        {
+        if let Some(next) = self.realtime.iter().position(|(s, _)| *s == n) {
             self.first[slot] = self.realtime.remove(next).1;
         } else {
             self.mask &= !bit(n);

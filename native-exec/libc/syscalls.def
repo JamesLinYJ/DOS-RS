@@ -109,3 +109,9 @@ setgroups 166 2
 socketpair 167 3
 recv 168 3
 send 169 3
+timercreate 170 3
+timerset 171 3
+timerget 172 2
+timerdelete 173 1
+timeroverrun 174 1
+sigwaitinfo 175 3

@@ -431,7 +431,10 @@ impl Threads {
                 Call::Setpgid => {
                     Poll::Ready(super::process::set_group(p.getpid(), a as i32, b as i32))
                 }
-                Call::Sigwait => signal::wait(&mut self.0[i], image, p.getpid(), args, cx),
+                Call::Sigwait | Call::Sigwaitinfo => signal::wait(&mut self.0[i], image, p.getpid(), args, call == Call::Sigwaitinfo, cx),
+                Call::Timercreate | Call::Timerset | Call::Timerget | Call::Timerdelete | Call::Timeroverrun => {
+                    Poll::Ready(super::process::timers::call(image, p.getpid(), call, args, cx))
+                }
                 Call::Tkill => {
                     Poll::Ready(self.thread_signal(p.getpid(), p.uid, a as i32, b as i32))
                 }
@@ -524,7 +527,7 @@ impl Threads {
                 {
                     let _ = self.0[i].pending_signals.add(
                         13,
-                        signals::Origin { code: 0, pid: p.getpid(), uid: p.uid, status: 0 },
+                        signals::Origin { code: 0, pid: p.getpid(), uid: p.uid, status: 0, timer: None },
                     );
                 }
                 self.0[i].reply(value.map(|n| n as isize).unwrap_or_else(|e| e));

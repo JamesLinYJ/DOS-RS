@@ -93,6 +93,24 @@ static long clock_sleep(long clk, long flags, long ptr, long rem, int wide)
         put_time(rem, remain, wide);
     return r;
 }
+static long timer_time(long id, long flags, long ptr, long old, int wide, int set)
+{
+    if (!ptr) return -EFAULT;
+    int64_t value[4], previous[4];
+    long r;
+    if (set) {
+        get_time(value, ptr, wide);
+        get_time(value + 2, ptr + (wide ? 16 : 2 * sizeof(long)), wide);
+        long options[2] = {(long)value, old ? (long)previous : 0};
+        r = sys_timerset(id, flags, (long)options);
+    } else {
+        r = sys_timerget(id, (long)previous);
+        old = ptr;
+    }
+    if (r || !old) return r;
+    r = put_time(old, previous, wide);
+    return r ? r : put_time(old + (wide ? 16 : 2 * sizeof(long)), previous + 2, wide);
+}
 static long signal_action(long sig, struct k_sigaction *sa, struct k_sigaction *old)
 {
     struct {
@@ -149,6 +167,32 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
         return sys_sethostname(a, b);
     case SYS_getrandom:
         return sys_getrandom(a, b, c);
+    case SYS_timer_create: {
+        struct { uintptr_t value; int signo, notify; } *event = (void *)b;
+        struct { uint32_t notify, signo; uint64_t value; } wire;
+        if (b) {
+            wire.notify = event->notify;
+            wire.signo = event->signo;
+            wire.value = event->value;
+        }
+        return sys_timercreate(a, b ? (long)&wire : 0, c);
+    }
+    case SYS_timer_settime:
+        return timer_time(a, b, c, d, sizeof(long) == 8, 1);
+    case SYS_timer_gettime:
+        return timer_time(a, 0, b, 0, sizeof(long) == 8, 0);
+#if defined(SYS_timer_settime64) && SYS_timer_settime64 != SYS_timer_settime
+    case SYS_timer_settime64:
+        return timer_time(a, b, c, d, 1, 1);
+#endif
+#if defined(SYS_timer_gettime64) && SYS_timer_gettime64 != SYS_timer_gettime
+    case SYS_timer_gettime64:
+        return timer_time(a, 0, b, 0, 1, 0);
+#endif
+    case SYS_timer_delete:
+        return sys_timerdelete(a);
+    case SYS_timer_getoverrun:
+        return sys_timeroverrun(a);
     case SYS_clock_gettime:
         return clock_read(a, b, 0, sizeof(long) == 8);
     case SYS_clock_getres:
@@ -177,6 +221,8 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
             int32_t code, pid;
             uint32_t uid;
             int32_t status;
+            uint32_t timer_id, overruns, pad;
+            uint64_t value;
         } info;
         int64_t duration[2];
         if (c) {
@@ -187,16 +233,23 @@ long __dos_dispatch(long n, long a, long b, long c, long d, long e, long f)
 #endif
             get_time(duration, c, wide);
         }
-        long r = sys_sigwait(a, b ? (long)&info : 0, c ? (long)duration : 0);
+        _Static_assert(sizeof info == 40, "sigwaitinfo wire ABI");
+        long r = sys_sigwaitinfo(a, b ? (long)&info : 0, c ? (long)duration : 0);
         if (r >= 0 && b) {
             siginfo_t *out = (siginfo_t *)b;
             *out = (siginfo_t){0};
             out->si_signo = info.signo;
             out->si_code = info.code;
-            out->si_pid = info.pid;
-            out->si_uid = info.uid;
-            if (info.signo == SIGCHLD)
-                out->si_status = info.status;
+            if (info.code == SI_TIMER) {
+                out->si_timerid = info.timer_id;
+                out->si_overrun = info.overruns;
+                out->si_value.sival_ptr = (void *)(uintptr_t)info.value;
+            } else {
+                out->si_pid = info.pid;
+                out->si_uid = info.uid;
+                if (info.signo == SIGCHLD)
+                    out->si_status = info.status;
+            }
         }
         return r;
     }

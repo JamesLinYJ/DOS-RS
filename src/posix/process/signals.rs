@@ -4,7 +4,7 @@ use super::{Record, TABLE};
 mod pending;
 use alloc::vec::Vec;
 use core::task::{Context, Waker};
-pub(in crate::posix) use pending::{Origin, Pending};
+pub(in crate::posix) use pending::{Origin, Pending, TimerInfo};
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Action {
@@ -16,7 +16,7 @@ pub(crate) struct Action {
 #[derive(Default)]
 pub(super) struct Signals {
     actions: Vec<(u8, Action)>,
-    pending: Pending,
+    pub(super) pending: Pending,
     pub stopped: bool,
     pub transition: Option<i32>,
     owner: Option<Waker>,
@@ -121,6 +121,7 @@ pub fn observe(pid: u32, cx: &Context) -> bool {
     let Some(r) = table.iter_mut().find(|r| r.pid == pid) else {
         return false;
     };
+    r.timers.poll(&mut r.signals, cx);
     if r.signals
         .owner
         .as_ref()
@@ -133,7 +134,8 @@ pub fn observe(pid: u32, cx: &Context) -> bool {
 pub fn take(pid: u32, mask: u64) -> Option<(u8, Action)> {
     let mut table = TABLE.borrow();
     let r = table.iter_mut().find(|r| r.pid == pid)?;
-    let (n, _) = r.signals.pending.take(!mask)?;
+    let (n, mut origin) = r.signals.pending.take(!mask)?;
+    r.timers.delivered(&mut origin);
     let a = r.signals.action(n);
     if a.flags & 0x8000_0000 != 0 {
         r.signals.actions.retain(|(s, _)| *s != n);
@@ -141,13 +143,11 @@ pub fn take(pid: u32, mask: u64) -> Option<(u8, Action)> {
     Some((n, a))
 }
 pub fn take_waiting(pid: u32, set: u64) -> Option<(u8, Origin)> {
-    TABLE
-        .borrow()
-        .iter_mut()
-        .find(|p| p.pid == pid)?
-        .signals
-        .pending
-        .take(set)
+    let mut table = TABLE.borrow();
+    let p = table.iter_mut().find(|p| p.pid == pid)?;
+    let mut next = p.signals.pending.take(set)?;
+    p.timers.delivered(&mut next.1);
+    Some(next)
 }
 fn notify_parent(table: &mut [Record], pid: u32, origin: Origin) {
     if let Some(p) = table.iter_mut().find(|r| r.pid == pid) {
@@ -166,6 +166,7 @@ pub fn stop(pid: u32, sig: u8) {
             pid,
             uid: p.uid,
             status: i32::from(sig),
+            timer: None,
         };
         notify_parent(&mut table, parent, origin);
     }
@@ -204,6 +205,7 @@ pub fn kill(caller: u32, target: i32, sig: i32) -> Result<usize, isize> {
                     pid: caller,
                     uid,
                     status: 0,
+                    timer: None,
                 },
             )?;
             let (parent, continued) = (p.parent, stopped && !p.signals.stopped);
@@ -213,6 +215,7 @@ pub fn kill(caller: u32, target: i32, sig: i32) -> Result<usize, isize> {
                     pid: p.pid,
                     uid: p.uid,
                     status: 18,
+                    timer: None,
                 };
                 notify_parent(&mut table, parent, origin);
             }

@@ -165,6 +165,7 @@ impl Threads {
                     pid,
                     uid,
                     status: 0,
+                    timer: None,
                 },
             )?;
         }
@@ -222,6 +223,7 @@ pub(super) fn wait(
     image: &mut AddressSpace,
     pid: u32,
     [set, info, timeout]: [usize; 3],
+    extended: bool,
     cx: &Context,
 ) -> Poll<Result<usize, isize>> {
     use super::clock;
@@ -235,7 +237,7 @@ pub(super) fn wait(
     }
     let request = t.signal_wait.as_ref().unwrap();
     if request.info != 0 {
-        image.check(request.info, 20, true).map_err(|_| -14isize)?;
+        image.check(request.info, if extended { 40 } else { 20 }, true).map_err(|_| -14isize)?;
     }
     if let Some((n, origin)) = t
         .pending_signals
@@ -250,11 +252,16 @@ pub(super) fn wait(
                 origin.uid,
                 origin.status as u32,
             ];
-            let mut bytes = [0; 20];
-            for (slot, v) in bytes.chunks_exact_mut(4).zip(fields) {
+            let mut bytes = [0; 40];
+            for (slot, v) in bytes[..20].chunks_exact_mut(4).zip(fields) {
                 slot.copy_from_slice(&v.to_le_bytes());
             }
-            image.write(request.info, &bytes).map_err(|_| -14isize)?;
+            if let Some(timer) = origin.timer {
+                bytes[20..24].copy_from_slice(&timer.id.to_le_bytes());
+                bytes[24..28].copy_from_slice(&timer.overruns.to_le_bytes());
+                bytes[32..40].copy_from_slice(&timer.value.to_le_bytes());
+            }
+            image.write(request.info, &bytes[..if extended { 40 } else { 20 }]).map_err(|_| -14isize)?;
         }
         return Poll::Ready(Ok(usize::from(n)));
     }

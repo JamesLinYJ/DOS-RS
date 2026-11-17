@@ -62,14 +62,16 @@ impl Source {
     }
 }
 struct Alarm {
-    tid: u32,
+    key: (u32, u64),
     deadline: u64,
     waker: Waker,
+    fired: bool,
 }
 static ALARMS: KernelCell<Vec<Alarm>> = KernelCell::new(Vec::new());
+static NEXT_ALARM: KernelCell<u64> = KernelCell::new(0);
 static ARMED: AtomicBool = AtomicBool::new(false);
 pub(in crate::posix) struct Timer {
-    tid: u32,
+    key: (u32, u64),
     deadline: u64,
     pub(super) remainder: usize,
 }
@@ -79,16 +81,20 @@ impl Timer {
         Self::arm(tid, now.checked_add(delta).ok_or(-75isize)?, 0, cx)
     }
     fn arm(tid: u32, deadline: u64, remainder: usize, cx: &Context) -> Result<Self, isize> {
+        let mut serial = NEXT_ALARM.borrow();
+        *serial = serial.checked_add(1).ok_or(-75isize)?;
+        let key = (tid, *serial);
         let mut all = ALARMS.borrow();
         all.try_reserve(1).map_err(|_| -12isize)?;
         all.push(Alarm {
-            tid,
+            key,
             deadline,
             waker: cx.waker().clone(),
+            fired: false,
         });
         ARMED.store(true, Ordering::Release);
         Ok(Self {
-            tid,
+            key,
             deadline,
             remainder,
         })
@@ -96,15 +102,29 @@ impl Timer {
     pub(in crate::posix) fn expired(&self) -> bool {
         source().is_ok_and(|s| s.ticks_ns() >= self.deadline)
     }
-    pub(super) fn remaining(&self) -> u64 {
+    pub(in crate::posix) fn remaining(&self) -> u64 {
         source().map_or(0, |s| self.deadline.saturating_sub(s.ticks_ns()))
+    }
+    pub(in crate::posix) fn overdue(&self) -> u64 {
+        source().map_or(0, |s| s.ticks_ns().saturating_sub(self.deadline))
+    }
+    pub(in crate::posix) fn advance(&mut self, delta: u64, cx: &Context) -> Result<(), isize> {
+        let deadline = self.deadline.checked_add(delta).ok_or(-75isize)?;
+        let mut all = ALARMS.borrow();
+        let alarm = all.iter_mut().find(|a| a.key == self.key).ok_or(-22isize)?;
+        alarm.deadline = deadline;
+        alarm.fired = false;
+        alarm.waker = cx.waker().clone();
+        self.deadline = deadline;
+        ARMED.store(true, Ordering::Release);
+        Ok(())
     }
 }
 impl Drop for Timer {
     fn drop(&mut self) {
         let mut all = ALARMS.borrow();
-        all.retain(|a| a.tid != self.tid);
-        ARMED.store(!all.is_empty(), Ordering::Release);
+        all.retain(|a| a.key != self.key);
+        ARMED.store(all.iter().any(|a| !a.fired), Ordering::Release);
     }
 }
 pub(crate) fn tick() {
@@ -116,16 +136,18 @@ pub(crate) fn tick() {
     };
     let now = src.ticks_ns();
     let mut all = ALARMS.borrow();
-    all.retain(|a| {
-        if a.deadline > now {
-            return true;
+    for a in all.iter_mut() {
+        if !a.fired && a.deadline <= now {
+            a.fired = true;
+            a.waker.wake_by_ref();
         }
-        a.waker.wake_by_ref();
-        false
-    });
-    ARMED.store(!all.is_empty(), Ordering::Release);
+    }
+    ARMED.store(all.iter().any(|a| !a.fired), Ordering::Release);
 }
-pub(super) fn read_ns(image: &AddressSpace, at: usize) -> Result<u64, isize> {
+pub(in crate::posix) fn now(id: usize) -> Result<u64, isize> {
+    source()?.now(id)
+}
+pub(in crate::posix) fn read_ns(image: &AddressSpace, at: usize) -> Result<u64, isize> {
     let mut buf = [0; 16];
     image.read(at, &mut buf).map_err(|_| -14isize)?;
     let sec = i64::from_le_bytes(buf[..8].try_into().unwrap());
@@ -138,7 +160,11 @@ pub(super) fn read_ns(image: &AddressSpace, at: usize) -> Result<u64, isize> {
         .and_then(|s| s.checked_add(ns as u64))
         .ok_or(-75)
 }
-pub(super) fn write_ns(image: &mut AddressSpace, at: usize, ns: u64) -> Result<(), isize> {
+pub(in crate::posix) fn write_ns(
+    image: &mut AddressSpace,
+    at: usize,
+    ns: u64,
+) -> Result<(), isize> {
     let mut out = [0; 16];
     out[..8].copy_from_slice(&(ns / BILLION).to_le_bytes());
     out[8..].copy_from_slice(&(ns % BILLION).to_le_bytes());
