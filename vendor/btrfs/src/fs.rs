@@ -501,7 +501,7 @@ pub struct Filesystem {
     pub(crate) leaving: Option<u64>,
 }
 
-/// Tree blocks a mount keeps: 1024, 16 MiB at the default 16 KiB node.
+/// Tree blocks a mount keeps: 128 KiB at the default 16 KiB node.
 pub const NODE_CACHE_BLOCKS: usize = 8;
 
 /// A least-recently-used set of verified tree blocks by logical address.
@@ -1542,6 +1542,8 @@ impl Filesystem {
                     buf,
                 )
             }),
+            cache_get: Box::new(|logical| self.nodes.borrow_mut().get(logical)),
+            cache_put: Box::new(|logical, block| self.nodes.borrow_mut().put(logical, block)),
         }
     }
 
@@ -1949,6 +1951,10 @@ impl Filesystem {
     pub fn read_tree_block(&self, logical: u64) -> Result<crate::btree::TreeBlock> {
         let reader = self.pool_reader();
         reader.tree().read_block(logical)
+    }
+
+    pub(crate) fn cached_tree_block(&self, logical: u64) -> Result<crate::btree::TreeBlock> {
+        self.pool_reader().cached_tree().read_block(logical)
     }
 
     /// The chunk map — how logical addresses become physical ones.
@@ -2933,6 +2939,8 @@ pub(crate) struct PoolReader<'a> {
     read: OwnedReadBlock<'a>,
     mirrors: OwnedMirrorCount<'a>,
     read_mirror: OwnedReadMirror<'a>,
+    cache_get: Box<dyn Fn(u64) -> Option<crate::btree::TreeBlock> + 'a>,
+    cache_put: OwnedCachePut<'a>,
 }
 
 /// An owned block reader, the counterpart to
@@ -2946,6 +2954,7 @@ type OwnedReadBlock<'a> = Box<dyn Fn(u64, &mut [u8]) -> Result<()> + 'a>;
 /// [`crate::btree::ReadMirror`], for the same reason.
 type OwnedMirrorCount<'a> = Box<dyn Fn(u64) -> Result<usize> + 'a>;
 type OwnedReadMirror<'a> = Box<dyn Fn(u64, usize, &mut [u8]) -> Result<()> + 'a>;
+type OwnedCachePut<'a> = Box<dyn Fn(u64, &crate::btree::TreeBlock) + 'a>;
 
 impl PoolReader<'_> {
     /// A walker over any tree in this pool. The root address is a
@@ -2960,5 +2969,11 @@ impl PoolReader<'_> {
         crate::btree::Tree::new(self.geom, &*self.read)
             .with_redundancy(&*self.mirrors, &*self.read_mirror)
             .with_seed_fsids(self.seeds)
+    }
+
+    /// Share verified nodes between the transaction planning and rendering
+    /// walks. The commit invalidates these entries before reusing the mount.
+    pub(crate) fn cached_tree(&self) -> crate::btree::Tree<'_> {
+        self.tree().with_cache(&*self.cache_get, &*self.cache_put)
     }
 }

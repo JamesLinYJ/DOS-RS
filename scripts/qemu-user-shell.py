@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 import qemu
 from qemu_shell import Shell
@@ -57,7 +58,9 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             # Btrfs. Software-emulated SMP guests can take over five minutes.
             vm.command("sh vars.sh > vars.out", prompt=b"$ ", timeout=900 if dual_volume else 180)
             vm.command("echo $? > vars.rc", prompt=b"$ ")
-            vm.command("sh source.sh > source.out", prompt=b"$ ", timeout=900 if dual_volume else 300)
+            start = time.monotonic()
+            vm.command("sh source.sh > source.out", prompt=b"$ ", timeout=300)
+            print(f"{arch}: source.sh returned in {time.monotonic() - start:.1f} s", flush=True)
             vm.command("echo $? > source.rc", prompt=b"$ ")
             vm.command("sh srcargs.sh > srcargs.out", prompt=b"$ ", timeout=180)
             vm.command("echo $? > srcargs.rc", prompt=b"$ ")

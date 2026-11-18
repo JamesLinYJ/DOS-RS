@@ -1006,7 +1006,7 @@ impl Filesystem {
     ) -> Result<()> {
         let mut dirty: Vec<u64> = {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             let mut leaves = alloc::collections::BTreeSet::new();
             for edit in &write.edits {
                 leaves.insert(tree.descend(self.fs_tree_root, &edit.key())?.header.bytenr);

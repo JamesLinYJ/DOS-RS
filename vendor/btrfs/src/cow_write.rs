@@ -825,7 +825,7 @@ impl Filesystem {
         // data moves.
         let dirty: Vec<u64> = {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             let mut leaves = BTreeSet::new();
             let keys = core::iter::once((INODE_ITEM_KEY, 0))
                 .chain(targets.iter().map(|t| (EXTENT_DATA_KEY, t.start)))
@@ -1883,7 +1883,7 @@ impl Filesystem {
         let mut items: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
         {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             for &(start, end) in released {
                 let found =
                     crate::csum::digests_for_range(&tree, root, size, sector, start, end - start)?;
@@ -1943,7 +1943,7 @@ impl Filesystem {
                 .saturating_sub(1)
                 .max(1);
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             for (at, bytes) in contents {
                 let len = bytes.len() as u64;
                 let stale = crate::csum::digests_for_range(&tree, root, size, sector, *at, len)?;

@@ -160,7 +160,7 @@ impl Filesystem {
     pub fn block_groups(&self) -> Result<Vec<BlockGroup>> {
         let root = self.tree_root(self.block_group_tree_id())?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
 
         let mut out = Vec::new();
         tree.for_each(root, &mut |key: &DiskKey, data: &[u8]| {
@@ -282,7 +282,7 @@ impl Filesystem {
     fn allocated_by_group(&self, groups: &[BlockGroup]) -> Result<Vec<Vec<FreeExtent>>> {
         let root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         let nodesize = self.sb.nodesize as u64;
 
         let mut out = vec![Vec::new(); groups.len()];
@@ -343,7 +343,7 @@ impl Filesystem {
             return Ok(None);
         };
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         let sectorsize = self.sb.sectorsize as u64;
 
         let mut info = None;
@@ -445,7 +445,7 @@ impl Filesystem {
     pub fn for_each_extent_item(&self, visit: &mut dyn FnMut(&DiskKey, &[u8])) -> Result<()> {
         let root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         tree.for_each(root, &mut |key: &DiskKey, data: &[u8]| {
             visit(key, data);
             Ok(true)
@@ -477,7 +477,7 @@ impl Filesystem {
         visit: &mut dyn FnMut(&DiskKey, &[u8]),
     ) -> Result<()> {
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         tree.for_each(root, &mut |key: &DiskKey, data: &[u8]| {
             visit(key, data);
             Ok(true)
@@ -493,7 +493,7 @@ impl Filesystem {
     /// learns the tree is absent.
     pub(crate) fn tree_root(&self, objectid: u64) -> Result<u64> {
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         // `required_root_item_target`, not `root_item_target` directly:
         // this function's own contract, documented above and on
         // `tree_root_public`, is that absence is `Error::BadSuperblock`.

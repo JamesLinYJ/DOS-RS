@@ -784,7 +784,7 @@ impl Filesystem {
     /// record edit's to report, when it comes to change it.
     fn tree_block_refs(&self, bytenr: u64, level: u8) -> Result<Option<u64>> {
         let root = self.tree_root(objectid::EXTENT_TREE)?;
-        let record = self.pool_reader().tree().search(
+        let record = self.pool_reader().cached_tree().search(
             root,
             &DiskKey {
                 objectid: bytenr,
@@ -813,7 +813,7 @@ impl Filesystem {
         };
         let mut found = false;
         self.pool_reader()
-            .tree()
+            .cached_tree()
             .for_each_from(root, &start, &mut |k: &DiskKey, _: &[u8]| {
                 found = k.objectid == bytenr
                     && (TREE_BLOCK_REF..=SHARED_DATA_REF).contains(&k.key_type);
@@ -832,7 +832,7 @@ impl Filesystem {
     /// reference is dropped rather than the extent released.
     pub(crate) fn leaf_shared(&self, tree: u64, key: &DiskKey) -> Result<bool> {
         let root = self.edit_root(tree)?;
-        let path = self.pool_reader().tree().descend_path(root, key)?;
+        let path = self.pool_reader().cached_tree().descend_path(root, key)?;
         for block in &path {
             if self
                 .tree_block_refs(block.header.bytenr, block.header.level)?
@@ -1021,7 +1021,7 @@ impl Filesystem {
     /// one whose reachable part is worth knowing.
     fn for_each_tree_block(&self, root: u64, visit: BlockVisitor) -> Result<()> {
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
 
         let mut stack = vec![(root, None)];
         let mut seen = BTreeSet::new();
@@ -1245,7 +1245,7 @@ impl Filesystem {
         } else {
             let root = self.edit_root(data.root)?;
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             data.edits
                 .iter()
                 .map(|e| Ok(tree.descend(root, &e.key())?.header.bytenr))
@@ -1257,7 +1257,7 @@ impl Filesystem {
         } else {
             let root = self.tree_root(crate::csum::CSUM_TREE_OBJECTID)?;
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             data.csum_edits
                 .iter()
                 .map(|e| Ok(tree.descend(root, &e.key())?.header.bytenr))
@@ -1266,7 +1266,7 @@ impl Filesystem {
         // And each other tree's edit's leaf, in its own tree (#267).
         let tree_edit_leaves: Vec<u64> = {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             data.tree_edits
                 .iter()
                 .map(|(t, e)| Ok(tree.descend(self.edit_root(*t)?, &e.key())?.header.bytenr))
@@ -1306,7 +1306,7 @@ impl Filesystem {
             if dry && rewrite.level > 0 {
                 continue;
             }
-            let block = self.read_tree_block(rewrite.old)?;
+            let block = self.cached_tree_block(rewrite.old)?;
             let raw = block.bytes().to_vec();
             let id = BlockIdentity {
                 bytenr: rewrite.new,
@@ -1690,7 +1690,7 @@ impl Filesystem {
             if rewrite.owner != objectid::EXTENT_TREE || rewrite.level != 0 {
                 continue;
             }
-            let block = self.read_tree_block(rewrite.old)?;
+            let block = self.cached_tree_block(rewrite.old)?;
             let owned: Vec<OwnedItem> = block
                 .body
                 .items()
@@ -1735,7 +1735,7 @@ impl Filesystem {
             )));
         }
         if !plan.created.is_empty() {
-            let uuid = chunk_tree_uuid_of(self.read_tree_block(self.sb.root)?.bytes());
+            let uuid = chunk_tree_uuid_of(self.cached_tree_block(self.sb.root)?.bytes());
             for (created, tree) in plan.created.iter().zip(&data.new_trees) {
                 if created.owner != tree.objectid {
                     return Err(Error::UnsupportedFeature(format!(
@@ -2141,7 +2141,7 @@ impl Filesystem {
                 let more = gained.entry(node).or_default();
                 *more += count;
                 let held = self
-                    .read_tree_block(node)?
+                    .cached_tree_block(node)?
                     .body
                     .key_ptrs()
                     .map_or(0, <[_]>::len);
@@ -2272,7 +2272,7 @@ impl Filesystem {
         for rewrite in order {
             let old = rewrite.old;
             if rewrite.level > 0 {
-                let block = self.read_tree_block(old)?;
+                let block = self.cached_tree_block(old)?;
                 if block.body.key_ptrs().is_some_and(|ptrs| {
                     !ptrs.is_empty() && ptrs.iter().all(|p| empty.contains(&p.blockptr))
                 }) {
@@ -2364,13 +2364,13 @@ impl Filesystem {
         // A reference leaf can begin with the same objectid as the
         // record's leaf. Descend by the complete key, before all keyed
         // backrefs, rather than comparing objectids alone.
-        let kind = if self.read_tree_block(root)?.header.owner == objectid::EXTENT_TREE {
+        let kind = if self.cached_tree_block(root)?.header.owner == objectid::EXTENT_TREE {
             key_type::METADATA_ITEM
         } else {
             key_type::FREE_SPACE_EXTENT
         };
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         addresses
             .iter()
             .map(|at| {
@@ -2398,7 +2398,7 @@ impl Filesystem {
         }
         let root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         for r in &data.block_refs {
             let key = DiskKey {
                 objectid: r.bytenr,
@@ -2431,11 +2431,11 @@ impl Filesystem {
             offset: crate::extent_write::data_ref_hash(tree, ino, offset),
         };
         loop {
-            let Some(item) = reader.tree().search(root, &key)? else {
+            let Some(item) = reader.cached_tree().search(root, &key)? else {
                 return Ok(None);
             };
             if keyed_data_ref_names(&item.data, tree, ino, offset) {
-                let leaf = reader.tree().descend(root, &key)?;
+                let leaf = reader.cached_tree().descend(root, &key)?;
                 return Ok(Some((key, leaf.header.bytenr)));
             }
             let Some(next) = key.offset.checked_add(1) else {
@@ -2686,7 +2686,7 @@ impl Filesystem {
                 out.iter().find(|i| i.key == key).map(|i| i.data.clone())
             } else {
                 self.pool_reader()
-                    .tree()
+                    .cached_tree()
                     .search(root, &key)?
                     .map(|i| i.data)
             }
@@ -2730,7 +2730,7 @@ impl Filesystem {
                         out.iter().find(|i| i.key == keyed).map(|i| i.data.clone())
                     } else {
                         self.pool_reader()
-                            .tree()
+                            .cached_tree()
                             .search(root, &keyed)?
                             .map(|i| i.data)
                     }
@@ -3275,7 +3275,7 @@ impl Filesystem {
         };
         let mut found = None;
         self.pool_reader()
-            .tree()
+            .cached_tree()
             .for_each_from(root, &start, &mut |k: &DiskKey, d: &[u8]| {
                 if k.objectid == bytenr
                     && matches!(k.key_type, key_type::EXTENT_ITEM | key_type::METADATA_ITEM)
@@ -3340,7 +3340,7 @@ impl Filesystem {
             None => {
                 let root = self.tree_root(objectid::EXTENT_TREE)?;
                 let reader = self.pool_reader();
-                let tree = reader.tree();
+                let tree = reader.cached_tree();
                 let key = out.item_key();
                 let item = tree.search(root, &key)?.ok_or_else(gone)?;
                 out.item_leaf = Some(tree.descend(root, &key)?.header.bytenr);
@@ -3378,7 +3378,7 @@ impl Filesystem {
         use crate::backref::{self, Keyed, EXTENT_DATA_REF, TREE_BLOCK_REF};
         let root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         let new_item = |key: DiskKey, data: Vec<u8>| -> Result<KeyedItem> {
             Ok(KeyedItem {
                 key,
@@ -3511,7 +3511,7 @@ impl Filesystem {
 
         let extent_root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         let moving: BTreeSet<u64> = plan
             .rewrites
             .iter()
@@ -3555,7 +3555,7 @@ impl Filesystem {
                 continue;
             }
 
-            let block = self.read_tree_block(rewrite.old)?;
+            let block = self.cached_tree_block(rewrite.old)?;
             let own = block.header.owner == rewrite.owner && !full_backref;
             let given_here = given.contains(&rewrite.old);
             if kept {
