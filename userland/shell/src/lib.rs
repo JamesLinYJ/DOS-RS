@@ -2,6 +2,7 @@
 extern crate alloc;
 mod arithmetic;
 mod compound;
+mod directory;
 mod expansion;
 mod getopts;
 mod here_input;
@@ -35,8 +36,6 @@ unsafe extern "C" {
     fn getpid() -> i32;
     fn dup2(old: i32, new: i32) -> i32;
     fn pipe(fds: *mut i32) -> i32;
-    fn sys_chdir(path: *const i8) -> isize;
-    fn sys_getcwd(buf: *mut u8, size: usize) -> isize;
 }
 fn diagnostic(message: &str) {
     let _ = write_all(2, format!("sh: {message}\n").as_bytes());
@@ -134,7 +133,7 @@ impl Shell {
             exported: true,
             readonly: false,
         });
-        Self {
+        let mut shell = Self {
             shell_pid: unsafe { getpid() },
             substitution_status: None,
             vars,
@@ -156,7 +155,9 @@ impl Shell {
             exiting: false,
             requested_exit: false,
             regular_builtin: false,
-        }
+        };
+        shell.initialize_directory();
+        shell
     }
     fn get(&self, key: &str) -> &str {
         self.variable_value(key).unwrap_or("")
@@ -344,31 +345,8 @@ impl Shell {
             }
             "export" | "readonly" => self.declare_variables(name, args),
             "unset" => self.unset(args),
-            "cd" => {
-                let dest = args.first().map_or(self.get("HOME"), String::as_str);
-                let Ok(path) = CString::new(dest) else {
-                    return Some(1);
-                };
-                if dest.is_empty() || unsafe { sys_chdir(path.as_ptr()) } < 0 {
-                    diagnostic(&format!("cd: {dest}: cannot change directory"));
-                    1
-                } else {
-                    if let Some(cwd) = cwd() {
-                        if self.set("PWD", &cwd).is_err() {
-                            return Some(1);
-                        }
-                    }
-                    0
-                }
-            }
-            "pwd" => {
-                if let Some(path) = cwd() {
-                    let _ = write_all(1, format!("{path}\n").as_bytes());
-                    0
-                } else {
-                    1
-                }
-            }
+            "cd" => self.cd(args),
+            "pwd" => self.pwd(args),
             "jobs" => {
                 for j in &mut self.jobs {
                     j.refresh(false);
@@ -708,13 +686,7 @@ impl Shell {
 }
 
 fn cwd() -> Option<String> {
-    let mut bytes = vec![0; 4096];
-    let len = unsafe { sys_getcwd(bytes.as_mut_ptr(), bytes.len()) };
-    if len <= 0 {
-        return None;
-    }
-    bytes.truncate(len as usize - 1);
-    String::from_utf8(bytes).ok()
+    directory::physical().ok()
 }
 
 #[unsafe(no_mangle)]

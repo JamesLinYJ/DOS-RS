@@ -156,6 +156,8 @@ cat count.txt
 
 32 位和 64 位原生 Shell 的 `command` 已验证函数绕过、`-p` 默认搜索路径、`-v`/`-V` 查询、当前 Shell 的目录和参数修改，以及包装特殊内置命令后的错误恢复。显式 `exit` 仍会退出。两种内核的 FAT 回归各有 30 个停机文件逐字节一致，原有 24 个结果保持不变。内核执行目录返回 `EACCES`，PATH 会继续搜索后面的普通文件；无 shebang 的文本程序仍可通过 libc 回退到 `/bin/sh`。别名、locale 和链接错误的查询规则仍待补齐，这项记录为部分通过。[命令查询与执行用例](tests/user-shell/command.sh)
 
+原生 i686 BIOS 和 x86_64 UEFI 的 Shell 已分别冷启动验证 `PWD` 初始化、`HOME`/`OLDPWD`、`CDPATH`、`cd`/`pwd` 选项及目录错误处理。两边各有 32 个停机文件一致，原有 30 个结果逐字节不变；新增目录输出为相同的 69 行、1,383 字节，`fsck.fat` 通过。这批结果覆盖 FAT 上的目录行为，符号链接、权限、无名目录和输出失败恢复仍需单独验收；16 位 `COMMAND.COM` 使用前述原生 DOS 回归。[目录复测入口](scripts/qemu-shell-directories.py)
+
 在 i686 BIOS 和 x86_64 UEFI 上，原生 Shell 可以将 here-document（`<<` 和 `<<-`）作为程序输入。引号控制变量和命令展开，`<<-` 会移除行首制表符。两台 QEMU 都通过了 16,401 字节输入的关机读回。另在 `a3e57a6` 归档内核的 Btrfs 安装盘上装入新版 `/bin/sh`，冷启动后重新执行脚本，两个架构的输出及退出码均与参考 Shell 一致。[脚本用例](tests/user-shell/here.sh)
 
 制盘需要 QEMU、mtools、目标架构交叉编译器。有 `mkfs.btrfs` 时在宿主制盘。macOS 也可由脚本启动 Linux，在内存盘上格式化 Btrfs。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。

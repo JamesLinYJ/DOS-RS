@@ -65,7 +65,11 @@ pub fn diagnostic(tool: &[u8], path: &[u8], errno: i32) {
         28 => b"No space left on device",
         30 => b"Read-only file system",
         32 => b"Broken pipe",
+        34 => b"Result too large",
+        36 => b"File name too long",
         39 => b"Directory not empty",
+        40 => b"Too many levels of symbolic links",
+        84 => b"Invalid or incomplete multibyte or wide character",
         95 => b"Operation not supported",
         _ => b"Unknown error",
     };

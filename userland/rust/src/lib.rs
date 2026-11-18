@@ -14,6 +14,8 @@ pub mod ends;
 #[cfg(feature = "alloc")]
 pub mod links;
 pub mod stat;
+#[cfg(feature = "alloc")]
+pub mod working_directory;
 
 pub mod ffi {
     pub use __errno_location as __dos_errno_location;

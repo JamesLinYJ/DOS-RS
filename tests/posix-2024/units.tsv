@@ -2174,7 +2174,7 @@ utilities	bg	UP	utilities/bg.html#tag_20_10	open	open
 utilities	c17	CD	utilities/c17.html#tag_20_11	open	open	
 utilities	cal	XSI	utilities/cal.html#tag_20_12	open	open	
 utilities	cat	base	utilities/cat.html#tag_20_13	partial	partial	qemu-coreutils.py#0..22
-utilities	cd	base	utilities/cd.html#tag_20_14	open	open	
+utilities	cd	base	utilities/cd.html#tag_20_14	partial	partial	tests/user-shell/directory.sh
 utilities	cflow	XSI	utilities/cflow.html#tag_20_15	open	open	
 utilities	chgrp	base	utilities/chgrp.html#tag_20_16	partial	partial	scripts/qemu-groups.py
 utilities	chmod	base	utilities/chmod.html#tag_20_17	partial	partial	scripts/qemu-coreutils.py#248
@@ -2263,7 +2263,7 @@ utilities	pr	base	utilities/pr.html#tag_20_95	partial	partial	scripts/qemu-coreu
 utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qemu-coreutils.py#186,187
 utilities	prs	XSI	utilities/prs.html#tag_20_97	open	open	
 utilities	ps	base	utilities/ps.html#tag_20_98	open	open	
-utilities	pwd	base	utilities/pwd.html#tag_20_99	open	open	
+utilities	pwd	base	utilities/pwd.html#tag_20_99	partial	partial	tests/user-shell/directory.sh
 utilities	read	base	utilities/read.html#tag_20_100	partial	partial	tests/user-shell/read.sh,tests/user-shell/variables.sh
 utilities	readlink	base	utilities/readlink.html#tag_20_101	partial	partial	scripts/qemu-coreutils.py#247
 utilities	realpath	base	utilities/realpath.html#tag_20_102	partial	partial	scripts/qemu-coreutils.py#280,281,282

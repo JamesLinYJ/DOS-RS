@@ -12,6 +12,8 @@ These fixtures exercise the 32-bit and 64-bit userspace Shell. The native 16-bit
 | `command.sh` | Function bypass, current-shell builtins, command categories and default PATH including readonly PATH | 65 |
 | `command-state.sh` | Declaration expansion, temporary assignments, dot/eval/return/exit, permanent exec redirection, pipelines, background execution, path queries and lookup failures | 67 |
 | `command-errors.sh` | Wrapped builtin errors, invalid command options and nested evaluation error recovery | 71 |
+| `directory.sh` | Initial PWD, cd/pwd options, CDPATH selection, OLDPWD, errors and repeated directory changes | 79 |
+| `directory-links.sh` | Btrfs symbolic links, logical versus physical parents, inherited logical PWD and link errors | 83 |
 
 PATH tests use `/bin/echo` explicitly while the search path excludes `/bin`; the native echo utility is an independent executable.
 
@@ -27,4 +29,8 @@ Reference implementations differ on relative query output, wrapped failed `exec`
 
 The runner preloads the empty directory `execdir/plaincmd` for the raw libc exec probe. Native POSIX `mkdir` currently returns ENOTSUP on FAT, so executable-directory tests must not depend on creating that fixture through this syscall. The probe checks its type, rejects directories with EACCES through direct `execve`, then searches past the directory to a regular text script. Keep the Btrfs-root run as a separate filesystem acceptance result. Query behavior across symlink loops and I/O failures still needs its own matrix.
 
-The initial native Shell does not yet reliably initialize `PWD` when the DOS launcher provides no value. Directory fixtures save their starting location with `pwd`; this does not count as acceptance of the inherited PWD rules.
+The command fixtures save their starting location with `pwd`; they do not establish correct initialization of inherited PWD. `directory.sh` separately checks the [initial PWD rules](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_05_03), [cd](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/cd.html) and [pwd](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pwd.html). Its fixed expected output includes Issue 8's empty-operand error and `cd -e`, which older host shells need not implement. DOS-RS chooses to reject an unset HOME, a non-absolute OLDPWD, extra operands and readonly directory variables before changing the working directory. Those policy assertions are not evidence that other choices violate POSIX. Each negative case runs in a subshell so a host extension cannot change later cases' starting directory.
+
+Use `scripts/qemu-shell-directories.py` for the FAT gate; it installs `directory.sh` as `dirs.sh`. Use `scripts/qemu-shell-directories-btrfs.py` for the installed Btrfs gate, which also stages real directory, dangling and looping symlinks and records their targets. Both require `--ram-dir` and `--proof`, repeat the existing Shell fixtures, cold-boot the guest and compare stopped-disk bytes. The Btrfs gate also performs another cold read and checks the disk with Linux. A failed run retains its disk in RAM for diagnosis. Pass only one `--arch` when supplying fixed `--kernel`, `--programs` and `--probes` inputs.
+
+Directory conformance remains partial until the two native targets also cover search-only permissions, unnamed current directories with `cd -Pe`, output-write failure, very long paths and raw non-UTF-8 pathname bytes. In particular, a failed write of `cd -` output currently leaves the new directory active. Do not mark the complete cd error contract as passed from the normal-path tests. The 16-bit DOS Shell continues to use its own command and directory tests.
