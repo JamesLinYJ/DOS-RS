@@ -1,5 +1,5 @@
 //! POSIX paths use byte names and inode-valued working directories.
-use super::{File, Mount, err, mounted};
+use super::{File, FileKind, Mount, err, mounted};
 use crate::vfs::posix::{Attribute, Credentials, DirEntry, Metadata, PosixDir, ROOT_INODE, Times};
 use alloc::{collections::{BTreeSet, VecDeque}, vec::Vec};
 use dosrs_btrfs::{Error, inode::Inode};
@@ -178,6 +178,7 @@ pub(crate) fn metadata(n: &Inode) -> Metadata {
     let dates = [n.atime, n.mtime, n.ctime];
     Metadata {
         dev: 2,
+        rdev: n.rdev as u32,
         ino: n.ino,
         size: n.size,
         blocks: n.nbytes.div_ceil(512),
@@ -209,7 +210,7 @@ pub(crate) fn pin_directory(dir: PosixDir) -> Result<super::super::File> {
             return Err(Errno::NotDirectory);
         }
         *m.opens.entry(inode).or_default() += 1;
-        Ok(alloc::boxed::Box::new(File(inode, false)) as super::super::File)
+        Ok(alloc::boxed::Box::new(File(inode, FileKind::Native)) as super::super::File)
     })
 }
 pub(crate) fn getcwd(cwd: PosixDir, size: usize) -> Result<Vec<u8>> {
@@ -289,7 +290,7 @@ pub(crate) fn open(
             return Err(Errno::Invalid);
         }
         let dirty = flags.truncate || flags.create;
-        let ino = match lookup(
+        let (ino, kind) = match lookup(
             m,
             cwd,
             path,
@@ -307,10 +308,14 @@ pub(crate) fn open(
                 if n.is_dir() && flags.access.writable() {
                     return Err(Errno::IsDirectory);
                 }
-                if !n.is_regular_file() && !n.is_dir() {
+                // Btrfs stores the encoded Linux device number in the inode.
+                // Opening an alias or hard link must reach the same driver.
+                let null = n.file_type() == Some(dosrs_btrfs::inode::FileType::CharDevice)
+                    && n.rdev == 0x103;
+                if !n.is_regular_file() && !n.is_dir() && !null {
                     return Err(Errno::NotSupported);
                 }
-                if flags.access.writable() && !m.fs.is_writable() {
+                if flags.access.writable() && !null && !m.fs.is_writable() {
                     return Err(Errno::ReadOnly);
                 }
                 access(
@@ -323,10 +328,10 @@ pub(crate) fn open(
                             | (u32::from(flags.access.writable()) << 1)
                     },
                 )?;
-                if flags.truncate {
+                if flags.truncate && !null {
                     m.fs.truncate(n.ino, 0).map_err(err)?;
                 }
-                n.ino
+                (n.ino, if null { FileKind::Null } else { FileKind::Native })
             }
             Lookup::Missing(dir, name) => {
                 let parent = m.fs.read_inode(dir).map_err(err)?;
@@ -339,12 +344,12 @@ pub(crate) fn open(
                 } else {
                     who.gid
                 };
-                m.fs.create(dir, &name, mode & 0o7777, who.uid, gid)
-                    .map_err(err)?
+                let ino = m.fs.create(dir, &name, mode & 0o7777, who.uid, gid).map_err(err)?;
+                (ino, FileKind::Native)
             }
         };
         *m.opens.entry(ino).or_default() += 1;
-        Ok((File(ino, false), dirty))
+        Ok((File(ino, kind), dirty && kind != FileKind::Null))
     })
 }
 pub(crate) fn mkdir(cwd: PosixDir, path: &[u8], mode: u32, who: Credentials) -> Result<()> {
@@ -556,10 +561,7 @@ pub(crate) fn rename_at(
                 if node.is_dir() && !m.fs.read_dir(node.ino).map_err(err)?.is_empty() {
                     return Err(Errno::NotEmpty);
                 }
-                (node.nlink == 1
-                    && m.opens.contains_key(&node.ino)
-                    && (node.is_regular_file() || node.is_dir()))
-                .then_some(node.ino)
+                (node.nlink == 1 && m.opens.contains_key(&node.ino)).then_some(node.ino)
             }
             Err(Error::NotFound) => None,
             Err(e) => return Err(err(e)),

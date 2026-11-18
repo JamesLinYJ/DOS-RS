@@ -8,7 +8,7 @@ pub struct Stat {
     pub ino: u64,
     pub size: i64,
     pub mode: u32,
-    reserved: u32,
+    pub rdev: u32,
 }
 const _: () = assert!(size_of::<Stat>() == 32);
 

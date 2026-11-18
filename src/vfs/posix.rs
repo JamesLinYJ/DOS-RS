@@ -205,6 +205,7 @@ pub(crate) fn open(
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Metadata {
     pub dev: u64,
+    pub rdev: u32,
     pub ino: u64,
     pub size: u64,
     pub blocks: u64,
@@ -235,6 +236,9 @@ impl Metadata {
             out[i..i + 8].copy_from_slice(&sec.to_le_bytes());
             out[i + 8..i + 12].copy_from_slice(&nsec.to_le_bytes());
         }
+        // The first timestamp's reserved word carries the encoded device
+        // number without changing the 96-byte ABI of existing binaries.
+        out[60..64].copy_from_slice(&self.rdev.to_le_bytes());
         out
     }
 }

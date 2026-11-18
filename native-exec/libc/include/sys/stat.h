@@ -11,6 +11,7 @@ struct stat {
 };
 _Static_assert(sizeof(struct stat) == 96, "DOS-RS stat ABI");
 #define st_atime st_atim.tv_sec
+#define st_rdev st_atim.__pad
 #define st_mtime st_mtim.tv_sec
 #define st_ctime st_ctim.tv_sec
 #define S_IFMT 0170000u

@@ -29,11 +29,14 @@ mod readonly;
 #[path = "vfs/time.rs"]
 pub(crate) mod time;
 pub(crate) use dos::Directories;
-use dosrs_native_posix::{Errno, Open, Result};
+use dosrs_native_posix::{Errno, Open, Result, Whence};
 /// A mounted object, independent of the path used to open it.
 pub(crate) type File = alloc::boxed::Box<dyn Node>;
 pub(crate) trait Node: Send {
     fn len(&self) -> Result<u64>;
+    fn seek_position(&self, current: u64, delta: i64, whence: Whence) -> Result<u64> {
+        file_position(current, delta, whence, || self.len())
+    }
     fn read(&self, offset: u64, out: &mut [u8]) -> Result<usize>;
     fn write(&self, offset: u64, data: &[u8]) -> Result<()>;
     fn sync(&self) -> Result<()>;
@@ -72,6 +75,25 @@ pub(crate) trait Node: Send {
     }
     fn stamp(&self) -> Result<(u16, u16)>;
     fn set_stamp(&self, time: u16, date: u16) -> Result<()>;
+}
+
+fn file_position(
+    current: u64,
+    delta: i64,
+    whence: Whence,
+    length: impl FnOnce() -> Result<u64>,
+) -> Result<u64> {
+    let base = match whence {
+        Whence::Start => 0,
+        Whence::Current => current,
+        Whence::End => length()?,
+    };
+    let pos = base.checked_add_signed(delta).ok_or(Errno::Invalid)?;
+    if pos > i64::MAX as u64 {
+        Err(Errno::FileTooLarge)
+    } else {
+        Ok(pos)
+    }
 }
 
 pub(crate) fn open(cwd: Directories, path: &str, flags: Open) -> Result<(File, bool)> {

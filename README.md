@@ -160,6 +160,8 @@ cat count.txt
 
 在安装式 Btrfs 根卷上，两种宽位内核都运行了独立 Rust ELF。通过 18 层相对目录构造的物理路径长 4,346 字节。小缓冲区得到 `ERANGE`，足够大的缓冲区读回完整原名。当前目录被删除后，`getcwd` 返回 `ENOENT`。普通用户在仅有搜索权限的目录中运行 `cd -`，若标准输出已关闭，工作目录、`PWD` 和 `OLDPWD` 均保留原值。`pwd -P` 可以输出含非 UTF-8 字节的目录名。[客体测试程序](tests/native-cwd/src/lib.rs)
 
+新建的 Btrfs 安装盘由 Rust 制盘工具写入字符设备 `/dev/null`，设备号为 1:3。i686 BIOS 和 x86_64 UEFI 均通过冷启动、普通用户重定向、EOF 和写入丢弃测试。`cat /dev/null` 的两个输出流和退出码与 GNU coreutils 9.12 一致，停机后的 FAT 和 Btrfs 检查均通过。[设备复测入口](scripts/qemu-native-null.py)
+
 在 i686 BIOS 和 x86_64 UEFI 上，原生 Shell 可以将 here-document（`<<` 和 `<<-`）作为程序输入。引号控制变量和命令展开，`<<-` 会移除行首制表符。两台 QEMU 都通过了 16,401 字节输入的关机读回。另在 `a3e57a6` 归档内核的 Btrfs 安装盘上装入新版 `/bin/sh`，冷启动后重新执行脚本，两个架构的输出及退出码均与参考 Shell 一致。[脚本用例](tests/user-shell/here.sh)
 
 制盘需要 QEMU、mtools、目标架构交叉编译器。有 `mkfs.btrfs` 时在宿主制盘。macOS 也可由脚本启动 Linux，在内存盘上格式化 Btrfs。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。

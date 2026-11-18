@@ -152,7 +152,14 @@ impl Mount {
         Err(Errno::NoEntry)
     }
 }
-pub struct File(u64, bool); // DOS attributes apply to legacy writes, POSIX permissions are checked at open.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileKind {
+    Dos,
+    Native,
+    Null,
+}
+
+pub struct File(u64, FileKind);
 impl File {
     pub fn open(dir: u32, path: &[u8], flags: Open, dos: bool) -> Result<Self> {
         mounted(|m| {
@@ -179,15 +186,21 @@ impl File {
                 Err(e) => return Err(e),
             };
             *m.opens.entry(ino).or_default() += 1;
-            Ok(Self(ino, true))
+            Ok(Self(ino, FileKind::Dos))
         })
     }
     pub fn read(&self, pos: u64, out: &mut [u8]) -> Result<usize> {
+        if self.1 == FileKind::Null {
+            return Ok(0);
+        }
         mounted(|m| m.fs.read_at(self.0, pos, out).map_err(err))
     }
     pub fn write(&self, pos: u64, data: &[u8]) -> Result<()> {
+        if self.1 == FileKind::Null {
+            return Ok(());
+        }
         mounted(|m| {
-            if self.1 && m.fs.read_inode(self.0).map_err(err)?.mode & 0o222 == 0 {
+            if self.1 == FileKind::Dos && m.fs.read_inode(self.0).map_err(err)?.mode & 0o222 == 0 {
                 return Err(Errno::Access);
             }
             if data.is_empty() {
@@ -498,6 +511,18 @@ impl Volume for Driver {
 }
 
 impl super::Node for File {
+    fn seek_position(&self, current: u64, delta: i64, whence: dosrs_native_posix::Whence) -> Result<u64> {
+        if self.1 == FileKind::Null {
+            return Ok(0);
+        }
+        super::file_position(current, delta, whence, || self.size())
+    }
+    fn resize(&self, length: u64) -> Result<()> {
+        if self.1 == FileKind::Null {
+            return Err(Errno::Invalid);
+        }
+        self.write(length, &[])
+    }
     fn len(&self) -> Result<u64> {
         self.size()
     }

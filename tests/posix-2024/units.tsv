@@ -595,7 +595,7 @@ basedefs	tag_09_05_01	chapter	basedefs/V1_chap09.html#tag_09_05_01	open	open
 basedefs	tag_09_05_02	chapter	basedefs/V1_chap09.html#tag_09_05_02	open	open	
 basedefs	tag_09_05_03	chapter	basedefs/V1_chap09.html#tag_09_05_03	open	open	
 basedefs	tag_10	chapter	basedefs/V1_chap10.html#tag_10	open	open	
-basedefs	tag_10_01	chapter	basedefs/V1_chap10.html#tag_10_01	open	open	
+basedefs	tag_10_01	chapter	basedefs/V1_chap10.html#tag_10_01	partial	partial	scripts/qemu-native-null.py
 basedefs	tag_10_02	chapter	basedefs/V1_chap10.html#tag_10_02	open	open	
 basedefs	tag_11	chapter	basedefs/V1_chap11.html#tag_11	open	open	
 basedefs	tag_11_01	chapter	basedefs/V1_chap11.html#tag_11_01	open	open	

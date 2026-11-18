@@ -6,6 +6,8 @@ use alloc::{ffi::CString, vec, vec::Vec};
 use core::ffi::CStr;
 use dosrs_user::{Args, cli, working_directory as cwd, write_all};
 
+mod null_device;
+
 mod abi {
     use super::*;
     unsafe extern "C" {
@@ -264,7 +266,16 @@ fn directory_permissions() -> Result<(), i32> {
     result
 }
 
-fn run(_: Args<'_>) -> i32 {
+fn run(args: Args<'_>) -> i32 {
+    if args.get(1) == Some(c"--null-device") {
+        return match null_device::check() {
+            Ok(()) => 0,
+            Err(error) => {
+                cli::diagnostic(b"cwdprobe", b"null device assertions", error);
+                1
+            }
+        };
+    }
     let result = long_directory()
         .and_then(|_| unnamed_directory())
         .and_then(|_| raw_name())

@@ -1,0 +1,12 @@
+[package]
+name = "dosrs-posix-seed"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[dependencies]
+dosrs-btrfs = { path = "../../vendor/btrfs" }
+dosrs-block = { path = "../../storage/block" }

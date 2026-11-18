@@ -566,15 +566,7 @@ impl Process for ProcessContext {
         let Description::File { object, offset, .. } = &mut *h else {
             return Err(Errno::IllegalSeek);
         };
-        let base = match whence {
-            Whence::Start => 0,
-            Whence::Current => *offset,
-            Whence::End => object.len()?,
-        };
-        let pos = base.checked_add_signed(delta).ok_or(Errno::Invalid)?;
-        if pos > i64::MAX as u64 {
-            return Err(Errno::FileTooLarge);
-        }
+        let pos = object.seek_position(*offset, delta, whence)?;
         *offset = pos;
         Ok(pos)
     }

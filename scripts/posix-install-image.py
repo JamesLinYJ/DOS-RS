@@ -46,11 +46,15 @@ def make_root(arch, work, extra, programs=None):
     if not shutil.which("mkfs.btrfs"):
         subprocess.run([sys.executable, qemu.ROOT / "scripts/linux-btrfs.py", "create",
                         "--root", tree, "--image", volume], check=True)
-        return volume
-    with volume.open("xb") as f:
-        f.truncate(128*MIB)
-    subprocess.run(["mkfs.btrfs", "-f", "-m", "single", "-d", "single", "-L", "DOSRS-ROOT",
-                    "--rootdir", tree, volume], check=True)
+    else:
+        with volume.open("xb") as f:
+            f.truncate(128*MIB)
+        subprocess.run(["mkfs.btrfs", "-f", "-m", "single", "-d", "single", "-L", "DOSRS-ROOT",
+                        "--rootdir", tree, volume], check=True)
+    subprocess.run(["cargo", "+stable", "run", "--locked", "--release",
+                    "--manifest-path", qemu.ROOT / "boot/posix-seed/Cargo.toml",
+                    "--target-dir", qemu.ROOT / "target/posix-seed",
+                    "--", volume], cwd=qemu.ROOT, check=True)
     return volume
 
 

@@ -29,6 +29,7 @@ int __fstatat(int fd, const char *restrict path, struct stat *restrict dst, int 
     if (r < 0)
         return __syscall_ret(r);
     *dst = (struct stat){.st_dev = v.dev,
+                         .st_rdev = v.access.pad,
                          .st_ino = v.ino,
                          .st_size = v.size,
                          .st_blocks = v.blocks,

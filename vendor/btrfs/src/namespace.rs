@@ -90,6 +90,7 @@ const FIRST_DIR_INDEX: u64 = 2;
 const S_IFMT: u32 = 0o170_000;
 const S_IFREG: u32 = 0o100_000;
 const S_IFDIR: u32 = 0o040_000;
+const S_IFCHR: u32 = 0o020_000;
 const S_IFLNK: u32 = 0o120_000;
 
 /// `BTRFS_INODE_COMPRESS` and `BTRFS_INODE_NOCOMPRESS`, which a new
@@ -103,11 +104,16 @@ const INODE_REF_HEADER: usize = 8 + 2;
 /// name length.
 const INODE_EXTREF_HEADER: usize = 8 + 8 + 2;
 
+fn can_reap_open(inode: &Inode) -> bool {
+    matches!(inode.mode & S_IFMT, S_IFREG | S_IFDIR | S_IFCHR)
+}
+
 /// What a new inode is.
 #[derive(Debug, Clone, Copy)]
 enum NewKind<'a> {
     File,
     Dir,
+    Character(u32),
     Symlink(&'a [u8]),
 }
 
@@ -146,6 +152,18 @@ impl Filesystem {
         gid: u32,
     ) -> Result<u64> {
         self.add_inode(parent, name, NewKind::Dir, mode, uid, gid)
+    }
+
+    /// Create a character-device inode owned by root. The number uses the
+    /// Linux on-disk device encoding, and the inode has no file data.
+    pub fn create_character_device(
+        &mut self,
+        parent: u64,
+        name: &[u8],
+        mode: u32,
+        device: u32,
+    ) -> Result<u64> {
+        self.add_inode(parent, name, NewKind::Character(device), mode, 0, 0)
     }
 
     /// Create a symbolic link `name` in `parent` pointing at `target`,
@@ -243,13 +261,13 @@ impl Filesystem {
         self.remove_name(parent, name, false)
     }
 
-    /// Unlink a regular file while a descriptor still pins its last link.
+    /// Unlink a nondirectory inode while a descriptor still pins its last link.
     /// Commit the unlinked inode and its on-disk orphan item with the name removal.
     pub fn unlink_open(&mut self, parent: u64, name: &[u8]) -> Result<()> {
         self.require_writable_top_level()?;
         self.ensure_metadata_reserve()?;
         let child = self.named_inode(parent, name)?;
-        if !child.is_regular_file() || child.nlink != 1 {
+        if child.is_dir() || !can_reap_open(&child) || child.nlink != 1 {
             return self.unlink(parent, name);
         }
         self.detach_open(parent, name, child)
@@ -302,7 +320,7 @@ impl Filesystem {
             return Err(Error::NotFound);
         }
         let inode = self.read_inode(ino)?;
-        if !(inode.is_regular_file() || inode.is_dir()) || inode.nlink != 0 || ino <= FIRST_FREE_OBJECTID {
+        if !can_reap_open(&inode) || inode.nlink != 0 || ino <= FIRST_FREE_OBJECTID {
             return Err(Error::UnsupportedFeature("orphan requires Linux recovery".into()));
         }
         if inode.is_dir() { self.refuse_non_empty(&inode, b"")?; }
@@ -471,7 +489,7 @@ impl Filesystem {
                     (false, false) => {}
                 }
                 self.drop_entry(&mut p, new_parent, new_name, target.ino)?;
-                if Some(target.ino) == pinned && target.nlink == 1 && (target.is_regular_file() || target.is_dir()) {
+                if Some(target.ino) == pinned && target.nlink == 1 && can_reap_open(&target) {
                     self.orphan_last_link(&mut p, target.ino)?;
                 } else {
                     let (releases, unrefs) = self.drop_link(&mut p, &target, new_name)?;
@@ -833,6 +851,7 @@ impl Filesystem {
         let (type_bits, ft, size) = match kind {
             NewKind::File => (S_IFREG, ftype::REG_FILE, 0),
             NewKind::Dir => (S_IFDIR, ftype::DIR, 0),
+            NewKind::Character(_) => (S_IFCHR, ftype::CHRDEV, 0),
             NewKind::Symlink(t) => (S_IFLNK, ftype::SYMLINK, t.len() as u64),
         };
         // What a new inode takes from its directory: copy-on-write or
@@ -842,10 +861,10 @@ impl Filesystem {
         let mut flags = dir.flags & (INODE_NODATACOW | INODE_COMPRESS | INODE_NOCOMPRESS);
         match kind {
             NewKind::File if flags & INODE_NODATACOW != 0 => flags |= INODE_NODATASUM,
-            NewKind::Symlink(_) => flags = 0,
+            NewKind::Symlink(_) | NewKind::Character(_) => flags = 0,
             _ => {}
         }
-        let raw = new_inode(NewInode {
+        let mut raw = new_inode(NewInode {
             generation,
             size,
             mode: type_bits | (mode & 0o7777),
@@ -854,6 +873,9 @@ impl Filesystem {
             flags,
             now,
         });
+        if let NewKind::Character(device) = kind {
+            raw[io::RDEV..io::RDEV + 8].copy_from_slice(&u64::from(device).to_le_bytes());
+        }
 
         let mut edits = vec![
             put(ino, INODE_ITEM_KEY, 0, raw),
