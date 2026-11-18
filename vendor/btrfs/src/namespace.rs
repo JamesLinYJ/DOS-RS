@@ -1150,16 +1150,6 @@ impl Filesystem {
         self.refuse_stale()
     }
 
-    /// Refuse a write through a stale handle, leaving a read-only handle to
-    /// be refused by the write itself. For a caller that has to read before
-    /// it can start the write, such as the C ABI resolving a path (#715).
-    pub(crate) fn refuse_stale_write(&self) -> Result<()> {
-        if self.writable.is_none() && self.subvolume_writes.is_none() {
-            return Ok(());
-        }
-        self.refuse_stale()
-    }
-
     /// Refuse a read-only mount, and one whose tree is not tree 5.
     pub(crate) fn require_writable_top_level(&self) -> Result<()> {
         self.require_writable()?;

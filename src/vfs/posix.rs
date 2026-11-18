@@ -42,9 +42,11 @@ pub(crate) enum Attribute {
     Owner(u32, u32),
     Times(Times),
 }
+pub(crate) use btrfs::posix::capacity;
+#[cfg(not(test))]
 pub(crate) use btrfs::posix::{
-    capacity, change_at, check_access, chmod, chown, link, link_at, mkdir, rename, rename_at,
-    rmdir, symlink, unlink,
+    change_at, check_access, chmod, chown, link, link_at, mkdir, rename, rename_at, rmdir, symlink,
+    unlink,
 };
 
 pub(crate) fn pin_directory(dir: PosixDir) -> Result<File> {

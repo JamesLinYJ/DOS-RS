@@ -73,17 +73,6 @@ pub(crate) fn store_rr(fcb: *mut u8, record: u32, recsiz: usize) {
     }
 }
 
-fn get_rr(fcb: *const u8, recsiz: usize) -> u32 {
-    unsafe {
-        let lo = u16::from_le_bytes([*fcb.add(FCB_RR), *fcb.add(FCB_RR + 1)]);
-        let mut hi = u16::from_le_bytes([*fcb.add(FCB_RR + 2), *fcb.add(FCB_RR + 3)]);
-        if recsiz >= 64 {
-            hi &= 0xff;
-        }
-        (u32::from(hi) << 16) | u32::from(lo)
-    }
-}
-
 /// AH=0Fh. Record size 0 becomes 128. AL is 0 or 0xFF.
 pub fn open(fcb: *mut u8) -> u8 {
     let (base, _) = split_mut(fcb);
@@ -125,51 +114,13 @@ pub fn open(fcb: *mut u8) -> u8 {
     0
 }
 
-/// AH=16h. An existing file is truncated. A new file is an owned root slot.
-pub fn create(fcb: *mut u8) -> u8 {
-    let name = packed_name(fcb);
-    if let Some(index) = search::find_packed(&name) {
-        let mut ent = search::slot(index);
-        if ent.dir {
-            return 0xff;
-        }
-        ent.owned = true;
-        ent.data = [0; 32];
-        ent.data_len = 0;
-        ent.size = 0;
-        search::set_slot(index, ent);
-    } else {
-        let Some(index) = search::alloc_slot() else {
-            return 0xff;
-        };
-        let mut ent = search::slot(index);
-        ent.name = name;
-        ent.live = true;
-        ent.dir = false;
-        ent.owned = true;
-        ent.attr = 0x20;
-        ent.data = [0; 32];
-        ent.data_len = 0;
-        ent.size = 0;
-        search::set_slot(index, ent);
-    }
-    open(fcb)
-}
-
 /// AH=14h. One record from `GetExtent` into the DTA.
 pub fn seq_read(fcb: *mut u8) -> u8 {
     let (base, _) = split_mut(fcb);
-    transfer(fcb, extent_record(base), true)
+    transfer(fcb, extent_record(base))
 }
 
-/// AH=21h. One record from the random-record field.
-pub fn random_read(fcb: *mut u8) -> u8 {
-    let (base, _) = split_mut(fcb);
-    let rec = rec_size(base);
-    transfer(fcb, get_rr(base, rec), false)
-}
-
-fn transfer(fcb: *mut u8, record: u32, sequential: bool) -> u8 {
+fn transfer(fcb: *mut u8, record: u32) -> u8 {
     let (base, _) = split_mut(fcb);
     let rec = rec_size(base);
     let name = packed_name(fcb);
@@ -185,12 +136,7 @@ fn transfer(fcb: *mut u8, record: u32, sequential: bool) -> u8 {
             i += 1;
         }
     }
-    let next = record + 1;
-    if sequential {
-        set_extent(base, next);
-    } else {
-        store_rr(base, next, rec);
-    }
+    set_extent(base, record + 1);
     if got < rec {
         FTRIM | FEOF
     } else {

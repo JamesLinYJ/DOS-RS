@@ -152,7 +152,12 @@ test -n "$disk"
             mode = path.lstat().st_mode
             data = os.fsencode(os.readlink(path)) if path.is_symlink() else path.read_bytes() if path.is_file() else b""
             entries[name] = (mode, data)
-        script += f'mkfs.btrfs -f -n {args.nodesize} -m single -d single -L DOSRSROOT -r /seed "$disk"\n'
+        # The formatter VM copies an image to the output disk. Formatting
+        # the regular file avoids registering a filesystem inside that VM.
+        script += f"""truncate -s {args.mib}M /tmp/root.img
+mkfs.btrfs -f -n {args.nodesize} -m single -d single -L DOSRSROOT -r /seed /tmp/root.img
+dd if=/tmp/root.img of="$disk" bs=1M
+"""
     else:
         if not disk.is_file():
             raise FileNotFoundError(disk)

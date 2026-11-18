@@ -31,7 +31,7 @@ struct Pair {
     pollers: poll::Subscribers,
 }
 
-pub(super) struct End {
+pub(in crate::posix) struct End {
     side: usize,
     pub(super) records: bool,
     pair: Arc<KernelCell<Pair>>,

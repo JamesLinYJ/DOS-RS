@@ -27,6 +27,7 @@ impl Xms {
             local: 0,
         }
     }
+    #[cfg(target_os = "none")]
     pub fn descriptors(&self) -> impl Iterator<Item = Option<(u8, usize, usize)>> + '_ {
         self.blocks
             .iter()

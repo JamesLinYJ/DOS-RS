@@ -1043,19 +1043,6 @@ impl Filesystem {
     }
 }
 
-impl Filesystem {
-    /// Every tree block reachable from the superblock whose address lies
-    /// in `range`, in address order: what a relocation emptying a
-    /// metadata group must copy out of it (#578).
-    pub(crate) fn tree_blocks_in(&self, range: core::ops::Range<u64>) -> Result<Vec<u64>> {
-        Ok(self
-            .placements()?
-            .into_keys()
-            .filter(|at| range.contains(at))
-            .collect())
-    }
-}
-
 use crate::fs::{root_item, ROOT_ITEM_KEY};
 
 impl Filesystem {
