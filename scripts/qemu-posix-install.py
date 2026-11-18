@@ -73,9 +73,10 @@ def archive_disk(disk, destination):
     return original.hexdigest()
 
 
-def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None):
+def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None,*,shell_sweep=True):
     installer=module("posix-install-image")
     shell=module("qemu-user-shell")
+    shell_sweep = volume is None and shell_sweep
     mode="bios" if arch=="i686" else "uefi"
     disk=work/"system.img"
     data=work/"tree"
@@ -101,7 +102,8 @@ def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None):
         data.mkdir()
         reference = shell.script_fixture(data, work)
         expected.update(reference)
-        expected.update({"cold.out": reference["here.out"], "cold.rc": reference["here.rc"]})
+        if shell_sweep:
+            expected.update({"cold.out": reference["here.out"], "cold.rc": reference["here.rc"]})
         if std_tools:
             expected.update({"encoded.txt": base64.encodebytes(shell.DATA), "decoded.bin": shell.DATA})
         (data/"a.txt").write_bytes(shell.DATA)
@@ -127,13 +129,14 @@ def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None):
             subprocess.run(["mcopy", "-i", f"{disk}@@{fat[0]*512}", probe, "::" + name], check=True)
     (proof/(arch+"-inputs.json")).write_text(json.dumps(inputs,indent=2)+"\n")
     serial=proof/(arch+"-install.serial")
-    shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,grammar=volume is None,std_tools=std_tools)
+    shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,
+                   grammar=shell_sweep,std_tools=std_tools)
     second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)
     try:
         second.wait(b"A:\\> ", timeout=180)
         second.command("sh",prompt=b"$ ")
         second.command("cat count.txt",prompt=b"$ ",expect=b"21254\r\n")
-        if volume is None:
+        if shell_sweep:
             second.command("sh here.sh > cold.out", prompt=b"$ ", timeout=300)
             second.command("echo $? > cold.rc", prompt=b"$ ")
         second.command("exit",prompt=b"A:\\> ")
@@ -178,7 +181,7 @@ def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None):
                           "matches":actual==reference_bytes}
             (proof/(arch+"-"+name)).write_bytes(actual)
         if (restored/"gone.tmp").exists():raise ValueError("unlinked file survived")
-        (proof/(arch+".json")).write_text(json.dumps({"arch":arch,"kernel_bits":32 if arch=="i686" else 64,"firmware":mode,"files":result,
+        (proof/(arch+".json")).write_text(json.dumps({"arch":arch,"kernel_bits":32 if arch=="i686" else 64,"firmware":mode,"shell_sweep":shell_sweep,"files":result,
                 "qemu":subprocess.check_output(["qemu-system-"+qemu.ARCH[arch][0],"--version"], text=True).splitlines()[0],
                 "partitions":{hex(k):v for k,v in table.items()},"inputs":inputs,
                 "fixture_sha256":fixture_sha256,"passed":not mismatches,

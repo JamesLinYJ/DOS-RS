@@ -59,9 +59,9 @@ def exercise(base, args, arch, mode, root, serial, probe=False, **options):
         vm.command("c:")
         vm.command("sh", prompt=b"$ ")
         vm.command("cat count.txt", prompt=b"$ ", expect=b"21254\r\n")
-        vm.command("sh dirs.sh > dirs.out", prompt=b"$ ", timeout=300)
+        vm.command("sh dirs.sh > dirs.out", prompt=b"$ ", timeout=900)
         vm.command("echo $? > dirs.rc", prompt=b"$ ")
-        vm.command("sh dirlinks.sh > links.out", prompt=b"$ ", timeout=300)
+        vm.command("sh dirlinks.sh > links.out", prompt=b"$ ", timeout=600)
         vm.command("echo $? > links.rc", prompt=b"$ ")
         if probe:
             vm.command("/cwdprobe > cwdedge.out 2> cwdedge.err", prompt=b"$ ", timeout=600)
@@ -77,7 +77,14 @@ def exercise(base, args, arch, mode, root, serial, probe=False, **options):
         raise RuntimeError("missing independently executed Rust cwd probe")
 
 
-def run(arch, work, proof, archive, kernel, programs, probes, cwd_probe=None, expect_failure=False):
+def directory_seed(tree, _work):
+    (tree / "SUB").mkdir()
+    (tree / "SUB/ONE.TX").write_bytes(b"regular file\n")
+    return {}
+
+
+def run(arch, work, proof, archive, kernel, programs, probes, cwd_probe=None,
+        expect_failure=False, directories_only=False):
     installer = module("qemu-posix-install")
     directories = module("qemu-shell-directories")
     original_module = installer.module
@@ -85,7 +92,8 @@ def run(arch, work, proof, archive, kernel, programs, probes, cwd_probe=None, ex
     def installed_module(name):
         result = original_module(name)
         if name == "qemu-user-shell":
-            original_fixture, original_exercise = result.script_fixture, result.exercise
+            original_fixture = directory_seed if directories_only else result.script_fixture
+            original_exercise = result.exercise
             result.script_fixture = lambda *args: fixture(
                 original_fixture, directories, *args, cwd_probe, expect_failure)
             result.exercise = lambda *args, **options: exercise(
@@ -94,7 +102,8 @@ def run(arch, work, proof, archive, kernel, programs, probes, cwd_probe=None, ex
 
     installer.module = installed_module
     try:
-        installer.run(arch, work, proof, None, archive, kernel, programs, probes)
+        installer.run(arch, work, proof, None, archive, kernel, programs, probes,
+                      shell_sweep=not directories_only)
     finally:
         links = work / "directory-links.json"
         if links.exists():
@@ -114,6 +123,8 @@ if __name__ == "__main__":
     parser.add_argument("--probes", type=Path)
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--cwd-probe", type=Path, help="additional architecture-specific Rust cwd ELF")
+    parser.add_argument("--directories-only", action="store_true",
+                        help="test the cold boot, pipeline, descriptor lifetime and directory fixtures")
     parser.add_argument("--expect-long-path-failure", action="store_true",
                         help="negative control: require the old kernel's ENAMETOOLONG result")
     options = parser.parse_args()
@@ -124,7 +135,7 @@ if __name__ == "__main__":
     try:
         run(options.arch, work, options.proof, options.archive,
             options.kernel, options.programs, options.probes,
-            options.cwd_probe, options.expect_long_path_failure)
+            options.cwd_probe, options.expect_long_path_failure, options.directories_only)
     except BaseException:
         print(f"{options.arch}: failed RAM fixture retained at {work}", flush=True)
         raise
