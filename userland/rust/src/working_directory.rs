@@ -5,7 +5,34 @@ use core::ffi::CStr;
 
 unsafe extern "C" {
     fn chdir(path: *const i8) -> i32;
+    fn fchdir(fd: i32) -> i32;
     fn getcwd(buffer: *mut i8, size: usize) -> *mut i8;
+}
+
+pub struct SavedDirectory(i32);
+
+impl SavedDirectory {
+    pub fn current() -> Result<Self, i32> {
+        const O_SEARCH: i32 = 0x200000;
+        const O_DIRECTORY: i32 = 0x10000;
+        const O_CLOEXEC: i32 = 0x80000;
+        crate::open(c".", O_SEARCH | O_DIRECTORY | O_CLOEXEC).map(Self)
+    }
+
+    pub fn restore(&self) -> Result<(), i32> {
+        // The descriptor pins the directory even if its name changes.
+        if unsafe { fchdir(self.0) } < 0 {
+            Err(crate::errno())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for SavedDirectory {
+    fn drop(&mut self) {
+        let _ = crate::close(self.0);
+    }
 }
 
 pub fn change(path: &CStr) -> Result<(), i32> {

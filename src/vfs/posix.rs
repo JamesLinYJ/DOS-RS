@@ -53,11 +53,17 @@ pub(crate) fn pin_directory(dir: PosixDir) -> Result<File> {
     }
     btrfs::posix::pin_directory(dir)
 }
-pub(crate) fn getcwd(dir: PosixDir) -> Result<Vec<u8>> {
+/// Reconstruct the physical name, including the NUL copied to userspace.
+pub(crate) fn getcwd(dir: PosixDir, size: usize) -> Result<Vec<u8>> {
     if let PosixDir::Mount(node) = dir {
-        return Ok(node.path());
+        let mut path = node.path();
+        if path.len() >= size {
+            return Err(Errno::Range);
+        }
+        path.push(0);
+        return Ok(path);
     }
-    btrfs::posix::getcwd(dir)
+    btrfs::posix::getcwd(dir, size)
 }
 pub(crate) fn chdir(
     dos: Directories,

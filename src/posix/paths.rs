@@ -142,11 +142,7 @@ pub(super) fn dispatch(
                 Ok(0)
             }
             Call::Getcwd => {
-                let mut path = fs::getcwd(dir).map_err(errno)?;
-                path.push(0);
-                if path.len() > b {
-                    return Err(-34);
-                }
+                let path = fs::getcwd(dir, b).map_err(errno)?;
                 image.write(a, &path).map_err(|_| -14isize)?;
                 Ok(path.len())
             }

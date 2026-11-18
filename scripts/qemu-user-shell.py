@@ -53,7 +53,9 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("echo $? > here.rc", prompt=b"$ ")
             vm.command("sh getopts.sh > opts.out", prompt=b"$ ", timeout=180)
             vm.command("echo $? > opts.rc", prompt=b"$ ")
-            vm.command("sh vars.sh > vars.out", prompt=b"$ ", timeout=300 if dual_volume else 180)
+            # This suite repeatedly starts a new shell and commits its result to
+            # Btrfs. Software-emulated SMP guests can take over five minutes.
+            vm.command("sh vars.sh > vars.out", prompt=b"$ ", timeout=900 if dual_volume else 180)
             vm.command("echo $? > vars.rc", prompt=b"$ ")
             vm.command("sh source.sh > source.out", prompt=b"$ ", timeout=300)
             vm.command("echo $? > source.rc", prompt=b"$ ")

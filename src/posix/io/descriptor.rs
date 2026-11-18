@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 pub(in crate::posix) const CLOFORK: usize = 0x04000000;
 pub(in crate::posix) const CLOEXEC: usize = 0x80000;
+pub(in crate::posix) const SEARCH: usize = 0x200000;
 const APPEND: u32 = 0x400;
 pub(in crate::posix) const NONBLOCK: u32 = 0x800;
 pub(in crate::posix) struct Shared {
@@ -29,6 +30,7 @@ impl Shared {
             Description::Output(_) => 1,
             Description::Pipe(end) => u32::from(!end.read_end),
             Description::Socket(_) => 2,
+            Description::SearchDirectory(_) => SEARCH as u32,
             Description::File { access, append, .. } => {
                 (match access {
                     Access::Read => 0,
@@ -62,7 +64,7 @@ impl ProcessContext {
             return Ok(self.directory);
         }
         match &*self.get(fd)?.borrow() {
-            Description::File { object, .. } => object.directory(),
+            Description::File { object, .. } | Description::SearchDirectory(object) => object.directory(),
             _ => Err(Errno::NotDirectory),
         }
     }
@@ -135,6 +137,9 @@ impl ProcessContext {
             4 => {
                 let status = (arg as u32) & (APPEND | NONBLOCK);
                 let mut d = h.borrow();
+                if matches!(*d, Description::SearchDirectory(_)) {
+                    return Err(Errno::BadFd);
+                }
                 if let Description::File { append, .. } = &mut *d {
                     *append = status & APPEND != 0;
                 }
@@ -205,7 +210,7 @@ impl ProcessContext {
     }
     pub(in crate::posix) fn file_capacity(&self, fd: usize) -> Result<vfs::capacity::Capacity> {
         match &*self.get(fd)?.borrow() {
-            Description::File { object, .. } => object.capacity(),
+            Description::File { object, .. } | Description::SearchDirectory(object) => object.capacity(),
             _ => Err(Errno::Invalid),
         }
     }

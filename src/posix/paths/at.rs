@@ -31,8 +31,22 @@ pub(super) fn open(
     mode: u32,
 ) -> Result<usize> {
     let path = string(image, addr)?;
-    let flags = open_flags(bits)?;
     let dir = p.at(fd, &path).map_err(errno)?;
+    use crate::posix::io::descriptor::{CLOEXEC, CLOFORK, SEARCH};
+    if bits & SEARCH != 0 {
+        if bits & !(SEARCH | 0x10000 | 0x20000 | CLOEXEC | CLOFORK) != 0 {
+            return Err(-22);
+        }
+        if bits & 0x20000 != 0
+            && p.metadata_at(dir, &path, false).map_err(errno)?.mode & 0o170000 == 0o120000
+        {
+            return Err(-40);
+        }
+        let new = p.open_search_directory(dir, &path).map_err(errno)?;
+        p.set_open_flags(new, bits);
+        return Ok(new);
+    }
+    let flags = open_flags(bits)?;
     if bits & 0x10000 != 0 && flags.create {
         return Err(-22);
     }

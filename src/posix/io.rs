@@ -17,7 +17,7 @@ mod terminal;
 pub(super) use terminal::{ReadClock, Terminal};
 
 #[path = "io/descriptor.rs"]
-mod descriptor;
+pub(super) mod descriptor;
 #[path = "io/record.rs"]
 pub(super) mod record;
 pub(super) type Handle = Arc<descriptor::Shared>;
@@ -26,6 +26,7 @@ pub(super) enum Description {
     Output(Arc<KernelCell<Terminal>>),
     Pipe(pipe::End),
     Socket(socket::End),
+    SearchDirectory(File),
     File {
         object: File,
         access: Access,
@@ -289,6 +290,17 @@ impl ProcessContext {
     pub(super) fn open_mode(&mut self, path: &[u8], flags: Open, mode: u32) -> Result<Fd> {
         self.open_at(self.directory, path, flags, mode)
     }
+    pub(super) fn open_search_directory(
+        &mut self,
+        dir: vfs::posix::PosixDir,
+        path: &[u8],
+    ) -> Result<Fd> {
+        let fd = self.available()?;
+        let directory = vfs::posix::chdir(self.cwd, dir, path, self.credentials())?;
+        let object = vfs::posix::pin_directory(directory)?;
+        self.set(fd, handle(Description::SearchDirectory(object)));
+        Ok(fd)
+    }
     pub(super) fn open_at(
         &mut self,
         dir: vfs::posix::PosixDir,
@@ -371,7 +383,9 @@ impl ProcessContext {
     pub(super) fn metadata(&self, fd: Fd) -> Result<vfs::posix::Metadata> {
         let desc = self.get(fd)?.borrow();
         let mode = match &*desc {
-            Description::File { object, .. } => return object.metadata(),
+            Description::File { object, .. } | Description::SearchDirectory(object) => {
+                return object.metadata();
+            }
             Description::Pipe(_) => 0o010600,
             Description::Socket(_) => 0o140777,
             _ => 0o020666,
@@ -384,6 +398,9 @@ impl ProcessContext {
     }
     pub(super) fn direntry(&self, fd: Fd, len: usize) -> Result<Vec<u8>> {
         let mut desc = self.get(fd)?.borrow();
+        if matches!(*desc, Description::SearchDirectory(_)) {
+            return Err(Errno::BadFd);
+        }
         let Description::File { object, offset, .. } = &mut *desc else {
             return Err(Errno::NotDirectory);
         };
@@ -462,6 +479,7 @@ impl ProcessContext {
             Description::Pipe(end) => end.readiness(events, waker),
             Description::Socket(end) => end.readiness(events, waker),
             Description::File { .. } => Ok(events & (poll::READ | poll::WRITE)),
+            Description::SearchDirectory(_) => Ok(poll::INVALID),
         }
     }
     pub(super) fn poll_read(

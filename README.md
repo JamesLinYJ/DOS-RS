@@ -154,9 +154,11 @@ cat count.txt
 
 32 位和 64 位原生 Shell 已通过 `.`、`eval` 与嵌套 `return` 的脚本回归。脚本可在当前环境修改变量、函数、目录和参数，标准输入与脚本读取分别处理；特殊内置命令的重定向错误会终止非交互脚本。两端各 24 个停机文件逐字节一致，原有 17 个输出保持不变，另验证了 256 次重复载入、16 KiB 输入、作业控制及返回 DOS。可选 dot 参数采用 KornShell 的临时参数作用域。这批结果按 Issue 8 记录为部分通过，trap 等语义仍待补齐。[脚本执行用例](tests/user-shell/README.md)
 
-32 位和 64 位原生 Shell 的 `command` 已验证函数绕过、`-p` 默认搜索路径、`-v`/`-V` 查询、当前 Shell 的目录和参数修改，以及包装特殊内置命令后的错误恢复。显式 `exit` 仍会退出。两种内核的 FAT 回归各有 30 个停机文件逐字节一致，原有 24 个结果保持不变。内核执行目录返回 `EACCES`，PATH 会继续搜索后面的普通文件；无 shebang 的文本程序仍可通过 libc 回退到 `/bin/sh`。别名、locale 和链接错误的查询规则仍待补齐，这项记录为部分通过。[命令查询与执行用例](tests/user-shell/command.sh)
+32 位和 64 位原生 Shell 的 `command` 已验证函数绕过、`-p` 默认搜索路径、`-v`/`-V` 查询、当前 Shell 的目录和参数修改，以及包装特殊内置命令后的错误恢复。显式 `exit` 仍会退出。两种内核的 FAT 回归各有 30 个停机文件逐字节一致，原有 24 个结果保持不变。固定 `20036fa` 的对应二进制再从 Btrfs 安装盘冷启动，两边各有 33 个停机文件匹配，全部 30 个公共输出与 FAT 结果逐字节相同，Linux Btrfs 检查通过。内核执行目录返回 `EACCES`，PATH 会继续搜索后面的普通文件；无 shebang 的文本程序仍可通过 libc 回退到 `/bin/sh`。别名、locale 和链接错误的查询规则仍待补齐，这项记录为部分通过。[命令查询与执行用例](tests/user-shell/command.sh)
 
-原生 i686 BIOS 和 x86_64 UEFI 的 Shell 已分别冷启动验证 `PWD` 初始化、`HOME`/`OLDPWD`、`CDPATH`、`cd`/`pwd` 选项及目录错误处理。两边各有 32 个停机文件一致，原有 30 个结果逐字节不变；新增目录输出为相同的 69 行、1,383 字节，`fsck.fat` 通过。这批结果覆盖 FAT 上的目录行为，符号链接、权限、无名目录和输出失败恢复仍需单独验收；16 位 `COMMAND.COM` 使用前述原生 DOS 回归。[目录复测入口](scripts/qemu-shell-directories.py)
+原生 i686 BIOS 和 x86_64 UEFI 的 Shell 已分别冷启动验证 `PWD` 初始化、`HOME`/`OLDPWD`、`CDPATH`、`cd`/`pwd` 选项及目录错误处理。两边各有 32 个停机文件一致，原有 30 个结果逐字节不变；新增目录输出为相同的 69 行、1,383 字节，`fsck.fat` 通过。16 位 `COMMAND.COM` 使用前述原生 DOS 回归。[目录复测入口](scripts/qemu-shell-directories.py)
+
+在安装式 Btrfs 根卷上，两种宽位内核都运行了独立 Rust ELF。通过 18 层相对目录构造的物理路径长 4,346 字节。小缓冲区得到 `ERANGE`，足够大的缓冲区读回完整原名。当前目录被删除后，`getcwd` 返回 `ENOENT`。普通用户在仅有搜索权限的目录中运行 `cd -`，若标准输出已关闭，工作目录、`PWD` 和 `OLDPWD` 均保留原值。`pwd -P` 可以输出含非 UTF-8 字节的目录名。[客体测试程序](tests/native-cwd/src/lib.rs)
 
 在 i686 BIOS 和 x86_64 UEFI 上，原生 Shell 可以将 here-document（`<<` 和 `<<-`）作为程序输入。引号控制变量和命令展开，`<<-` 会移除行首制表符。两台 QEMU 都通过了 16,401 字节输入的关机读回。另在 `a3e57a6` 归档内核的 Btrfs 安装盘上装入新版 `/bin/sh`，冷启动后重新执行脚本，两个架构的输出及退出码均与参考 Shell 一致。[脚本用例](tests/user-shell/here.sh)
 

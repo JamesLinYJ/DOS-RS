@@ -1,7 +1,7 @@
 //! POSIX paths use byte names and inode-valued working directories.
 use super::{File, Mount, err, mounted};
 use crate::vfs::posix::{Attribute, Credentials, DirEntry, Metadata, PosixDir, ROOT_INODE, Times};
-use alloc::{collections::VecDeque, vec::Vec};
+use alloc::{collections::{BTreeSet, VecDeque}, vec::Vec};
 use dosrs_btrfs::{Error, inode::Inode};
 use dosrs_native_posix::{Errno, Open, Result};
 
@@ -212,28 +212,34 @@ pub(crate) fn pin_directory(dir: PosixDir) -> Result<super::super::File> {
         Ok(alloc::boxed::Box::new(File(inode, false)) as super::super::File)
     })
 }
-pub(crate) fn getcwd(cwd: PosixDir) -> Result<Vec<u8>> {
+pub(crate) fn getcwd(cwd: PosixDir, size: usize) -> Result<Vec<u8>> {
     mounted(|m| {
-        let mut path = VecDeque::new();
-        let mut len = 1;
+        if size < 2 {
+            return Err(Errno::Range);
+        }
+        // Build from the leaf, keeping the terminator in the buffer from the
+        // start. Only input pathnames are subject to PATH_MAX.
+        let mut path = alloc::vec![0];
+        let mut ancestors = BTreeSet::new();
         let mut ino = cwd.inode()?;
         while ino != ROOT_INODE {
-            let (parent, name) = m.fs.directory_parent(ino).map_err(err)?;
-            len += name.len() + 1;
-            if len > PATH_MAX {
-                return Err(Errno::NameTooLong);
+            if !ancestors.insert(ino) {
+                return Err(Errno::Io);
             }
-            path.push_front(name);
+            let (parent, name) = m.fs.directory_parent(ino).map_err(err)?;
+            if name.len() >= size - path.len() {
+                return Err(Errno::Range);
+            }
+            path.try_reserve(name.len() + 1).map_err(|_| Errno::NoMemory)?;
+            path.extend(name.into_iter().rev());
+            path.push(b'/');
             ino = parent;
         }
-        let mut out = alloc::vec![b'/'];
-        for name in path {
-            if out.len() > 1 {
-                out.push(b'/');
-            }
-            out.extend(name);
+        if path.len() == 1 {
+            path.push(b'/');
         }
-        Ok(out)
+        path.reverse();
+        Ok(path)
     })
 }
 pub(crate) fn capacity() -> Result<crate::vfs::capacity::Capacity> {

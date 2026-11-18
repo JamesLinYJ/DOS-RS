@@ -67,6 +67,18 @@ struct Options {
     first: usize,
 }
 
+impl Options {
+    // Status 1 under -Pe is reserved for a successful chdir followed by
+    // failure to determine the physical pathname.
+    fn change_error(&self) -> i32 {
+        if self.physical && self.require_physical {
+            2
+        } else {
+            1
+        }
+    }
+}
+
 fn options(args: &[String], change: bool) -> Result<Options, ()> {
     let mut result = Options::default();
     for arg in args {
@@ -98,8 +110,8 @@ fn failure(command: &str, path: &str, error: i32) -> i32 {
     1
 }
 
-fn print(command: &str, path: &str) -> i32 {
-    match write_all(1, format!("{path}\n").as_bytes()) {
+fn print(command: &str, path: &[u8]) -> i32 {
+    match write_all(1, path).and_then(|_| write_all(1, b"\n")) {
         Ok(()) => 0,
         Err(error) => failure(command, "output", error),
     }
@@ -133,12 +145,12 @@ impl Shell {
             diagnostic("pwd: invalid option or unexpected operand");
             return 2;
         };
-        let path = if options.physical {
-            physical()
-        } else {
-            self.logical_directory().map_or_else(physical, Ok)
-        };
-        match path {
+        if !options.physical
+            && let Some(logical) = self.logical_directory()
+        {
+            return print("pwd", logical.as_bytes());
+        }
+        match working_directory::current() {
             Ok(path) => print("pwd", &path),
             Err(error) => failure("pwd", "current directory", error),
         }
@@ -153,6 +165,10 @@ impl Shell {
             .get(options.first)
             .map_or(self.get("HOME"), String::as_str);
         let previous = operand == "-";
+        let failed = |what: &str, error| {
+            failure("cd", what, error);
+            options.change_error()
+        };
         let destination = if previous {
             self.get("OLDPWD")
         } else {
@@ -166,12 +182,12 @@ impl Shell {
             } else {
                 "cd: empty directory operand"
             });
-            return 1;
+            return options.change_error();
         }
         for name in ["PWD", "OLDPWD"] {
             if self.vars.get(name).is_some_and(|v| v.readonly) {
                 diagnostic(&format!("cd: {name}: readonly variable"));
-                return 1;
+                return options.change_error();
             }
         }
         let base = self.logical_directory().or_else(|| physical().ok());
@@ -199,7 +215,7 @@ impl Shell {
             };
             match canonical(&absolute) {
                 Ok(path) => Some(path),
-                Err(error) => return failure("cd", destination, error),
+                Err(error) => return failed(destination, error),
             }
         } else {
             None
@@ -218,10 +234,18 @@ impl Shell {
         };
         let path = match CString::new(path) {
             Ok(path) => path,
-            Err(_) => return failure("cd", destination, 22),
+            Err(_) => return failed(destination, 22),
+        };
+        let saved = if display {
+            match working_directory::SavedDirectory::current() {
+                Ok(directory) => Some(directory),
+                Err(error) => return failed("save working directory", error),
+            }
+        } else {
+            None
         };
         if let Err(error) = working_directory::change(&path) {
-            return failure("cd", destination, error);
+            return failed(destination, error);
         }
         let new = match logical.map_or_else(physical, Ok) {
             Ok(path) => path,
@@ -230,11 +254,19 @@ impl Shell {
             }
             Err(_) => return 0,
         };
-        // Readonly attributes were checked before changing the process cwd.
+        if let Some(saved) = saved
+            && print("cd", new.as_bytes()) != 0
+        {
+            if let Err(error) = saved.restore() {
+                return failed("restore working directory", error);
+            }
+            return options.change_error();
+        }
+        // Commit both variables only after any required output succeeded.
         if self.set("OLDPWD", &old).is_err() || self.set("PWD", &new).is_err() {
             return 1;
         }
         self.vars.get_mut("PWD").unwrap().exported = true;
-        if display { print("cd", &new) } else { 0 }
+        0
     }
 }

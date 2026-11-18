@@ -1241,7 +1241,7 @@ functions	getchar_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	ope
 functions	putc_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
 functions	putchar_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
 functions	getchar	base	functions/getchar.html#tag_17_204	open	open	
-functions	getcwd	base	functions/getcwd.html#tag_17_205	partial	partial	ports/musl/tests/files.c
+functions	getcwd	base	functions/getcwd.html#tag_17_205	partial	partial	tests/native-cwd/src/lib.rs
 functions	getdate	XSI	functions/getdate.html#tag_17_206	open	open	
 functions	getdelim	base	functions/getdelim.html#tag_17_207	open	open	
 functions	getline	base	functions/getdelim.html#tag_17_207	open	open	
