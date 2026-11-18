@@ -1,0 +1,93 @@
+[package]
+name = "dosrs_user"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[features]
+alloc = []
+
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+
+[[example]]
+name = "cat"
+path = "tools/cat.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "wc"
+path = "tools/wc.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "echo"
+path = "tools/echo.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "kill"
+path = "tools/kill.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "true"
+path = "tools/true.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "false"
+path = "tools/false.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "dirname"
+path = "tools/dirname.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "basename"
+path = "tools/basename.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "head"
+path = "tools/head.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "tail"
+path = "tools/tail.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "link"
+path = "tools/link.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "unlink"
+path = "tools/unlink.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "mkdir"
+path = "tools/mkdir.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]
+
+[[example]]
+name = "rmdir"
+path = "tools/rmdir.rs"
+required-features = ["alloc"]
+crate-type = ["staticlib"]

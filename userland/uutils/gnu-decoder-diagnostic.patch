@@ -1,0 +1,91 @@
+--- a/src/uu/base32/src/base_common.rs
++++ b/src/uu/base32/src/base_common.rs
+@@ -730,5 +730,5 @@
+                 continue;
+             } else {
+-                return Err(USimpleError::new(1, "error: invalid input"));
++                return Err(USimpleError::new(1, "invalid input"));
+             }
+ 
+@@ -779,5 +779,5 @@
+ 
+             if had_invalid_tail {
+-                return Err(USimpleError::new(1, "error: invalid input"));
++                return Err(USimpleError::new(1, "invalid input"));
+             }
+         }
+@@ -842,5 +842,5 @@
+                         }
+                     }
+-                    return Err(USimpleError::new(1, "error: invalid input"));
++                    return Err(USimpleError::new(1, "invalid input"));
+                 }
+ 
+@@ -894,5 +894,5 @@
+ 
+             if had_invalid_tail {
+-                return Err(USimpleError::new(1, "error: invalid input"));
++                return Err(USimpleError::new(1, "invalid input"));
+             }
+         }
+--- a/src/uucore/src/lib/features/encoding.rs
++++ b/src/uucore/src/lib/features/encoding.rs
+@@ -83,9 +83,9 @@
+ 
+                     if segment_len > remaining.len() {
+-                        return Err(USimpleError::new(1, "error: invalid input"));
++                        return Err(USimpleError::new(1, "invalid input"));
+                     }
+ 
+                     Self::decode_with_standard(&remaining[..segment_len], output)
+-                        .map_err(|_| USimpleError::new(1, "error: invalid input"))?;
++                        .map_err(|_| USimpleError::new(1, "invalid input"))?;
+ 
+                     start += segment_len;
+@@ -101,5 +101,5 @@
+ 
+                     decoder(remaining, output)
+-                        .map_err(|_| USimpleError::new(1, "error: invalid input"))?;
++                        .map_err(|_| USimpleError::new(1, "invalid input"))?;
+ 
+                     break;
+@@ -110,5 +110,5 @@
+         } else {
+             Self::decode_with_no_pad(input, output)
+-                .map_err(|_| USimpleError::new(1, "error: invalid input"))
++                .map_err(|_| USimpleError::new(1, "invalid input"))
+         };
+ 
+@@ -288,5 +288,5 @@
+                 .iter()
+                 .position(|&b| b == byte)
+-                .ok_or_else(|| USimpleError::new(1, "error: invalid input"))?;
++                .ok_or_else(|| USimpleError::new(1, "invalid input"))?;
+ 
+             // Multiply by 58 and add digit
+@@ -419,9 +419,9 @@
+     fn decode_into_vec(&self, input: &[u8], output: &mut Vec<u8>) -> UResult<()> {
+         if input.first() == Some(&b'#') {
+-            return Err(USimpleError::new(1, "error: invalid input"));
++            return Err(USimpleError::new(1, "invalid input"));
+         }
+ 
+         let decode_result =
+-            z85::decode(input).map_err(|_de| USimpleError::new(1, "error: invalid input"))?;
++            z85::decode(input).map_err(|_de| USimpleError::new(1, "invalid input"))?;
+         output.extend_from_slice(&decode_result);
+ 
+@@ -465,5 +465,5 @@
+             .encoding
+             .decode_len(input.len())
+-            .map_err(|_de| USimpleError::new(1, "error: invalid input"))?;
++            .map_err(|_de| USimpleError::new(1, "invalid input"))?;
+ 
+         let output_len = output.len();
+@@ -474,5 +474,5 @@
+             .encoding
+             .decode_mut(input, &mut (output[output_len..]))
+-            .map_err(|_de| USimpleError::new(1, "error: invalid input"))?;
++            .map_err(|_de| USimpleError::new(1, "invalid input"))?;
+         // See:
+         // https://docs.rs/data-encoding/latest/data_encoding/struct.Encoding.html#method.decode_mut

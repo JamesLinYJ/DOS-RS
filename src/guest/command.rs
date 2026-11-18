@@ -82,6 +82,29 @@ pub(super) fn invoke(cpu: &CpuState, ram: &mut GuestRam, session: &mut Session) 
     execute(&line[..length], ram, session, 0, true);
 }
 
+fn launch_native(line: &[u8], session: &mut Session) -> bool {
+    use crate::tasks::{self, Command};
+    match tasks::launch(
+        session.terminal,
+        session.scheduled,
+        line,
+        disk::directories(),
+    ) {
+        Command::Unknown => false,
+        Command::Started => true,
+        Command::Exited(code) => {
+            session.last_code = u16::from(code);
+            true
+        }
+        Command::Failed(message) => {
+            crate::puts(message);
+            crate::puts("\n");
+            session.last_code = 2;
+            true
+        }
+    }
+}
+
 pub(super) fn execute(
     line: &[u8],
     ram: &mut GuestRam,
@@ -92,26 +115,6 @@ pub(super) fn execute(
     let line = line.trim_ascii();
     if line.is_empty() || depth > 4 {
         return;
-    }
-    use crate::tasks::{self, Command};
-    match tasks::launch(
-        session.terminal,
-        session.scheduled,
-        line,
-        disk::directories(),
-    ) {
-        Command::Unknown => {}
-        Command::Started => return,
-        Command::Exited(code) => {
-            session.last_code = u16::from(code);
-            return;
-        }
-        Command::Failed(message) => {
-            crate::puts(message);
-            crate::puts("\n");
-            session.last_code = 2;
-            return;
-        }
     }
     let (verb, rest) = split(line);
     if verb.len() == 2 && verb[1] == b':' && rest.is_empty() {
@@ -197,6 +200,8 @@ pub(super) fn execute(
         );
     } else if verb.eq_ignore_ascii_case(b"SET") {
         assign(rest, &mut session.environment);
+    } else if launch_native(line, session) {
+        return;
     } else if let Some((dir, mut file)) = disk::path_name(verb) {
         if !verb.contains(&b'.') {
             for ext in [b"COM", b"EXE", b"BAT"] {

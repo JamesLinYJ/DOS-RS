@@ -2,6 +2,7 @@
 #define DOSRS_ERRNO_H
 int *__dos_errno_location(void);
 #define errno (*__dos_errno_location())
+#define EPERM 1
 #define ENOENT 2
 #define ESRCH 3
 #define EAGAIN 11
@@ -11,6 +12,7 @@ int *__dos_errno_location(void);
 #define EACCES 13
 #define EFAULT 14
 #define EEXIST 17
+#define EXDEV 18
 #define ENOTDIR 20
 #define EISDIR 21
 #define EINVAL 22
@@ -22,6 +24,9 @@ int *__dos_errno_location(void);
 #define EPIPE 32
 #define EDEADLK 35
 #define ENAMETOOLONG 36
+#define ERANGE 34
+#define ENOTEMPTY 39
+#define ELOOP 40
 #define ENOSYS 38
 #define ENOTSUP 95
 #endif

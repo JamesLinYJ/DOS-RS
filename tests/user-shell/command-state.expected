@@ -1,0 +1,32 @@
+declare:two words:two words:/home/space name/path
+exported:two words:two words
+prefix:outside
+eval:outside:inside
+export-prefix:outside:value
+source-prefix:outside:inside
+function-return:23
+command-function:echo shadowed
+restored
+no-operand:0
+delimiter-only:0
+piped
+background
+permanent
+replaced
+exit:29
+eval-exit:31
+dot-exit:39
+/bin/cat
+query-prefix-restored
+disk-command
+absolute-path
+empty-path
+no-cwd-fallback
+directory-rejected
+directory-exec:126
+missing-exec:127
+empty-exec:127
+keyword-exec:127
+option-as-name:127
+/bin/cat
+disk-command

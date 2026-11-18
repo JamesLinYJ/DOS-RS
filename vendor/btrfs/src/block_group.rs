@@ -160,7 +160,7 @@ impl Filesystem {
     pub fn block_groups(&self) -> Result<Vec<BlockGroup>> {
         let root = self.tree_root(self.block_group_tree_id())?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
 
         let mut out = Vec::new();
         tree.for_each(root, &mut |key: &DiskKey, data: &[u8]| {
@@ -282,7 +282,7 @@ impl Filesystem {
     fn allocated_by_group(&self, groups: &[BlockGroup]) -> Result<Vec<Vec<FreeExtent>>> {
         let root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         let nodesize = self.sb.nodesize as u64;
 
         let mut out = vec![Vec::new(); groups.len()];
@@ -343,7 +343,7 @@ impl Filesystem {
             return Ok(None);
         };
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         let sectorsize = self.sb.sectorsize as u64;
 
         let mut info = None;
@@ -445,7 +445,7 @@ impl Filesystem {
     pub fn for_each_extent_item(&self, visit: &mut dyn FnMut(&DiskKey, &[u8])) -> Result<()> {
         let root = self.tree_root(objectid::EXTENT_TREE)?;
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         tree.for_each(root, &mut |key: &DiskKey, data: &[u8]| {
             visit(key, data);
             Ok(true)
@@ -477,7 +477,7 @@ impl Filesystem {
         visit: &mut dyn FnMut(&DiskKey, &[u8]),
     ) -> Result<()> {
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         tree.for_each(root, &mut |key: &DiskKey, data: &[u8]| {
             visit(key, data);
             Ok(true)
@@ -493,7 +493,7 @@ impl Filesystem {
     /// learns the tree is absent.
     pub(crate) fn tree_root(&self, objectid: u64) -> Result<u64> {
         let reader = self.pool_reader();
-        let tree = reader.tree();
+        let tree = reader.cached_tree();
         // `required_root_item_target`, not `root_item_target` directly:
         // this function's own contract, documented above and on
         // `tree_root_public`, is that absence is `Error::BadSuperblock`.
@@ -550,19 +550,10 @@ impl Filesystem {
     /// reference and moving the group's `used`, which is the next piece
     /// of work and not this one.
     ///
-    /// It also does not allocate a new block group when every existing
-    /// one is full; it reports that instead. A group a relocation is
-    /// emptying is never offered (#574).
-    ///
-    /// # Errors
-    ///
-    /// [`Error::UnsupportedFeature`] when no metadata block group has a
-    /// free run long enough, naming how much was free — a caller that
-    /// needs to grow the filesystem needs to know it is full, not that
-    /// something went wrong.
+    /// Reports `NoSpace` when the existing writable metadata groups have no usable tree block.
+    /// A group a relocation is emptying is never offered.
     pub fn find_metadata_block(&self) -> Result<u64> {
         let nodesize = self.sb.nodesize as u64;
-        let mut best_free = 0u64;
 
         // One walk of the extent tree for every group, rather than one
         // per group.
@@ -578,7 +569,6 @@ impl Filesystem {
         groups.sort_by_key(|g| self.on_leaving_device(g));
         for runs in self.free_extents_by_group(&groups)? {
             for run in runs {
-                best_free = best_free.max(usable_in(run, nodesize));
                 let Some(mut at) = place_in_run(run, nodesize) else {
                     continue;
                 };
@@ -591,11 +581,7 @@ impl Filesystem {
             }
         }
 
-        Err(Error::UnsupportedFeature(format!(
-            "no metadata block group has {nodesize} contiguous bytes aligned to a tree \
-             block; the longest usable run is {best_free}. Allocating a new block group \
-             is not implemented"
-        )))
+        Err(Error::NoSpace)
     }
 }
 
@@ -648,9 +634,7 @@ impl Filesystem {
     ///
     /// # Errors
     ///
-    /// [`Error::UnsupportedFeature`] when some length does not fit in
-    /// any data group's free space. Allocating a new block group is not
-    /// implemented.
+    /// [`Error::DataGroupFull`] for an extent that needs a new data group.
     pub(crate) fn find_data_extents(&self, lens: &[u64]) -> Result<Vec<u64>> {
         let groups: Vec<BlockGroup> = self
             .block_groups()?
@@ -717,12 +701,35 @@ impl Filesystem {
                     continue 'next;
                 }
             }
-            return Err(Error::UnsupportedFeature(format!(
-                "no data block group has {len} contiguous free bytes clear of the superblock \
-                 copies; allocating a new block group is not implemented"
-            )));
+            return Err(Error::DataGroupFull(len));
         }
         Ok(out)
+    }
+
+    /// Bytes currently usable for file data in writable groups. Superblock stripe rows are reserved.
+    pub fn available_data_bytes(&self) -> Result<u64> {
+        if !self.is_writable() {
+            return Ok(0);
+        }
+        let groups: Vec<_> = self.block_groups()?.into_iter().filter(|g| {
+            g.holds_data() && !g.holds_metadata() && self.block_group_is_writable(g)
+        }).collect();
+        let mut bytes = 0u64;
+        for (group, runs) in groups.iter().zip(self.free_extents_by_group(&groups)?) {
+            let chunk = self.map.chunk_for(group.start).ok_or(Error::UnmappedLogical(group.start))?;
+            let row = chunk.stripe_len.max(1);
+            for run in runs {
+                let mut start = run.start;
+                while start < run.end() {
+                    let len = (row - (start - chunk.logical) % row).min(run.end() - start);
+                    if !self.on_superblock_copy(start, len)? {
+                        bytes = bytes.saturating_add(len);
+                    }
+                    start += len;
+                }
+            }
+        }
+        Ok(bytes.saturating_add(self.expandable_data_bytes()?))
     }
 
     /// Where the first superblock copy's stripe row inside
@@ -748,15 +755,6 @@ impl Filesystem {
         }
         Ok(None)
     }
-}
-
-/// How much of a free run is usable once alignment is paid for.
-///
-/// A run starting mid-block loses the remainder of that block, so the
-/// usable length is not the run's length.
-fn usable_in(run: FreeExtent, nodesize: u64) -> u64 {
-    run.end()
-        .saturating_sub(run.start.next_multiple_of(nodesize))
 }
 
 /// Where in a free run a tree block goes, if it fits.

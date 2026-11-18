@@ -1,6 +1,6 @@
 //! Parse native pipelines before opening any output files.
 use alloc::{string::String, vec::Vec};
-use dosrs_native_posix::{Open, Program};
+use dosrs_native_posix::Open;
 
 enum Token {
     Word(String),
@@ -52,6 +52,16 @@ fn tokenize(line: &str) -> Result<Vec<Token>, &'static str> {
     Ok(tokens)
 }
 
+pub(super) fn shell_args(line: &str) -> Result<Vec<String>, &'static str> {
+    tokenize(line)?
+        .into_iter()
+        .map(|token| match token {
+            Token::Word(word) => Ok(word),
+            _ => Err("pass the command to sh -c inside quotes"),
+        })
+        .collect()
+}
+
 pub(super) struct Stage {
     pub program: super::Native,
     pub argv: Vec<String>,
@@ -96,12 +106,20 @@ pub(super) fn parse(line: &str, cwd: crate::vfs::Directories) -> Result<Vec<Stag
         if stages.len() == 32 {
             return Err("too many pipeline stages");
         }
-        let program = if let Some(p) = Program::lookup(name) {
-            super::Native::Builtin(p)
+        let program = if name == "fdcheck" {
+            super::Native::FdCheck
         } else if name.to_ascii_lowercase().ends_with(".elf") {
             super::Native::Disk(super::executable::Executable::load(cwd, name, &argv)?)
         } else {
-            return Err("unknown native program");
+            let (file, _) = super::find_utility(cwd, name).map_err(|e| e.message())?;
+            super::Native::Disk(super::executable::Executable::from_file(
+                file,
+                &argv,
+                &[],
+                0,
+                0,
+                dosrs_native_exec::STACK_MAX,
+            )?)
         };
         stages.push(Stage {
             program,

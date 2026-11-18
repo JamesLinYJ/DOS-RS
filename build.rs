@@ -56,6 +56,39 @@ fn main() {
         }
         None => seed,
     };
+    // Explicit guest images belong to their caller. The default distribution
+    // gets its native applications from a separately compiled userspace.
+    let image = if std::env::var_os("DOS_RS_GUEST_IMAGE").is_none() {
+        for path in [
+            "disks/guest12.img",
+            "scripts/boot-userland.py",
+            "scripts/build-rust-tools.py",
+            "ports/musl",
+            "userland/shell",
+            "userland/rust",
+            "native-exec/libc/syscalls.def",
+        ] {
+            println!("cargo:rerun-if-changed={path}");
+        }
+        let arch = if std::env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "x86" {
+            "i686"
+        } else {
+            "x86_64"
+        };
+        let dest = out.join("system-boot.img");
+        let result = std::process::Command::new("python3")
+            .arg(root.join("scripts/boot-userland.py"))
+            .args(["--arch", arch, "--seed"])
+            .arg(&image)
+            .arg("--output")
+            .arg(&dest)
+            .status()
+            .expect("build the native FAT boot userspace");
+        assert!(result.success(), "failed to build the FAT boot userspace");
+        dest
+    } else {
+        image
+    };
     let image = image
         .canonicalize()
         .expect("cannot open DOS_RS_GUEST_IMAGE");

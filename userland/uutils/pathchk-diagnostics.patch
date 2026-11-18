@@ -1,0 +1,47 @@
+--- a/src/uu/pathchk/src/pathchk.rs
++++ b/src/uu/pathchk/src/pathchk.rs
+@@ -144,6 +144,9 @@
+ /// check a path in basic compatibility mode
+ fn check_basic(path: &[String]) -> bool {
+     let joined_path = path.join("/");
++    if path.iter().any(|component| !check_portable_chars(component, &joined_path)) {
++        return false;
++    }
+     let total_len = joined_path.len();
+     // path length
+     if total_len > POSIX_PATH_MAX {
+@@ -162,9 +165,6 @@
+                 "{}",
+                 translate!("pathchk-error-posix-name-length-exceeded", "limit" => POSIX_NAME_MAX, "length" => component_len, "component" => p.quote())
+             );
+-            return false;
+-        }
+-        if !check_portable_chars(p) {
+             return false;
+         }
+     }
+@@ -237,14 +237,14 @@
+ }
+ 
+ /// check whether a path segment contains only valid (read: portable) characters
+-fn check_portable_chars(path_segment: &str) -> bool {
++fn check_portable_chars(path_segment: &str, full_path: &str) -> bool {
+     const VALID_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-";
+     for (i, ch) in path_segment.as_bytes().iter().enumerate() {
+         if !VALID_CHARS.contains(ch) {
+             let invalid = path_segment[i..].chars().next().unwrap();
+             show_error!(
+                 "{}",
+-                translate!("pathchk-error-nonportable-character", "character" => invalid, "component" => path_segment.quote())
++                translate!("pathchk-error-nonportable-character", "character" => invalid, "component" => path_segment.quote(), "path" => full_path.quote())
+             );
+             return false;
+         }
+--- a/src/uu/pathchk/locales/en-US.ftl
++++ b/src/uu/pathchk/locales/en-US.ftl
+@@ -14,4 +14,4 @@
+ pathchk-error-path-length-exceeded = limit { $limit } exceeded by length { $length } of file name { $path }
+ pathchk-error-name-length-exceeded = limit { $limit } exceeded by length { $length } of file name component { $component }
+ pathchk-error-empty-path-not-found = '': No such file or directory
+-pathchk-error-nonportable-character = nonportable character '{ $character }' in file name component { $component }
++pathchk-error-nonportable-character = non-portable character '{ $character }' in file name { $path }

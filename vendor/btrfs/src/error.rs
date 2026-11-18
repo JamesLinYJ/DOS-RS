@@ -105,6 +105,10 @@ pub enum Error {
     /// The requested operation would write, but the volume is mounted
     /// read-only or the driver has no write path for this structure.
     ReadOnly,
+    /// Writable devices have no remaining space for this allocation.
+    NoSpace,
+    /// No existing data group can fit this transaction; retry after growing a group.
+    DataGroupFull(u64),
 
     /// The volume was committed through another handle after this one
     /// read its superblock (#599). Committing from the older view would
@@ -152,6 +156,8 @@ impl fmt::Display for Error {
             Error::NotFound => f.write_str("no such file or directory"),
             Error::NotADirectory => f.write_str("not a directory"),
             Error::NotAFile => f.write_str("not a regular file"),
+            Error::NoSpace => f.write_str("filesystem has no allocatable space"),
+            Error::DataGroupFull(n) => write!(f, "existing data groups cannot fit {n} bytes"),
             Error::ReadOnly => f.write_str("filesystem is read-only"),
             Error::Stale { handle, disk } => write!(
                 f,

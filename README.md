@@ -8,7 +8,7 @@ DOS 是用 Rust 实现的操作系统，提供三个原生内核目标。**16 �
 
 从同一张 FAT12 软盘启动，`IO.SYS` 检测 CPU，从 `MSDOS.SYS` 载入对应的 286 或 386 实模式内核，在引导阶段处理 `CONFIG.SYS`，随后启动 `COMMAND.COM /P`。首个 Shell 执行 `AUTOEXEC.BAT`，完成后显示当前驱动器和完整目录。COM 和 MZ 程序直接在 CPU 上执行。DOS 版本查询报告 7.10。[16 位内核入口](src/realmode.rs) · [已验证的 rust16 编译器及其构建说明](https://github.com/JamesLinYJ/rust16/tree/c073e743d3f5adda306ee6899b6a001564f4e555)
 
-在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建包含完整字体和工具的 2.88 MB 安装软盘，并创建 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建时运行 `python3 scripts/prepare-cpu.py` 获取并校验固定版本的架构库。
+在已挂载的内存盘上选择一个**新**的镜像文件。以下命令构建包含完整字体和工具的 2.88 MB 安装软盘，并创建 48 MiB 空白硬盘，并打开 QEMU 图形窗口。需要 QEMU、mtools、liblz4、i686-elf GCC/binutils，以及已经构建的 rust16。第一次构建 16 位系统时运行 `python3 scripts/prepare-cpu.py --cpu-only` 获取并校验固定版本的架构库。
 
 ```sh
 RAM_DISK=/Volumes/DOS-INSTALL-QA
@@ -135,9 +135,50 @@ python3 scripts/qemu.py --arch i686 --firmware bios
 | `NET`、`NET ARP 10.0.2.15 10.0.2.2` | 在挂有 e1000 的 QEMU 用户网络中，读出网卡地址并实际收发 ARP 帧。 |
 | `WIFI`、`BT` | Intel 无线适配器探测信息、标准 USB 蓝牙控制器状态或缺少设备的原因。 |
 
-## 原生 POSIX 文件和管道
+## 32 位和 64 位用户环境
 
-i686 和 x86_64 的 Shell 可以运行内置 Rust 命令，也可以从挂载卷加载独立的静态 ELF 程序。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
+i686 BIOS 和 x86_64 UEFI 安装盘可以从同一块磁盘加载内核，挂载 Btrfs 根目录和独立的 FAT `C:`。在 DOS 提示符输入 `sh` 可进入磁盘上的 Rust `/bin/sh`，输入 `exit` 返回 DOS。下面的管道通过 `PATH` 运行两个独立的 Rust ELF。两架构均以 21,254 字节的二进制输入通过了停机核对、冷启动读回和 Linux Btrfs 数据校验。打开文件后再删除并同名重建，旧描述符仍读到原文件。[安装盘回归](scripts/qemu-posix-install.py)
+
+```sh
+cat a.txt | wc -c > count.txt
+cat count.txt
+```
+
+两个架构的原生 Shell 均可执行嵌套的 `$(...)`、反引号命令替换和整数算术展开。通过 `PATH` 启动具有执行权限、没有 shebang 的文本脚本时，Shell 和 musl 的 `execvp`、`execlp` 会传递原参数和环境。回归同时核对了脚本退出码、重定向文件和大于管道容量的输出。[Shell 回归](scripts/qemu-user-shell.py)
+
+32 位和 64 位原生 Shell 的 `read` 可以从同一描述符连续读取记录，支持 `-r`、`-d`、NUL 分隔符和管道输入。两种内核还测过参数默认值、引号、`IFS` 拆词、目录通配及 `set -f`。测试逐字节核对关机后的输出。[输入用例](tests/user-shell/read.sh) · [展开用例](tests/user-shell/expand.sh)
+
+两种架构的原生 Shell 还通过了 `getopts` 的组合短选项、选项参数、静默错误、参数重置和子 Shell 状态隔离回归。`OPTIND=1` 可重新开始扫描；组合选项尚未读完时，`OPTIND` 使用 `索引:偏移` 保存完整状态，选项参数或扫描结束后恢复为整数。两边关机读回的 583 字节输出和退出码均与 Issue 8 用例一致，向只读目标赋值会返回错误并保留原值。完整 locale 行为仍待补齐，因此这一项记录为部分通过。[选项解析用例](tests/user-shell/getopts.sh)
+
+原生 32 位和 64 位 Shell 还验证了 `export`、`readonly` 和 `unset` 的变量属性。未赋值与空字符串分别保存，`-p` 输出中的引号、特殊字符和中文可以读回，`unset -f` 与 `unset -v` 分别操作函数和变量。脚本中的只读赋值错误会停止执行，交互提示符则保留；`PATH` 的一个目录无法表示长文件名时，继续搜索后续目录。两端内存盘关机后，变量用例的 928 字节结果、退出码 47 和原有 15 个回归文件全部核对一致。[变量与命令搜索用例](tests/user-shell/variables.sh)
+
+32 位和 64 位原生 Shell 已通过 `.`、`eval` 与嵌套 `return` 的脚本回归。脚本可在当前环境修改变量、函数、目录和参数，标准输入与脚本读取分别处理；特殊内置命令的重定向错误会终止非交互脚本。两端各 24 个停机文件逐字节一致，原有 17 个输出保持不变，另验证了 256 次重复载入、16 KiB 输入、作业控制及返回 DOS。可选 dot 参数采用 KornShell 的临时参数作用域。这批结果按 Issue 8 记录为部分通过，trap 等语义仍待补齐。[脚本执行用例](tests/user-shell/README.md)
+
+32 位和 64 位原生 Shell 的 `command` 已验证函数绕过、`-p` 默认搜索路径、`-v`/`-V` 查询、当前 Shell 的目录和参数修改，以及包装特殊内置命令后的错误恢复。显式 `exit` 仍会退出。两种内核的 FAT 回归各有 30 个停机文件逐字节一致，原有 24 个结果保持不变。固定 `20036fa` 的对应二进制再从 Btrfs 安装盘冷启动，两边各有 33 个停机文件匹配，全部 30 个公共输出与 FAT 结果逐字节相同，Linux Btrfs 检查通过。内核执行目录返回 `EACCES`，PATH 会继续搜索后面的普通文件；无 shebang 的文本程序仍可通过 libc 回退到 `/bin/sh`。别名、locale 和链接错误的查询规则仍待补齐，这项记录为部分通过。[命令查询与执行用例](tests/user-shell/command.sh)
+
+原生 i686 BIOS 和 x86_64 UEFI 的 Shell 已分别冷启动验证 `PWD` 初始化、`HOME`/`OLDPWD`、`CDPATH`、`cd`/`pwd` 选项及目录错误处理。两边各有 32 个停机文件一致，原有 30 个结果逐字节不变；新增目录输出为相同的 69 行、1,383 字节，`fsck.fat` 通过。16 位 `COMMAND.COM` 使用前述原生 DOS 回归。[目录复测入口](scripts/qemu-shell-directories.py)
+
+在安装式 Btrfs 根卷上，两种宽位内核都运行了独立 Rust ELF。通过 18 层相对目录构造的物理路径长 4,346 字节。小缓冲区得到 `ERANGE`，足够大的缓冲区读回完整原名。当前目录被删除后，`getcwd` 返回 `ENOENT`。普通用户在仅有搜索权限的目录中运行 `cd -`，若标准输出已关闭，工作目录、`PWD` 和 `OLDPWD` 均保留原值。`pwd -P` 可以输出含非 UTF-8 字节的目录名。[客体测试程序](tests/native-cwd/src/lib.rs) 两边的目录专项各核对 10 个停机文件。符号链接的逻辑与物理父目录、长路径以及重新启动都通过，FAT 与 Btrfs 检查通过。完整 Shell 回归采用独立的验收记录。[Btrfs 目录复测](scripts/qemu-shell-directories-btrfs.py)
+
+新建的 Btrfs 安装盘由 Rust 制盘工具写入字符设备 `/dev/null`，设备号为 1:3。i686 BIOS 和 x86_64 UEFI 均通过冷启动、普通用户重定向、EOF 和写入丢弃测试。`cat /dev/null` 的两个输出流和退出码与 GNU coreutils 9.12 一致，停机后的 FAT 和 Btrfs 检查均通过。[设备复测入口](scripts/qemu-native-null.py)
+
+在 i686 BIOS 和 x86_64 UEFI 上，原生 Shell 可以将 here-document（`<<` 和 `<<-`）作为程序输入。引号控制变量和命令展开，`<<-` 会移除行首制表符。两台 QEMU 都通过了 16,401 字节输入的关机读回。另在 `a3e57a6` 归档内核的 Btrfs 安装盘上装入新版 `/bin/sh`，冷启动后重新执行脚本，两个架构的输出及退出码均与参考 Shell 一致。[脚本用例](tests/user-shell/here.sh)
+
+制盘需要 QEMU、mtools、Rust stable 和目标架构交叉编译器。有 `mkfs.btrfs` 时在宿主制盘。macOS 也可由脚本启动 Linux，在内存盘上格式化 Btrfs。准备脚本和用户态构建使用仓库锁定的工具链。已有本架构的离线 Btrfs 根卷时可追加 `--root-image`。输出路径必须是新文件。
+
+```sh
+python3 scripts/prepare-cpu.py
+python3 scripts/posix-install-image.py --arch i686 --ram-dir "$RAM_DISK" --output "$RAM_DISK/dos32.img"
+python3 scripts/posix-install-image.py --arch x86_64 --ram-dir "$RAM_DISK" --output "$RAM_DISK/dos64.img"
+```
+
+双架构用户态 Shell 已通过多行脚本回归，覆盖 `if/elif/else`、`for`、`while/until`、函数参数和返回值、分组、子 Shell 以及多层 `break/continue`。测试将输出和退出码写入磁盘，关机后与宿主 `/bin/sh` 的结果比较。[脚本用例](tests/user-shell/control.sh) [QEMU 验收](scripts/qemu-user-shell.py)
+
+原生 16 位 DOS 的安装与命令解释器见上面的 286/386 章节。POSIX.1-2024 逐项验收仍在进行，GNU 工具的差分用例按架构记录。[规范清单与验证范围](tests/posix-2024/README.md)
+
+### DOS 提示符下的原生文件和管道
+
+i686 和 x86_64 的 POSIX Shell 和文件工具都从磁盘加载。安装盘优先查找根卷的 `/bin`。只有 FAT 数据盘时，系统从启动盘 `A:\BIN` 加载对应架构的程序，在用户态通过 `/dos/a/bin` 访问。每个管道阶段有独立的 PID、参数、描述符表和退出状态。内核在空管道上挂起读者，在满管道上挂起写者，另一端可继续运行。管道的退出状态取最后一个程序，可用 `echo $?` 查看。原生进程启动时继承 Shell 各盘的当前目录。终端收到按键后唤醒等待读入的任务，按 Ctrl+D 结束输入。一条管道等待键盘期间，仍可用 Alt+F2 切换终端运行 DOS 程序。
 
 在含有 `a.txt` 的可写目录中输入以下命令。
 
@@ -152,7 +193,15 @@ type count.txt
 
 BIOS 从 E820、UEFI 从退出启动服务时的内存图交付空闲物理页。帧分配器使用 4 GiB 以下可由内核直接访问的物理内存，扣除固件、内核及保留区。程序可以按 4 KiB 页申请匿名内存，物理页耗尽时收到 `ENOMEM`。未映射页访问触发进程异常，进程退出后释放其页帧。双架构在单核及四核 QEMU 上都测试了耗尽、重新分配和跨线程撤销映射。[内存接口](native-exec/libc/include/dos_memory.h) · [内存盘回归](scripts/qemu-native-frames.py)
 
-C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。动态链接、通用 ELF TLS、`fork` 和完整 POSIX 接口仍待实现。[独立 ELF 多核回归](scripts/qemu-native-threads.py)
+原生 ELF 主线程的栈默认映射 64 KiB，可按需增长到 8 MiB。`getrlimit`、`setrlimit` 和本进程的 `prlimit` 支持 `RLIMIT_STACK`，`fork` 继承限额，`exec` 按继承的限额装载参数和栈。硬限额上界为 8 MiB，栈页增长按 4 KiB 向下取整后的软限额执行。双架构验证了 100 KiB 限额下的 80 KiB 局部缓冲区、120 KiB 超限子进程隔离、系统调用入口扩栈检查、非管理员权限，以及 `exec` 参数过大失败后原进程继续运行。其他资源类型仍待实现。[进程回归](scripts/qemu-native-process.py) · [限额探针](ports/musl/tests/limits.c)
+
+C 运行库目前支持本架构的静态 ELF。用户线程通过 `dos_thread_create` 启动，可用 `dos_thread_join` 回收或用 futex 等待共享数据。静态 musl 1.2.6 程序支持 ELF TLS、pthread、`fork`、`execve` 和 `waitpid`。动态链接和完整 POSIX 验收仍待完成。[musl 复测](ports/musl/test.py) [独立 ELF 多核回归](scripts/qemu-native-threads.py)
+
+固定版本的上游 libc-test 已在两个原生 ELF 目标各通过首批 35 个独立程序，覆盖字符串、数字转换、格式化与扫描、环境、内存流、查找结构和信号掩码跳转。其中长输入扫描实际在 100 KiB 栈限额下处理 8 MiB 字符串。回归记录每例输出、错误和退出状态，并从停机 Btrfs 盘恢复结果。[上游测试入口](ports/libc-test/README.md)
+
+原生 32 位和 64 位程序可创建实时或单调时钟定时器，使用周期、相对期限或绝对期限。双架构内存盘回归验证了信号值、过期次数、过去期限立即通知和进程生命周期回收，64 位信号值完整保留到 `sigtimedwait`。当前支持 `SIGEV_SIGNAL`、`SIGEV_NONE` 和单参数信号处理器，`SIGEV_THREAD` 与 `SA_SIGINFO` 处理器仍待实现。[定时器回归](scripts/qemu-posix-timers.py)
+
+独立 Rust `sleep`、`nohup` 和 `timeout` 在 32 位 BIOS 与 64 位 UEFI 内核上各通过了 17 项 GNU coreutils 9.12 差分，覆盖输出、错误、退出状态和客体单调时钟计时。程序从 Btrfs 的 `/bin` 加载，关机后由 Linux 工具恢复并检查输出。[构建与复测](userland/uutils/README.md)
 
 用目标架构的 `i686-elf-gcc` 或 `x86_64-elf-gcc` 和配套 binutils 构建程序。以下示例把程序放进已有的 FAT 内存盘镜像。启动同架构内核后在提示符输入 `C:`、`HELLO.ELF 7`，可看到 `hello from native C`。
 
@@ -165,7 +214,7 @@ python3 scripts/qemu.py --arch i686 --firmware bios --ram-dir "$RAM_DISK" --c-di
 
 x86_64 的原生 ELF 支持低半区的 48 位规范虚拟地址。按实际装载段分配四级页表，用户栈、读写权限和不可执行页由各进程独立维护。QEMU 已从 `0x7f0000001000` 执行代码，并通过 `0x7ffffffff000` 的数据页完成跨进程管道传输。两架构均保留原有的低位静态 ELF 地址窗口，另提供独立的匿名页映射区。[装载器和运行示例](native-exec/examples/highva.c)
 
-`python3 scripts/qemu-native-elf.py --ram-dir "$RAM_DISK"` 会为两种架构分别编译 C 程序，从 QEMU Shell 执行 `cat.elf a.txt | wc.elf -c > count.txt`，并在退出 QEMU 后核对文件。它还检查 unlink 后的描述符、并行进程的私有内存、异常退出、时钟抢占和 DOS COM 共存。内置命令的回归入口是 `scripts/qemu-posix.py`，同样接受 `--ram-dir`。
+`python3 scripts/qemu-native-elf.py --ram-dir "$RAM_DISK"` 会为两种架构分别编译 C 程序，从 QEMU Shell 执行 `cat.elf a.txt | wc.elf -c > count.txt`，并在退出 QEMU 后核对文件。它还检查 unlink 后的描述符、并行进程的私有内存、异常退出、时钟抢占和 DOS COM 共存。FAT 启动盘上的独立用户程序回归入口是 `scripts/qemu-posix.py`，同样接受 `--ram-dir`。
 
 ## 文件系统
 
@@ -178,6 +227,8 @@ i686 和 x86_64 的 DOS Shell、INT 21h、FCB、COM/MZ 加载器和原生进程�
 | NTFS 3.x | 只读，按卷内 `$UpCase` 表匹配长文件名 | 读取常驻和非常驻数据、遍历 `$I30` 目录索引、运行 DOS COM。测试卷上的创建和删除被拒绝，退出后整盘 SHA-256 保持一致。 |
 
 NTFS 驱动使用 Rust 直接读取 MFT。目前支持 512 字节逻辑扇区和基记录内可完整描述的数据流。压缩、加密和重解析点返回未支持。Windows 系统卷的独占管理员写入及日志恢复仍待实现。原生 16 位 286/386 内核使用驻留 IO.SYS 提供的 FAT 服务。[NTFS 实现](storage/ntfs/src/lib.rs) · [16 位内核](src/realmode.rs)
+
+在 i686 和 x86_64 上，程序可以用 musl 的 `statvfs` 或 `fstatvfs` 查询 Btrfs 根卷和 FAT 盘的可用空间。只读卷报告 `ST_RDONLY` 和零个可分配块。单设备 Btrfs 卷可在写入时增加数据块组。两端都在 Linux 格式化的 128 MiB 卷上把初始 8 MiB 数据块组用完，新增了 16 MiB 块组。关机后 Linux 从每块盘恢复的 9,469,952 字节均与宿主生成的数据一致。另用 64 KiB 树节点和 1,100 个内联文件填充元数据，验证两个架构都能新增 8 MiB 元数据块组。[容量与扩容回归](scripts/qemu-btrfs-capacity.py)
 
 Btrfs 代码移植自 Antimatter Studios 维护的 Rust 驱动，DOS-RS 提供块设备、时钟与打开后删除的生命周期处理。源版本和许可证列在 NOTICE 中。[Rust 上游](https://github.com/antimatter-studios/rust-fs-btrfs/tree/bac713a69c2b65f70ef1ea0845760f92858ad88d) · [组件说明](NOTICE)
 

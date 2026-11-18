@@ -255,6 +255,16 @@ impl Filesystem {
         if data.is_empty() {
             return Ok(0);
         }
+        self.ensure_metadata_reserve()?;
+        loop {
+            match self.write_once(ino, offset, data) {
+                Err(Error::DataGroupFull(bytes)) => self.grow_data(bytes)?,
+                result => return result,
+            }
+        }
+    }
+
+    fn write_once(&mut self, ino: u64, offset: u64, data: &[u8]) -> Result<usize> {
         let inode = self.read_inode(ino)?;
         if !inode.is_regular_file() {
             return Err(Error::NotAFile);
@@ -815,7 +825,7 @@ impl Filesystem {
         // data moves.
         let dirty: Vec<u64> = {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             let mut leaves = BTreeSet::new();
             let keys = core::iter::once((INODE_ITEM_KEY, 0))
                 .chain(targets.iter().map(|t| (EXTENT_DATA_KEY, t.start)))
@@ -1873,7 +1883,7 @@ impl Filesystem {
         let mut items: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
         {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             for &(start, end) in released {
                 let found =
                     crate::csum::digests_for_range(&tree, root, size, sector, start, end - start)?;
@@ -1933,7 +1943,7 @@ impl Filesystem {
                 .saturating_sub(1)
                 .max(1);
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             for (at, bytes) in contents {
                 let len = bytes.len() as u64;
                 let stale = crate::csum::digests_for_range(&tree, root, size, sector, *at, len)?;
@@ -1959,75 +1969,6 @@ impl Filesystem {
         }
         deletes.extend(puts);
         Ok(deletes)
-    }
-
-    /// The checksum tree edits that carry each extent in `moved`, given as
-    /// `(old, new, length)`, from its old address to its new one (#493):
-    /// its digests are taken from the old sectors exactly as they are and
-    /// filed under the new, after the deletes [`Filesystem::csum_edits`]
-    /// makes for an extent it releases. A sector with no digest gets none.
-    pub(crate) fn csum_move_edits(&self, moved: &[(u64, u64, u64)]) -> Result<Vec<ItemEdit>> {
-        use crate::csum::{CSUM_TREE_OBJECTID, EXTENT_CSUM_KEY, EXTENT_CSUM_OBJECTID};
-        let size = self.sb.csum_type.digest_len();
-        let sector = u64::from(self.sb.sectorsize);
-        let Ok(root) = self.tree_root(CSUM_TREE_OBJECTID) else {
-            return Ok(Vec::new());
-        };
-        let released: Vec<(u64, u64)> = moved
-            .iter()
-            .map(|&(old, _, len)| (old, old + len))
-            .collect();
-        let mut edits = self.csum_edits(&released, &[], false)?;
-
-        // Every digest, by the sector it describes once moved.
-        let mut digests: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
-        {
-            let reader = self.pool_reader();
-            let tree = reader.tree();
-            for &(_, new, len) in moved {
-                let stale = crate::csum::digests_for_range(&tree, root, size, sector, new, len)?;
-                if !stale.is_empty() {
-                    return Err(Error::UnsupportedFeature(format!(
-                        "the checksum tree already holds {} digests for the space at {new} \
-                         the relocation was given, which nothing allocates",
-                        stale.len()
-                    )));
-                }
-            }
-        }
-        for &(old, new, len) in moved {
-            for (at, digest) in self.data_digests(old, len)? {
-                digests.insert(new + (at - old), digest);
-            }
-        }
-        // Runs of adjacent sectors, each cut at the kernel's cap on one
-        // item, MAX_CSUM_ITEMS.
-        let per_item = ((self.sb.nodesize as usize - LEAF_HEADER - 2 * ITEM_HEADER) / size)
-            .saturating_sub(1)
-            .max(1);
-        let mut runs: Vec<(u64, Vec<u8>)> = Vec::new();
-        for (at, digest) in digests {
-            match runs.last_mut() {
-                Some((start, packed))
-                    if packed.len() / size < per_item
-                        && *start + (packed.len() / size) as u64 * sector == at =>
-                {
-                    packed.extend_from_slice(&digest[..size]);
-                }
-                _ => runs.push((at, digest[..size].to_vec())),
-            }
-        }
-        edits.extend(runs.into_iter().map(|(at, data)| {
-            ItemEdit::Put(OwnedItem {
-                key: DiskKey {
-                    objectid: EXTENT_CSUM_OBJECTID,
-                    key_type: EXTENT_CSUM_KEY,
-                    offset: at,
-                },
-                data,
-            })
-        }));
-        Ok(edits)
     }
 }
 

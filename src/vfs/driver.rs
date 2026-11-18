@@ -58,6 +58,12 @@ pub trait Volume: Sync {
 }
 /// The low bits are private to the driver and identify a directory within its volume.
 pub(super) const HARD: u32 = 1 << 31;
+#[cfg(not(test))]
+static BTRFS_DRIVE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+#[cfg(not(test))]
+pub(super) fn btrfs_drive() -> bool {
+    BTRFS_DRIVE.load(core::sync::atomic::Ordering::Relaxed)
+}
 static HARD_DRIVER: KernelCell<Option<&'static dyn Volume>> = KernelCell::new(None);
 
 pub fn boot() {
@@ -71,32 +77,47 @@ pub fn boot() {
 }
 #[cfg(not(test))]
 fn mount_disk(device: dosrs_block::BlockWindow) {
-    let driver = match dosrs_block::partition::data_partitions(&device) {
-        Ok(None) => probe(device),
+    let windows = match dosrs_block::partition::data_partitions(&device) {
+        Ok(None) => alloc::vec![device],
         Ok(Some(parts)) => parts
             .into_iter()
             .filter_map(|p| device.partition(p))
-            .find_map(probe),
-        Err(_) => None,
+            .collect(),
+        Err(_) => return,
     };
-    *HARD_DRIVER.borrow() = driver;
-}
-#[cfg(not(test))]
-fn probe(device: dosrs_block::BlockWindow) -> Option<&'static dyn Volume> {
-    use dosrs_block::BlockDevice;
-    if fat::mount(device.clone()) {
-        if !device.is_writable() {
-            crate::puts("Mounted FAT volume C:\\ (read-only).\n");
-            return Some(&super::readonly::FAT);
-        }
-        crate::puts("Mounted persistent FAT volume C:\\ on IDE.\n");
-        Some(&fat::Driver)
-    } else if btrfs::mount(device.clone()) {
-        Some(&btrfs::Driver)
-    } else if super::ntfs::mount(device) {
-        Some(&super::ntfs::Driver)
-    } else {
-        None
+    // A DOS system disk may have a separate Btrfs partition for POSIX /.
+    // Each driver owns one mount. Avoid replacing it on subsequent partitions.
+    let root = windows
+        .iter()
+        .find_map(|w| btrfs::mount(w.clone()).then_some(&btrfs::Driver as &dyn Volume));
+    let hard = windows
+        .iter()
+        .find_map(|w| {
+            use dosrs_block::BlockDevice;
+            if !fat::mount(w.clone()) {
+                return None;
+            }
+            if w.is_writable() {
+                crate::puts("Mounted persistent FAT volume C:\\ on IDE.\n");
+                Some(&fat::Driver as &dyn Volume)
+            } else {
+                crate::puts("Mounted FAT volume C:\\ (read-only).\n");
+                Some(&super::readonly::FAT as &dyn Volume)
+            }
+        })
+        .or_else(|| {
+            windows
+                .into_iter()
+                .find_map(|w| super::ntfs::mount(w).then_some(&super::ntfs::Driver as &dyn Volume))
+        });
+    *HARD_DRIVER.borrow() = hard.or(root);
+    if root.is_some() && hard.is_none() {
+        BTRFS_DRIVE.store(true, core::sync::atomic::Ordering::Relaxed);
+        crate::puts(if btrfs::is_writable() {
+            "Mounted Btrfs C:\\ (read/write).\n"
+        } else {
+            "Mounted Btrfs C:\\ (read-only).\n"
+        });
     }
 }
 pub fn hard_present() -> bool {

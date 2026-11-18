@@ -1,5 +1,5 @@
 // Use real linker output to exercise both ELF header layouts and segment permissions.
-use dosrs_native_exec::{ANON_BASE, BASE, END, Frame, Machine, PAGE, STACK};
+use dosrs_native_exec::{ANON_BASE, BASE, Frame, Machine, PAGE, STACK, STACK_LIMIT, STACK_TOP};
 use std::{fs, process::Command};
 
 #[repr(align(4096))]
@@ -81,9 +81,9 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
     assert_eq!(data, [1, 2, 3]);
     assert!(image.write(STACK - 1, &[0, 0]).is_err());
     assert!(image.read(usize::MAX - 1, &mut data).is_err());
-    assert!(image.write(END - 1, &[1, 2]).is_err());
+    assert!(image.write(STACK_TOP - 1, &[1, 2]).is_err());
     let mut last = [1];
-    image.read(END - 1, &mut last).unwrap();
+    image.read(STACK_TOP - 1, &mut last).unwrap();
     assert_eq!(last, [0]);
     REMAINING.with(|left| {
         let saved = left.replace(2);
@@ -91,6 +91,25 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
         assert_eq!(left.replace(saved), 2);
         assert!(image.check(ANON_BASE, 1, false).is_err());
     });
+    let resident = image.pages().count();
+    REMAINING.with(|left| {
+        let saved = left.replace(2);
+        assert!(image.grow_stack(STACK - PAGE).is_err());
+        assert_eq!(left.replace(saved), 2);
+    });
+    assert_eq!(image.pages().count(), resident);
+    assert_eq!(image.stack_bottom(), STACK);
+    image.grow_stack(STACK - PAGE).unwrap();
+    assert!(image.pages().count() > resident);
+    image.write(STACK - 1, &[17]).unwrap();
+    let mut child = image.fork().unwrap();
+    assert_eq!(child.stack_bottom(), image.stack_bottom());
+    child.write(STACK - 1, &[19]).unwrap();
+    image.read(STACK - 1, &mut last).unwrap();
+    assert_eq!(last, [17]);
+    assert!(image.grow_stack(STACK_LIMIT - 1).is_err());
+    image.rollback_stack(STACK);
+    assert_eq!(image.pages().count(), resident);
     let base = image.map_anonymous(600).unwrap();
     assert_eq!(base, ANON_BASE);
     image.write(base + 575 * PAGE, &[44]).unwrap();
@@ -102,6 +121,26 @@ fn exercise(elf: &[u8], machine: Machine, other: Machine) {
     image.unmap_anonymous(base, 600).unwrap();
     assert!(image.check(base, 1, false).is_err());
     assert!(Image::load(&elf[..50], machine).is_err());
+    let mut limited = Image::load_with_stack_limit(elf, machine, 100 * 1024).unwrap();
+    limited.grow_stack(STACK_TOP - 80 * 1024).unwrap();
+    assert_eq!(limited.stack_bottom(), STACK_TOP - 100 * 1024);
+    assert!(limited.grow_stack(STACK_TOP - 120 * 1024).is_err());
+    assert!(
+        limited
+            .fork()
+            .unwrap()
+            .grow_stack(STACK_TOP - 120 * 1024)
+            .is_err()
+    );
+    let mapped = limited.pages().count();
+    limited.set_stack_limit(16 * 1024).unwrap();
+    assert_eq!(limited.pages().count(), mapped);
+    limited.grow_stack(STACK_TOP - 90 * 1024).unwrap();
+    limited.rollback_stack(STACK);
+    assert!(limited.grow_stack(STACK - PAGE).is_err());
+    let small = Image::load_with_stack_limit(elf, machine, 16 * 1024).unwrap();
+    assert_eq!(small.stack_bottom(), STACK_TOP - 16 * 1024);
+    assert!(small.check(STACK_TOP - 16 * 1024 - 1, 1, true).is_err());
 }
 #[test]
 fn i686_static_c_image() {
@@ -145,6 +184,62 @@ fn x86_64_static_c_image() {
         assert!(
             relocated(BASE as u64, bad).is_err(),
             "mapped invalid segment at {bad:#x}"
+        );
+    }
+}
+
+#[test]
+fn static_tls_template_and_program_headers() {
+    use std::path::Path;
+    for (arch, machine, word) in [
+        ("i686", Machine::I386, 4usize),
+        ("x86_64", Machine::Amd64, 8usize),
+    ] {
+        let temp = std::env::temp_dir().join(format!("dosrs-tls-{}-{arch}", std::process::id()));
+        fs::create_dir_all(&temp).unwrap();
+        fs::write(temp.join("tls.c"),
+            "_Thread_local int value=37; _Thread_local char zero[113]; void _start(void){ zero[3]=(char)value; }").unwrap();
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ports/musl/user.ld");
+        assert!(
+            Command::new(format!("{arch}-elf-gcc"))
+                .current_dir(&temp)
+                .args([
+                    "-fno-pie",
+                    "-ffreestanding",
+                    "-nostdlib",
+                    "-Wl,-z,max-page-size=4096",
+                    "-T",
+                ])
+                .arg(script)
+                .args(["tls.c", "-o", "tls.elf"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let mut file = fs::read(temp.join("tls.elf")).unwrap();
+        fs::remove_dir_all(temp).unwrap();
+        let (offset, phsize, n) = if word == 4 { (52, 32, 4) } else { (64, 56, 4) };
+        let image = Image::load(&file, machine).unwrap();
+        let ph = &file[offset..offset + phsize];
+        let addr = if word == 4 {
+            u32::from_le_bytes(ph[8..12].try_into().unwrap()) as usize
+        } else {
+            u64::from_le_bytes(ph[16..24].try_into().unwrap()) as usize
+        };
+        assert_eq!(image.phdr, Some((addr, phsize, n)));
+        let mut headers = vec![0; phsize * n];
+        image.read(addr, &mut headers).unwrap();
+        assert_eq!(headers, file[offset..offset + phsize * n]);
+        let off = headers
+            .chunks_exact(phsize)
+            .position(|p| p[..4] == 7u32.to_le_bytes())
+            .unwrap();
+        // The copied TLS initializer must belong to the same writable load image.
+        let filesize = offset + off * phsize + if word == 4 { 16 } else { 32 };
+        file[filesize..filesize + word].fill(0xff);
+        assert_eq!(
+            Image::load(&file, machine).err(),
+            Some("invalid ELF TLS template")
         );
     }
 }

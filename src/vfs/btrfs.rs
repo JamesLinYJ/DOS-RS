@@ -13,6 +13,9 @@ use dosrs_block::{BlockDevice, BlockRead};
 use dosrs_btrfs::{Error, Filesystem, inode::Inode};
 use dosrs_native_posix::{Errno, Open, Result};
 
+#[path = "btrfs/posix.rs"]
+pub(super) mod posix;
+
 static VOLUME: KernelCell<Option<Mount>> = KernelCell::new(None);
 use super::folders::Folders;
 struct Mount {
@@ -51,14 +54,22 @@ pub fn mount(device: BlockWindow) -> bool {
         orphans: Default::default(),
     });
     crate::puts(if writable {
-        "Mounted Btrfs C:\\ (read/write).\n"
+        "Mounted Btrfs / (read/write).\n"
     } else {
-        "Mounted Btrfs C:\\ (read-only).\n"
+        "Mounted Btrfs / (read-only).\n"
     });
     true
 }
+pub(super) fn is_mounted() -> bool {
+    VOLUME.borrow().is_some()
+}
+#[cfg(not(test))]
+pub(super) fn is_writable() -> bool {
+    mounted(|m| Ok(m.fs.is_writable())).unwrap_or(false)
+}
 fn err(e: Error) -> Errno {
     match e {
+        Error::NoSpace | Error::DataGroupFull(_) => Errno::NoSpace,
         Error::NotFound => Errno::NoEntry,
         Error::NotADirectory => Errno::NotDirectory,
         Error::NotAFile => Errno::IsDirectory,
@@ -72,6 +83,16 @@ fn mounted<T>(action: impl FnOnce(&mut Mount) -> Result<T>) -> Result<T> {
     action(guard.as_mut().ok_or(Errno::NoEntry)?)
 }
 impl Mount {
+    fn remove_directory(&mut self, parent: u64, name: &[u8], ino: u64) -> Result<()> {
+        if self.opens.contains_key(&ino) {
+            self.fs.rmdir_open(parent, name).map_err(err)?;
+            self.orphans.insert(ino);
+        } else {
+            self.fs.rmdir(parent, name).map_err(err)?;
+        }
+        self.dirs.remove(ino);
+        Ok(())
+    }
     fn by_name(&self, parent: u64, name: &[u8], dos: bool) -> Result<(Inode, Vec<u8>)> {
         match self.fs.lookup(parent, name) {
             Ok(node) => Ok((node, name.to_vec())),
@@ -131,7 +152,14 @@ impl Mount {
         Err(Errno::NoEntry)
     }
 }
-pub struct File(u64);
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileKind {
+    Dos,
+    Native,
+    Null,
+}
+
+pub struct File(u64, FileKind);
 impl File {
     pub fn open(dir: u32, path: &[u8], flags: Open, dos: bool) -> Result<Self> {
         mounted(|m| {
@@ -158,15 +186,21 @@ impl File {
                 Err(e) => return Err(e),
             };
             *m.opens.entry(ino).or_default() += 1;
-            Ok(Self(ino))
+            Ok(Self(ino, FileKind::Dos))
         })
     }
     pub fn read(&self, pos: u64, out: &mut [u8]) -> Result<usize> {
+        if self.1 == FileKind::Null {
+            return Ok(0);
+        }
         mounted(|m| m.fs.read_at(self.0, pos, out).map_err(err))
     }
     pub fn write(&self, pos: u64, data: &[u8]) -> Result<()> {
+        if self.1 == FileKind::Null {
+            return Ok(());
+        }
         mounted(|m| {
-            if m.fs.read_inode(self.0).map_err(err)?.mode & 0o222 == 0 {
+            if self.1 == FileKind::Dos && m.fs.read_inode(self.0).map_err(err)?.mode & 0o222 == 0 {
                 return Err(Errno::Access);
             }
             if data.is_empty() {
@@ -312,9 +346,7 @@ pub fn rmdir(dir: u32, name: &[u8; 11]) -> bool {
     mounted(|m| {
         let parent = m.dirs.get(dir)?.id;
         let (node, name) = m.by_name(parent, &short_name(name), true)?;
-        m.fs.rmdir(parent, &name).map_err(err)?;
-        m.dirs.remove(node.ino);
-        Ok(())
+        m.remove_directory(parent, &name, node.ino)
     })
     .is_ok()
 }
@@ -359,6 +391,9 @@ pub fn replace(dir: u32, name: &[u8; 11], data: &[u8], attr: u8) -> bool {
         Ok(())
     })();
     result.is_ok()
+}
+pub(super) fn mount_identity() -> Option<([u8; 16], bool)> {
+    mounted(|m| Ok((m.fs.superblock().fsid, m.fs.is_writable()))).ok()
 }
 pub fn volume_id() -> Option<([u8; 4], [u8; 11], [u8; 8])> {
     mounted(|m| {
@@ -476,6 +511,18 @@ impl Volume for Driver {
 }
 
 impl super::Node for File {
+    fn seek_position(&self, current: u64, delta: i64, whence: dosrs_native_posix::Whence) -> Result<u64> {
+        if self.1 == FileKind::Null {
+            return Ok(0);
+        }
+        super::file_position(current, delta, whence, || self.size())
+    }
+    fn resize(&self, length: u64) -> Result<()> {
+        if self.1 == FileKind::Null {
+            return Err(Errno::Invalid);
+        }
+        self.write(length, &[])
+    }
     fn len(&self) -> Result<u64> {
         self.size()
     }
@@ -488,6 +535,33 @@ impl super::Node for File {
     fn sync(&self) -> Result<()> {
         Ok(())
     } // Every mutating operation commits and flushes.
+    fn directory(&self) -> Result<super::posix::PosixDir> {
+        mounted(|m| {
+            if m.fs.read_inode(self.0).map_err(err)?.is_dir() {
+                Ok(super::posix::PosixDir::Btrfs(self.0))
+            } else {
+                Err(Errno::NotDirectory)
+            }
+        })
+    }
+    fn chmod(&self, mode: u32, who: super::posix::Credentials) -> Result<()> {
+        posix::fchmod(self.0, mode, who)
+    }
+    fn chown(&self, uid: u32, gid: u32, who: super::posix::Credentials) -> Result<()> {
+        posix::fchown(self.0, uid, gid, who)
+    }
+    fn set_times(&self, times: super::posix::Times, who: super::posix::Credentials) -> Result<()> {
+        posix::futimens(self.0, times, who)
+    }
+    fn capacity(&self) -> Result<super::capacity::Capacity> {
+        posix::capacity()
+    }
+    fn metadata(&self) -> Result<super::posix::Metadata> {
+        mounted(|m| Ok(posix::metadata(&m.fs.read_inode(self.0).map_err(err)?)))
+    }
+    fn dirent(&self, offset: u64) -> Result<Option<super::posix::DirEntry>> {
+        posix::dirent(self.0, offset)
+    }
     fn identity(&self) -> (u32, u64) {
         (HARD, self.ino())
     }

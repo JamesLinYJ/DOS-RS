@@ -1,6 +1,12 @@
 //! Process-owned threads. CPUs execute runnable threads in parallel. At a
 //! quantum boundary, all CPUs release the process pages before the kernel
 //! reads a syscall buffer, changes a mapping or tears down the process.
+mod affinity;
+pub(super) mod clock;
+mod musl;
+mod poll;
+mod signal;
+use super::process::signals;
 use super::{
     executable::file_call,
     io::{ProcessContext, allocate_id},
@@ -14,24 +20,35 @@ use core::{
     ops::Range,
     task::{Context, Poll},
 };
-use dosrs_native_exec::{Call, END, PAGE, STACK};
+use dosrs_native_exec::{Call, PAGE, STACK_LIMIT, STACK_TOP};
 use dosrs_native_posix::Process;
 
 #[derive(Clone, Copy)]
 enum State {
     Ready,
     Running,
+    Suspended(u64),
     Call(Call, [usize; 3]),
     Futex(usize),
+    Sleep,
     Exited(u8),
     Joined,
 }
 
 struct Member {
     tid: u32,
+    secondary: Option<affinity::ActiveTid>,
     cpu: usize,
     stack: Range<usize>,
     errno: usize,
+    pending_signals: signals::Pending,
+    signal_wait: Option<signal::Wait>,
+    interrupted: Vec<State>,
+    clear_tid: usize,
+    tty_read: super::io::ReadClock,
+    timer: Option<clock::Timer>,
+    poll_request: Option<poll::Request>,
+    lock_request: Option<super::io::record::Request>,
     registers: Option<Thread>,
     returned: Arc<Completion>,
     state: State,
@@ -46,15 +63,43 @@ impl Member {
     ) -> Result<Self, &'static str> {
         Ok(Self {
             tid,
+            secondary: if tid == 0 {
+                None
+            } else {
+                Some(affinity::ActiveTid::register(tid)?)
+            },
             cpu: user::assign_cpu(),
             stack,
             errno,
+            pending_signals: signals::Pending::default(),
+            signal_wait: None,
+            interrupted: Vec::new(),
+            clear_tid: 0,
+            tty_read: super::io::ReadClock::new(tid),
+            timer: None,
+            poll_request: None,
+            lock_request: None,
             registers: Some(registers),
             returned: Completion::new()?,
             state: State::Ready,
         })
     }
+    fn interrupt_wait(&mut self, image: &mut AddressSpace) {
+        if let Some(timer) = &self.timer
+            && timer.remainder != 0
+        {
+            let _ = clock::write_ns(image, timer.remainder, timer.remaining());
+        }
+        self.reply(-4);
+    }
     fn reply(&mut self, value: isize) {
+        self.tty_read.reset(self.tid);
+        self.signal_wait = None;
+        self.lock_request = None;
+        self.timer = None;
+        if let Some(request) = self.poll_request.take() {
+            request.restore(self);
+        }
         self.registers
             .as_mut()
             .expect("stopped user thread")
@@ -68,14 +113,33 @@ type Outcome = Result<u8, (u8, String)>;
 
 impl Threads {
     pub fn new(main: Thread) -> Result<Self, &'static str> {
+        Self::from_caller(main, STACK_LIMIT..STACK_TOP, 0)
+    }
+    pub(super) fn from_caller(
+        main: Thread,
+        stack: Range<usize>,
+        errno: usize,
+    ) -> Result<Self, &'static str> {
         let mut threads = Vec::new();
         threads
             .try_reserve(1)
             .map_err(|_| "insufficient thread memory")?;
-        threads.push(Member::new(0, STACK..END, 0, main)?);
+        threads.push(Member::new(0, stack, errno, main)?);
         Ok(Self(threads))
     }
 
+    pub(super) fn inherit_handlers(&mut self, caller: &Threads, i: usize) -> Result<(), isize> {
+        let states = &caller.0[i].interrupted;
+        let saved = &mut self.0[0].interrupted;
+        saved
+            .try_reserve_exact(states.len())
+            .map_err(|_| -12isize)?;
+        saved.extend_from_slice(states);
+        Ok(())
+    }
+    pub(super) fn set_mask(&mut self, mask: u64) {
+        self.0[0].registers.as_mut().unwrap().signal_mask = mask;
+    }
     fn spawn(
         &mut self,
         image: &mut AddressSpace,
@@ -136,7 +200,7 @@ impl Threads {
         Ok(tid as usize)
     }
 
-    fn collect(&mut self, image: &AddressSpace, pid: u32) -> Result<(), (u8, String)> {
+    fn collect(&mut self, image: &mut AddressSpace, pid: u32) -> Result<(), (u8, String)> {
         #[cfg(feature = "thread-trace")]
         let trace = self.0.len() > 1;
         for t in &mut self.0 {
@@ -160,11 +224,39 @@ impl Threads {
                 }
             }
             t.registers = Some(returned.thread);
-            match returned
+            let mut outcome = returned
                 .outcome
-                .map_err(|message| (126, format!("{message}\n")))?
-            {
-                Stop::Fault(vector) => {
+                .map_err(|message| (126, format!("{message}\n")))?;
+            let sp = t.registers.as_ref().unwrap().stack_pointer();
+            if t.stack.start == STACK_LIMIT && t.stack.contains(&sp) {
+                // A system call may be the first writer to an untouched local
+                // buffer. Materialize the live stack down to the ABI red zone.
+                let red_zone = if cfg!(target_arch = "x86_64") { 128 } else { 0 };
+                let low = sp.saturating_sub(red_zone).max(STACK_LIMIT);
+                if low < image.stack_bottom() && image.ensure_stack(low).is_err() {
+                    outcome = Stop::Fault(14, None);
+                }
+            }
+            match outcome {
+                // Compilers may probe below SP before moving it. The
+                // reserved stack is also addressable by sibling threads.
+                Stop::Fault(14, Some(address))
+                    if (STACK_LIMIT..STACK_TOP).contains(&address)
+                        && image.ensure_stack(address).is_ok() =>
+                {
+                    t.state = State::Ready;
+                }
+                Stop::Fault(vector, _) => {
+                    let signo = signal::exception(vector);
+                    let action = signals::disposition(pid, signo, true);
+                    if action.handler > 1
+                        && t.registers.as_ref().unwrap().signal_mask & signals::bit(signo) == 0
+                    {
+                        t.state = State::Ready;
+                        if t.interrupt(image, signo, action).is_ok() {
+                            continue;
+                        }
+                    }
                     return Err((
                         128 + vector.min(127) as u8,
                         format!("native process {pid}: user exception {vector:02x}\n"),
@@ -260,31 +352,193 @@ impl Threads {
         }
         if self.0[0].tid == 0 {
             self.0[0].tid = p.getpid();
+            self.0[0].tty_read.reset(p.getpid());
         }
         self.collect(image, p.getpid())?;
+        for t in &mut self.0 {
+            if matches!(t.state, State::Futex(_) | State::Sleep)
+                && t.timer.as_ref().is_some_and(|timer| timer.expired())
+            {
+                t.reply(if matches!(t.state, State::Futex(_)) {
+                    -110
+                } else {
+                    0
+                });
+            }
+        }
+
+        if signals::observe(p.getpid(), cx) {
+            return Poll::Pending;
+        }
         for i in 0..self.0.len() {
             let State::Call(call, args) = self.0[i].state else {
                 continue;
             };
             let [a, b, c] = args;
+            p.caller_mask = self.0[i].registers.as_ref().unwrap().signal_mask;
+            let mut sigpipe = matches!(call, Call::Write | Call::Writev);
             let result = match call {
                 Call::Exit => return Poll::Ready(Ok(a as u8)),
+                Call::Fork => Poll::Ready((|| {
+                    let new = p.children.upgrade().ok_or(-11isize)?;
+                    let mut queue = new.borrow();
+                    queue.try_reserve(1).map_err(|_| -12isize)?;
+                    let caller = &self.0[i];
+                    let mut child = super::executable::Executable::fork(
+                        image,
+                        caller.registers.as_ref().unwrap(),
+                        caller.stack.clone(),
+                        caller.errno,
+                    )?;
+                    child.inherit_handlers(self, i)?;
+                    let context = p.inherit().map_err(|_| -11isize)?;
+                    let pid = context.getpid();
+                    queue.push((child, context));
+                    Ok(pid as usize)
+                })()),
+                Call::Execve => match super::executable::execve(image, p, args) {
+                    Ok(mut task) => {
+                        task.set_mask(self.0[i].registers.as_ref().unwrap().signal_mask);
+                        super::process::exec(p.getpid());
+                        p.close_exec_fds();
+                        task.replace(image, self);
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
+                    Err(error) => Poll::Ready(Err(error)),
+                },
+                Call::Waitpid => {
+                    if b != 0 && image.check(b, 4, true).is_err() {
+                        Poll::Ready(Err(-14))
+                    } else {
+                        super::process::wait(p.getpid(), a as i32, c, cx).map(|result| {
+                            let (pid, status) = result?;
+                            if pid != 0 && b != 0 {
+                                image
+                                    .write(b, &status.to_le_bytes())
+                                    .map_err(|_| -14isize)?;
+                            }
+                            Ok(pid as usize)
+                        })
+                    }
+                }
+                Call::Getppid => Poll::Ready(Ok(super::process::parent(p.getpid()) as usize)),
+                Call::Getsid | Call::Getpgid => Poll::Ready(super::process::group(
+                    p.getpid(),
+                    a as i32,
+                    call == Call::Getsid,
+                )),
+                Call::Setsid => Poll::Ready(super::process::new_session(p.getpid())),
+                Call::Setpgid => {
+                    Poll::Ready(super::process::set_group(p.getpid(), a as i32, b as i32))
+                }
+                Call::Resource => {
+                    Poll::Ready(super::process::limits::call(image, p.getpid(), args))
+                }
+                Call::Sigwait | Call::Sigwaitinfo => signal::wait(&mut self.0[i], image, p.getpid(), args, call == Call::Sigwaitinfo, cx),
+                Call::Timercreate | Call::Timerset | Call::Timerget | Call::Timerdelete | Call::Timeroverrun => {
+                    Poll::Ready(super::process::timers::call(image, p.getpid(), call, args, cx))
+                }
+                Call::Tkill => {
+                    Poll::Ready(self.thread_signal(p.getpid(), p.uid, a as i32, b as i32))
+                }
+                Call::Kill => Poll::Ready(signals::kill(p.getpid(), a as i32, b as i32)),
+                Call::Sigaction => Poll::Ready(signal::action(image, p.getpid(), a, b, c)),
+                Call::Sigreturn => {
+                    if self.0[i].sigreturn() {
+                        cx.waker().wake_by_ref();
+                        continue;
+                    } else {
+                        Poll::Ready(Err(-22))
+                    }
+                }
+                Call::Sigpending => {
+                    let mask = self.0[i].registers.as_ref().unwrap().signal_mask;
+                    Poll::Ready(
+                        image
+                            .write(
+                                a,
+                                &((signals::pending(p.getpid())
+                                    | self.0[i].pending_signals.mask())
+                                    & mask)
+                                    .to_le_bytes(),
+                            )
+                            .map(|_| 0)
+                            .map_err(|_| -14),
+                    )
+                }
+                Call::Sigsuspend => {
+                    let mut bytes = [0; 8];
+                    if image.read(a, &mut bytes).is_err() {
+                        Poll::Ready(Err(-14))
+                    } else {
+                        let regs = self.0[i].registers.as_mut().unwrap();
+                        let old = regs.signal_mask;
+                        regs.signal_mask =
+                            u64::from_le_bytes(bytes) & !(signals::bit(9) | signals::bit(19));
+                        self.0[i].state = State::Suspended(old);
+                        Poll::Pending
+                    }
+                }
                 Call::Threxit => {
+                    self.0[i].secondary = None;
                     self.0[i].state = State::Exited(a as u8);
                     self.0[i].registers = None;
                     cx.waker().wake_by_ref();
                     continue;
                 }
+                Call::Clockread | Call::Clocksleep | Call::Futextimed => {
+                    clock::call(&mut self.0[i], image, call, args, cx)
+                }
+                Call::Poll | Call::Ppoll => poll::call(&mut self.0[i], image, p, call, args, cx),
+                Call::Readv | Call::Writev => {
+                    musl::vectors(image, p, cx, call, args, &mut self.0[i].tty_read)
+                }
+                Call::Threadfinish => match self.finish_pthread(i, image, a, b) {
+                    Ok(()) => {
+                        cx.waker().wake_by_ref();
+                        continue;
+                    }
+                    Err(error) => Poll::Ready(Err(error)),
+                },
+                Call::Settls
+                | Call::Settidx
+                | Call::Pthreadspawn
+                | Call::Sigmask
+                | Call::Mapanon
+                | Call::Protectmem
+                | Call::Futexmove => Poll::Ready(self.musl_call(i, image, call, args)),
                 Call::Thrspawn => Poll::Ready(self.spawn(image, a, b, c)),
                 Call::Thrjoin => self.join(i, a),
+                Call::Getaffinity => Poll::Ready(affinity::get(image, args)),
                 Call::Gettid => Poll::Ready(Ok(self.0[i].tid as usize)),
                 Call::Threrrno => Poll::Ready(Ok(self.0[i].errno)),
                 Call::Futexwait | Call::Futexwake => self.futex(i, p.getpid(), image, call, a, b),
-                _ => file_call(image, p, cx, call, args),
+                Call::Fcntl if matches!(b, 5..=7 | 36..=38) => {
+                    super::io::record::call(&mut self.0[i].lock_request, p, image, args, cx)
+                }
+                Call::Socketpair => Poll::Ready(super::io::socket::socketpair(p, image, args)),
+                Call::Send | Call::Recv => {
+                    super::io::socket::transfer(p, image, call, args, cx, &mut sigpipe)
+                }
+                Call::Ttyio => p.tty_ioctl(image, a, b, c, cx),
+                _ => file_call(image, p, cx, call, args, &mut self.0[i].tty_read),
             };
             if let Poll::Ready(value) = result {
+                if value == Err(-32)
+                    && sigpipe
+                    && signals::disposition(p.getpid(), 13, false).handler != 1
+                {
+                    let _ = self.0[i].pending_signals.add(
+                        13,
+                        signals::Origin { code: 0, pid: p.getpid(), uid: p.uid, status: 0, timer: None },
+                    );
+                }
                 self.0[i].reply(value.map(|n| n as isize).unwrap_or_else(|e| e));
             }
+        }
+        if let Some(status) = self.deliver(image, p, cx) {
+            return status;
         }
         self.0.retain(|t| !matches!(t.state, State::Joined));
         if self.0.iter().all(|t| matches!(t.state, State::Exited(_))) {

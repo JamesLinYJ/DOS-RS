@@ -15,6 +15,15 @@ ROOT = Path(__file__).resolve().parents[1]
 ARCH = {"i686": ("i386", "BOOTIA32.EFI"), "x86_64": ("x86_64", "BOOTX64.EFI")}
 
 
+def check_native_boot(serial, arch, mode):
+    lines = serial.read_bytes().splitlines()
+    banners = [line for line in lines if line.startswith(b"DOS / ")]
+    kernel = b"DOS / " + arch.encode("ascii")
+    firmware = {"bios": b"Legacy BIOS", "uefi": b"UEFI boot services exited."}[mode]
+    if banners != [kernel] or firmware not in lines:
+        raise ValueError(f"{serial}: expected running {arch} kernel and {mode} firmware")
+
+
 def firmware(machine):
     override = os.environ.get("DOS_RS_FIRMWARE_" + machine.upper())
     if override:
@@ -165,6 +174,7 @@ def main():
                                   "pc386" if args.pc386 else None)
     with tempfile.TemporaryDirectory(dir=args.ram_dir) as temp:
         cmd = boot_args(kernel, args.arch, Path(temp), args.cpus, args.firmware)
+        cmd += ["-device", "virtio-rng-pci"]
         if args.c_disk:
             disk = ram_disk(args.c_disk, args.ram_dir) if args.ram_dir else args.c_disk.resolve()
             print(f"C: {disk}", flush=True)

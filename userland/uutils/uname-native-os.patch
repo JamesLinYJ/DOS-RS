@@ -1,0 +1,10 @@
+--- a/src/uu/uname/src/uname.rs
++++ b/src/uu/uname/src/uname.rs
+@@ -113,5 +113,6 @@
+             (opts.machine || opts.all || opts.all_labeled).then(|| uname.machine().to_owned());
+ 
+-        let os = (opts.os || opts.all || opts.all_labeled).then(|| uname.osname().to_owned());
++        // DOS-RS supplies its OS name through the native uname syscall.
++        let os = (opts.os || opts.all || opts.all_labeled).then(|| uname.sysname().to_owned());
+ 
+         // This option is unsupported on modern Linux systems

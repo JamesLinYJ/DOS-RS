@@ -1,0 +1,12 @@
+{
+  "project": "libc-test",
+  "repository": "https://repo.or.cz/libc-test.git",
+  "commit": "63e36e934e8f2bedf645303a90b64098e2af6c8f",
+  "commit_date": "2026-11-01T21:11:50Z",
+  "tree": "79ab0eb50d214b6b1e67a38a2ecd9454aeecf3c9",
+  "archive_prefix": "libc-test-63e36e9/",
+  "archive_sha256": "23762e39f6f5ceb307a42e5cd35065a8b7c3e0193311b8b1dcc8660e029a1339",
+  "archive_command": "git archive --format=tar.gz --prefix=libc-test-63e36e9/ 63e36e934e8f2bedf645303a90b64098e2af6c8f",
+  "provenance": "https://wiki.musl-libc.org/writing-tests",
+  "license": "MIT; math vector files carry additional upstream notices"
+}

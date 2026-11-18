@@ -1,0 +1,56 @@
+dot-args:source.sh:3:first:[two words]
+shared-args:2:two words:third
+function:[value with spaces]
+shared-variable:[value with spaces]
+empty:0
+comment:0
+no-final-newline
+no-newline-status:0
+path:yes:SUB:/unrepresentable_directory:.
+dash-name
+dash-name
+inner
+outer-resumed:13
+caller-resumed:14
+inner
+function-resumed:13
+function-status:19
+inside-function:21
+dot-function-status:22
+return-last:1
+loop:first
+loop-return:23
+stdin:[ordinary stdin]
+descriptor-10-closed
+descriptor-11-closed
+changed-directory
+multiline:literal $data
+eval-none:0
+eval-null:0
+eval-comment:0
+eval-value:[two words]
+eval-persists:[two words]
+indirect:[two words]
+eval-pipeline
+eval-function
+eval-function
+eval-previous:1
+eval-status:1
+eval-function-return:29
+negated-return:30
+eval-dot-return:31
+eval-prefix:prefix
+eval-prefix-persists:after
+reject:missing
+reject:no-operand
+reject:empty-name
+reject:no-current-search
+reject:directory
+reject:bad-option
+reject:eval-syntax
+reject:eval-incomplete
+reject:dot-syntax
+reject:readonly-eval
+dot-exit:39
+eval-exit:41
+repeated-dot:256

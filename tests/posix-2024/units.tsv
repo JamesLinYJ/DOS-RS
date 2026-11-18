@@ -1,0 +1,2326 @@
+volume	unit	scope	source	i686	x86_64	test
+basedefs	tag_01	chapter	basedefs/V1_chap01.html#tag_01	open	open	
+basedefs	tag_01_01	chapter	basedefs/V1_chap01.html#tag_01_01	open	open	
+basedefs	tag_01_02	chapter	basedefs/V1_chap01.html#tag_01_02	open	open	
+basedefs	tag_01_03	chapter	basedefs/V1_chap01.html#tag_01_03	open	open	
+basedefs	tag_01_04	chapter	basedefs/V1_chap01.html#tag_01_04	open	open	
+basedefs	tag_01_05	chapter	basedefs/V1_chap01.html#tag_01_05	open	open	
+basedefs	tag_01_06	chapter	basedefs/V1_chap01.html#tag_01_06	open	open	
+basedefs	tag_01_06_01	chapter	basedefs/V1_chap01.html#tag_01_06_01	open	open	
+basedefs	tag_01_06_02	chapter	basedefs/V1_chap01.html#tag_01_06_02	open	open	
+basedefs	tag_01_06_03	chapter	basedefs/V1_chap01.html#tag_01_06_03	open	open	
+basedefs	tag_01_06_04	chapter	basedefs/V1_chap01.html#tag_01_06_04	open	open	
+basedefs	tag_01_06_05	chapter	basedefs/V1_chap01.html#tag_01_06_05	open	open	
+basedefs	tag_01_06_06	chapter	basedefs/V1_chap01.html#tag_01_06_06	open	open	
+basedefs	tag_01_06_07	chapter	basedefs/V1_chap01.html#tag_01_06_07	open	open	
+basedefs	tag_01_06_08	chapter	basedefs/V1_chap01.html#tag_01_06_08	open	open	
+basedefs	tag_01_07	chapter	basedefs/V1_chap01.html#tag_01_07	open	open	
+basedefs	tag_01_08	chapter	basedefs/V1_chap01.html#tag_01_08	open	open	
+basedefs	tag_01_08_01	chapter	basedefs/V1_chap01.html#tag_01_08_01	open	open	
+basedefs	tag_01_08_02	chapter	basedefs/V1_chap01.html#tag_01_08_02	open	open	
+basedefs	tag_01_08_02_01	chapter	basedefs/V1_chap01.html#tag_01_08_02_01	open	open	
+basedefs	tag_01_08_02_02	chapter	basedefs/V1_chap01.html#tag_01_08_02_02	open	open	
+basedefs	tag_01_08_02_03	chapter	basedefs/V1_chap01.html#tag_01_08_02_03	open	open	
+basedefs	tag_01_08_02_04	chapter	basedefs/V1_chap01.html#tag_01_08_02_04	open	open	
+basedefs	tag_01_08_03	chapter	basedefs/V1_chap01.html#tag_01_08_03	open	open	
+basedefs	tag_02	chapter	basedefs/V1_chap02.html#tag_02	open	open	
+basedefs	tag_02_01	chapter	basedefs/V1_chap02.html#tag_02_01	open	open	
+basedefs	tag_02_01_01	chapter	basedefs/V1_chap02.html#tag_02_01_01	open	open	
+basedefs	tag_02_01_02	chapter	basedefs/V1_chap02.html#tag_02_01_02	open	open	
+basedefs	tag_02_01_03	chapter	basedefs/V1_chap02.html#tag_02_01_03	open	open	
+basedefs	tag_02_01_03_01	chapter	basedefs/V1_chap02.html#tag_02_01_03_01	open	open	
+basedefs	tag_02_01_03_02	chapter	basedefs/V1_chap02.html#tag_02_01_03_02	open	open	
+basedefs	tag_02_01_04	chapter	basedefs/V1_chap02.html#tag_02_01_04	open	open	
+basedefs	tag_02_01_04_01	chapter	basedefs/V1_chap02.html#tag_02_01_04_01	open	open	
+basedefs	tag_02_01_04_02	chapter	basedefs/V1_chap02.html#tag_02_01_04_02	open	open	
+basedefs	tag_02_01_05	chapter	basedefs/V1_chap02.html#tag_02_01_05	open	open	
+basedefs	tag_02_01_05_01	chapter	basedefs/V1_chap02.html#tag_02_01_05_01	open	open	
+basedefs	tag_02_01_05_02	chapter	basedefs/V1_chap02.html#tag_02_01_05_02	open	open	
+basedefs	tag_02_01_05_03	chapter	basedefs/V1_chap02.html#tag_02_01_05_03	open	open	
+basedefs	tag_02_01_05_04	chapter	basedefs/V1_chap02.html#tag_02_01_05_04	open	open	
+basedefs	tag_02_01_05_05	chapter	basedefs/V1_chap02.html#tag_02_01_05_05	open	open	
+basedefs	tag_02_01_05_06	chapter	basedefs/V1_chap02.html#tag_02_01_05_06	open	open	
+basedefs	tag_02_01_05_07	chapter	basedefs/V1_chap02.html#tag_02_01_05_07	open	open	
+basedefs	tag_02_01_06	chapter	basedefs/V1_chap02.html#tag_02_01_06	open	open	
+basedefs	tag_02_01_06_01	chapter	basedefs/V1_chap02.html#tag_02_01_06_01	open	open	
+basedefs	tag_02_01_06_02	chapter	basedefs/V1_chap02.html#tag_02_01_06_02	open	open	
+basedefs	tag_02_02	chapter	basedefs/V1_chap02.html#tag_02_02	open	open	
+basedefs	tag_02_02_01	chapter	basedefs/V1_chap02.html#tag_02_02_01	open	open	
+basedefs	tag_02_02_02	chapter	basedefs/V1_chap02.html#tag_02_02_02	open	open	
+basedefs	tag_02_02_02_01	chapter	basedefs/V1_chap02.html#tag_02_02_02_01	open	open	
+basedefs	tag_02_02_02_02	chapter	basedefs/V1_chap02.html#tag_02_02_02_02	open	open	
+basedefs	tag_02_02_03	chapter	basedefs/V1_chap02.html#tag_02_02_03	open	open	
+basedefs	tag_02_02_04	chapter	basedefs/V1_chap02.html#tag_02_02_04	open	open	
+basedefs	tag_02_02_05	chapter	basedefs/V1_chap02.html#tag_02_02_05	open	open	
+basedefs	tag_02_03	chapter	basedefs/V1_chap02.html#tag_02_03	open	open	
+basedefs	tag_02_04	chapter	basedefs/V1_chap02.html#tag_02_04	open	open	
+basedefs	tag_02_04_01	chapter	basedefs/V1_chap02.html#tag_02_04_01	open	open	
+basedefs	tag_03	chapter	basedefs/V1_chap03.html#tag_03	open	open	
+basedefs	tag_03_01	chapter	basedefs/V1_chap03.html#tag_03_01	open	open	
+basedefs	tag_03_02	chapter	basedefs/V1_chap03.html#tag_03_02	open	open	
+basedefs	tag_03_03	chapter	basedefs/V1_chap03.html#tag_03_03	open	open	
+basedefs	tag_03_04	chapter	basedefs/V1_chap03.html#tag_03_04	open	open	
+basedefs	tag_03_05	chapter	basedefs/V1_chap03.html#tag_03_05	open	open	
+basedefs	tag_03_06	chapter	basedefs/V1_chap03.html#tag_03_06	open	open	
+basedefs	tag_03_07	chapter	basedefs/V1_chap03.html#tag_03_07	open	open	
+basedefs	tag_03_08	chapter	basedefs/V1_chap03.html#tag_03_08	open	open	
+basedefs	tag_03_09	chapter	basedefs/V1_chap03.html#tag_03_09	open	open	
+basedefs	tag_03_10	chapter	basedefs/V1_chap03.html#tag_03_10	open	open	
+basedefs	tag_03_11	chapter	basedefs/V1_chap03.html#tag_03_11	open	open	
+basedefs	tag_03_12	chapter	basedefs/V1_chap03.html#tag_03_12	open	open	
+basedefs	tag_03_13	chapter	basedefs/V1_chap03.html#tag_03_13	open	open	
+basedefs	tag_03_14	chapter	basedefs/V1_chap03.html#tag_03_14	open	open	
+basedefs	tag_03_15	chapter	basedefs/V1_chap03.html#tag_03_15	open	open	
+basedefs	tag_03_16	chapter	basedefs/V1_chap03.html#tag_03_16	open	open	
+basedefs	tag_03_17	chapter	basedefs/V1_chap03.html#tag_03_17	open	open	
+basedefs	tag_03_18	chapter	basedefs/V1_chap03.html#tag_03_18	open	open	
+basedefs	tag_03_19	chapter	basedefs/V1_chap03.html#tag_03_19	open	open	
+basedefs	tag_03_20	chapter	basedefs/V1_chap03.html#tag_03_20	open	open	
+basedefs	tag_03_21	chapter	basedefs/V1_chap03.html#tag_03_21	open	open	
+basedefs	tag_03_22	chapter	basedefs/V1_chap03.html#tag_03_22	open	open	
+basedefs	tag_03_23	chapter	basedefs/V1_chap03.html#tag_03_23	open	open	
+basedefs	tag_03_24	chapter	basedefs/V1_chap03.html#tag_03_24	open	open	
+basedefs	tag_03_25	chapter	basedefs/V1_chap03.html#tag_03_25	open	open	
+basedefs	tag_03_26	chapter	basedefs/V1_chap03.html#tag_03_26	open	open	
+basedefs	tag_03_27	chapter	basedefs/V1_chap03.html#tag_03_27	open	open	
+basedefs	tag_03_28	chapter	basedefs/V1_chap03.html#tag_03_28	open	open	
+basedefs	tag_03_29	chapter	basedefs/V1_chap03.html#tag_03_29	open	open	
+basedefs	tag_03_30	chapter	basedefs/V1_chap03.html#tag_03_30	open	open	
+basedefs	tag_03_31	chapter	basedefs/V1_chap03.html#tag_03_31	open	open	
+basedefs	tag_03_32	chapter	basedefs/V1_chap03.html#tag_03_32	open	open	
+basedefs	tag_03_33	chapter	basedefs/V1_chap03.html#tag_03_33	open	open	
+basedefs	tag_03_34	chapter	basedefs/V1_chap03.html#tag_03_34	open	open	
+basedefs	tag_03_35	chapter	basedefs/V1_chap03.html#tag_03_35	open	open	
+basedefs	tag_03_36	chapter	basedefs/V1_chap03.html#tag_03_36	open	open	
+basedefs	tag_03_37	chapter	basedefs/V1_chap03.html#tag_03_37	open	open	
+basedefs	tag_03_38	chapter	basedefs/V1_chap03.html#tag_03_38	open	open	
+basedefs	tag_03_39	chapter	basedefs/V1_chap03.html#tag_03_39	open	open	
+basedefs	tag_03_40	chapter	basedefs/V1_chap03.html#tag_03_40	open	open	
+basedefs	tag_03_41	chapter	basedefs/V1_chap03.html#tag_03_41	open	open	
+basedefs	tag_03_42	chapter	basedefs/V1_chap03.html#tag_03_42	open	open	
+basedefs	tag_03_43	chapter	basedefs/V1_chap03.html#tag_03_43	open	open	
+basedefs	tag_03_44	chapter	basedefs/V1_chap03.html#tag_03_44	open	open	
+basedefs	tag_03_45	chapter	basedefs/V1_chap03.html#tag_03_45	open	open	
+basedefs	tag_03_46	chapter	basedefs/V1_chap03.html#tag_03_46	open	open	
+basedefs	tag_03_47	chapter	basedefs/V1_chap03.html#tag_03_47	open	open	
+basedefs	tag_03_48	chapter	basedefs/V1_chap03.html#tag_03_48	open	open	
+basedefs	tag_03_49	chapter	basedefs/V1_chap03.html#tag_03_49	open	open	
+basedefs	tag_03_50	chapter	basedefs/V1_chap03.html#tag_03_50	open	open	
+basedefs	tag_03_51	chapter	basedefs/V1_chap03.html#tag_03_51	open	open	
+basedefs	tag_03_52	chapter	basedefs/V1_chap03.html#tag_03_52	open	open	
+basedefs	tag_03_53	chapter	basedefs/V1_chap03.html#tag_03_53	open	open	
+basedefs	tag_03_54	chapter	basedefs/V1_chap03.html#tag_03_54	open	open	
+basedefs	tag_03_55	chapter	basedefs/V1_chap03.html#tag_03_55	open	open	
+basedefs	tag_03_56	chapter	basedefs/V1_chap03.html#tag_03_56	open	open	
+basedefs	tag_03_57	chapter	basedefs/V1_chap03.html#tag_03_57	open	open	
+basedefs	tag_03_58	chapter	basedefs/V1_chap03.html#tag_03_58	open	open	
+basedefs	tag_03_59	chapter	basedefs/V1_chap03.html#tag_03_59	open	open	
+basedefs	tag_03_60	chapter	basedefs/V1_chap03.html#tag_03_60	open	open	
+basedefs	tag_03_61	chapter	basedefs/V1_chap03.html#tag_03_61	open	open	
+basedefs	tag_03_62	chapter	basedefs/V1_chap03.html#tag_03_62	open	open	
+basedefs	tag_03_63	chapter	basedefs/V1_chap03.html#tag_03_63	open	open	
+basedefs	tag_03_64	chapter	basedefs/V1_chap03.html#tag_03_64	open	open	
+basedefs	tag_03_65	chapter	basedefs/V1_chap03.html#tag_03_65	open	open	
+basedefs	tag_03_66	chapter	basedefs/V1_chap03.html#tag_03_66	open	open	
+basedefs	tag_03_67	chapter	basedefs/V1_chap03.html#tag_03_67	open	open	
+basedefs	tag_03_68	chapter	basedefs/V1_chap03.html#tag_03_68	open	open	
+basedefs	tag_03_69	chapter	basedefs/V1_chap03.html#tag_03_69	open	open	
+basedefs	tag_03_70	chapter	basedefs/V1_chap03.html#tag_03_70	open	open	
+basedefs	tag_03_71	chapter	basedefs/V1_chap03.html#tag_03_71	open	open	
+basedefs	tag_03_72	chapter	basedefs/V1_chap03.html#tag_03_72	open	open	
+basedefs	tag_03_73	chapter	basedefs/V1_chap03.html#tag_03_73	open	open	
+basedefs	tag_03_74	chapter	basedefs/V1_chap03.html#tag_03_74	open	open	
+basedefs	tag_03_75	chapter	basedefs/V1_chap03.html#tag_03_75	open	open	
+basedefs	tag_03_76	chapter	basedefs/V1_chap03.html#tag_03_76	open	open	
+basedefs	tag_03_77	chapter	basedefs/V1_chap03.html#tag_03_77	open	open	
+basedefs	tag_03_78	chapter	basedefs/V1_chap03.html#tag_03_78	open	open	
+basedefs	tag_03_79	chapter	basedefs/V1_chap03.html#tag_03_79	open	open	
+basedefs	tag_03_80	chapter	basedefs/V1_chap03.html#tag_03_80	open	open	
+basedefs	tag_03_81	chapter	basedefs/V1_chap03.html#tag_03_81	open	open	
+basedefs	tag_03_82	chapter	basedefs/V1_chap03.html#tag_03_82	open	open	
+basedefs	tag_03_83	chapter	basedefs/V1_chap03.html#tag_03_83	open	open	
+basedefs	tag_03_84	chapter	basedefs/V1_chap03.html#tag_03_84	open	open	
+basedefs	tag_03_85	chapter	basedefs/V1_chap03.html#tag_03_85	open	open	
+basedefs	tag_03_86	chapter	basedefs/V1_chap03.html#tag_03_86	open	open	
+basedefs	tag_03_87	chapter	basedefs/V1_chap03.html#tag_03_87	open	open	
+basedefs	tag_03_88	chapter	basedefs/V1_chap03.html#tag_03_88	open	open	
+basedefs	tag_03_89	chapter	basedefs/V1_chap03.html#tag_03_89	open	open	
+basedefs	tag_03_90	chapter	basedefs/V1_chap03.html#tag_03_90	open	open	
+basedefs	tag_03_91	chapter	basedefs/V1_chap03.html#tag_03_91	open	open	
+basedefs	tag_03_92	chapter	basedefs/V1_chap03.html#tag_03_92	open	open	
+basedefs	tag_03_93	chapter	basedefs/V1_chap03.html#tag_03_93	open	open	
+basedefs	tag_03_94	chapter	basedefs/V1_chap03.html#tag_03_94	open	open	
+basedefs	tag_03_95	chapter	basedefs/V1_chap03.html#tag_03_95	open	open	
+basedefs	tag_03_96	chapter	basedefs/V1_chap03.html#tag_03_96	open	open	
+basedefs	tag_03_97	chapter	basedefs/V1_chap03.html#tag_03_97	open	open	
+basedefs	tag_03_98	chapter	basedefs/V1_chap03.html#tag_03_98	open	open	
+basedefs	tag_03_99	chapter	basedefs/V1_chap03.html#tag_03_99	open	open	
+basedefs	tag_03_100	chapter	basedefs/V1_chap03.html#tag_03_100	open	open	
+basedefs	tag_03_101	chapter	basedefs/V1_chap03.html#tag_03_101	open	open	
+basedefs	tag_03_102	chapter	basedefs/V1_chap03.html#tag_03_102	open	open	
+basedefs	tag_03_103	chapter	basedefs/V1_chap03.html#tag_03_103	open	open	
+basedefs	tag_03_104	chapter	basedefs/V1_chap03.html#tag_03_104	open	open	
+basedefs	tag_03_105	chapter	basedefs/V1_chap03.html#tag_03_105	open	open	
+basedefs	tag_03_106	chapter	basedefs/V1_chap03.html#tag_03_106	open	open	
+basedefs	tag_03_107	chapter	basedefs/V1_chap03.html#tag_03_107	open	open	
+basedefs	tag_03_108	chapter	basedefs/V1_chap03.html#tag_03_108	open	open	
+basedefs	tag_03_109	chapter	basedefs/V1_chap03.html#tag_03_109	open	open	
+basedefs	tag_03_110	chapter	basedefs/V1_chap03.html#tag_03_110	open	open	
+basedefs	tag_03_111	chapter	basedefs/V1_chap03.html#tag_03_111	open	open	
+basedefs	tag_03_112	chapter	basedefs/V1_chap03.html#tag_03_112	open	open	
+basedefs	tag_03_113	chapter	basedefs/V1_chap03.html#tag_03_113	open	open	
+basedefs	tag_03_114	chapter	basedefs/V1_chap03.html#tag_03_114	open	open	
+basedefs	tag_03_115	chapter	basedefs/V1_chap03.html#tag_03_115	open	open	
+basedefs	tag_03_116	chapter	basedefs/V1_chap03.html#tag_03_116	open	open	
+basedefs	tag_03_117	chapter	basedefs/V1_chap03.html#tag_03_117	open	open	
+basedefs	tag_03_118	chapter	basedefs/V1_chap03.html#tag_03_118	open	open	
+basedefs	tag_03_119	chapter	basedefs/V1_chap03.html#tag_03_119	open	open	
+basedefs	tag_03_120	chapter	basedefs/V1_chap03.html#tag_03_120	open	open	
+basedefs	tag_03_121	chapter	basedefs/V1_chap03.html#tag_03_121	open	open	
+basedefs	tag_03_122	chapter	basedefs/V1_chap03.html#tag_03_122	open	open	
+basedefs	tag_03_123	chapter	basedefs/V1_chap03.html#tag_03_123	open	open	
+basedefs	tag_03_124	chapter	basedefs/V1_chap03.html#tag_03_124	open	open	
+basedefs	tag_03_125	chapter	basedefs/V1_chap03.html#tag_03_125	open	open	
+basedefs	tag_03_126	chapter	basedefs/V1_chap03.html#tag_03_126	open	open	
+basedefs	tag_03_127	chapter	basedefs/V1_chap03.html#tag_03_127	open	open	
+basedefs	tag_03_128	chapter	basedefs/V1_chap03.html#tag_03_128	open	open	
+basedefs	tag_03_129	chapter	basedefs/V1_chap03.html#tag_03_129	open	open	
+basedefs	tag_03_130	chapter	basedefs/V1_chap03.html#tag_03_130	open	open	
+basedefs	tag_03_131	chapter	basedefs/V1_chap03.html#tag_03_131	open	open	
+basedefs	tag_03_132	chapter	basedefs/V1_chap03.html#tag_03_132	open	open	
+basedefs	tag_03_133	chapter	basedefs/V1_chap03.html#tag_03_133	open	open	
+basedefs	tag_03_134	chapter	basedefs/V1_chap03.html#tag_03_134	open	open	
+basedefs	tag_03_135	chapter	basedefs/V1_chap03.html#tag_03_135	open	open	
+basedefs	tag_03_136	chapter	basedefs/V1_chap03.html#tag_03_136	open	open	
+basedefs	tag_03_137	chapter	basedefs/V1_chap03.html#tag_03_137	open	open	
+basedefs	tag_03_138	chapter	basedefs/V1_chap03.html#tag_03_138	open	open	
+basedefs	tag_03_139	chapter	basedefs/V1_chap03.html#tag_03_139	open	open	
+basedefs	tag_03_140	chapter	basedefs/V1_chap03.html#tag_03_140	open	open	
+basedefs	tag_03_141	chapter	basedefs/V1_chap03.html#tag_03_141	open	open	
+basedefs	tag_03_142	chapter	basedefs/V1_chap03.html#tag_03_142	open	open	
+basedefs	tag_03_143	chapter	basedefs/V1_chap03.html#tag_03_143	open	open	
+basedefs	tag_03_144	chapter	basedefs/V1_chap03.html#tag_03_144	open	open	
+basedefs	tag_03_145	chapter	basedefs/V1_chap03.html#tag_03_145	open	open	
+basedefs	tag_03_146	chapter	basedefs/V1_chap03.html#tag_03_146	open	open	
+basedefs	tag_03_147	chapter	basedefs/V1_chap03.html#tag_03_147	open	open	
+basedefs	tag_03_148	chapter	basedefs/V1_chap03.html#tag_03_148	open	open	
+basedefs	tag_03_149	chapter	basedefs/V1_chap03.html#tag_03_149	open	open	
+basedefs	tag_03_150	chapter	basedefs/V1_chap03.html#tag_03_150	open	open	
+basedefs	tag_03_151	chapter	basedefs/V1_chap03.html#tag_03_151	open	open	
+basedefs	tag_03_152	chapter	basedefs/V1_chap03.html#tag_03_152	open	open	
+basedefs	tag_03_153	chapter	basedefs/V1_chap03.html#tag_03_153	open	open	
+basedefs	tag_03_154	chapter	basedefs/V1_chap03.html#tag_03_154	open	open	
+basedefs	tag_03_155	chapter	basedefs/V1_chap03.html#tag_03_155	open	open	
+basedefs	tag_03_156	chapter	basedefs/V1_chap03.html#tag_03_156	open	open	
+basedefs	tag_03_157	chapter	basedefs/V1_chap03.html#tag_03_157	open	open	
+basedefs	tag_03_158	chapter	basedefs/V1_chap03.html#tag_03_158	open	open	
+basedefs	tag_03_159	chapter	basedefs/V1_chap03.html#tag_03_159	open	open	
+basedefs	tag_03_160	chapter	basedefs/V1_chap03.html#tag_03_160	open	open	
+basedefs	tag_03_161	chapter	basedefs/V1_chap03.html#tag_03_161	open	open	
+basedefs	tag_03_162	chapter	basedefs/V1_chap03.html#tag_03_162	open	open	
+basedefs	tag_03_163	chapter	basedefs/V1_chap03.html#tag_03_163	open	open	
+basedefs	tag_03_164	chapter	basedefs/V1_chap03.html#tag_03_164	open	open	
+basedefs	tag_03_165	chapter	basedefs/V1_chap03.html#tag_03_165	open	open	
+basedefs	tag_03_166	chapter	basedefs/V1_chap03.html#tag_03_166	open	open	
+basedefs	tag_03_167	chapter	basedefs/V1_chap03.html#tag_03_167	open	open	
+basedefs	tag_03_168	chapter	basedefs/V1_chap03.html#tag_03_168	open	open	
+basedefs	tag_03_169	chapter	basedefs/V1_chap03.html#tag_03_169	open	open	
+basedefs	tag_03_170	chapter	basedefs/V1_chap03.html#tag_03_170	open	open	
+basedefs	tag_03_171	chapter	basedefs/V1_chap03.html#tag_03_171	open	open	
+basedefs	tag_03_172	chapter	basedefs/V1_chap03.html#tag_03_172	open	open	
+basedefs	tag_03_173	chapter	basedefs/V1_chap03.html#tag_03_173	open	open	
+basedefs	tag_03_174	chapter	basedefs/V1_chap03.html#tag_03_174	open	open	
+basedefs	tag_03_175	chapter	basedefs/V1_chap03.html#tag_03_175	open	open	
+basedefs	tag_03_176	chapter	basedefs/V1_chap03.html#tag_03_176	open	open	
+basedefs	tag_03_177	chapter	basedefs/V1_chap03.html#tag_03_177	open	open	
+basedefs	tag_03_178	chapter	basedefs/V1_chap03.html#tag_03_178	open	open	
+basedefs	tag_03_179	chapter	basedefs/V1_chap03.html#tag_03_179	open	open	
+basedefs	tag_03_180	chapter	basedefs/V1_chap03.html#tag_03_180	open	open	
+basedefs	tag_03_181	chapter	basedefs/V1_chap03.html#tag_03_181	open	open	
+basedefs	tag_03_182	chapter	basedefs/V1_chap03.html#tag_03_182	open	open	
+basedefs	tag_03_183	chapter	basedefs/V1_chap03.html#tag_03_183	open	open	
+basedefs	tag_03_184	chapter	basedefs/V1_chap03.html#tag_03_184	open	open	
+basedefs	tag_03_185	chapter	basedefs/V1_chap03.html#tag_03_185	open	open	
+basedefs	tag_03_186	chapter	basedefs/V1_chap03.html#tag_03_186	open	open	
+basedefs	tag_03_187	chapter	basedefs/V1_chap03.html#tag_03_187	open	open	
+basedefs	tag_03_188	chapter	basedefs/V1_chap03.html#tag_03_188	open	open	
+basedefs	tag_03_189	chapter	basedefs/V1_chap03.html#tag_03_189	open	open	
+basedefs	tag_03_190	chapter	basedefs/V1_chap03.html#tag_03_190	open	open	
+basedefs	tag_03_191	chapter	basedefs/V1_chap03.html#tag_03_191	open	open	
+basedefs	tag_03_192	chapter	basedefs/V1_chap03.html#tag_03_192	open	open	
+basedefs	tag_03_193	chapter	basedefs/V1_chap03.html#tag_03_193	open	open	
+basedefs	tag_03_194	chapter	basedefs/V1_chap03.html#tag_03_194	open	open	
+basedefs	tag_03_195	chapter	basedefs/V1_chap03.html#tag_03_195	open	open	
+basedefs	tag_03_196	chapter	basedefs/V1_chap03.html#tag_03_196	open	open	
+basedefs	tag_03_197	chapter	basedefs/V1_chap03.html#tag_03_197	open	open	
+basedefs	tag_03_198	chapter	basedefs/V1_chap03.html#tag_03_198	open	open	
+basedefs	tag_03_199	chapter	basedefs/V1_chap03.html#tag_03_199	open	open	
+basedefs	tag_03_200	chapter	basedefs/V1_chap03.html#tag_03_200	open	open	
+basedefs	tag_03_201	chapter	basedefs/V1_chap03.html#tag_03_201	open	open	
+basedefs	tag_03_202	chapter	basedefs/V1_chap03.html#tag_03_202	open	open	
+basedefs	tag_03_203	chapter	basedefs/V1_chap03.html#tag_03_203	open	open	
+basedefs	tag_03_204	chapter	basedefs/V1_chap03.html#tag_03_204	open	open	
+basedefs	tag_03_205	chapter	basedefs/V1_chap03.html#tag_03_205	open	open	
+basedefs	tag_03_206	chapter	basedefs/V1_chap03.html#tag_03_206	open	open	
+basedefs	tag_03_207	chapter	basedefs/V1_chap03.html#tag_03_207	open	open	
+basedefs	tag_03_208	chapter	basedefs/V1_chap03.html#tag_03_208	open	open	
+basedefs	tag_03_209	chapter	basedefs/V1_chap03.html#tag_03_209	open	open	
+basedefs	tag_03_210	chapter	basedefs/V1_chap03.html#tag_03_210	open	open	
+basedefs	tag_03_211	chapter	basedefs/V1_chap03.html#tag_03_211	open	open	
+basedefs	tag_03_212	chapter	basedefs/V1_chap03.html#tag_03_212	open	open	
+basedefs	tag_03_213	chapter	basedefs/V1_chap03.html#tag_03_213	open	open	
+basedefs	tag_03_214	chapter	basedefs/V1_chap03.html#tag_03_214	open	open	
+basedefs	tag_03_215	chapter	basedefs/V1_chap03.html#tag_03_215	open	open	
+basedefs	tag_03_216	chapter	basedefs/V1_chap03.html#tag_03_216	open	open	
+basedefs	tag_03_217	chapter	basedefs/V1_chap03.html#tag_03_217	open	open	
+basedefs	tag_03_218	chapter	basedefs/V1_chap03.html#tag_03_218	open	open	
+basedefs	tag_03_219	chapter	basedefs/V1_chap03.html#tag_03_219	open	open	
+basedefs	tag_03_220	chapter	basedefs/V1_chap03.html#tag_03_220	open	open	
+basedefs	tag_03_221	chapter	basedefs/V1_chap03.html#tag_03_221	open	open	
+basedefs	tag_03_222	chapter	basedefs/V1_chap03.html#tag_03_222	open	open	
+basedefs	tag_03_223	chapter	basedefs/V1_chap03.html#tag_03_223	open	open	
+basedefs	tag_03_224	chapter	basedefs/V1_chap03.html#tag_03_224	open	open	
+basedefs	tag_03_225	chapter	basedefs/V1_chap03.html#tag_03_225	open	open	
+basedefs	tag_03_226	chapter	basedefs/V1_chap03.html#tag_03_226	open	open	
+basedefs	tag_03_227	chapter	basedefs/V1_chap03.html#tag_03_227	open	open	
+basedefs	tag_03_228	chapter	basedefs/V1_chap03.html#tag_03_228	open	open	
+basedefs	tag_03_229	chapter	basedefs/V1_chap03.html#tag_03_229	open	open	
+basedefs	tag_03_230	chapter	basedefs/V1_chap03.html#tag_03_230	open	open	
+basedefs	tag_03_231	chapter	basedefs/V1_chap03.html#tag_03_231	open	open	
+basedefs	tag_03_232	chapter	basedefs/V1_chap03.html#tag_03_232	open	open	
+basedefs	tag_03_233	chapter	basedefs/V1_chap03.html#tag_03_233	open	open	
+basedefs	tag_03_234	chapter	basedefs/V1_chap03.html#tag_03_234	open	open	
+basedefs	tag_03_235	chapter	basedefs/V1_chap03.html#tag_03_235	open	open	
+basedefs	tag_03_236	chapter	basedefs/V1_chap03.html#tag_03_236	open	open	
+basedefs	tag_03_237	chapter	basedefs/V1_chap03.html#tag_03_237	open	open	
+basedefs	tag_03_238	chapter	basedefs/V1_chap03.html#tag_03_238	open	open	
+basedefs	tag_03_239	chapter	basedefs/V1_chap03.html#tag_03_239	open	open	
+basedefs	tag_03_240	chapter	basedefs/V1_chap03.html#tag_03_240	open	open	
+basedefs	tag_03_241	chapter	basedefs/V1_chap03.html#tag_03_241	open	open	
+basedefs	tag_03_242	chapter	basedefs/V1_chap03.html#tag_03_242	open	open	
+basedefs	tag_03_243	chapter	basedefs/V1_chap03.html#tag_03_243	open	open	
+basedefs	tag_03_244	chapter	basedefs/V1_chap03.html#tag_03_244	open	open	
+basedefs	tag_03_245	chapter	basedefs/V1_chap03.html#tag_03_245	open	open	
+basedefs	tag_03_246	chapter	basedefs/V1_chap03.html#tag_03_246	open	open	
+basedefs	tag_03_247	chapter	basedefs/V1_chap03.html#tag_03_247	open	open	
+basedefs	tag_03_248	chapter	basedefs/V1_chap03.html#tag_03_248	open	open	
+basedefs	tag_03_249	chapter	basedefs/V1_chap03.html#tag_03_249	open	open	
+basedefs	tag_03_250	chapter	basedefs/V1_chap03.html#tag_03_250	open	open	
+basedefs	tag_03_251	chapter	basedefs/V1_chap03.html#tag_03_251	open	open	
+basedefs	tag_03_252	chapter	basedefs/V1_chap03.html#tag_03_252	open	open	
+basedefs	tag_03_253	chapter	basedefs/V1_chap03.html#tag_03_253	open	open	
+basedefs	tag_03_254	chapter	basedefs/V1_chap03.html#tag_03_254	open	open	
+basedefs	tag_03_255	chapter	basedefs/V1_chap03.html#tag_03_255	open	open	
+basedefs	tag_03_256	chapter	basedefs/V1_chap03.html#tag_03_256	open	open	
+basedefs	tag_03_257	chapter	basedefs/V1_chap03.html#tag_03_257	open	open	
+basedefs	tag_03_258	chapter	basedefs/V1_chap03.html#tag_03_258	open	open	
+basedefs	tag_03_259	chapter	basedefs/V1_chap03.html#tag_03_259	open	open	
+basedefs	tag_03_260	chapter	basedefs/V1_chap03.html#tag_03_260	open	open	
+basedefs	tag_03_261	chapter	basedefs/V1_chap03.html#tag_03_261	open	open	
+basedefs	tag_03_262	chapter	basedefs/V1_chap03.html#tag_03_262	open	open	
+basedefs	tag_03_263	chapter	basedefs/V1_chap03.html#tag_03_263	open	open	
+basedefs	tag_03_264	chapter	basedefs/V1_chap03.html#tag_03_264	open	open	
+basedefs	tag_03_265	chapter	basedefs/V1_chap03.html#tag_03_265	open	open	
+basedefs	tag_03_266	chapter	basedefs/V1_chap03.html#tag_03_266	open	open	
+basedefs	tag_03_267	chapter	basedefs/V1_chap03.html#tag_03_267	open	open	
+basedefs	tag_03_268	chapter	basedefs/V1_chap03.html#tag_03_268	open	open	
+basedefs	tag_03_269	chapter	basedefs/V1_chap03.html#tag_03_269	open	open	
+basedefs	tag_03_270	chapter	basedefs/V1_chap03.html#tag_03_270	open	open	
+basedefs	tag_03_271	chapter	basedefs/V1_chap03.html#tag_03_271	open	open	
+basedefs	tag_03_272	chapter	basedefs/V1_chap03.html#tag_03_272	open	open	
+basedefs	tag_03_273	chapter	basedefs/V1_chap03.html#tag_03_273	open	open	
+basedefs	tag_03_274	chapter	basedefs/V1_chap03.html#tag_03_274	open	open	
+basedefs	tag_03_275	chapter	basedefs/V1_chap03.html#tag_03_275	open	open	
+basedefs	tag_03_276	chapter	basedefs/V1_chap03.html#tag_03_276	open	open	
+basedefs	tag_03_277	chapter	basedefs/V1_chap03.html#tag_03_277	open	open	
+basedefs	tag_03_278	chapter	basedefs/V1_chap03.html#tag_03_278	open	open	
+basedefs	tag_03_279	chapter	basedefs/V1_chap03.html#tag_03_279	open	open	
+basedefs	tag_03_280	chapter	basedefs/V1_chap03.html#tag_03_280	open	open	
+basedefs	tag_03_281	chapter	basedefs/V1_chap03.html#tag_03_281	open	open	
+basedefs	tag_03_282	chapter	basedefs/V1_chap03.html#tag_03_282	open	open	
+basedefs	tag_03_283	chapter	basedefs/V1_chap03.html#tag_03_283	open	open	
+basedefs	tag_03_284	chapter	basedefs/V1_chap03.html#tag_03_284	open	open	
+basedefs	tag_03_285	chapter	basedefs/V1_chap03.html#tag_03_285	open	open	
+basedefs	tag_03_286	chapter	basedefs/V1_chap03.html#tag_03_286	open	open	
+basedefs	tag_03_287	chapter	basedefs/V1_chap03.html#tag_03_287	open	open	
+basedefs	tag_03_288	chapter	basedefs/V1_chap03.html#tag_03_288	open	open	
+basedefs	tag_03_289	chapter	basedefs/V1_chap03.html#tag_03_289	open	open	
+basedefs	tag_03_290	chapter	basedefs/V1_chap03.html#tag_03_290	open	open	
+basedefs	tag_03_291	chapter	basedefs/V1_chap03.html#tag_03_291	open	open	
+basedefs	tag_03_292	chapter	basedefs/V1_chap03.html#tag_03_292	open	open	
+basedefs	tag_03_293	chapter	basedefs/V1_chap03.html#tag_03_293	open	open	
+basedefs	tag_03_294	chapter	basedefs/V1_chap03.html#tag_03_294	open	open	
+basedefs	tag_03_295	chapter	basedefs/V1_chap03.html#tag_03_295	open	open	
+basedefs	tag_03_296	chapter	basedefs/V1_chap03.html#tag_03_296	open	open	
+basedefs	tag_03_297	chapter	basedefs/V1_chap03.html#tag_03_297	open	open	
+basedefs	tag_03_298	chapter	basedefs/V1_chap03.html#tag_03_298	open	open	
+basedefs	tag_03_299	chapter	basedefs/V1_chap03.html#tag_03_299	open	open	
+basedefs	tag_03_300	chapter	basedefs/V1_chap03.html#tag_03_300	open	open	
+basedefs	tag_03_301	chapter	basedefs/V1_chap03.html#tag_03_301	open	open	
+basedefs	tag_03_302	chapter	basedefs/V1_chap03.html#tag_03_302	open	open	
+basedefs	tag_03_303	chapter	basedefs/V1_chap03.html#tag_03_303	open	open	
+basedefs	tag_03_304	chapter	basedefs/V1_chap03.html#tag_03_304	open	open	
+basedefs	tag_03_305	chapter	basedefs/V1_chap03.html#tag_03_305	open	open	
+basedefs	tag_03_306	chapter	basedefs/V1_chap03.html#tag_03_306	open	open	
+basedefs	tag_03_307	chapter	basedefs/V1_chap03.html#tag_03_307	open	open	
+basedefs	tag_03_308	chapter	basedefs/V1_chap03.html#tag_03_308	open	open	
+basedefs	tag_03_309	chapter	basedefs/V1_chap03.html#tag_03_309	open	open	
+basedefs	tag_03_310	chapter	basedefs/V1_chap03.html#tag_03_310	open	open	
+basedefs	tag_03_311	chapter	basedefs/V1_chap03.html#tag_03_311	open	open	
+basedefs	tag_03_312	chapter	basedefs/V1_chap03.html#tag_03_312	open	open	
+basedefs	tag_03_313	chapter	basedefs/V1_chap03.html#tag_03_313	open	open	
+basedefs	tag_03_314	chapter	basedefs/V1_chap03.html#tag_03_314	open	open	
+basedefs	tag_03_315	chapter	basedefs/V1_chap03.html#tag_03_315	open	open	
+basedefs	tag_03_316	chapter	basedefs/V1_chap03.html#tag_03_316	open	open	
+basedefs	tag_03_317	chapter	basedefs/V1_chap03.html#tag_03_317	open	open	
+basedefs	tag_03_318	chapter	basedefs/V1_chap03.html#tag_03_318	open	open	
+basedefs	tag_03_319	chapter	basedefs/V1_chap03.html#tag_03_319	open	open	
+basedefs	tag_03_320	chapter	basedefs/V1_chap03.html#tag_03_320	open	open	
+basedefs	tag_03_321	chapter	basedefs/V1_chap03.html#tag_03_321	open	open	
+basedefs	tag_03_322	chapter	basedefs/V1_chap03.html#tag_03_322	open	open	
+basedefs	tag_03_323	chapter	basedefs/V1_chap03.html#tag_03_323	open	open	
+basedefs	tag_03_324	chapter	basedefs/V1_chap03.html#tag_03_324	open	open	
+basedefs	tag_03_325	chapter	basedefs/V1_chap03.html#tag_03_325	open	open	
+basedefs	tag_03_326	chapter	basedefs/V1_chap03.html#tag_03_326	open	open	
+basedefs	tag_03_327	chapter	basedefs/V1_chap03.html#tag_03_327	open	open	
+basedefs	tag_03_328	chapter	basedefs/V1_chap03.html#tag_03_328	open	open	
+basedefs	tag_03_329	chapter	basedefs/V1_chap03.html#tag_03_329	open	open	
+basedefs	tag_03_330	chapter	basedefs/V1_chap03.html#tag_03_330	open	open	
+basedefs	tag_03_331	chapter	basedefs/V1_chap03.html#tag_03_331	open	open	
+basedefs	tag_03_332	chapter	basedefs/V1_chap03.html#tag_03_332	open	open	
+basedefs	tag_03_333	chapter	basedefs/V1_chap03.html#tag_03_333	open	open	
+basedefs	tag_03_334	chapter	basedefs/V1_chap03.html#tag_03_334	open	open	
+basedefs	tag_03_335	chapter	basedefs/V1_chap03.html#tag_03_335	open	open	
+basedefs	tag_03_336	chapter	basedefs/V1_chap03.html#tag_03_336	open	open	
+basedefs	tag_03_337	chapter	basedefs/V1_chap03.html#tag_03_337	open	open	
+basedefs	tag_03_338	chapter	basedefs/V1_chap03.html#tag_03_338	open	open	
+basedefs	tag_03_339	chapter	basedefs/V1_chap03.html#tag_03_339	open	open	
+basedefs	tag_03_340	chapter	basedefs/V1_chap03.html#tag_03_340	open	open	
+basedefs	tag_03_341	chapter	basedefs/V1_chap03.html#tag_03_341	open	open	
+basedefs	tag_03_342	chapter	basedefs/V1_chap03.html#tag_03_342	open	open	
+basedefs	tag_03_343	chapter	basedefs/V1_chap03.html#tag_03_343	open	open	
+basedefs	tag_03_344	chapter	basedefs/V1_chap03.html#tag_03_344	open	open	
+basedefs	tag_03_345	chapter	basedefs/V1_chap03.html#tag_03_345	open	open	
+basedefs	tag_03_346	chapter	basedefs/V1_chap03.html#tag_03_346	open	open	
+basedefs	tag_03_347	chapter	basedefs/V1_chap03.html#tag_03_347	open	open	
+basedefs	tag_03_348	chapter	basedefs/V1_chap03.html#tag_03_348	open	open	
+basedefs	tag_03_349	chapter	basedefs/V1_chap03.html#tag_03_349	open	open	
+basedefs	tag_03_350	chapter	basedefs/V1_chap03.html#tag_03_350	open	open	
+basedefs	tag_03_351	chapter	basedefs/V1_chap03.html#tag_03_351	open	open	
+basedefs	tag_03_352	chapter	basedefs/V1_chap03.html#tag_03_352	open	open	
+basedefs	tag_03_353	chapter	basedefs/V1_chap03.html#tag_03_353	open	open	
+basedefs	tag_03_354	chapter	basedefs/V1_chap03.html#tag_03_354	open	open	
+basedefs	tag_03_355	chapter	basedefs/V1_chap03.html#tag_03_355	open	open	
+basedefs	tag_03_356	chapter	basedefs/V1_chap03.html#tag_03_356	open	open	
+basedefs	tag_03_357	chapter	basedefs/V1_chap03.html#tag_03_357	open	open	
+basedefs	tag_03_358	chapter	basedefs/V1_chap03.html#tag_03_358	open	open	
+basedefs	tag_03_359	chapter	basedefs/V1_chap03.html#tag_03_359	open	open	
+basedefs	tag_03_360	chapter	basedefs/V1_chap03.html#tag_03_360	open	open	
+basedefs	tag_03_361	chapter	basedefs/V1_chap03.html#tag_03_361	open	open	
+basedefs	tag_03_362	chapter	basedefs/V1_chap03.html#tag_03_362	open	open	
+basedefs	tag_03_363	chapter	basedefs/V1_chap03.html#tag_03_363	open	open	
+basedefs	tag_03_364	chapter	basedefs/V1_chap03.html#tag_03_364	open	open	
+basedefs	tag_03_365	chapter	basedefs/V1_chap03.html#tag_03_365	open	open	
+basedefs	tag_03_366	chapter	basedefs/V1_chap03.html#tag_03_366	open	open	
+basedefs	tag_03_367	chapter	basedefs/V1_chap03.html#tag_03_367	open	open	
+basedefs	tag_03_368	chapter	basedefs/V1_chap03.html#tag_03_368	open	open	
+basedefs	tag_03_369	chapter	basedefs/V1_chap03.html#tag_03_369	open	open	
+basedefs	tag_03_370	chapter	basedefs/V1_chap03.html#tag_03_370	open	open	
+basedefs	tag_03_371	chapter	basedefs/V1_chap03.html#tag_03_371	open	open	
+basedefs	tag_03_372	chapter	basedefs/V1_chap03.html#tag_03_372	open	open	
+basedefs	tag_03_373	chapter	basedefs/V1_chap03.html#tag_03_373	open	open	
+basedefs	tag_03_374	chapter	basedefs/V1_chap03.html#tag_03_374	open	open	
+basedefs	tag_03_375	chapter	basedefs/V1_chap03.html#tag_03_375	open	open	
+basedefs	tag_03_376	chapter	basedefs/V1_chap03.html#tag_03_376	open	open	
+basedefs	tag_03_377	chapter	basedefs/V1_chap03.html#tag_03_377	open	open	
+basedefs	tag_03_378	chapter	basedefs/V1_chap03.html#tag_03_378	open	open	
+basedefs	tag_03_379	chapter	basedefs/V1_chap03.html#tag_03_379	open	open	
+basedefs	tag_03_380	chapter	basedefs/V1_chap03.html#tag_03_380	open	open	
+basedefs	tag_03_381	chapter	basedefs/V1_chap03.html#tag_03_381	open	open	
+basedefs	tag_03_382	chapter	basedefs/V1_chap03.html#tag_03_382	open	open	
+basedefs	tag_03_383	chapter	basedefs/V1_chap03.html#tag_03_383	open	open	
+basedefs	tag_03_384	chapter	basedefs/V1_chap03.html#tag_03_384	open	open	
+basedefs	tag_03_385	chapter	basedefs/V1_chap03.html#tag_03_385	open	open	
+basedefs	tag_03_386	chapter	basedefs/V1_chap03.html#tag_03_386	open	open	
+basedefs	tag_03_387	chapter	basedefs/V1_chap03.html#tag_03_387	open	open	
+basedefs	tag_03_388	chapter	basedefs/V1_chap03.html#tag_03_388	open	open	
+basedefs	tag_03_389	chapter	basedefs/V1_chap03.html#tag_03_389	open	open	
+basedefs	tag_03_390	chapter	basedefs/V1_chap03.html#tag_03_390	open	open	
+basedefs	tag_03_391	chapter	basedefs/V1_chap03.html#tag_03_391	open	open	
+basedefs	tag_03_392	chapter	basedefs/V1_chap03.html#tag_03_392	open	open	
+basedefs	tag_03_393	chapter	basedefs/V1_chap03.html#tag_03_393	open	open	
+basedefs	tag_03_394	chapter	basedefs/V1_chap03.html#tag_03_394	open	open	
+basedefs	tag_03_395	chapter	basedefs/V1_chap03.html#tag_03_395	open	open	
+basedefs	tag_03_396	chapter	basedefs/V1_chap03.html#tag_03_396	open	open	
+basedefs	tag_03_397	chapter	basedefs/V1_chap03.html#tag_03_397	open	open	
+basedefs	tag_03_398	chapter	basedefs/V1_chap03.html#tag_03_398	open	open	
+basedefs	tag_03_399	chapter	basedefs/V1_chap03.html#tag_03_399	open	open	
+basedefs	tag_03_400	chapter	basedefs/V1_chap03.html#tag_03_400	open	open	
+basedefs	tag_03_401	chapter	basedefs/V1_chap03.html#tag_03_401	open	open	
+basedefs	tag_03_402	chapter	basedefs/V1_chap03.html#tag_03_402	open	open	
+basedefs	tag_03_403	chapter	basedefs/V1_chap03.html#tag_03_403	open	open	
+basedefs	tag_03_404	chapter	basedefs/V1_chap03.html#tag_03_404	open	open	
+basedefs	tag_03_405	chapter	basedefs/V1_chap03.html#tag_03_405	open	open	
+basedefs	tag_03_406	chapter	basedefs/V1_chap03.html#tag_03_406	open	open	
+basedefs	tag_03_407	chapter	basedefs/V1_chap03.html#tag_03_407	open	open	
+basedefs	tag_03_408	chapter	basedefs/V1_chap03.html#tag_03_408	open	open	
+basedefs	tag_03_409	chapter	basedefs/V1_chap03.html#tag_03_409	open	open	
+basedefs	tag_03_410	chapter	basedefs/V1_chap03.html#tag_03_410	open	open	
+basedefs	tag_03_411	chapter	basedefs/V1_chap03.html#tag_03_411	open	open	
+basedefs	tag_03_412	chapter	basedefs/V1_chap03.html#tag_03_412	open	open	
+basedefs	tag_03_413	chapter	basedefs/V1_chap03.html#tag_03_413	open	open	
+basedefs	tag_03_414	chapter	basedefs/V1_chap03.html#tag_03_414	open	open	
+basedefs	tag_03_415	chapter	basedefs/V1_chap03.html#tag_03_415	open	open	
+basedefs	tag_03_416	chapter	basedefs/V1_chap03.html#tag_03_416	open	open	
+basedefs	tag_03_417	chapter	basedefs/V1_chap03.html#tag_03_417	open	open	
+basedefs	tag_03_418	chapter	basedefs/V1_chap03.html#tag_03_418	open	open	
+basedefs	tag_03_419	chapter	basedefs/V1_chap03.html#tag_03_419	open	open	
+basedefs	tag_03_420	chapter	basedefs/V1_chap03.html#tag_03_420	open	open	
+basedefs	tag_03_421	chapter	basedefs/V1_chap03.html#tag_03_421	open	open	
+basedefs	tag_03_422	chapter	basedefs/V1_chap03.html#tag_03_422	open	open	
+basedefs	tag_03_423	chapter	basedefs/V1_chap03.html#tag_03_423	open	open	
+basedefs	tag_03_424	chapter	basedefs/V1_chap03.html#tag_03_424	open	open	
+basedefs	tag_03_425	chapter	basedefs/V1_chap03.html#tag_03_425	open	open	
+basedefs	tag_03_426	chapter	basedefs/V1_chap03.html#tag_03_426	open	open	
+basedefs	tag_03_427	chapter	basedefs/V1_chap03.html#tag_03_427	open	open	
+basedefs	tag_03_428	chapter	basedefs/V1_chap03.html#tag_03_428	open	open	
+basedefs	tag_04	chapter	basedefs/V1_chap04.html#tag_04	open	open	
+basedefs	tag_04_01	chapter	basedefs/V1_chap04.html#tag_04_01	open	open	
+basedefs	tag_04_02	chapter	basedefs/V1_chap04.html#tag_04_02	open	open	
+basedefs	tag_04_03	chapter	basedefs/V1_chap04.html#tag_04_03	open	open	
+basedefs	tag_04_04	chapter	basedefs/V1_chap04.html#tag_04_04	open	open	
+basedefs	tag_04_05	chapter	basedefs/V1_chap04.html#tag_04_05	open	open	
+basedefs	tag_04_06	chapter	basedefs/V1_chap04.html#tag_04_06	open	open	
+basedefs	tag_04_07	chapter	basedefs/V1_chap04.html#tag_04_07	open	open	
+basedefs	tag_04_08	chapter	basedefs/V1_chap04.html#tag_04_08	open	open	
+basedefs	tag_04_09	chapter	basedefs/V1_chap04.html#tag_04_09	open	open	
+basedefs	tag_04_10	chapter	basedefs/V1_chap04.html#tag_04_10	open	open	
+basedefs	tag_04_11	chapter	basedefs/V1_chap04.html#tag_04_11	open	open	
+basedefs	tag_04_12	chapter	basedefs/V1_chap04.html#tag_04_12	open	open	
+basedefs	tag_04_13	chapter	basedefs/V1_chap04.html#tag_04_13	open	open	
+basedefs	tag_04_14	chapter	basedefs/V1_chap04.html#tag_04_14	open	open	
+basedefs	tag_04_15	chapter	basedefs/V1_chap04.html#tag_04_15	open	open	
+basedefs	tag_04_15_01	chapter	basedefs/V1_chap04.html#tag_04_15_01	open	open	
+basedefs	tag_04_15_01_01	chapter	basedefs/V1_chap04.html#tag_04_15_01_01	open	open	
+basedefs	tag_04_15_01_02	chapter	basedefs/V1_chap04.html#tag_04_15_01_02	open	open	
+basedefs	tag_04_15_02	chapter	basedefs/V1_chap04.html#tag_04_15_02	open	open	
+basedefs	tag_04_16	chapter	basedefs/V1_chap04.html#tag_04_16	open	open	
+basedefs	tag_04_17	chapter	basedefs/V1_chap04.html#tag_04_17	open	open	
+basedefs	tag_04_18	chapter	basedefs/V1_chap04.html#tag_04_18	open	open	
+basedefs	tag_04_19	chapter	basedefs/V1_chap04.html#tag_04_19	open	open	
+basedefs	tag_04_20	chapter	basedefs/V1_chap04.html#tag_04_20	open	open	
+basedefs	tag_04_20_00_01	chapter	basedefs/V1_chap04.html#tag_04_20_00_01	open	open	
+basedefs	tag_04_20_00_02	chapter	basedefs/V1_chap04.html#tag_04_20_00_02	open	open	
+basedefs	tag_04_21	chapter	basedefs/V1_chap04.html#tag_04_21	open	open	
+basedefs	tag_04_22	chapter	basedefs/V1_chap04.html#tag_04_22	open	open	
+basedefs	tag_04_23	chapter	basedefs/V1_chap04.html#tag_04_23	open	open	
+basedefs	tag_04_23_01	chapter	basedefs/V1_chap04.html#tag_04_23_01	open	open	
+basedefs	tag_04_23_02	chapter	basedefs/V1_chap04.html#tag_04_23_02	open	open	
+basedefs	tag_04_23_03	chapter	basedefs/V1_chap04.html#tag_04_23_03	open	open	
+basedefs	tag_04_23_03_01	chapter	basedefs/V1_chap04.html#tag_04_23_03_01	open	open	
+basedefs	tag_04_23_03_02	chapter	basedefs/V1_chap04.html#tag_04_23_03_02	open	open	
+basedefs	tag_04_24	chapter	basedefs/V1_chap04.html#tag_04_24	open	open	
+basedefs	tag_04_25	chapter	basedefs/V1_chap04.html#tag_04_25	open	open	
+basedefs	tag_04_26	chapter	basedefs/V1_chap04.html#tag_04_26	open	open	
+basedefs	tag_04_26_01	chapter	basedefs/V1_chap04.html#tag_04_26_01	open	open	
+basedefs	tag_05	chapter	basedefs/V1_chap05.html#tag_05	open	open	
+basedefs	tag_06	chapter	basedefs/V1_chap06.html#tag_06	open	open	
+basedefs	tag_06_01	chapter	basedefs/V1_chap06.html#tag_06_01	open	open	
+basedefs	tag_06_02	chapter	basedefs/V1_chap06.html#tag_06_02	open	open	
+basedefs	tag_06_03	chapter	basedefs/V1_chap06.html#tag_06_03	open	open	
+basedefs	tag_06_04	chapter	basedefs/V1_chap06.html#tag_06_04	open	open	
+basedefs	tag_06_04_00_01	chapter	basedefs/V1_chap06.html#tag_06_04_00_01	open	open	
+basedefs	tag_06_04_01	chapter	basedefs/V1_chap06.html#tag_06_04_01	open	open	
+basedefs	tag_07	chapter	basedefs/V1_chap07.html#tag_07	open	open	
+basedefs	tag_07_01	chapter	basedefs/V1_chap07.html#tag_07_01	open	open	
+basedefs	tag_07_02	chapter	basedefs/V1_chap07.html#tag_07_02	open	open	
+basedefs	tag_07_03	chapter	basedefs/V1_chap07.html#tag_07_03	open	open	
+basedefs	tag_07_03_01	chapter	basedefs/V1_chap07.html#tag_07_03_01	open	open	
+basedefs	tag_07_03_01_01	chapter	basedefs/V1_chap07.html#tag_07_03_01_01	open	open	
+basedefs	tag_07_03_02	chapter	basedefs/V1_chap07.html#tag_07_03_02	open	open	
+basedefs	tag_07_03_02_01	chapter	basedefs/V1_chap07.html#tag_07_03_02_01	open	open	
+basedefs	tag_07_03_02_02	chapter	basedefs/V1_chap07.html#tag_07_03_02_02	open	open	
+basedefs	tag_07_03_02_03	chapter	basedefs/V1_chap07.html#tag_07_03_02_03	open	open	
+basedefs	tag_07_03_02_04	chapter	basedefs/V1_chap07.html#tag_07_03_02_04	open	open	
+basedefs	tag_07_03_02_05	chapter	basedefs/V1_chap07.html#tag_07_03_02_05	open	open	
+basedefs	tag_07_03_02_06	chapter	basedefs/V1_chap07.html#tag_07_03_02_06	open	open	
+basedefs	tag_07_03_03	chapter	basedefs/V1_chap07.html#tag_07_03_03	open	open	
+basedefs	tag_07_03_03_01	chapter	basedefs/V1_chap07.html#tag_07_03_03_01	open	open	
+basedefs	tag_07_03_04	chapter	basedefs/V1_chap07.html#tag_07_03_04	open	open	
+basedefs	tag_07_03_04_01	chapter	basedefs/V1_chap07.html#tag_07_03_04_01	open	open	
+basedefs	tag_07_03_05	chapter	basedefs/V1_chap07.html#tag_07_03_05	open	open	
+basedefs	tag_07_03_05_01	chapter	basedefs/V1_chap07.html#tag_07_03_05_01	open	open	
+basedefs	tag_07_03_05_02	chapter	basedefs/V1_chap07.html#tag_07_03_05_02	open	open	
+basedefs	tag_07_03_05_03	chapter	basedefs/V1_chap07.html#tag_07_03_05_03	open	open	
+basedefs	tag_07_03_06	chapter	basedefs/V1_chap07.html#tag_07_03_06	open	open	
+basedefs	tag_07_03_06_01	chapter	basedefs/V1_chap07.html#tag_07_03_06_01	open	open	
+basedefs	tag_07_04	chapter	basedefs/V1_chap07.html#tag_07_04	open	open	
+basedefs	tag_07_04_01	chapter	basedefs/V1_chap07.html#tag_07_04_01	open	open	
+basedefs	tag_07_04_02	chapter	basedefs/V1_chap07.html#tag_07_04_02	open	open	
+basedefs	tag_08	chapter	basedefs/V1_chap08.html#tag_08	open	open	
+basedefs	tag_08_01	chapter	basedefs/V1_chap08.html#tag_08_01	open	open	
+basedefs	tag_08_02	chapter	basedefs/V1_chap08.html#tag_08_02	open	open	
+basedefs	tag_08_03	chapter	basedefs/V1_chap08.html#tag_08_03	open	open	
+basedefs	tag_09	chapter	basedefs/V1_chap09.html#tag_09	open	open	
+basedefs	tag_09_01	chapter	basedefs/V1_chap09.html#tag_09_01	open	open	
+basedefs	tag_09_01_01	chapter	basedefs/V1_chap09.html#tag_09_01_01	open	open	
+basedefs	tag_09_01_02	chapter	basedefs/V1_chap09.html#tag_09_01_02	open	open	
+basedefs	tag_09_01_03	chapter	basedefs/V1_chap09.html#tag_09_01_03	open	open	
+basedefs	tag_09_01_04	chapter	basedefs/V1_chap09.html#tag_09_01_04	open	open	
+basedefs	tag_09_01_05	chapter	basedefs/V1_chap09.html#tag_09_01_05	open	open	
+basedefs	tag_09_01_06	chapter	basedefs/V1_chap09.html#tag_09_01_06	open	open	
+basedefs	tag_09_01_07	chapter	basedefs/V1_chap09.html#tag_09_01_07	open	open	
+basedefs	tag_09_02	chapter	basedefs/V1_chap09.html#tag_09_02	open	open	
+basedefs	tag_09_03	chapter	basedefs/V1_chap09.html#tag_09_03	open	open	
+basedefs	tag_09_03_01	chapter	basedefs/V1_chap09.html#tag_09_03_01	open	open	
+basedefs	tag_09_03_02	chapter	basedefs/V1_chap09.html#tag_09_03_02	open	open	
+basedefs	tag_09_03_03	chapter	basedefs/V1_chap09.html#tag_09_03_03	open	open	
+basedefs	tag_09_03_04	chapter	basedefs/V1_chap09.html#tag_09_03_04	open	open	
+basedefs	tag_09_03_05	chapter	basedefs/V1_chap09.html#tag_09_03_05	open	open	
+basedefs	tag_09_03_06	chapter	basedefs/V1_chap09.html#tag_09_03_06	open	open	
+basedefs	tag_09_03_07	chapter	basedefs/V1_chap09.html#tag_09_03_07	open	open	
+basedefs	tag_09_03_08	chapter	basedefs/V1_chap09.html#tag_09_03_08	open	open	
+basedefs	tag_09_04	chapter	basedefs/V1_chap09.html#tag_09_04	open	open	
+basedefs	tag_09_04_01	chapter	basedefs/V1_chap09.html#tag_09_04_01	open	open	
+basedefs	tag_09_04_02	chapter	basedefs/V1_chap09.html#tag_09_04_02	open	open	
+basedefs	tag_09_04_03	chapter	basedefs/V1_chap09.html#tag_09_04_03	open	open	
+basedefs	tag_09_04_04	chapter	basedefs/V1_chap09.html#tag_09_04_04	open	open	
+basedefs	tag_09_04_05	chapter	basedefs/V1_chap09.html#tag_09_04_05	open	open	
+basedefs	tag_09_04_06	chapter	basedefs/V1_chap09.html#tag_09_04_06	open	open	
+basedefs	tag_09_04_07	chapter	basedefs/V1_chap09.html#tag_09_04_07	open	open	
+basedefs	tag_09_04_08	chapter	basedefs/V1_chap09.html#tag_09_04_08	open	open	
+basedefs	tag_09_04_09	chapter	basedefs/V1_chap09.html#tag_09_04_09	open	open	
+basedefs	tag_09_05	chapter	basedefs/V1_chap09.html#tag_09_05	open	open	
+basedefs	tag_09_05_01	chapter	basedefs/V1_chap09.html#tag_09_05_01	open	open	
+basedefs	tag_09_05_02	chapter	basedefs/V1_chap09.html#tag_09_05_02	open	open	
+basedefs	tag_09_05_03	chapter	basedefs/V1_chap09.html#tag_09_05_03	open	open	
+basedefs	tag_10	chapter	basedefs/V1_chap10.html#tag_10	open	open	
+basedefs	tag_10_01	chapter	basedefs/V1_chap10.html#tag_10_01	partial	partial	scripts/qemu-native-null.py
+basedefs	tag_10_02	chapter	basedefs/V1_chap10.html#tag_10_02	open	open	
+basedefs	tag_11	chapter	basedefs/V1_chap11.html#tag_11	open	open	
+basedefs	tag_11_01	chapter	basedefs/V1_chap11.html#tag_11_01	open	open	
+basedefs	tag_11_01_01	chapter	basedefs/V1_chap11.html#tag_11_01_01	open	open	
+basedefs	tag_11_01_02	chapter	basedefs/V1_chap11.html#tag_11_01_02	open	open	
+basedefs	tag_11_01_03	chapter	basedefs/V1_chap11.html#tag_11_01_03	open	open	
+basedefs	tag_11_01_04	chapter	basedefs/V1_chap11.html#tag_11_01_04	open	open	
+basedefs	tag_11_01_05	chapter	basedefs/V1_chap11.html#tag_11_01_05	open	open	
+basedefs	tag_11_01_06	chapter	basedefs/V1_chap11.html#tag_11_01_06	open	open	
+basedefs	tag_11_01_07	chapter	basedefs/V1_chap11.html#tag_11_01_07	open	open	
+basedefs	tag_11_01_07_01	chapter	basedefs/V1_chap11.html#tag_11_01_07_01	open	open	
+basedefs	tag_11_01_07_02	chapter	basedefs/V1_chap11.html#tag_11_01_07_02	open	open	
+basedefs	tag_11_01_07_03	chapter	basedefs/V1_chap11.html#tag_11_01_07_03	open	open	
+basedefs	tag_11_01_07_04	chapter	basedefs/V1_chap11.html#tag_11_01_07_04	open	open	
+basedefs	tag_11_01_08	chapter	basedefs/V1_chap11.html#tag_11_01_08	open	open	
+basedefs	tag_11_01_09	chapter	basedefs/V1_chap11.html#tag_11_01_09	open	open	
+basedefs	tag_11_01_10	chapter	basedefs/V1_chap11.html#tag_11_01_10	open	open	
+basedefs	tag_11_01_11	chapter	basedefs/V1_chap11.html#tag_11_01_11	open	open	
+basedefs	tag_11_02	chapter	basedefs/V1_chap11.html#tag_11_02	open	open	
+basedefs	tag_11_02_01	chapter	basedefs/V1_chap11.html#tag_11_02_01	open	open	
+basedefs	tag_11_02_02	chapter	basedefs/V1_chap11.html#tag_11_02_02	open	open	
+basedefs	tag_11_02_03	chapter	basedefs/V1_chap11.html#tag_11_02_03	open	open	
+basedefs	tag_11_02_04	chapter	basedefs/V1_chap11.html#tag_11_02_04	open	open	
+basedefs	tag_11_02_05	chapter	basedefs/V1_chap11.html#tag_11_02_05	open	open	
+basedefs	tag_11_02_06	chapter	basedefs/V1_chap11.html#tag_11_02_06	open	open	
+basedefs	tag_12	chapter	basedefs/V1_chap12.html#tag_12	open	open	
+basedefs	tag_12_01	chapter	basedefs/V1_chap12.html#tag_12_01	open	open	
+basedefs	tag_12_02	chapter	basedefs/V1_chap12.html#tag_12_02	open	open	
+basedefs	tag_13	chapter	basedefs/V1_chap13.html#tag_13	open	open	
+basedefs	tag_14	chapter	basedefs/V1_chap14.html#tag_14	open	open	
+basedefs	tag_14_00_00_01	chapter	basedefs/V1_chap14.html#tag_14_00_00_01	open	open	
+basedefs	aio.h	base	basedefs/aio.h.html#tag_14_01	open	open	
+basedefs	arpa/inet.h	base	basedefs/arpa_inet.h.html#tag_14_02	open	open	
+basedefs	assert.h	base	basedefs/assert.h.html#tag_14_03	open	open	
+basedefs	complex.h	base	basedefs/complex.h.html#tag_14_04	open	open	
+basedefs	cpio.h	base	basedefs/cpio.h.html#tag_14_05	open	open	
+basedefs	ctype.h	base	basedefs/ctype.h.html#tag_14_06	open	open	
+basedefs	devctl.h	DC	basedefs/devctl.h.html#tag_14_07	open	open	
+basedefs	dirent.h	base	basedefs/dirent.h.html#tag_14_08	open	open	
+basedefs	dlfcn.h	base	basedefs/dlfcn.h.html#tag_14_09	open	open	
+basedefs	endian.h	base	basedefs/endian.h.html#tag_14_10	open	open	
+basedefs	errno.h	base	basedefs/errno.h.html#tag_14_11	open	open	
+basedefs	fcntl.h	base	basedefs/fcntl.h.html#tag_14_12	open	open	
+basedefs	fenv.h	base	basedefs/fenv.h.html#tag_14_13	open	open	
+basedefs	float.h	base	basedefs/float.h.html#tag_14_14	open	open	
+basedefs	fmtmsg.h	XSI	basedefs/fmtmsg.h.html#tag_14_15	open	open	
+basedefs	fnmatch.h	base	basedefs/fnmatch.h.html#tag_14_16	open	open	
+basedefs	ftw.h	XSI	basedefs/ftw.h.html#tag_14_17	open	open	
+basedefs	glob.h	base	basedefs/glob.h.html#tag_14_18	open	open	
+basedefs	grp.h	base	basedefs/grp.h.html#tag_14_19	open	open	
+basedefs	iconv.h	base	basedefs/iconv.h.html#tag_14_20	open	open	
+basedefs	inttypes.h	base	basedefs/inttypes.h.html#tag_14_21	open	open	
+basedefs	iso646.h	base	basedefs/iso646.h.html#tag_14_22	open	open	
+basedefs	langinfo.h	base	basedefs/langinfo.h.html#tag_14_23	open	open	
+basedefs	libgen.h	XSI	basedefs/libgen.h.html#tag_14_24	open	open	
+basedefs	libintl.h	base	basedefs/libintl.h.html#tag_14_25	open	open	
+basedefs	limits.h	base	basedefs/limits.h.html#tag_14_26	open	open	
+basedefs	locale.h	base	basedefs/locale.h.html#tag_14_27	open	open	
+basedefs	math.h	base	basedefs/math.h.html#tag_14_28	open	open	
+basedefs	monetary.h	base	basedefs/monetary.h.html#tag_14_29	open	open	
+basedefs	mqueue.h	MSG	basedefs/mqueue.h.html#tag_14_30	open	open	
+basedefs	ndbm.h	XSI	basedefs/ndbm.h.html#tag_14_31	open	open	
+basedefs	net/if.h	base	basedefs/net_if.h.html#tag_14_32	open	open	
+basedefs	netdb.h	base	basedefs/netdb.h.html#tag_14_33	open	open	
+basedefs	netinet/in.h	base	basedefs/netinet_in.h.html#tag_14_34	open	open	
+basedefs	netinet/tcp.h	base	basedefs/netinet_tcp.h.html#tag_14_35	open	open	
+basedefs	nl_types.h	base	basedefs/nl_types.h.html#tag_14_36	open	open	
+basedefs	poll.h	base	basedefs/poll.h.html#tag_14_37	open	open	
+basedefs	pthread.h	base	basedefs/pthread.h.html#tag_14_38	open	open	
+basedefs	pwd.h	base	basedefs/pwd.h.html#tag_14_39	open	open	
+basedefs	regex.h	base	basedefs/regex.h.html#tag_14_40	open	open	
+basedefs	sched.h	base	basedefs/sched.h.html#tag_14_41	open	open	
+basedefs	search.h	XSI	basedefs/search.h.html#tag_14_42	open	open	
+basedefs	semaphore.h	base	basedefs/semaphore.h.html#tag_14_43	open	open	
+basedefs	setjmp.h	base	basedefs/setjmp.h.html#tag_14_44	open	open	
+basedefs	signal.h	base	basedefs/signal.h.html#tag_14_45	open	open	
+basedefs	spawn.h	SPN	basedefs/spawn.h.html#tag_14_46	open	open	
+basedefs	stdalign.h	base	basedefs/stdalign.h.html#tag_14_47	open	open	
+basedefs	stdarg.h	base	basedefs/stdarg.h.html#tag_14_48	open	open	
+basedefs	stdatomic.h	base	basedefs/stdatomic.h.html#tag_14_49	open	open	
+basedefs	stdbool.h	base	basedefs/stdbool.h.html#tag_14_50	open	open	
+basedefs	stddef.h	base	basedefs/stddef.h.html#tag_14_51	open	open	
+basedefs	stdint.h	base	basedefs/stdint.h.html#tag_14_52	open	open	
+basedefs	stdio.h	base	basedefs/stdio.h.html#tag_14_53	open	open	
+basedefs	stdlib.h	base	basedefs/stdlib.h.html#tag_14_54	open	open	
+basedefs	stdnoreturn.h	base	basedefs/stdnoreturn.h.html#tag_14_55	open	open	
+basedefs	string.h	base	basedefs/string.h.html#tag_14_56	open	open	
+basedefs	strings.h	base	basedefs/strings.h.html#tag_14_57	open	open	
+basedefs	sys/ipc.h	XSI	basedefs/sys_ipc.h.html#tag_14_58	open	open	
+basedefs	sys/mman.h	base	basedefs/sys_mman.h.html#tag_14_59	open	open	
+basedefs	sys/msg.h	XSI	basedefs/sys_msg.h.html#tag_14_60	open	open	
+basedefs	sys/resource.h	base	basedefs/sys_resource.h.html#tag_14_61	open	open	
+basedefs	sys/select.h	base	basedefs/sys_select.h.html#tag_14_62	open	open	
+basedefs	sys/sem.h	XSI	basedefs/sys_sem.h.html#tag_14_63	open	open	
+basedefs	sys/shm.h	XSI	basedefs/sys_shm.h.html#tag_14_64	open	open	
+basedefs	sys/socket.h	base	basedefs/sys_socket.h.html#tag_14_65	open	open	
+basedefs	sys/stat.h	base	basedefs/sys_stat.h.html#tag_14_66	open	open	
+basedefs	sys/statvfs.h	base	basedefs/sys_statvfs.h.html#tag_14_67	open	open	
+basedefs	sys/time.h	XSI	basedefs/sys_time.h.html#tag_14_68	open	open	
+basedefs	sys/times.h	base	basedefs/sys_times.h.html#tag_14_69	open	open	
+basedefs	sys/types.h	base	basedefs/sys_types.h.html#tag_14_70	open	open	
+basedefs	sys/uio.h	XSI	basedefs/sys_uio.h.html#tag_14_71	open	open	
+basedefs	sys/un.h	base	basedefs/sys_un.h.html#tag_14_72	open	open	
+basedefs	sys/utsname.h	base	basedefs/sys_utsname.h.html#tag_14_73	open	open	
+basedefs	sys/wait.h	base	basedefs/sys_wait.h.html#tag_14_74	open	open	
+basedefs	syslog.h	XSI	basedefs/syslog.h.html#tag_14_75	open	open	
+basedefs	tar.h	base	basedefs/tar.h.html#tag_14_76	open	open	
+basedefs	termios.h	base	basedefs/termios.h.html#tag_14_77	open	open	
+basedefs	tgmath.h	base	basedefs/tgmath.h.html#tag_14_78	open	open	
+basedefs	threads.h	base	basedefs/threads.h.html#tag_14_79	open	open	
+basedefs	time.h	base	basedefs/time.h.html#tag_14_80	open	open	
+basedefs	uchar.h	base	basedefs/uchar.h.html#tag_14_81	open	open	
+basedefs	unistd.h	base	basedefs/unistd.h.html#tag_14_82	open	open	
+basedefs	utmpx.h	XSI	basedefs/utmpx.h.html#tag_14_83	open	open	
+basedefs	wchar.h	base	basedefs/wchar.h.html#tag_14_84	open	open	
+basedefs	wctype.h	base	basedefs/wctype.h.html#tag_14_85	open	open	
+basedefs	wordexp.h	base	basedefs/wordexp.h.html#tag_14_86	open	open	
+functions	tag_15	chapter	functions/V2_chap01.html#tag_15	open	open	
+functions	tag_15_01	chapter	functions/V2_chap01.html#tag_15_01	open	open	
+functions	tag_15_02	chapter	functions/V2_chap01.html#tag_15_02	open	open	
+functions	tag_16	chapter	functions/V2_chap02.html#tag_16	open	open	
+functions	tag_16_01	chapter	functions/V2_chap02.html#tag_16_01	open	open	
+functions	tag_16_01_01	chapter	functions/V2_chap02.html#tag_16_01_01	open	open	
+functions	tag_16_01_02	chapter	functions/V2_chap02.html#tag_16_01_02	open	open	
+functions	tag_16_02	chapter	functions/V2_chap02.html#tag_16_02	open	open	
+functions	tag_16_02_01	chapter	functions/V2_chap02.html#tag_16_02_01	open	open	
+functions	tag_16_02_01_01	chapter	functions/V2_chap02.html#tag_16_02_01_01	open	open	
+functions	tag_16_02_01_02	chapter	functions/V2_chap02.html#tag_16_02_01_02	open	open	
+functions	tag_16_02_01_03	chapter	functions/V2_chap02.html#tag_16_02_01_03	open	open	
+functions	tag_16_02_02	chapter	functions/V2_chap02.html#tag_16_02_02	open	open	
+functions	tag_16_03	chapter	functions/V2_chap02.html#tag_16_03	open	open	
+functions	tag_16_03_01	chapter	functions/V2_chap02.html#tag_16_03_01	open	open	
+functions	tag_16_04	chapter	functions/V2_chap02.html#tag_16_04	open	open	
+functions	tag_16_04_01	chapter	functions/V2_chap02.html#tag_16_04_01	open	open	
+functions	tag_16_04_02	chapter	functions/V2_chap02.html#tag_16_04_02	open	open	
+functions	tag_16_04_03	chapter	functions/V2_chap02.html#tag_16_04_03	open	open	
+functions	tag_16_04_03_01	chapter	functions/V2_chap02.html#tag_16_04_03_01	open	open	
+functions	tag_16_04_03_02	chapter	functions/V2_chap02.html#tag_16_04_03_02	open	open	
+functions	tag_16_04_03_03	chapter	functions/V2_chap02.html#tag_16_04_03_03	open	open	
+functions	tag_16_04_04	chapter	functions/V2_chap02.html#tag_16_04_04	open	open	
+functions	tag_16_05	chapter	functions/V2_chap02.html#tag_16_05	open	open	
+functions	tag_16_05_01	chapter	functions/V2_chap02.html#tag_16_05_01	open	open	
+functions	tag_16_05_02	chapter	functions/V2_chap02.html#tag_16_05_02	open	open	
+functions	tag_16_06	chapter	functions/V2_chap02.html#tag_16_06	open	open	
+functions	tag_16_07	chapter	functions/V2_chap02.html#tag_16_07	open	open	
+functions	tag_16_07_01	chapter	functions/V2_chap02.html#tag_16_07_01	open	open	
+functions	tag_16_08	chapter	functions/V2_chap02.html#tag_16_08	open	open	
+functions	tag_16_08_01	chapter	functions/V2_chap02.html#tag_16_08_01	open	open	
+functions	tag_16_08_02	chapter	functions/V2_chap02.html#tag_16_08_02	open	open	
+functions	tag_16_08_03	chapter	functions/V2_chap02.html#tag_16_08_03	open	open	
+functions	tag_16_08_03_01	chapter	functions/V2_chap02.html#tag_16_08_03_01	open	open	
+functions	tag_16_08_03_02	chapter	functions/V2_chap02.html#tag_16_08_03_02	open	open	
+functions	tag_16_08_03_03	chapter	functions/V2_chap02.html#tag_16_08_03_03	open	open	
+functions	tag_16_08_03_04	chapter	functions/V2_chap02.html#tag_16_08_03_04	open	open	
+functions	tag_16_08_04	chapter	functions/V2_chap02.html#tag_16_08_04	open	open	
+functions	tag_16_08_04_01	chapter	functions/V2_chap02.html#tag_16_08_04_01	open	open	
+functions	tag_16_08_04_02	chapter	functions/V2_chap02.html#tag_16_08_04_02	open	open	
+functions	tag_16_08_04_03	chapter	functions/V2_chap02.html#tag_16_08_04_03	open	open	
+functions	tag_16_08_04_04	chapter	functions/V2_chap02.html#tag_16_08_04_04	open	open	
+functions	tag_16_08_04_05	chapter	functions/V2_chap02.html#tag_16_08_04_05	open	open	
+functions	tag_16_08_05	chapter	functions/V2_chap02.html#tag_16_08_05	open	open	
+functions	tag_16_08_05_01	chapter	functions/V2_chap02.html#tag_16_08_05_01	open	open	
+functions	tag_16_08_05_02	chapter	functions/V2_chap02.html#tag_16_08_05_02	open	open	
+functions	tag_16_08_05_03	chapter	functions/V2_chap02.html#tag_16_08_05_03	open	open	
+functions	tag_16_08_05_04	chapter	functions/V2_chap02.html#tag_16_08_05_04	open	open	
+functions	tag_16_09	chapter	functions/V2_chap02.html#tag_16_09	open	open	
+functions	tag_16_09_01	chapter	functions/V2_chap02.html#tag_16_09_01	open	open	
+functions	tag_16_09_02	chapter	functions/V2_chap02.html#tag_16_09_02	open	open	
+functions	tag_16_09_03	chapter	functions/V2_chap02.html#tag_16_09_03	open	open	
+functions	tag_16_09_04	chapter	functions/V2_chap02.html#tag_16_09_04	open	open	
+functions	tag_16_09_04_01	chapter	functions/V2_chap02.html#tag_16_09_04_01	open	open	
+functions	tag_16_09_04_02	chapter	functions/V2_chap02.html#tag_16_09_04_02	open	open	
+functions	tag_16_09_04_03	chapter	functions/V2_chap02.html#tag_16_09_04_03	open	open	
+functions	tag_16_09_04_04	chapter	functions/V2_chap02.html#tag_16_09_04_04	open	open	
+functions	tag_16_09_05	chapter	functions/V2_chap02.html#tag_16_09_05	open	open	
+functions	tag_16_09_05_01	chapter	functions/V2_chap02.html#tag_16_09_05_01	open	open	
+functions	tag_16_09_05_02	chapter	functions/V2_chap02.html#tag_16_09_05_02	open	open	
+functions	tag_16_09_05_03	chapter	functions/V2_chap02.html#tag_16_09_05_03	open	open	
+functions	tag_16_09_05_04	chapter	functions/V2_chap02.html#tag_16_09_05_04	open	open	
+functions	tag_16_09_06	chapter	functions/V2_chap02.html#tag_16_09_06	open	open	
+functions	tag_16_09_07	chapter	functions/V2_chap02.html#tag_16_09_07	open	open	
+functions	tag_16_09_08	chapter	functions/V2_chap02.html#tag_16_09_08	open	open	
+functions	tag_16_09_09	chapter	functions/V2_chap02.html#tag_16_09_09	open	open	
+functions	tag_16_10	chapter	functions/V2_chap02.html#tag_16_10	open	open	
+functions	tag_16_10_01	chapter	functions/V2_chap02.html#tag_16_10_01	open	open	
+functions	tag_16_10_02	chapter	functions/V2_chap02.html#tag_16_10_02	open	open	
+functions	tag_16_10_03	chapter	functions/V2_chap02.html#tag_16_10_03	open	open	
+functions	tag_16_10_04	chapter	functions/V2_chap02.html#tag_16_10_04	open	open	
+functions	tag_16_10_05	chapter	functions/V2_chap02.html#tag_16_10_05	open	open	
+functions	tag_16_10_06	chapter	functions/V2_chap02.html#tag_16_10_06	open	open	
+functions	tag_16_10_07	chapter	functions/V2_chap02.html#tag_16_10_07	open	open	
+functions	tag_16_10_08	chapter	functions/V2_chap02.html#tag_16_10_08	open	open	
+functions	tag_16_10_09	chapter	functions/V2_chap02.html#tag_16_10_09	open	open	
+functions	tag_16_10_10	chapter	functions/V2_chap02.html#tag_16_10_10	open	open	
+functions	tag_16_10_11	chapter	functions/V2_chap02.html#tag_16_10_11	open	open	
+functions	tag_16_10_12	chapter	functions/V2_chap02.html#tag_16_10_12	open	open	
+functions	tag_16_10_13	chapter	functions/V2_chap02.html#tag_16_10_13	open	open	
+functions	tag_16_10_14	chapter	functions/V2_chap02.html#tag_16_10_14	open	open	
+functions	tag_16_10_15	chapter	functions/V2_chap02.html#tag_16_10_15	open	open	
+functions	tag_16_10_16	chapter	functions/V2_chap02.html#tag_16_10_16	open	open	
+functions	tag_16_10_17	chapter	functions/V2_chap02.html#tag_16_10_17	open	open	
+functions	tag_16_10_17_01	chapter	functions/V2_chap02.html#tag_16_10_17_01	open	open	
+functions	tag_16_10_18	chapter	functions/V2_chap02.html#tag_16_10_18	open	open	
+functions	tag_16_10_19	chapter	functions/V2_chap02.html#tag_16_10_19	open	open	
+functions	tag_16_10_19_01	chapter	functions/V2_chap02.html#tag_16_10_19_01	open	open	
+functions	tag_16_10_20	chapter	functions/V2_chap02.html#tag_16_10_20	open	open	
+functions	tag_16_10_20_01	chapter	functions/V2_chap02.html#tag_16_10_20_01	open	open	
+functions	tag_16_10_20_02	chapter	functions/V2_chap02.html#tag_16_10_20_02	open	open	
+functions	tag_16_10_20_03	chapter	functions/V2_chap02.html#tag_16_10_20_03	open	open	
+functions	tag_16_10_20_04	chapter	functions/V2_chap02.html#tag_16_10_20_04	open	open	
+functions	tag_16_10_20_05	chapter	functions/V2_chap02.html#tag_16_10_20_05	open	open	
+functions	tag_16_11	chapter	functions/V2_chap02.html#tag_16_11	open	open	
+functions	tag_16_11_01	chapter	functions/V2_chap02.html#tag_16_11_01	open	open	
+functions	tag_16_11_02	chapter	functions/V2_chap02.html#tag_16_11_02	open	open	
+functions	tag_16_12	chapter	functions/V2_chap02.html#tag_16_12	open	open	
+functions	tag_16_12_01	chapter	functions/V2_chap02.html#tag_16_12_01	open	open	
+functions	tag_17	chapter	functions/V2_chap03.html#tag_17	open	open	
+functions	CMPLX	base	functions/CMPLX.html#tag_17_01	open	open	
+functions	CMPLXF	base	functions/CMPLX.html#tag_17_01	open	open	
+functions	CMPLXL	base	functions/CMPLX.html#tag_17_01	open	open	
+functions	_Exit	base	functions/_Exit.html#tag_17_02	open	open	
+functions	_exit	base	functions/_Exit.html#tag_17_02	open	open	
+functions	a64l	XSI	functions/a64l.html#tag_17_03	open	open	
+functions	l64a	XSI	functions/a64l.html#tag_17_03	open	open	
+functions	abort	base	functions/abort.html#tag_17_04	open	open	
+functions	abs	base	functions/abs.html#tag_17_05	open	open	
+functions	accept	base	functions/accept.html#tag_17_06	open	open	
+functions	accept4	base	functions/accept.html#tag_17_06	open	open	
+functions	access	base	functions/access.html#tag_17_07	partial	partial	ports/musl/tests/files.c
+functions	faccessat	base	functions/access.html#tag_17_07	partial	partial	native-exec/examples/attrcheck.c
+functions	acos	base	functions/acos.html#tag_17_08	open	open	
+functions	acosf	base	functions/acos.html#tag_17_08	open	open	
+functions	acosl	base	functions/acos.html#tag_17_08	open	open	
+functions	acosh	base	functions/acosh.html#tag_17_09	open	open	
+functions	acoshf	base	functions/acosh.html#tag_17_09	open	open	
+functions	acoshl	base	functions/acosh.html#tag_17_09	open	open	
+functions	aio_cancel	base	functions/aio_cancel.html#tag_17_10	open	open	
+functions	aio_error	base	functions/aio_error.html#tag_17_11	open	open	
+functions	aio_fsync	FSC|SIO	functions/aio_fsync.html#tag_17_12	open	open	
+functions	aio_read	base	functions/aio_read.html#tag_17_13	open	open	
+functions	aio_return	base	functions/aio_return.html#tag_17_14	open	open	
+functions	aio_suspend	base	functions/aio_suspend.html#tag_17_15	open	open	
+functions	aio_write	base	functions/aio_write.html#tag_17_16	open	open	
+functions	alarm	base	functions/alarm.html#tag_17_17	open	open	
+functions	aligned_alloc	base	functions/aligned_alloc.html#tag_17_18	open	open	
+functions	alphasort	base	functions/alphasort.html#tag_17_19	open	open	
+functions	scandir	base	functions/alphasort.html#tag_17_19	open	open	
+functions	asctime	base	functions/asctime.html#tag_17_20	open	open	
+functions	asin	base	functions/asin.html#tag_17_21	open	open	
+functions	asinf	base	functions/asin.html#tag_17_21	open	open	
+functions	asinl	base	functions/asin.html#tag_17_21	open	open	
+functions	asinh	base	functions/asinh.html#tag_17_22	open	open	
+functions	asinhf	base	functions/asinh.html#tag_17_22	open	open	
+functions	asinhl	base	functions/asinh.html#tag_17_22	open	open	
+functions	assert	base	functions/assert.html#tag_17_23	open	open	
+functions	at_quick_exit	base	functions/at_quick_exit.html#tag_17_24	open	open	
+functions	atan	base	functions/atan.html#tag_17_25	open	open	
+functions	atanf	base	functions/atan.html#tag_17_25	open	open	
+functions	atanl	base	functions/atan.html#tag_17_25	open	open	
+functions	atan2	base	functions/atan2.html#tag_17_26	open	open	
+functions	atan2f	base	functions/atan2.html#tag_17_26	open	open	
+functions	atan2l	base	functions/atan2.html#tag_17_26	open	open	
+functions	atanh	base	functions/atanh.html#tag_17_27	open	open	
+functions	atanhf	base	functions/atanh.html#tag_17_27	open	open	
+functions	atanhl	base	functions/atanh.html#tag_17_27	open	open	
+functions	atexit	base	functions/atexit.html#tag_17_28	open	open	
+functions	atof	base	functions/atof.html#tag_17_29	open	open	
+functions	atoi	base	functions/atoi.html#tag_17_30	open	open	
+functions	atol	base	functions/atol.html#tag_17_31	open	open	
+functions	atoll	base	functions/atol.html#tag_17_31	open	open	
+functions	atomic_compare_exchange_strong	base	functions/atomic_compare_exchange_strong.html#tag_17_32	open	open	
+functions	atomic_compare_exchange_strong_explicit	base	functions/atomic_compare_exchange_strong.html#tag_17_32	open	open	
+functions	atomic_compare_exchange_weak	base	functions/atomic_compare_exchange_strong.html#tag_17_32	open	open	
+functions	atomic_compare_exchange_weak_explicit	base	functions/atomic_compare_exchange_strong.html#tag_17_32	open	open	
+functions	atomic_exchange	base	functions/atomic_exchange.html#tag_17_33	open	open	
+functions	atomic_exchange_explicit	base	functions/atomic_exchange.html#tag_17_33	open	open	
+functions	atomic_fetch_add	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_add_explicit	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_and	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_and_explicit	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_or	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_or_explicit	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_sub	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_sub_explicit	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_xor	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_fetch_xor_explicit	base	functions/atomic_fetch_add.html#tag_17_34	open	open	
+functions	atomic_flag_clear	base	functions/atomic_flag_clear.html#tag_17_35	open	open	
+functions	atomic_flag_clear_explicit	base	functions/atomic_flag_clear.html#tag_17_35	open	open	
+functions	atomic_flag_test_and_set	base	functions/atomic_flag_test_and_set.html#tag_17_36	open	open	
+functions	atomic_flag_test_and_set_explicit	base	functions/atomic_flag_test_and_set.html#tag_17_36	open	open	
+functions	atomic_init	base	functions/atomic_init.html#tag_17_37	open	open	
+functions	atomic_is_lock_free	base	functions/atomic_is_lock_free.html#tag_17_38	open	open	
+functions	atomic_load	base	functions/atomic_load.html#tag_17_39	open	open	
+functions	atomic_load_explicit	base	functions/atomic_load.html#tag_17_39	open	open	
+functions	atomic_signal_fence	base	functions/atomic_signal_fence.html#tag_17_40	open	open	
+functions	atomic_thread_fence	base	functions/atomic_signal_fence.html#tag_17_40	open	open	
+functions	atomic_store	base	functions/atomic_store.html#tag_17_41	open	open	
+functions	atomic_store_explicit	base	functions/atomic_store.html#tag_17_41	open	open	
+functions	basename	XSI	functions/basename.html#tag_17_42	partial	partial	scripts/qemu-libc-test.py#functional/basename
+functions	be16toh	base	functions/be16toh.html#tag_17_43	open	open	
+functions	be32toh	base	functions/be16toh.html#tag_17_43	open	open	
+functions	be64toh	base	functions/be16toh.html#tag_17_43	open	open	
+functions	htobe16	base	functions/be16toh.html#tag_17_43	open	open	
+functions	htobe32	base	functions/be16toh.html#tag_17_43	open	open	
+functions	htobe64	base	functions/be16toh.html#tag_17_43	open	open	
+functions	htole16	base	functions/be16toh.html#tag_17_43	open	open	
+functions	htole32	base	functions/be16toh.html#tag_17_43	open	open	
+functions	htole64	base	functions/be16toh.html#tag_17_43	open	open	
+functions	le16toh	base	functions/be16toh.html#tag_17_43	open	open	
+functions	le32toh	base	functions/be16toh.html#tag_17_43	open	open	
+functions	le64toh	base	functions/be16toh.html#tag_17_43	open	open	
+functions	bind	base	functions/bind.html#tag_17_44	open	open	
+functions	bindtextdomain	base	functions/bindtextdomain.html#tag_17_45	open	open	
+functions	bind_textdomain_codeset	base	functions/bindtextdomain.html#tag_17_45	open	open	
+functions	textdomain	base	functions/bindtextdomain.html#tag_17_45	open	open	
+functions	bsearch	base	functions/bsearch.html#tag_17_46	open	open	
+functions	btowc	base	functions/btowc.html#tag_17_47	open	open	
+functions	c16rtomb	base	functions/c16rtomb.html#tag_17_48	open	open	
+functions	c32rtomb	base	functions/c16rtomb.html#tag_17_48	open	open	
+functions	cabs	base	functions/cabs.html#tag_17_49	open	open	
+functions	cabsf	base	functions/cabs.html#tag_17_49	open	open	
+functions	cabsl	base	functions/cabs.html#tag_17_49	open	open	
+functions	cacos	base	functions/cacos.html#tag_17_50	open	open	
+functions	cacosf	base	functions/cacos.html#tag_17_50	open	open	
+functions	cacosl	base	functions/cacos.html#tag_17_50	open	open	
+functions	cacosh	base	functions/cacosh.html#tag_17_51	open	open	
+functions	cacoshf	base	functions/cacosh.html#tag_17_51	open	open	
+functions	cacoshl	base	functions/cacosh.html#tag_17_51	open	open	
+functions	call_once	base	functions/call_once.html#tag_17_52	open	open	
+functions	calloc	base	functions/calloc.html#tag_17_53	partial	partial	ports/musl/tests/libc.c
+functions	carg	base	functions/carg.html#tag_17_54	open	open	
+functions	cargf	base	functions/carg.html#tag_17_54	open	open	
+functions	cargl	base	functions/carg.html#tag_17_54	open	open	
+functions	casin	base	functions/casin.html#tag_17_55	open	open	
+functions	casinf	base	functions/casin.html#tag_17_55	open	open	
+functions	casinl	base	functions/casin.html#tag_17_55	open	open	
+functions	casinh	base	functions/casinh.html#tag_17_56	open	open	
+functions	casinhf	base	functions/casinh.html#tag_17_56	open	open	
+functions	casinhl	base	functions/casinh.html#tag_17_56	open	open	
+functions	catan	base	functions/catan.html#tag_17_57	open	open	
+functions	catanf	base	functions/catan.html#tag_17_57	open	open	
+functions	catanl	base	functions/catan.html#tag_17_57	open	open	
+functions	catanh	base	functions/catanh.html#tag_17_58	open	open	
+functions	catanhf	base	functions/catanh.html#tag_17_58	open	open	
+functions	catanhl	base	functions/catanh.html#tag_17_58	open	open	
+functions	catclose	base	functions/catclose.html#tag_17_59	open	open	
+functions	catgets	base	functions/catgets.html#tag_17_60	open	open	
+functions	catopen	base	functions/catopen.html#tag_17_61	open	open	
+functions	cbrt	base	functions/cbrt.html#tag_17_62	open	open	
+functions	cbrtf	base	functions/cbrt.html#tag_17_62	open	open	
+functions	cbrtl	base	functions/cbrt.html#tag_17_62	open	open	
+functions	ccos	base	functions/ccos.html#tag_17_63	open	open	
+functions	ccosf	base	functions/ccos.html#tag_17_63	open	open	
+functions	ccosl	base	functions/ccos.html#tag_17_63	open	open	
+functions	ccosh	base	functions/ccosh.html#tag_17_64	open	open	
+functions	ccoshf	base	functions/ccosh.html#tag_17_64	open	open	
+functions	ccoshl	base	functions/ccosh.html#tag_17_64	open	open	
+functions	ceil	base	functions/ceil.html#tag_17_65	open	open	
+functions	ceilf	base	functions/ceil.html#tag_17_65	open	open	
+functions	ceill	base	functions/ceil.html#tag_17_65	open	open	
+functions	cexp	base	functions/cexp.html#tag_17_66	open	open	
+functions	cexpf	base	functions/cexp.html#tag_17_66	open	open	
+functions	cexpl	base	functions/cexp.html#tag_17_66	open	open	
+functions	cfgetispeed	base	functions/cfgetispeed.html#tag_17_67	open	open	
+functions	cfgetospeed	base	functions/cfgetospeed.html#tag_17_68	open	open	
+functions	cfsetispeed	base	functions/cfsetispeed.html#tag_17_69	open	open	
+functions	cfsetospeed	base	functions/cfsetospeed.html#tag_17_70	open	open	
+functions	chdir	base	functions/chdir.html#tag_17_71	partial	partial	ports/musl/tests/files.c
+functions	chmod	base	functions/chmod.html#tag_17_72	partial	partial	ports/musl/tests/files.c
+functions	fchmodat	base	functions/chmod.html#tag_17_72	partial	partial	native-exec/examples/attrcheck.c
+functions	chown	base	functions/chown.html#tag_17_73	partial	partial	native-exec/examples/vfscheck.c
+functions	fchownat	base	functions/chown.html#tag_17_73	partial	partial	native-exec/examples/attrcheck.c
+functions	cimag	base	functions/cimag.html#tag_17_74	open	open	
+functions	cimagf	base	functions/cimag.html#tag_17_74	open	open	
+functions	cimagl	base	functions/cimag.html#tag_17_74	open	open	
+functions	clearerr	base	functions/clearerr.html#tag_17_75	open	open	
+functions	clock	base	functions/clock.html#tag_17_76	open	open	
+functions	clock_getcpuclockid	CPT	functions/clock_getcpuclockid.html#tag_17_77	open	open	
+functions	clock_getres	base	functions/clock_getres.html#tag_17_78	partial	partial	ports/musl/tests/libc.c
+functions	clock_gettime	base	functions/clock_getres.html#tag_17_78	partial	partial	ports/musl/tests/libc.c
+functions	clock_settime	base	functions/clock_getres.html#tag_17_78	open	open	
+functions	clock_nanosleep	base	functions/clock_nanosleep.html#tag_17_79	open	open	
+functions	clog	base	functions/clog.html#tag_17_80	open	open	
+functions	clogf	base	functions/clog.html#tag_17_80	open	open	
+functions	clogl	base	functions/clog.html#tag_17_80	open	open	
+functions	close	base	functions/close.html#tag_17_81	partial	partial	ports/musl/tests/files.c
+functions	posix_close	base	functions/close.html#tag_17_81	open	open	
+functions	closedir	base	functions/closedir.html#tag_17_82	partial	partial	ports/musl/tests/files.c
+functions	closelog	XSI	functions/closelog.html#tag_17_83	open	open	
+functions	openlog	XSI	functions/closelog.html#tag_17_83	open	open	
+functions	setlogmask	XSI	functions/closelog.html#tag_17_83	open	open	
+functions	syslog	XSI	functions/closelog.html#tag_17_83	open	open	
+functions	cnd_broadcast	base	functions/cnd_broadcast.html#tag_17_84	open	open	
+functions	cnd_signal	base	functions/cnd_broadcast.html#tag_17_84	open	open	
+functions	cnd_destroy	base	functions/cnd_destroy.html#tag_17_85	open	open	
+functions	cnd_init	base	functions/cnd_destroy.html#tag_17_85	open	open	
+functions	cnd_timedwait	base	functions/cnd_timedwait.html#tag_17_86	open	open	
+functions	cnd_wait	base	functions/cnd_timedwait.html#tag_17_86	open	open	
+functions	confstr	base	functions/confstr.html#tag_17_87	open	open	
+functions	conj	base	functions/conj.html#tag_17_88	open	open	
+functions	conjf	base	functions/conj.html#tag_17_88	open	open	
+functions	conjl	base	functions/conj.html#tag_17_88	open	open	
+functions	connect	base	functions/connect.html#tag_17_89	open	open	
+functions	copysign	base	functions/copysign.html#tag_17_90	open	open	
+functions	copysignf	base	functions/copysign.html#tag_17_90	open	open	
+functions	copysignl	base	functions/copysign.html#tag_17_90	open	open	
+functions	cos	base	functions/cos.html#tag_17_91	open	open	
+functions	cosf	base	functions/cos.html#tag_17_91	open	open	
+functions	cosl	base	functions/cos.html#tag_17_91	open	open	
+functions	cosh	base	functions/cosh.html#tag_17_92	open	open	
+functions	coshf	base	functions/cosh.html#tag_17_92	open	open	
+functions	coshl	base	functions/cosh.html#tag_17_92	open	open	
+functions	cpow	base	functions/cpow.html#tag_17_93	open	open	
+functions	cpowf	base	functions/cpow.html#tag_17_93	open	open	
+functions	cpowl	base	functions/cpow.html#tag_17_93	open	open	
+functions	cproj	base	functions/cproj.html#tag_17_94	open	open	
+functions	cprojf	base	functions/cproj.html#tag_17_94	open	open	
+functions	cprojl	base	functions/cproj.html#tag_17_94	open	open	
+functions	creal	base	functions/creal.html#tag_17_95	open	open	
+functions	crealf	base	functions/creal.html#tag_17_95	open	open	
+functions	creall	base	functions/creal.html#tag_17_95	open	open	
+functions	creat	base	functions/creat.html#tag_17_96	open	open	
+functions	crypt	XSI	functions/crypt.html#tag_17_97	open	open	
+functions	csin	base	functions/csin.html#tag_17_98	open	open	
+functions	csinf	base	functions/csin.html#tag_17_98	open	open	
+functions	csinl	base	functions/csin.html#tag_17_98	open	open	
+functions	csinh	base	functions/csinh.html#tag_17_99	open	open	
+functions	csinhf	base	functions/csinh.html#tag_17_99	open	open	
+functions	csinhl	base	functions/csinh.html#tag_17_99	open	open	
+functions	csqrt	base	functions/csqrt.html#tag_17_100	open	open	
+functions	csqrtf	base	functions/csqrt.html#tag_17_100	open	open	
+functions	csqrtl	base	functions/csqrt.html#tag_17_100	open	open	
+functions	ctan	base	functions/ctan.html#tag_17_101	open	open	
+functions	ctanf	base	functions/ctan.html#tag_17_101	open	open	
+functions	ctanl	base	functions/ctan.html#tag_17_101	open	open	
+functions	ctanh	base	functions/ctanh.html#tag_17_102	open	open	
+functions	ctanhf	base	functions/ctanh.html#tag_17_102	open	open	
+functions	ctanhl	base	functions/ctanh.html#tag_17_102	open	open	
+functions	ctermid	base	functions/ctermid.html#tag_17_103	open	open	
+functions	ctime	base	functions/ctime.html#tag_17_104	open	open	
+functions	dbm_clearerr	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_close	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_delete	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_error	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_fetch	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_firstkey	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_nextkey	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_open	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	dbm_store	XSI	functions/dbm_clearerr.html#tag_17_105	open	open	
+functions	difftime	base	functions/difftime.html#tag_17_106	open	open	
+functions	dirfd	base	functions/dirfd.html#tag_17_107	open	open	
+functions	dirname	XSI	functions/dirname.html#tag_17_108	partial	partial	scripts/qemu-libc-test.py#functional/dirname
+functions	div	base	functions/div.html#tag_17_109	open	open	
+functions	dladdr	base	functions/dladdr.html#tag_17_110	open	open	
+functions	dlclose	base	functions/dlclose.html#tag_17_111	open	open	
+functions	dlerror	base	functions/dlerror.html#tag_17_112	open	open	
+functions	dlopen	base	functions/dlopen.html#tag_17_113	open	open	
+functions	dlsym	base	functions/dlsym.html#tag_17_114	open	open	
+functions	drand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	erand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	jrand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	lcong48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	lrand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	mrand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	nrand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	seed48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	srand48	XSI	functions/drand48.html#tag_17_134	open	open	
+functions	dup	base	functions/dup.html#tag_17_116	open	open	
+functions	dup2	base	functions/dup.html#tag_17_116	partial	partial	native-exec/examples/family.c
+functions	dup3	base	functions/dup.html#tag_17_116	partial	partial	native-exec/examples/lockcheck.c
+functions	duplocale	base	functions/duplocale.html#tag_17_117	open	open	
+functions	encrypt	OB XSI	functions/encrypt.html#tag_17_118	open	open	
+functions	endgrent	XSI	functions/endgrent.html#tag_17_119	open	open	
+functions	getgrent	XSI	functions/endgrent.html#tag_17_119	open	open	
+functions	setgrent	XSI	functions/endgrent.html#tag_17_119	open	open	
+functions	endhostent	base	functions/endhostent.html#tag_17_120	open	open	
+functions	gethostent	base	functions/endhostent.html#tag_17_120	open	open	
+functions	sethostent	base	functions/endhostent.html#tag_17_120	open	open	
+functions	endnetent	base	functions/endnetent.html#tag_17_121	open	open	
+functions	getnetbyaddr	base	functions/endnetent.html#tag_17_121	open	open	
+functions	getnetbyname	base	functions/endnetent.html#tag_17_121	open	open	
+functions	getnetent	base	functions/endnetent.html#tag_17_121	open	open	
+functions	setnetent	base	functions/endnetent.html#tag_17_121	open	open	
+functions	endprotoent	base	functions/endprotoent.html#tag_17_122	open	open	
+functions	getprotobyname	base	functions/endprotoent.html#tag_17_122	open	open	
+functions	getprotobynumber	base	functions/endprotoent.html#tag_17_122	open	open	
+functions	getprotoent	base	functions/endprotoent.html#tag_17_122	open	open	
+functions	setprotoent	base	functions/endprotoent.html#tag_17_122	open	open	
+functions	endpwent	XSI	functions/endpwent.html#tag_17_123	open	open	
+functions	getpwent	XSI	functions/endpwent.html#tag_17_123	open	open	
+functions	setpwent	XSI	functions/endpwent.html#tag_17_123	open	open	
+functions	endservent	base	functions/endservent.html#tag_17_124	open	open	
+functions	getservbyname	base	functions/endservent.html#tag_17_124	open	open	
+functions	getservbyport	base	functions/endservent.html#tag_17_124	open	open	
+functions	getservent	base	functions/endservent.html#tag_17_124	open	open	
+functions	setservent	base	functions/endservent.html#tag_17_124	open	open	
+functions	endutxent	XSI	functions/endutxent.html#tag_17_125	open	open	
+functions	getutxent	XSI	functions/endutxent.html#tag_17_125	open	open	
+functions	getutxid	XSI	functions/endutxent.html#tag_17_125	open	open	
+functions	getutxline	XSI	functions/endutxent.html#tag_17_125	open	open	
+functions	pututxline	XSI	functions/endutxent.html#tag_17_125	open	open	
+functions	setutxent	XSI	functions/endutxent.html#tag_17_125	open	open	
+functions	erf	base	functions/erf.html#tag_17_147	open	open	
+functions	erff	base	functions/erf.html#tag_17_147	open	open	
+functions	erfl	base	functions/erf.html#tag_17_147	open	open	
+functions	erfc	base	functions/erfc.html#tag_17_127	open	open	
+functions	erfcf	base	functions/erfc.html#tag_17_127	open	open	
+functions	erfcl	base	functions/erfc.html#tag_17_127	open	open	
+functions	errno	base	functions/errno.html#tag_17_128	open	open	
+functions	environ	base	functions/exec.html#tag_17_129	open	open	
+functions	execl	base	functions/exec.html#tag_17_129	open	open	
+functions	execle	base	functions/exec.html#tag_17_129	open	open	
+functions	execlp	base	functions/exec.html#tag_17_129	partial	partial	ports/musl/tests/exec_script.c
+functions	execv	base	functions/exec.html#tag_17_129	open	open	
+functions	execve	base	functions/exec.html#tag_17_129	partial	partial	native-exec/examples/family.c
+functions	execvp	base	functions/exec.html#tag_17_129	partial	partial	ports/musl/tests/exec_script.c
+functions	fexecve	base	functions/exec.html#tag_17_129	open	open	
+functions	exit	base	functions/exit.html#tag_17_130	open	open	
+functions	exp	base	functions/exp.html#tag_17_131	open	open	
+functions	expf	base	functions/exp.html#tag_17_131	open	open	
+functions	expl	base	functions/exp.html#tag_17_131	open	open	
+functions	exp2	base	functions/exp2.html#tag_17_132	open	open	
+functions	exp2f	base	functions/exp2.html#tag_17_132	open	open	
+functions	exp2l	base	functions/exp2.html#tag_17_132	open	open	
+functions	expm1	base	functions/expm1.html#tag_17_133	open	open	
+functions	expm1f	base	functions/expm1.html#tag_17_133	open	open	
+functions	expm1l	base	functions/expm1.html#tag_17_133	open	open	
+functions	fabs	base	functions/fabs.html#tag_17_134	open	open	
+functions	fabsf	base	functions/fabs.html#tag_17_134	open	open	
+functions	fabsl	base	functions/fabs.html#tag_17_134	open	open	
+functions	fchdir	base	functions/fchdir.html#tag_17_135	partial	partial	native-exec/examples/attrcheck.c
+functions	fchmod	base	functions/fchmod.html#tag_17_136	partial	partial	native-exec/examples/atcheck.c
+functions	fchown	base	functions/fchown.html#tag_17_137	partial	partial	native-exec/examples/atcheck.c
+functions	fclose	base	functions/fclose.html#tag_17_138	partial	partial	ports/musl/tests/libc.c
+functions	fcntl	base	functions/fcntl.html#tag_17_139	partial	partial	native-exec/examples/lockcheck.c
+functions	fdatasync	SIO	functions/fdatasync.html#tag_17_140	open	open	
+functions	fdim	base	functions/fdim.html#tag_17_141	open	open	
+functions	fdimf	base	functions/fdim.html#tag_17_141	open	open	
+functions	fdiml	base	functions/fdim.html#tag_17_141	open	open	
+functions	fdopen	base	functions/fdopen.html#tag_17_142	open	open	
+functions	fdopendir	base	functions/fdopendir.html#tag_17_143	open	open	
+functions	opendir	base	functions/fdopendir.html#tag_17_143	partial	partial	ports/musl/tests/files.c
+functions	feclearexcept	base	functions/feclearexcept.html#tag_17_144	open	open	
+functions	fegetenv	base	functions/fegetenv.html#tag_17_145	open	open	
+functions	fesetenv	base	functions/fegetenv.html#tag_17_145	open	open	
+functions	fegetexceptflag	base	functions/fegetexceptflag.html#tag_17_146	open	open	
+functions	fesetexceptflag	base	functions/fegetexceptflag.html#tag_17_146	open	open	
+functions	fegetround	base	functions/fegetround.html#tag_17_147	open	open	
+functions	fesetround	base	functions/fegetround.html#tag_17_147	open	open	
+functions	feholdexcept	base	functions/feholdexcept.html#tag_17_148	open	open	
+functions	feof	base	functions/feof.html#tag_17_149	open	open	
+functions	feraiseexcept	base	functions/feraiseexcept.html#tag_17_150	open	open	
+functions	ferror	base	functions/ferror.html#tag_17_151	open	open	
+functions	fetestexcept	base	functions/fetestexcept.html#tag_17_152	open	open	
+functions	feupdateenv	base	functions/feupdateenv.html#tag_17_153	open	open	
+functions	fflush	base	functions/fflush.html#tag_17_154	partial	partial	scripts/qemu-libc-test.py#functional/memstream
+functions	ffs	XSI	functions/ffs.html#tag_17_155	open	open	
+functions	ffsl	XSI	functions/ffs.html#tag_17_155	open	open	
+functions	ffsll	XSI	functions/ffs.html#tag_17_155	open	open	
+functions	fgetc	base	functions/fgetc.html#tag_17_156	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
+functions	fgetpos	base	functions/fgetpos.html#tag_17_157	open	open	
+functions	fgets	base	functions/fgets.html#tag_17_158	open	open	
+functions	fgetwc	base	functions/fgetwc.html#tag_17_159	open	open	
+functions	fgetws	base	functions/fgetws.html#tag_17_160	open	open	
+functions	fileno	base	functions/fileno.html#tag_17_161	open	open	
+functions	flockfile	base	functions/flockfile.html#tag_17_162	open	open	
+functions	ftrylockfile	base	functions/flockfile.html#tag_17_162	open	open	
+functions	funlockfile	base	functions/flockfile.html#tag_17_162	open	open	
+functions	floor	base	functions/floor.html#tag_17_163	open	open	
+functions	floorf	base	functions/floor.html#tag_17_163	open	open	
+functions	floorl	base	functions/floor.html#tag_17_163	open	open	
+functions	fma	base	functions/fma.html#tag_17_164	open	open	
+functions	fmaf	base	functions/fma.html#tag_17_164	open	open	
+functions	fmal	base	functions/fma.html#tag_17_164	open	open	
+functions	fmax	base	functions/fmax.html#tag_17_165	open	open	
+functions	fmaxf	base	functions/fmax.html#tag_17_165	open	open	
+functions	fmaxl	base	functions/fmax.html#tag_17_165	open	open	
+functions	fmemopen	base	functions/fmemopen.html#tag_17_166	partial	partial	scripts/qemu-libc-test.py#functional/memstream
+functions	fmin	base	functions/fmin.html#tag_17_167	open	open	
+functions	fminf	base	functions/fmin.html#tag_17_167	open	open	
+functions	fminl	base	functions/fmin.html#tag_17_167	open	open	
+functions	fmod	base	functions/fmod.html#tag_17_168	open	open	
+functions	fmodf	base	functions/fmod.html#tag_17_168	open	open	
+functions	fmodl	base	functions/fmod.html#tag_17_168	open	open	
+functions	fmtmsg	XSI	functions/fmtmsg.html#tag_17_169	open	open	
+functions	fnmatch	base	functions/fnmatch.html#tag_17_170	partial	partial	scripts/qemu-libc-test.py#functional/fnmatch
+functions	fopen	base	functions/fopen.html#tag_17_171	partial	partial	ports/musl/tests/libc.c
+functions	fork	base	functions/fork.html#tag_17_172	partial	partial	native-exec/examples/family.c
+functions	fpathconf	base	functions/fpathconf.html#tag_17_173	open	open	
+functions	pathconf	base	functions/fpathconf.html#tag_17_173	open	open	
+functions	fpclassify	base	functions/fpclassify.html#tag_17_174	open	open	
+functions	asprintf	base	functions/fprintf.html#tag_17_175	open	open	
+functions	dprintf	base	functions/fprintf.html#tag_17_175	open	open	
+functions	fprintf	base	functions/fprintf.html#tag_17_175	partial	partial	ports/musl/tests/libc.c
+functions	printf	base	functions/fprintf.html#tag_17_175	open	open	
+functions	snprintf	base	functions/fprintf.html#tag_17_175	partial	partial	scripts/qemu-libc-test.py#functional/snprintf
+functions	sprintf	base	functions/fprintf.html#tag_17_175	open	open	
+functions	fputc	base	functions/fputc.html#tag_17_176	open	open	
+functions	fputs	base	functions/fputs.html#tag_17_177	open	open	
+functions	fputwc	base	functions/fputwc.html#tag_17_178	open	open	
+functions	fputws	base	functions/fputws.html#tag_17_179	open	open	
+functions	fread	base	functions/fread.html#tag_17_180	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
+functions	free	base	functions/free.html#tag_17_181	partial	partial	ports/musl/tests/libc.c
+functions	freeaddrinfo	base	functions/freeaddrinfo.html#tag_17_182	open	open	
+functions	getaddrinfo	base	functions/freeaddrinfo.html#tag_17_182	open	open	
+functions	freelocale	base	functions/freelocale.html#tag_17_183	open	open	
+functions	freopen	base	functions/freopen.html#tag_17_184	open	open	
+functions	frexp	base	functions/frexp.html#tag_17_185	open	open	
+functions	frexpf	base	functions/frexp.html#tag_17_185	open	open	
+functions	frexpl	base	functions/frexp.html#tag_17_185	open	open	
+functions	fscanf	base	functions/fscanf.html#tag_17_186	open	open	
+functions	scanf	base	functions/fscanf.html#tag_17_186	open	open	
+functions	sscanf	base	functions/fscanf.html#tag_17_186	partial	partial	scripts/qemu-libc-test.py#functional/sscanf,scripts/qemu-libc-test.py#functional/sscanf_long
+functions	fseek	base	functions/fseek.html#tag_17_187	partial	partial	scripts/qemu-libc-test.py#functional/memstream
+functions	fseeko	base	functions/fseek.html#tag_17_187	open	open	
+functions	fsetpos	base	functions/fsetpos.html#tag_17_188	open	open	
+functions	fstat	base	functions/fstat.html#tag_17_189	partial	partial	ports/musl/tests/files.c
+functions	fstatat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
+functions	lstat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
+functions	stat	base	functions/fstatat.html#tag_17_190	partial	partial	ports/musl/tests/files.c
+functions	fstatvfs	base	functions/fstatvfs.html#tag_17_191	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c
+functions	statvfs	base	functions/fstatvfs.html#tag_17_191	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c
+functions	fsync	FSC	functions/fsync.html#tag_17_192	partial	partial	native-exec/examples/atcheck.c
+functions	ftell	base	functions/ftell.html#tag_17_193	partial	partial	scripts/qemu-libc-test.py#functional/memstream
+functions	ftello	base	functions/ftell.html#tag_17_193	open	open	
+functions	ftok	XSI	functions/ftok.html#tag_17_194	open	open	
+functions	ftruncate	base	functions/ftruncate.html#tag_17_195	partial	partial	ports/musl/tests/files.c
+functions	futimens	base	functions/futimens.html#tag_17_196	partial	partial	native-exec/examples/attrcheck.c
+functions	utimensat	base	functions/futimens.html#tag_17_196	partial	partial	native-exec/examples/attrcheck.c
+functions	utimes	XSI	functions/futimens.html#tag_17_196	open	open	
+functions	fwide	base	functions/fwide.html#tag_17_197	open	open	
+functions	fwprintf	base	functions/fwprintf.html#tag_17_198	open	open	
+functions	swprintf	base	functions/fwprintf.html#tag_17_198	partial	partial	scripts/qemu-libc-test.py#functional/swprintf
+functions	wprintf	base	functions/fwprintf.html#tag_17_198	open	open	
+functions	fwrite	base	functions/fwrite.html#tag_17_199	open	open	
+functions	fwscanf	base	functions/fwscanf.html#tag_17_200	open	open	
+functions	swscanf	base	functions/fwscanf.html#tag_17_200	open	open	
+functions	wscanf	base	functions/fwscanf.html#tag_17_200	open	open	
+functions	gai_strerror	base	functions/gai_strerror.html#tag_17_201	open	open	
+functions	getc	base	functions/getc.html#tag_17_202	open	open	
+functions	getc_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
+functions	getchar_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
+functions	putc_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
+functions	putchar_unlocked	base	functions/getc_unlocked.html#tag_17_203	open	open	
+functions	getchar	base	functions/getchar.html#tag_17_204	open	open	
+functions	getcwd	base	functions/getcwd.html#tag_17_205	partial	partial	tests/native-cwd/src/lib.rs
+functions	getdate	XSI	functions/getdate.html#tag_17_206	open	open	
+functions	getdelim	base	functions/getdelim.html#tag_17_207	open	open	
+functions	getline	base	functions/getdelim.html#tag_17_207	open	open	
+functions	getegid	base	functions/getegid.html#tag_17_208	open	open	
+functions	getentropy	base	functions/getentropy.html#tag_17_209	partial	partial	tests/native-entropy/random.c
+functions	getenv	base	functions/getenv.html#tag_17_210	partial	partial	ports/musl/tests/libc.c
+functions	secure_getenv	base	functions/getenv.html#tag_17_210	open	open	
+functions	geteuid	base	functions/geteuid.html#tag_17_211	open	open	
+functions	getgid	base	functions/getgid.html#tag_17_212	open	open	
+functions	getgrgid	base	functions/getgrgid.html#tag_17_213	open	open	
+functions	getgrgid_r	base	functions/getgrgid.html#tag_17_213	partial	partial	scripts/qemu-groups.py
+functions	getgrnam	base	functions/getgrnam.html#tag_17_214	open	open	
+functions	getgrnam_r	base	functions/getgrnam.html#tag_17_214	open	open	
+functions	getgroups	base	functions/getgroups.html#tag_17_215	partial	partial	scripts/qemu-groups.py
+functions	gethostid	XSI	functions/gethostid.html#tag_17_216	open	open	
+functions	gethostname	base	functions/gethostname.html#tag_17_217	partial	partial	tests/native-uts/names.c
+functions	getlocalename_l	base	functions/getlocalename_l.html#tag_17_218	open	open	
+functions	getlogin	base	functions/getlogin.html#tag_17_219	open	open	
+functions	getlogin_r	base	functions/getlogin.html#tag_17_219	open	open	
+functions	getnameinfo	base	functions/getnameinfo.html#tag_17_220	open	open	
+functions	getopt	base	functions/getopt.html#tag_17_221	open	open	
+functions	optarg	base	functions/getopt.html#tag_17_221	open	open	
+functions	opterr	base	functions/getopt.html#tag_17_221	open	open	
+functions	optind	base	functions/getopt.html#tag_17_221	open	open	
+functions	optopt	base	functions/getopt.html#tag_17_221	open	open	
+functions	getpeername	base	functions/getpeername.html#tag_17_222	open	open	
+functions	getpgid	base	functions/getpgid.html#tag_17_223	partial	partial	native-exec/examples/family.c
+functions	getpgrp	base	functions/getpgrp.html#tag_17_224	open	open	
+functions	getpid	base	functions/getpid.html#tag_17_225	partial	partial	native-exec/examples/family.c
+functions	getppid	base	functions/getppid.html#tag_17_226	partial	partial	native-exec/examples/family.c
+functions	getpriority	XSI	functions/getpriority.html#tag_17_227	open	open	
+functions	setpriority	XSI	functions/getpriority.html#tag_17_227	open	open	
+functions	getpwnam	base	functions/getpwnam.html#tag_17_228	open	open	
+functions	getpwnam_r	base	functions/getpwnam.html#tag_17_228	partial	partial	scripts/qemu-groups.py
+functions	getpwuid	base	functions/getpwuid.html#tag_17_229	open	open	
+functions	getpwuid_r	base	functions/getpwuid.html#tag_17_229	open	open	
+functions	getresgid	XSI	functions/getresgid.html#tag_17_230	open	open	
+functions	getresuid	XSI	functions/getresuid.html#tag_17_231	open	open	
+functions	getrlimit	base	functions/getrlimit.html#tag_17_232	partial	partial	ports/musl/tests/limits.c
+functions	setrlimit	base	functions/getrlimit.html#tag_17_232	partial	partial	ports/musl/tests/limits.c
+functions	getrusage	XSI	functions/getrusage.html#tag_17_233	open	open	
+functions	getsid	base	functions/getsid.html#tag_17_234	partial	partial	native-exec/examples/family.c
+functions	getsockname	base	functions/getsockname.html#tag_17_235	open	open	
+functions	getsockopt	base	functions/getsockopt.html#tag_17_236	open	open	
+functions	getsubopt	base	functions/getsubopt.html#tag_17_237	open	open	
+functions	dgettext	base	functions/gettext.html#tag_17_238	open	open	
+functions	dgettext_l	base	functions/gettext.html#tag_17_238	open	open	
+functions	dcgettext	base	functions/gettext.html#tag_17_238	open	open	
+functions	dcgettext_l	base	functions/gettext.html#tag_17_238	open	open	
+functions	gettext	base	functions/gettext.html#tag_17_238	open	open	
+functions	gettext_l	base	functions/gettext.html#tag_17_238	open	open	
+functions	ngettext	base	functions/gettext.html#tag_17_238	open	open	
+functions	ngettext_l	base	functions/gettext.html#tag_17_238	open	open	
+functions	dngettext	base	functions/gettext.html#tag_17_238	open	open	
+functions	dngettext_l	base	functions/gettext.html#tag_17_238	open	open	
+functions	dcngettext	base	functions/gettext.html#tag_17_238	open	open	
+functions	dcngettext_l	base	functions/gettext.html#tag_17_238	open	open	
+functions	getuid	base	functions/getuid.html#tag_17_239	open	open	
+functions	getwc	base	functions/getwc.html#tag_17_240	open	open	
+functions	getwchar	base	functions/getwchar.html#tag_17_241	open	open	
+functions	glob	base	functions/glob.html#tag_17_242	open	open	
+functions	globfree	base	functions/glob.html#tag_17_242	open	open	
+functions	gmtime	base	functions/gmtime.html#tag_17_243	open	open	
+functions	gmtime_r	base	functions/gmtime.html#tag_17_243	open	open	
+functions	grantpt	XSI	functions/grantpt.html#tag_17_244	open	open	
+functions	hcreate	XSI	functions/hcreate.html#tag_17_245	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch
+functions	hdestroy	XSI	functions/hcreate.html#tag_17_245	open	open	
+functions	hsearch	XSI	functions/hcreate.html#tag_17_245	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch
+functions	htonl	base	functions/htonl.html#tag_17_246	open	open	
+functions	htons	base	functions/htonl.html#tag_17_246	open	open	
+functions	ntohl	base	functions/htonl.html#tag_17_246	open	open	
+functions	ntohs	base	functions/htonl.html#tag_17_246	open	open	
+functions	hypot	base	functions/hypot.html#tag_17_247	open	open	
+functions	hypotf	base	functions/hypot.html#tag_17_247	open	open	
+functions	hypotl	base	functions/hypot.html#tag_17_247	open	open	
+functions	iconv	base	functions/iconv.html#tag_17_248	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open
+functions	iconv_close	base	functions/iconv_close.html#tag_17_249	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open
+functions	iconv_open	base	functions/iconv_open.html#tag_17_250	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open
+functions	if_freenameindex	base	functions/if_freenameindex.html#tag_17_251	open	open	
+functions	if_indextoname	base	functions/if_indextoname.html#tag_17_252	open	open	
+functions	if_nameindex	base	functions/if_nameindex.html#tag_17_253	open	open	
+functions	if_nametoindex	base	functions/if_nametoindex.html#tag_17_254	open	open	
+functions	ilogb	base	functions/ilogb.html#tag_17_297	open	open	
+functions	ilogbf	base	functions/ilogb.html#tag_17_297	open	open	
+functions	ilogbl	base	functions/ilogb.html#tag_17_297	open	open	
+functions	imaxabs	base	functions/imaxabs.html#tag_17_256	open	open	
+functions	imaxdiv	base	functions/imaxdiv.html#tag_17_257	open	open	
+functions	in6addr_any	IP6	functions/in6addr_any.html#tag_17_258	open	open	
+functions	in6addr_loopback	IP6	functions/in6addr_any.html#tag_17_258	open	open	
+functions	inet_addr	base	functions/inet_addr.html#tag_17_259	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	inet_ntoa	base	functions/inet_addr.html#tag_17_259	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	inet_ntop	base	functions/inet_ntop.html#tag_17_260	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	inet_pton	base	functions/inet_ntop.html#tag_17_260	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton
+functions	initstate	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	random	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	setstate	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	srandom	XSI	functions/initstate.html#tag_17_261	partial	partial	scripts/qemu-libc-test.py#functional/random
+functions	insque	XSI	functions/insque.html#tag_17_262	partial	partial	scripts/qemu-libc-test.py#functional/search_insque
+functions	remque	XSI	functions/insque.html#tag_17_262	partial	partial	scripts/qemu-libc-test.py#functional/search_insque
+functions	isalnum	base	functions/isalnum.html#tag_17_263	open	open	
+functions	isalnum_l	base	functions/isalnum.html#tag_17_263	open	open	
+functions	isalpha	base	functions/isalpha.html#tag_17_264	open	open	
+functions	isalpha_l	base	functions/isalpha.html#tag_17_264	open	open	
+functions	isatty	base	functions/isatty.html#tag_17_265	partial	partial	ports/musl/tests/terminal.c
+functions	isblank	base	functions/isblank.html#tag_17_266	open	open	
+functions	isblank_l	base	functions/isblank.html#tag_17_266	open	open	
+functions	iscntrl	base	functions/iscntrl.html#tag_17_267	open	open	
+functions	iscntrl_l	base	functions/iscntrl.html#tag_17_267	open	open	
+functions	isdigit	base	functions/isdigit.html#tag_17_268	open	open	
+functions	isdigit_l	base	functions/isdigit.html#tag_17_268	open	open	
+functions	isfinite	base	functions/isfinite.html#tag_17_269	open	open	
+functions	isgraph	base	functions/isgraph.html#tag_17_270	open	open	
+functions	isgraph_l	base	functions/isgraph.html#tag_17_270	open	open	
+functions	isgreater	base	functions/isgreater.html#tag_17_271	open	open	
+functions	isgreaterequal	base	functions/isgreater.html#tag_17_271	open	open	
+functions	isless	base	functions/isgreater.html#tag_17_271	open	open	
+functions	islessequal	base	functions/isgreater.html#tag_17_271	open	open	
+functions	islessgreater	base	functions/isgreater.html#tag_17_271	open	open	
+functions	isinf	base	functions/isinf.html#tag_17_272	open	open	
+functions	islower	base	functions/islower.html#tag_17_273	open	open	
+functions	islower_l	base	functions/islower.html#tag_17_273	open	open	
+functions	isnan	base	functions/isnan.html#tag_17_274	open	open	
+functions	isnormal	base	functions/isnormal.html#tag_17_275	open	open	
+functions	isprint	base	functions/isprint.html#tag_17_276	open	open	
+functions	isprint_l	base	functions/isprint.html#tag_17_276	open	open	
+functions	ispunct	base	functions/ispunct.html#tag_17_277	open	open	
+functions	ispunct_l	base	functions/ispunct.html#tag_17_277	open	open	
+functions	isspace	base	functions/isspace.html#tag_17_278	open	open	
+functions	isspace_l	base	functions/isspace.html#tag_17_278	open	open	
+functions	isunordered	base	functions/isunordered.html#tag_17_279	open	open	
+functions	isupper	base	functions/isupper.html#tag_17_280	open	open	
+functions	isupper_l	base	functions/isupper.html#tag_17_280	open	open	
+functions	iswalnum	base	functions/iswalnum.html#tag_17_281	open	open	
+functions	iswalnum_l	base	functions/iswalnum.html#tag_17_281	open	open	
+functions	iswalpha	base	functions/iswalpha.html#tag_17_282	open	open	
+functions	iswalpha_l	base	functions/iswalpha.html#tag_17_282	open	open	
+functions	iswblank	base	functions/iswblank.html#tag_17_283	open	open	
+functions	iswblank_l	base	functions/iswblank.html#tag_17_283	open	open	
+functions	iswcntrl	base	functions/iswcntrl.html#tag_17_284	open	open	
+functions	iswcntrl_l	base	functions/iswcntrl.html#tag_17_284	open	open	
+functions	iswctype	base	functions/iswctype.html#tag_17_285	open	open	
+functions	iswctype_l	base	functions/iswctype.html#tag_17_285	open	open	
+functions	iswdigit	base	functions/iswdigit.html#tag_17_286	open	open	
+functions	iswdigit_l	base	functions/iswdigit.html#tag_17_286	open	open	
+functions	iswgraph	base	functions/iswgraph.html#tag_17_287	open	open	
+functions	iswgraph_l	base	functions/iswgraph.html#tag_17_287	open	open	
+functions	iswlower	base	functions/iswlower.html#tag_17_288	open	open	
+functions	iswlower_l	base	functions/iswlower.html#tag_17_288	open	open	
+functions	iswprint	base	functions/iswprint.html#tag_17_289	open	open	
+functions	iswprint_l	base	functions/iswprint.html#tag_17_289	open	open	
+functions	iswpunct	base	functions/iswpunct.html#tag_17_290	open	open	
+functions	iswpunct_l	base	functions/iswpunct.html#tag_17_290	open	open	
+functions	iswspace	base	functions/iswspace.html#tag_17_291	open	open	
+functions	iswspace_l	base	functions/iswspace.html#tag_17_291	open	open	
+functions	iswupper	base	functions/iswupper.html#tag_17_292	open	open	
+functions	iswupper_l	base	functions/iswupper.html#tag_17_292	open	open	
+functions	iswxdigit	base	functions/iswxdigit.html#tag_17_293	open	open	
+functions	iswxdigit_l	base	functions/iswxdigit.html#tag_17_293	open	open	
+functions	isxdigit	base	functions/isxdigit.html#tag_17_294	open	open	
+functions	isxdigit_l	base	functions/isxdigit.html#tag_17_294	open	open	
+functions	j0	XSI	functions/j0.html#tag_17_295	open	open	
+functions	j1	XSI	functions/j0.html#tag_17_295	open	open	
+functions	jn	XSI	functions/j0.html#tag_17_295	open	open	
+functions	kill	base	functions/kill.html#tag_17_296	partial	partial	ports/musl/tests/libc.c
+functions	kill_dependency	base	functions/kill_dependency.html#tag_17_297	open	open	
+functions	killpg	XSI	functions/killpg.html#tag_17_298	open	open	
+functions	labs	base	functions/labs.html#tag_17_299	open	open	
+functions	llabs	base	functions/labs.html#tag_17_299	open	open	
+functions	lchown	base	functions/lchown.html#tag_17_300	open	open	
+functions	ldexp	base	functions/ldexp.html#tag_17_301	open	open	
+functions	ldexpf	base	functions/ldexp.html#tag_17_301	open	open	
+functions	ldexpl	base	functions/ldexp.html#tag_17_301	open	open	
+functions	ldiv	base	functions/ldiv.html#tag_17_302	open	open	
+functions	lldiv	base	functions/ldiv.html#tag_17_302	open	open	
+functions	lgamma	base	functions/lgamma.html#tag_17_351	open	open	
+functions	lgammaf	base	functions/lgamma.html#tag_17_351	open	open	
+functions	lgammal	base	functions/lgamma.html#tag_17_351	open	open	
+functions	signgam	XSI	functions/lgamma.html#tag_17_351	open	open	
+functions	link	base	functions/link.html#tag_17_304	partial	partial	ports/musl/tests/files.c
+functions	linkat	base	functions/link.html#tag_17_304	partial	partial	ports/musl/tests/files.c
+functions	lio_listio	base	functions/lio_listio.html#tag_17_305	open	open	
+functions	listen	base	functions/listen.html#tag_17_306	open	open	
+functions	llrint	base	functions/llrint.html#tag_17_307	open	open	
+functions	llrintf	base	functions/llrint.html#tag_17_307	open	open	
+functions	llrintl	base	functions/llrint.html#tag_17_307	open	open	
+functions	llround	base	functions/llround.html#tag_17_308	open	open	
+functions	llroundf	base	functions/llround.html#tag_17_308	open	open	
+functions	llroundl	base	functions/llround.html#tag_17_308	open	open	
+functions	localeconv	base	functions/localeconv.html#tag_17_309	open	open	
+functions	localtime	base	functions/localtime.html#tag_17_310	open	open	
+functions	localtime_r	base	functions/localtime.html#tag_17_310	open	open	
+functions	lockf	XSI	functions/lockf.html#tag_17_311	open	open	
+functions	log	base	functions/log.html#tag_17_312	open	open	
+functions	logf	base	functions/log.html#tag_17_312	open	open	
+functions	logl	base	functions/log.html#tag_17_312	open	open	
+functions	log10	base	functions/log10.html#tag_17_313	open	open	
+functions	log10f	base	functions/log10.html#tag_17_313	open	open	
+functions	log10l	base	functions/log10.html#tag_17_313	open	open	
+functions	log1p	base	functions/log1p.html#tag_17_314	open	open	
+functions	log1pf	base	functions/log1p.html#tag_17_314	open	open	
+functions	log1pl	base	functions/log1p.html#tag_17_314	open	open	
+functions	log2	base	functions/log2.html#tag_17_315	open	open	
+functions	log2f	base	functions/log2.html#tag_17_315	open	open	
+functions	log2l	base	functions/log2.html#tag_17_315	open	open	
+functions	logb	base	functions/logb.html#tag_17_316	open	open	
+functions	logbf	base	functions/logb.html#tag_17_316	open	open	
+functions	logbl	base	functions/logb.html#tag_17_316	open	open	
+functions	longjmp	base	functions/longjmp.html#tag_17_317	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
+functions	lrint	base	functions/lrint.html#tag_17_318	open	open	
+functions	lrintf	base	functions/lrint.html#tag_17_318	open	open	
+functions	lrintl	base	functions/lrint.html#tag_17_318	open	open	
+functions	lround	base	functions/lround.html#tag_17_319	open	open	
+functions	lroundf	base	functions/lround.html#tag_17_319	open	open	
+functions	lroundl	base	functions/lround.html#tag_17_319	open	open	
+functions	lsearch	XSI	functions/lsearch.html#tag_17_320	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch
+functions	lfind	XSI	functions/lsearch.html#tag_17_320	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch
+functions	lseek	base	functions/lseek.html#tag_17_321	partial	partial	ports/musl/tests/files.c
+functions	malloc	base	functions/malloc.html#tag_17_322	open	open	
+functions	mblen	base	functions/mblen.html#tag_17_323	open	open	
+functions	mbrlen	base	functions/mbrlen.html#tag_17_324	open	open	
+functions	mbrtoc16	base	functions/mbrtoc16.html#tag_17_325	open	open	
+functions	mbrtoc32	base	functions/mbrtoc16.html#tag_17_325	open	open	
+functions	mbrtowc	base	functions/mbrtowc.html#tag_17_326	open	open	
+functions	mbsinit	base	functions/mbsinit.html#tag_17_327	open	open	
+functions	mbsnrtowcs	base	functions/mbsrtowcs.html#tag_17_328	open	open	
+functions	mbsrtowcs	base	functions/mbsrtowcs.html#tag_17_328	open	open	
+functions	mbstowcs	base	functions/mbstowcs.html#tag_17_329	open	open	
+functions	mbtowc	base	functions/mbtowc.html#tag_17_330	open	open	
+functions	memccpy	XSI	functions/memccpy.html#tag_17_331	open	open	
+functions	memchr	base	functions/memchr.html#tag_17_332	open	open	
+functions	memcmp	base	functions/memcmp.html#tag_17_333	open	open	
+functions	memcpy	base	functions/memcpy.html#tag_17_334	partial	partial	scripts/qemu-libc-test.py#functional/string_memcpy
+functions	memmem	base	functions/memmem.html#tag_17_335	partial	partial	scripts/qemu-libc-test.py#functional/string_memmem
+functions	memmove	base	functions/memmove.html#tag_17_336	open	open	
+functions	memset	base	functions/memset.html#tag_17_337	partial	partial	scripts/qemu-libc-test.py#functional/string_memset
+functions	mkdir	base	functions/mkdir.html#tag_17_338	partial	partial	ports/musl/tests/files.c
+functions	mkdirat	base	functions/mkdir.html#tag_17_338	partial	partial	ports/musl/tests/files.c
+functions	mkdtemp	base	functions/mkdtemp.html#tag_17_339	open	open	
+functions	mkostemp	base	functions/mkdtemp.html#tag_17_339	open	open	
+functions	mkstemp	base	functions/mkdtemp.html#tag_17_339	open	open	
+functions	mkfifo	base	functions/mkfifo.html#tag_17_340	open	open	
+functions	mkfifoat	base	functions/mkfifo.html#tag_17_340	open	open	
+functions	mknod	XSI	functions/mknod.html#tag_17_341	open	open	
+functions	mknodat	XSI	functions/mknod.html#tag_17_341	open	open	
+functions	mktime	base	functions/mktime.html#tag_17_342	open	open	
+functions	mlock	MLR	functions/mlock.html#tag_17_343	open	open	
+functions	munlock	MLR	functions/mlock.html#tag_17_343	open	open	
+functions	mlockall	ML	functions/mlockall.html#tag_17_344	open	open	
+functions	munlockall	ML	functions/mlockall.html#tag_17_344	open	open	
+functions	mmap	base	functions/mmap.html#tag_17_345	open	open	
+functions	modf	base	functions/modf.html#tag_17_346	open	open	
+functions	modff	base	functions/modf.html#tag_17_346	open	open	
+functions	modfl	base	functions/modf.html#tag_17_346	open	open	
+functions	mprotect	base	functions/mprotect.html#tag_17_347	open	open	
+functions	mq_close	MSG	functions/mq_close.html#tag_17_348	open	open	
+functions	mq_getattr	MSG	functions/mq_getattr.html#tag_17_349	open	open	
+functions	mq_notify	MSG	functions/mq_notify.html#tag_17_350	open	open	
+functions	mq_open	MSG	functions/mq_open.html#tag_17_351	open	open	
+functions	mq_receive	MSG	functions/mq_receive.html#tag_17_352	open	open	
+functions	mq_timedreceive	MSG	functions/mq_receive.html#tag_17_352	open	open	
+functions	mq_send	MSG	functions/mq_send.html#tag_17_353	open	open	
+functions	mq_timedsend	MSG	functions/mq_send.html#tag_17_353	open	open	
+functions	mq_setattr	MSG	functions/mq_setattr.html#tag_17_354	open	open	
+functions	mq_unlink	MSG	functions/mq_unlink.html#tag_17_355	open	open	
+functions	msgctl	XSI	functions/msgctl.html#tag_17_356	open	open	
+functions	msgget	XSI	functions/msgget.html#tag_17_357	open	open	
+functions	msgrcv	XSI	functions/msgrcv.html#tag_17_358	open	open	
+functions	msgsnd	XSI	functions/msgsnd.html#tag_17_359	open	open	
+functions	msync	XSI|SIO	functions/msync.html#tag_17_360	open	open	
+functions	mtx_destroy	base	functions/mtx_destroy.html#tag_17_361	open	open	
+functions	mtx_init	base	functions/mtx_destroy.html#tag_17_361	open	open	
+functions	mtx_lock	base	functions/mtx_lock.html#tag_17_362	open	open	
+functions	mtx_timedlock	base	functions/mtx_lock.html#tag_17_362	open	open	
+functions	mtx_trylock	base	functions/mtx_lock.html#tag_17_362	open	open	
+functions	mtx_unlock	base	functions/mtx_lock.html#tag_17_362	open	open	
+functions	munmap	base	functions/munmap.html#tag_17_363	open	open	
+functions	nan	base	functions/nan.html#tag_17_364	open	open	
+functions	nanf	base	functions/nan.html#tag_17_364	open	open	
+functions	nanl	base	functions/nan.html#tag_17_364	open	open	
+functions	nanosleep	base	functions/nanosleep.html#tag_17_365	partial	partial	ports/musl/tests/libc.c
+functions	nearbyint	base	functions/nearbyint.html#tag_17_366	open	open	
+functions	nearbyintf	base	functions/nearbyint.html#tag_17_366	open	open	
+functions	nearbyintl	base	functions/nearbyint.html#tag_17_366	open	open	
+functions	newlocale	base	functions/newlocale.html#tag_17_367	open	open	
+functions	nextafter	base	functions/nextafter.html#tag_17_368	open	open	
+functions	nextafterf	base	functions/nextafter.html#tag_17_368	open	open	
+functions	nextafterl	base	functions/nextafter.html#tag_17_368	open	open	
+functions	nexttoward	base	functions/nextafter.html#tag_17_368	open	open	
+functions	nexttowardf	base	functions/nextafter.html#tag_17_368	open	open	
+functions	nexttowardl	base	functions/nextafter.html#tag_17_368	open	open	
+functions	nftw	XSI	functions/nftw.html#tag_17_369	open	open	
+functions	nice	XSI	functions/nice.html#tag_17_370	open	open	
+functions	nl_langinfo	base	functions/nl_langinfo.html#tag_17_371	open	open	
+functions	nl_langinfo_l	base	functions/nl_langinfo.html#tag_17_371	open	open	
+functions	open	base	functions/open.html#tag_17_372	partial	partial	ports/musl/tests/files.c
+functions	openat	base	functions/open.html#tag_17_372	partial	partial	ports/musl/tests/files.c
+functions	open_memstream	base	functions/open_memstream.html#tag_17_373	partial	partial	scripts/qemu-libc-test.py#functional/memstream
+functions	open_wmemstream	base	functions/open_memstream.html#tag_17_373	open	open	
+functions	pause	base	functions/pause.html#tag_17_374	open	open	
+functions	pclose	base	functions/pclose.html#tag_17_375	partial	partial	qemu-libc-test.py#functional/popen
+functions	perror	base	functions/perror.html#tag_17_376	open	open	
+functions	pipe	base	functions/pipe.html#tag_17_377	partial	partial	native-exec/examples/family.c
+functions	pipe2	base	functions/pipe.html#tag_17_377	partial	partial	native-exec/examples/lockcheck.c
+functions	poll	base	functions/poll.html#tag_17_378	partial	partial	tests/native-poll/poll.c
+functions	ppoll	base	functions/poll.html#tag_17_378	partial	partial	tests/native-poll/poll.c
+functions	popen	base	functions/popen.html#tag_17_379	partial	partial	qemu-libc-test.py#functional/popen
+functions	posix_devctl	DC	functions/posix_devctl.html#tag_17_380	open	open	
+functions	posix_fadvise	ADV	functions/posix_fadvise.html#tag_17_381	open	open	
+functions	posix_fallocate	ADV	functions/posix_fallocate.html#tag_17_382	open	open	
+functions	posix_getdents	base	functions/posix_getdents.html#tag_17_383	open	open	
+functions	posix_madvise	ADV	functions/posix_madvise.html#tag_17_384	open	open	
+functions	posix_mem_offset	TYM	functions/posix_mem_offset.html#tag_17_385	open	open	
+functions	posix_memalign	ADV	functions/posix_memalign.html#tag_17_386	open	open	
+functions	posix_openpt	XSI	functions/posix_openpt.html#tag_17_387	open	open	
+functions	posix_spawn	SPN	functions/posix_spawn.html#tag_17_388	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnp	SPN	functions/posix_spawn.html#tag_17_388	partial	partial	qemu-libc-test.py#functional/spawn
+functions	posix_spawn_file_actions_addchdir	SPN	functions/posix_spawn_file_actions_addchdir.html#tag_17_389	open	open	
+functions	posix_spawn_file_actions_addfchdir	SPN	functions/posix_spawn_file_actions_addchdir.html#tag_17_389	open	open	
+functions	posix_spawn_file_actions_addclose	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_addopen	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_adddup2	SPN	functions/posix_spawn_file_actions_adddup2.html#tag_17_391	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_destroy	SPN	functions/posix_spawn_file_actions_destroy.html#tag_17_392	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawn_file_actions_init	SPN	functions/posix_spawn_file_actions_destroy.html#tag_17_392	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_destroy	SPN	functions/posix_spawnattr_destroy.html#tag_17_393	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_init	SPN	functions/posix_spawnattr_destroy.html#tag_17_393	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_getflags	SPN	functions/posix_spawnattr_getflags.html#tag_17_394	open	open	
+functions	posix_spawnattr_setflags	SPN	functions/posix_spawnattr_getflags.html#tag_17_394	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_getpgroup	SPN	functions/posix_spawnattr_getpgroup.html#tag_17_395	open	open	
+functions	posix_spawnattr_setpgroup	SPN	functions/posix_spawnattr_getpgroup.html#tag_17_395	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_spawnattr_getschedparam	SPN PS	functions/posix_spawnattr_getschedparam.html#tag_17_396	open	open	
+functions	posix_spawnattr_setschedparam	SPN PS	functions/posix_spawnattr_getschedparam.html#tag_17_396	open	open	
+functions	posix_spawnattr_getschedpolicy	SPN PS	functions/posix_spawnattr_getschedpolicy.html#tag_17_397	open	open	
+functions	posix_spawnattr_setschedpolicy	SPN PS	functions/posix_spawnattr_getschedpolicy.html#tag_17_397	open	open	
+functions	posix_spawnattr_getsigdefault	SPN	functions/posix_spawnattr_getsigdefault.html#tag_17_398	open	open	
+functions	posix_spawnattr_setsigdefault	SPN	functions/posix_spawnattr_getsigdefault.html#tag_17_398	open	open	
+functions	posix_spawnattr_getsigmask	SPN	functions/posix_spawnattr_getsigmask.html#tag_17_399	open	open	
+functions	posix_spawnattr_setsigmask	SPN	functions/posix_spawnattr_getsigmask.html#tag_17_399	partial	partial	scripts/qemu-local-sockets.py
+functions	posix_typed_mem_get_info	TYM	functions/posix_typed_mem_get_info.html#tag_17_400	open	open	
+functions	posix_typed_mem_open	TYM	functions/posix_typed_mem_open.html#tag_17_401	open	open	
+functions	pow	base	functions/pow.html#tag_17_402	open	open	
+functions	powf	base	functions/pow.html#tag_17_402	open	open	
+functions	powl	base	functions/pow.html#tag_17_402	open	open	
+functions	pselect	base	functions/pselect.html#tag_17_403	open	open	
+functions	select	base	functions/pselect.html#tag_17_403	open	open	
+functions	psiginfo	base	functions/psiginfo.html#tag_17_404	open	open	
+functions	psignal	base	functions/psiginfo.html#tag_17_404	open	open	
+functions	pthread_atfork	base	functions/pthread_atfork.html#tag_17_405	open	open	
+functions	pthread_attr_destroy	base	functions/pthread_attr_destroy.html#tag_17_406	open	open	
+functions	pthread_attr_init	base	functions/pthread_attr_destroy.html#tag_17_406	open	open	
+functions	pthread_attr_getdetachstate	base	functions/pthread_attr_getdetachstate.html#tag_17_407	open	open	
+functions	pthread_attr_setdetachstate	base	functions/pthread_attr_getdetachstate.html#tag_17_407	open	open	
+functions	pthread_attr_getguardsize	base	functions/pthread_attr_getguardsize.html#tag_17_408	open	open	
+functions	pthread_attr_setguardsize	base	functions/pthread_attr_getguardsize.html#tag_17_408	open	open	
+functions	pthread_attr_getinheritsched	TPS	functions/pthread_attr_getinheritsched.html#tag_17_409	open	open	
+functions	pthread_attr_setinheritsched	TPS	functions/pthread_attr_getinheritsched.html#tag_17_409	open	open	
+functions	pthread_attr_getschedparam	base	functions/pthread_attr_getschedparam.html#tag_17_410	open	open	
+functions	pthread_attr_setschedparam	base	functions/pthread_attr_getschedparam.html#tag_17_410	open	open	
+functions	pthread_attr_getschedpolicy	TPS	functions/pthread_attr_getschedpolicy.html#tag_17_411	open	open	
+functions	pthread_attr_setschedpolicy	TPS	functions/pthread_attr_getschedpolicy.html#tag_17_411	open	open	
+functions	pthread_attr_getscope	TPS	functions/pthread_attr_getscope.html#tag_17_412	open	open	
+functions	pthread_attr_setscope	TPS	functions/pthread_attr_getscope.html#tag_17_412	open	open	
+functions	pthread_attr_getstack	TSA TSS	functions/pthread_attr_getstack.html#tag_17_413	open	open	
+functions	pthread_attr_setstack	TSA TSS	functions/pthread_attr_getstack.html#tag_17_413	open	open	
+functions	pthread_attr_getstacksize	TSS	functions/pthread_attr_getstacksize.html#tag_17_414	open	open	
+functions	pthread_attr_setstacksize	TSS	functions/pthread_attr_getstacksize.html#tag_17_414	open	open	
+functions	pthread_barrier_destroy	base	functions/pthread_barrier_destroy.html#tag_17_415	open	open	
+functions	pthread_barrier_init	base	functions/pthread_barrier_destroy.html#tag_17_415	open	open	
+functions	pthread_barrier_wait	base	functions/pthread_barrier_wait.html#tag_17_416	open	open	
+functions	pthread_barrierattr_destroy	base	functions/pthread_barrierattr_destroy.html#tag_17_417	open	open	
+functions	pthread_barrierattr_init	base	functions/pthread_barrierattr_destroy.html#tag_17_417	open	open	
+functions	pthread_barrierattr_getpshared	TSH	functions/pthread_barrierattr_getpshared.html#tag_17_418	open	open	
+functions	pthread_barrierattr_setpshared	TSH	functions/pthread_barrierattr_getpshared.html#tag_17_418	open	open	
+functions	pthread_cancel	base	functions/pthread_cancel.html#tag_17_419	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cleanup_pop	base	functions/pthread_cleanup_pop.html#tag_17_420	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cleanup_push	base	functions/pthread_cleanup_pop.html#tag_17_420	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cond_broadcast	base	functions/pthread_cond_broadcast.html#tag_17_421	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cond_signal	base	functions/pthread_cond_broadcast.html#tag_17_421	open	open	
+functions	pthread_cond_clockwait	base	functions/pthread_cond_clockwait.html#tag_17_422	open	open	
+functions	pthread_cond_timedwait	base	functions/pthread_cond_clockwait.html#tag_17_422	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cond_wait	base	functions/pthread_cond_clockwait.html#tag_17_422	partial	partial	ports/musl/tests/libc.c
+functions	pthread_cond_destroy	base	functions/pthread_cond_destroy.html#tag_17_423	open	open	
+functions	pthread_cond_init	base	functions/pthread_cond_destroy.html#tag_17_423	open	open	
+functions	pthread_condattr_destroy	base	functions/pthread_condattr_destroy.html#tag_17_424	open	open	
+functions	pthread_condattr_init	base	functions/pthread_condattr_destroy.html#tag_17_424	open	open	
+functions	pthread_condattr_getclock	base	functions/pthread_condattr_getclock.html#tag_17_425	open	open	
+functions	pthread_condattr_setclock	base	functions/pthread_condattr_getclock.html#tag_17_425	open	open	
+functions	pthread_condattr_getpshared	TSH	functions/pthread_condattr_getpshared.html#tag_17_426	open	open	
+functions	pthread_condattr_setpshared	TSH	functions/pthread_condattr_getpshared.html#tag_17_426	open	open	
+functions	pthread_create	base	functions/pthread_create.html#tag_17_427	partial	partial	ports/musl/tests/libc.c
+functions	pthread_detach	base	functions/pthread_detach.html#tag_17_428	open	open	
+functions	pthread_equal	base	functions/pthread_equal.html#tag_17_429	open	open	
+functions	pthread_exit	base	functions/pthread_exit.html#tag_17_430	open	open	
+functions	pthread_getcpuclockid	TCT	functions/pthread_getcpuclockid.html#tag_17_431	open	open	
+functions	pthread_getschedparam	TPS	functions/pthread_getschedparam.html#tag_17_432	open	open	
+functions	pthread_setschedparam	TPS	functions/pthread_getschedparam.html#tag_17_432	open	open	
+functions	pthread_getspecific	base	functions/pthread_getspecific.html#tag_17_433	open	open	
+functions	pthread_setspecific	base	functions/pthread_getspecific.html#tag_17_433	open	open	
+functions	pthread_join	base	functions/pthread_join.html#tag_17_434	partial	partial	ports/musl/tests/libc.c
+functions	pthread_key_create	base	functions/pthread_key_create.html#tag_17_435	open	open	
+functions	pthread_key_delete	base	functions/pthread_key_delete.html#tag_17_436	open	open	
+functions	pthread_kill	base	functions/pthread_kill.html#tag_17_437	partial	partial	ports/musl/tests/libc.c
+functions	pthread_mutex_clocklock	base	functions/pthread_mutex_clocklock.html#tag_17_438	open	open	
+functions	pthread_mutex_timedlock	base	functions/pthread_mutex_clocklock.html#tag_17_438	open	open	
+functions	pthread_mutex_consistent	base	functions/pthread_mutex_consistent.html#tag_17_439	open	open	
+functions	pthread_mutex_destroy	base	functions/pthread_mutex_destroy.html#tag_17_440	open	open	
+functions	pthread_mutex_init	base	functions/pthread_mutex_destroy.html#tag_17_440	open	open	
+functions	pthread_mutex_getprioceiling	RPP|TPP	functions/pthread_mutex_getprioceiling.html#tag_17_441	open	open	
+functions	pthread_mutex_setprioceiling	RPP|TPP	functions/pthread_mutex_getprioceiling.html#tag_17_441	open	open	
+functions	pthread_mutex_lock	base	functions/pthread_mutex_lock.html#tag_17_442	partial	partial	ports/musl/tests/libc.c
+functions	pthread_mutex_trylock	base	functions/pthread_mutex_lock.html#tag_17_442	open	open	
+functions	pthread_mutex_unlock	base	functions/pthread_mutex_lock.html#tag_17_442	partial	partial	ports/musl/tests/libc.c
+functions	pthread_mutexattr_destroy	base	functions/pthread_mutexattr_destroy.html#tag_17_443	open	open	
+functions	pthread_mutexattr_init	base	functions/pthread_mutexattr_destroy.html#tag_17_443	open	open	
+functions	pthread_mutexattr_getprioceiling	RPP|TPP	functions/pthread_mutexattr_getprioceiling.html#tag_17_444	open	open	
+functions	pthread_mutexattr_setprioceiling	RPP|TPP	functions/pthread_mutexattr_getprioceiling.html#tag_17_444	open	open	
+functions	pthread_mutexattr_getprotocol	MC1	functions/pthread_mutexattr_getprotocol.html#tag_17_445	open	open	
+functions	pthread_mutexattr_setprotocol	MC1	functions/pthread_mutexattr_getprotocol.html#tag_17_445	open	open	
+functions	pthread_mutexattr_getpshared	TSH	functions/pthread_mutexattr_getpshared.html#tag_17_446	open	open	
+functions	pthread_mutexattr_setpshared	TSH	functions/pthread_mutexattr_getpshared.html#tag_17_446	open	open	
+functions	pthread_mutexattr_getrobust	base	functions/pthread_mutexattr_getrobust.html#tag_17_447	open	open	
+functions	pthread_mutexattr_setrobust	base	functions/pthread_mutexattr_getrobust.html#tag_17_447	open	open	
+functions	pthread_mutexattr_gettype	base	functions/pthread_mutexattr_gettype.html#tag_17_448	open	open	
+functions	pthread_mutexattr_settype	base	functions/pthread_mutexattr_gettype.html#tag_17_448	open	open	
+functions	pthread_once	base	functions/pthread_once.html#tag_17_449	open	open	
+functions	pthread_rwlock_clockrdlock	base	functions/pthread_rwlock_clockrdlock.html#tag_17_450	open	open	
+functions	pthread_rwlock_timedrdlock	base	functions/pthread_rwlock_clockrdlock.html#tag_17_450	open	open	
+functions	pthread_rwlock_clockwrlock	base	functions/pthread_rwlock_clockwrlock.html#tag_17_451	open	open	
+functions	pthread_rwlock_timedwrlock	base	functions/pthread_rwlock_clockwrlock.html#tag_17_451	open	open	
+functions	pthread_rwlock_destroy	base	functions/pthread_rwlock_destroy.html#tag_17_452	open	open	
+functions	pthread_rwlock_init	base	functions/pthread_rwlock_destroy.html#tag_17_452	open	open	
+functions	pthread_rwlock_rdlock	base	functions/pthread_rwlock_rdlock.html#tag_17_453	open	open	
+functions	pthread_rwlock_tryrdlock	base	functions/pthread_rwlock_rdlock.html#tag_17_453	open	open	
+functions	pthread_rwlock_trywrlock	base	functions/pthread_rwlock_trywrlock.html#tag_17_454	open	open	
+functions	pthread_rwlock_wrlock	base	functions/pthread_rwlock_trywrlock.html#tag_17_454	open	open	
+functions	pthread_rwlock_unlock	base	functions/pthread_rwlock_unlock.html#tag_17_455	open	open	
+functions	pthread_rwlockattr_destroy	base	functions/pthread_rwlockattr_destroy.html#tag_17_456	open	open	
+functions	pthread_rwlockattr_init	base	functions/pthread_rwlockattr_destroy.html#tag_17_456	open	open	
+functions	pthread_rwlockattr_getpshared	TSH	functions/pthread_rwlockattr_getpshared.html#tag_17_457	open	open	
+functions	pthread_rwlockattr_setpshared	TSH	functions/pthread_rwlockattr_getpshared.html#tag_17_457	open	open	
+functions	pthread_self	base	functions/pthread_self.html#tag_17_458	open	open	
+functions	pthread_setcancelstate	base	functions/pthread_setcancelstate.html#tag_17_459	open	open	
+functions	pthread_setcanceltype	base	functions/pthread_setcancelstate.html#tag_17_459	open	open	
+functions	pthread_testcancel	base	functions/pthread_setcancelstate.html#tag_17_459	open	open	
+functions	pthread_setschedprio	TPS	functions/pthread_setschedprio.html#tag_17_460	open	open	
+functions	pthread_sigmask	base	functions/pthread_sigmask.html#tag_17_461	partial	partial	ports/musl/tests/libc.c
+functions	sigprocmask	base	functions/pthread_sigmask.html#tag_17_461	partial	partial	ports/musl/tests/libc.c
+functions	pthread_spin_destroy	base	functions/pthread_spin_destroy.html#tag_17_462	open	open	
+functions	pthread_spin_init	base	functions/pthread_spin_destroy.html#tag_17_462	open	open	
+functions	pthread_spin_lock	base	functions/pthread_spin_lock.html#tag_17_463	open	open	
+functions	pthread_spin_trylock	base	functions/pthread_spin_lock.html#tag_17_463	open	open	
+functions	pthread_spin_unlock	base	functions/pthread_spin_unlock.html#tag_17_464	open	open	
+functions	ptsname	XSI	functions/ptsname.html#tag_17_465	open	open	
+functions	ptsname_r	XSI	functions/ptsname.html#tag_17_465	open	open	
+functions	putc	base	functions/putc.html#tag_17_466	open	open	
+functions	putchar	base	functions/putchar.html#tag_17_467	open	open	
+functions	putenv	XSI	functions/putenv.html#tag_17_468	partial	partial	scripts/qemu-libc-test.py#functional/env
+functions	puts	base	functions/puts.html#tag_17_469	open	open	
+functions	putwc	base	functions/putwc.html#tag_17_470	open	open	
+functions	putwchar	base	functions/putwchar.html#tag_17_471	open	open	
+functions	qsort	base	functions/qsort.html#tag_17_472	partial	partial	scripts/qemu-libc-test.py#functional/qsort
+functions	qsort_r	base	functions/qsort.html#tag_17_472	open	open	
+functions	quick_exit	base	functions/quick_exit.html#tag_17_473	open	open	
+functions	raise	base	functions/raise.html#tag_17_474	open	open	
+functions	rand	base	functions/rand.html#tag_17_475	open	open	
+functions	srand	base	functions/rand.html#tag_17_475	open	open	
+functions	pread	base	functions/read.html#tag_17_476	partial	partial	native-exec/examples/attrcheck.c
+functions	read	base	functions/read.html#tag_17_476	partial	partial	ports/musl/tests/files.c
+functions	readdir	base	functions/readdir.html#tag_17_477	partial	partial	ports/musl/tests/files.c
+functions	readdir_r	base	functions/readdir.html#tag_17_477	open	open	
+functions	readlink	base	functions/readlink.html#tag_17_478	partial	partial	ports/musl/tests/files.c
+functions	readlinkat	base	functions/readlink.html#tag_17_478	partial	partial	ports/musl/tests/files.c
+functions	readv	XSI	functions/readv.html#tag_17_479	open	open	
+functions	realloc	base	functions/realloc.html#tag_17_480	partial	partial	ports/musl/tests/libc.c
+functions	reallocarray	base	functions/realloc.html#tag_17_480	open	open	
+functions	realpath	base	functions/realpath.html#tag_17_481	partial	partial	tests/native-df/mounts.c
+functions	recv	base	functions/recv.html#tag_17_482	partial	partial	scripts/qemu-local-sockets.py
+functions	recvfrom	base	functions/recvfrom.html#tag_17_483	open	open	
+functions	recvmsg	base	functions/recvmsg.html#tag_17_484	open	open	
+functions	regcomp	base	functions/regcomp.html#tag_17_485	open	open	
+functions	regerror	base	functions/regcomp.html#tag_17_485	open	open	
+functions	regexec	base	functions/regcomp.html#tag_17_485	open	open	
+functions	regfree	base	functions/regcomp.html#tag_17_485	open	open	
+functions	remainder	base	functions/remainder.html#tag_17_486	open	open	
+functions	remainderf	base	functions/remainder.html#tag_17_486	open	open	
+functions	remainderl	base	functions/remainder.html#tag_17_486	open	open	
+functions	remove	base	functions/remove.html#tag_17_487	open	open	
+functions	remquo	base	functions/remquo.html#tag_17_488	open	open	
+functions	remquof	base	functions/remquo.html#tag_17_488	open	open	
+functions	remquol	base	functions/remquo.html#tag_17_488	open	open	
+functions	rename	base	functions/rename.html#tag_17_489	partial	partial	ports/musl/tests/files.c
+functions	renameat	base	functions/rename.html#tag_17_489	partial	partial	ports/musl/tests/files.c
+functions	rewind	base	functions/rewind.html#tag_17_490	open	open	
+functions	rewinddir	base	functions/rewinddir.html#tag_17_491	open	open	
+functions	rint	base	functions/rint.html#tag_17_492	open	open	
+functions	rintf	base	functions/rint.html#tag_17_492	open	open	
+functions	rintl	base	functions/rint.html#tag_17_492	open	open	
+functions	rmdir	base	functions/rmdir.html#tag_17_493	partial	partial	ports/musl/tests/files.c
+functions	round	base	functions/round.html#tag_17_494	open	open	
+functions	roundf	base	functions/round.html#tag_17_494	open	open	
+functions	roundl	base	functions/round.html#tag_17_494	open	open	
+functions	scalbln	base	functions/scalbln.html#tag_17_495	open	open	
+functions	scalblnf	base	functions/scalbln.html#tag_17_495	open	open	
+functions	scalblnl	base	functions/scalbln.html#tag_17_495	open	open	
+functions	scalbn	base	functions/scalbln.html#tag_17_495	open	open	
+functions	scalbnf	base	functions/scalbln.html#tag_17_495	open	open	
+functions	scalbnl	base	functions/scalbln.html#tag_17_495	open	open	
+functions	sched_get_priority_max	PS|TPS	functions/sched_get_priority_max.html#tag_17_496	open	open	
+functions	sched_get_priority_min	PS|TPS	functions/sched_get_priority_max.html#tag_17_496	open	open	
+functions	sched_getparam	PS	functions/sched_getparam.html#tag_17_497	open	open	
+functions	sched_getscheduler	PS	functions/sched_getscheduler.html#tag_17_498	open	open	
+functions	sched_rr_get_interval	PS|TPS	functions/sched_rr_get_interval.html#tag_17_499	open	open	
+functions	sched_setparam	PS	functions/sched_setparam.html#tag_17_500	open	open	
+functions	sched_setscheduler	PS	functions/sched_setscheduler.html#tag_17_501	open	open	
+functions	sched_yield	base	functions/sched_yield.html#tag_17_502	open	open	
+functions	seekdir	XSI	functions/seekdir.html#tag_17_503	open	open	
+functions	sem_clockwait	base	functions/sem_clockwait.html#tag_17_504	open	open	
+functions	sem_timedwait	base	functions/sem_clockwait.html#tag_17_504	open	open	
+functions	sem_close	base	functions/sem_close.html#tag_17_505	open	open	
+functions	sem_destroy	base	functions/sem_destroy.html#tag_17_506	open	open	
+functions	sem_getvalue	base	functions/sem_getvalue.html#tag_17_507	open	open	
+functions	sem_init	base	functions/sem_init.html#tag_17_508	open	open	
+functions	sem_open	base	functions/sem_open.html#tag_17_509	open	open	
+functions	sem_post	base	functions/sem_post.html#tag_17_510	open	open	
+functions	sem_trywait	base	functions/sem_trywait.html#tag_17_511	open	open	
+functions	sem_wait	base	functions/sem_trywait.html#tag_17_511	open	open	
+functions	sem_unlink	base	functions/sem_unlink.html#tag_17_512	open	open	
+functions	semctl	XSI	functions/semctl.html#tag_17_513	open	open	
+functions	semget	XSI	functions/semget.html#tag_17_514	open	open	
+functions	semop	XSI	functions/semop.html#tag_17_515	open	open	
+functions	send	base	functions/send.html#tag_17_516	partial	partial	scripts/qemu-local-sockets.py
+functions	sendmsg	base	functions/sendmsg.html#tag_17_517	open	open	
+functions	sendto	base	functions/sendto.html#tag_17_518	open	open	
+functions	setbuf	base	functions/setbuf.html#tag_17_519	open	open	
+functions	setegid	base	functions/setegid.html#tag_17_520	open	open	
+functions	setenv	base	functions/setenv.html#tag_17_521	partial	partial	scripts/qemu-libc-test.py#functional/env
+functions	seteuid	base	functions/seteuid.html#tag_17_522	open	open	
+functions	setgid	base	functions/setgid.html#tag_17_523	partial	partial	native-exec/examples/vfscheck.c
+functions	setjmp	base	functions/setjmp.html#tag_17_524	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
+functions	setkey	OB XSI	functions/setkey.html#tag_17_525	open	open	
+functions	setlocale	base	functions/setlocale.html#tag_17_526	open	open	
+functions	setpgid	base	functions/setpgid.html#tag_17_527	partial	partial	native-exec/examples/family.c
+functions	setregid	XSI	functions/setregid.html#tag_17_528	open	open	
+functions	setresgid	XSI	functions/setresgid.html#tag_17_529	open	open	
+functions	setresuid	XSI	functions/setresuid.html#tag_17_530	open	open	
+functions	setreuid	XSI	functions/setreuid.html#tag_17_531	open	open	
+functions	setsid	base	functions/setsid.html#tag_17_532	open	open	
+functions	setsockopt	base	functions/setsockopt.html#tag_17_533	open	open	
+functions	setuid	base	functions/setuid.html#tag_17_534	partial	partial	native-exec/examples/vfscheck.c
+functions	setvbuf	base	functions/setvbuf.html#tag_17_535	open	open	
+functions	shm_open	SHM	functions/shm_open.html#tag_17_536	open	open	
+functions	shm_unlink	SHM	functions/shm_unlink.html#tag_17_537	open	open	
+functions	shmat	XSI	functions/shmat.html#tag_17_538	open	open	
+functions	shmctl	XSI	functions/shmctl.html#tag_17_539	open	open	
+functions	shmdt	XSI	functions/shmdt.html#tag_17_540	open	open	
+functions	shmget	XSI	functions/shmget.html#tag_17_541	open	open	
+functions	shutdown	base	functions/shutdown.html#tag_17_542	open	open	
+functions	sig2str	base	functions/sig2str.html#tag_17_543	open	open	
+functions	str2sig	base	functions/sig2str.html#tag_17_543	open	open	
+functions	sigaction	base	functions/sigaction.html#tag_17_544	partial	partial	ports/musl/tests/libc.c
+functions	sigaddset	base	functions/sigaddset.html#tag_17_545	partial	partial	ports/musl/tests/libc.c
+functions	sigaltstack	XSI	functions/sigaltstack.html#tag_17_546	open	open	
+functions	sigdelset	base	functions/sigdelset.html#tag_17_547	open	open	
+functions	sigemptyset	base	functions/sigemptyset.html#tag_17_548	partial	partial	ports/musl/tests/libc.c
+functions	sigfillset	base	functions/sigfillset.html#tag_17_549	open	open	
+functions	sigismember	base	functions/sigismember.html#tag_17_550	partial	partial	ports/musl/tests/libc.c
+functions	siglongjmp	base	functions/siglongjmp.html#tag_17_551	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
+functions	signal	base	functions/signal.html#tag_17_552	open	open	
+functions	signbit	base	functions/signbit.html#tag_17_553	open	open	
+functions	sigpending	base	functions/sigpending.html#tag_17_554	partial	partial	ports/musl/tests/libc.c
+functions	sigqueue	base	functions/sigqueue.html#tag_17_555	open	open	
+functions	sigsetjmp	base	functions/sigsetjmp.html#tag_17_556	partial	partial	scripts/qemu-libc-test.py#functional/setjmp
+functions	sigsuspend	base	functions/sigsuspend.html#tag_17_557	open	open	
+functions	sigtimedwait	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c
+functions	sigwaitinfo	base	functions/sigtimedwait.html#tag_17_558	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c
+functions	sigwait	base	functions/sigwait.html#tag_17_559	partial	partial	ports/musl/tests/sigwait.c
+functions	sin	base	functions/sin.html#tag_17_560	open	open	
+functions	sinf	base	functions/sin.html#tag_17_560	open	open	
+functions	sinl	base	functions/sin.html#tag_17_560	open	open	
+functions	sinh	base	functions/sinh.html#tag_17_561	open	open	
+functions	sinhf	base	functions/sinh.html#tag_17_561	open	open	
+functions	sinhl	base	functions/sinh.html#tag_17_561	open	open	
+functions	sleep	base	functions/sleep.html#tag_17_562	open	open	
+functions	sockatmark	base	functions/sockatmark.html#tag_17_563	open	open	
+functions	socket	base	functions/socket.html#tag_17_710	open	open	
+functions	socketpair	base	functions/socketpair.html#tag_17_565	partial	partial	scripts/qemu-local-sockets.py
+functions	sqrt	base	functions/sqrt.html#tag_17_713	open	open	
+functions	sqrtf	base	functions/sqrt.html#tag_17_713	open	open	
+functions	sqrtl	base	functions/sqrt.html#tag_17_713	open	open	
+functions	stderr	base	functions/stdin.html#tag_17_567	open	open	
+functions	stdin	base	functions/stdin.html#tag_17_567	open	open	
+functions	stdout	base	functions/stdin.html#tag_17_567	open	open	
+functions	strcasecmp	base	functions/strcasecmp.html#tag_17_568	open	open	
+functions	strcasecmp_l	base	functions/strcasecmp.html#tag_17_568	open	open	
+functions	strncasecmp	base	functions/strcasecmp.html#tag_17_568	open	open	
+functions	strncasecmp_l	base	functions/strcasecmp.html#tag_17_568	open	open	
+functions	strcat	base	functions/strcat.html#tag_17_569	open	open	
+functions	strchr	base	functions/strchr.html#tag_17_570	partial	partial	scripts/qemu-libc-test.py#functional/string_strchr
+functions	strcmp	base	functions/strcmp.html#tag_17_571	open	open	
+functions	strcoll	base	functions/strcoll.html#tag_17_572	open	open	
+functions	strcoll_l	base	functions/strcoll.html#tag_17_572	open	open	
+functions	stpcpy	base	functions/strcpy.html#tag_17_573	open	open	
+functions	strcpy	base	functions/strcpy.html#tag_17_573	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strcspn	base	functions/strcspn.html#tag_17_574	partial	partial	scripts/qemu-libc-test.py#functional/string_strcspn
+functions	strdup	base	functions/strdup.html#tag_17_575	open	open	
+functions	strndup	base	functions/strdup.html#tag_17_575	open	open	
+functions	strerror	base	functions/strerror.html#tag_17_576	open	open	
+functions	strerror_l	base	functions/strerror.html#tag_17_576	open	open	
+functions	strerror_r	base	functions/strerror.html#tag_17_576	open	open	
+functions	strfmon	base	functions/strfmon.html#tag_17_577	open	open	
+functions	strfmon_l	base	functions/strfmon.html#tag_17_577	open	open	
+functions	strftime	base	functions/strftime.html#tag_17_578	open	open	
+functions	strftime_l	base	functions/strftime.html#tag_17_578	open	open	
+functions	strlcat	base	functions/strlcat.html#tag_17_579	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strlcpy	base	functions/strlcat.html#tag_17_579	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strlen	base	functions/strlen.html#tag_17_580	open	open	
+functions	strnlen	base	functions/strlen.html#tag_17_580	open	open	
+functions	strncat	base	functions/strncat.html#tag_17_581	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strncmp	base	functions/strncmp.html#tag_17_582	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	stpncpy	base	functions/strncpy.html#tag_17_583	open	open	
+functions	strncpy	base	functions/strncpy.html#tag_17_583	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strpbrk	base	functions/strpbrk.html#tag_17_584	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strptime	XSI	functions/strptime.html#tag_17_585	open	open	
+functions	strrchr	base	functions/strrchr.html#tag_17_586	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strsignal	base	functions/strsignal.html#tag_17_587	open	open	
+functions	strspn	base	functions/strspn.html#tag_17_588	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strstr	base	functions/strstr.html#tag_17_589	partial	partial	scripts/qemu-libc-test.py#functional/string_strstr
+functions	strtod	base	functions/strtod.html#tag_17_590	partial	partial	scripts/qemu-libc-test.py#functional/strtod,scripts/qemu-libc-test.py#functional/strtod_simple
+functions	strtof	base	functions/strtod.html#tag_17_590	partial	partial	scripts/qemu-libc-test.py#functional/strtof
+functions	strtold	base	functions/strtod.html#tag_17_590	partial	partial	scripts/qemu-libc-test.py#functional/strtold
+functions	strtoimax	base	functions/strtoimax.html#tag_17_591	open	open	
+functions	strtoumax	base	functions/strtoimax.html#tag_17_591	open	open	
+functions	strtok	base	functions/strtok.html#tag_17_592	partial	partial	scripts/qemu-libc-test.py#functional/string
+functions	strtok_r	base	functions/strtok.html#tag_17_592	open	open	
+functions	strtol	base	functions/strtol.html#tag_17_593	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strtoll	base	functions/strtol.html#tag_17_593	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strtoul	base	functions/strtoul.html#tag_17_594	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strtoull	base	functions/strtoul.html#tag_17_594	partial	partial	scripts/qemu-libc-test.py#functional/strtol
+functions	strxfrm	base	functions/strxfrm.html#tag_17_595	open	open	
+functions	strxfrm_l	base	functions/strxfrm.html#tag_17_595	open	open	
+functions	swab	XSI	functions/swab.html#tag_17_596	open	open	
+functions	symlink	base	functions/symlink.html#tag_17_597	partial	partial	ports/musl/tests/files.c
+functions	symlinkat	base	functions/symlink.html#tag_17_597	partial	partial	ports/musl/tests/files.c
+functions	sync	XSI	functions/sync.html#tag_17_598	open	open	
+functions	sysconf	base	functions/sysconf.html#tag_17_599	open	open	
+functions	system	base	functions/system.html#tag_17_600	open	open	
+functions	tan	base	functions/tan.html#tag_17_601	open	open	
+functions	tanf	base	functions/tan.html#tag_17_601	open	open	
+functions	tanl	base	functions/tan.html#tag_17_601	open	open	
+functions	tanh	base	functions/tanh.html#tag_17_602	open	open	
+functions	tanhf	base	functions/tanh.html#tag_17_602	open	open	
+functions	tanhl	base	functions/tanh.html#tag_17_602	open	open	
+functions	tcdrain	base	functions/tcdrain.html#tag_17_603	partial	partial	ports/musl/tests/terminal.c
+functions	tcflow	base	functions/tcflow.html#tag_17_604	partial	partial	ports/musl/tests/terminal.c
+functions	tcflush	base	functions/tcflush.html#tag_17_605	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetattr	base	functions/tcgetattr.html#tag_17_606	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetpgrp	base	functions/tcgetpgrp.html#tag_17_607	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetsid	base	functions/tcgetsid.html#tag_17_608	partial	partial	ports/musl/tests/terminal.c
+functions	tcgetwinsize	base	functions/tcgetwinsize.html#tag_17_609	partial	partial	ports/musl/tests/terminal.c
+functions	tcsendbreak	base	functions/tcsendbreak.html#tag_17_610	open	open	
+functions	tcsetattr	base	functions/tcsetattr.html#tag_17_611	partial	partial	ports/musl/tests/terminal.c
+functions	tcsetpgrp	base	functions/tcsetpgrp.html#tag_17_612	partial	partial	ports/musl/tests/terminal.c
+functions	tcsetwinsize	base	functions/tcsetwinsize.html#tag_17_613	partial	partial	ports/musl/tests/terminal.c
+functions	tdelete	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	tfind	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	tsearch	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	twalk	XSI	functions/tdelete.html#tag_17_614	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch
+functions	telldir	XSI	functions/telldir.html#tag_17_615	open	open	
+functions	tgamma	base	functions/tgamma.html#tag_17_784	open	open	
+functions	tgammaf	base	functions/tgamma.html#tag_17_784	open	open	
+functions	tgammal	base	functions/tgamma.html#tag_17_784	open	open	
+functions	thrd_create	base	functions/thrd_create.html#tag_17_617	open	open	
+functions	thrd_current	base	functions/thrd_current.html#tag_17_618	open	open	
+functions	thrd_detach	base	functions/thrd_detach.html#tag_17_619	open	open	
+functions	thrd_equal	base	functions/thrd_equal.html#tag_17_620	open	open	
+functions	thrd_exit	base	functions/thrd_exit.html#tag_17_621	open	open	
+functions	thrd_join	base	functions/thrd_join.html#tag_17_622	open	open	
+functions	thrd_sleep	base	functions/thrd_sleep.html#tag_17_623	open	open	
+functions	thrd_yield	base	functions/thrd_yield.html#tag_17_624	open	open	
+functions	time	base	functions/time.html#tag_17_625	open	open	
+functions	timer_create	base	functions/timer_create.html#tag_17_626	partial	partial	ports/musl/tests/timers.c
+functions	timer_delete	base	functions/timer_delete.html#tag_17_627	partial	partial	ports/musl/tests/timers.c
+functions	timer_getoverrun	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
+functions	timer_gettime	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
+functions	timer_settime	base	functions/timer_getoverrun.html#tag_17_628	partial	partial	ports/musl/tests/timers.c
+functions	times	base	functions/times.html#tag_17_629	open	open	
+functions	timespec_get	base	functions/timespec_get.html#tag_17_630	open	open	
+functions	tmpfile	base	functions/tmpfile.html#tag_17_631	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
+functions	tmpnam	base	functions/tmpnam.html#tag_17_632	open	open	
+functions	tolower	base	functions/tolower.html#tag_17_633	open	open	
+functions	tolower_l	base	functions/tolower.html#tag_17_633	open	open	
+functions	toupper	base	functions/toupper.html#tag_17_634	open	open	
+functions	toupper_l	base	functions/toupper.html#tag_17_634	open	open	
+functions	towctrans	base	functions/towctrans.html#tag_17_635	open	open	
+functions	towctrans_l	base	functions/towctrans.html#tag_17_635	open	open	
+functions	towlower	base	functions/towlower.html#tag_17_636	open	open	
+functions	towlower_l	base	functions/towlower.html#tag_17_636	open	open	
+functions	towupper	base	functions/towupper.html#tag_17_637	open	open	
+functions	towupper_l	base	functions/towupper.html#tag_17_637	open	open	
+functions	trunc	base	functions/trunc.html#tag_17_638	open	open	
+functions	truncf	base	functions/trunc.html#tag_17_638	open	open	
+functions	truncl	base	functions/trunc.html#tag_17_638	open	open	
+functions	truncate	base	functions/truncate.html#tag_17_639	partial	partial	ports/musl/tests/files.c
+functions	tss_create	base	functions/tss_create.html#tag_17_640	open	open	
+functions	tss_delete	base	functions/tss_delete.html#tag_17_641	open	open	
+functions	tss_get	base	functions/tss_get.html#tag_17_642	open	open	
+functions	tss_set	base	functions/tss_get.html#tag_17_642	open	open	
+functions	ttyname	base	functions/ttyname.html#tag_17_643	open	open	
+functions	ttyname_r	base	functions/ttyname.html#tag_17_643	open	open	
+functions	daylight	XSI	functions/tzset.html#tag_17_644	open	open	
+functions	timezone	XSI	functions/tzset.html#tag_17_644	open	open	
+functions	tzname	base	functions/tzset.html#tag_17_644	open	open	
+functions	tzset	base	functions/tzset.html#tag_17_644	open	open	
+functions	umask	base	functions/umask.html#tag_17_645	partial	partial	ports/musl/tests/files.c
+functions	uname	base	functions/uname.html#tag_17_646	partial	partial	tests/native-uts/names.c
+functions	ungetc	base	functions/ungetc.html#tag_17_647	partial	partial	scripts/qemu-libc-test.py#functional/ungetc
+functions	ungetwc	base	functions/ungetwc.html#tag_17_648	open	open	
+functions	unlink	base	functions/unlink.html#tag_17_649	partial	partial	ports/musl/tests/files.c
+functions	unlinkat	base	functions/unlink.html#tag_17_649	partial	partial	ports/musl/tests/files.c
+functions	unlockpt	XSI	functions/unlockpt.html#tag_17_650	open	open	
+functions	unsetenv	base	functions/unsetenv.html#tag_17_651	partial	partial	scripts/qemu-libc-test.py#functional/env
+functions	uselocale	base	functions/uselocale.html#tag_17_652	open	open	
+functions	vasprintf	base	functions/vfprintf.html#tag_17_654	open	open	
+functions	vdprintf	base	functions/vfprintf.html#tag_17_654	open	open	
+functions	vfprintf	base	functions/vfprintf.html#tag_17_654	open	open	
+functions	vprintf	base	functions/vfprintf.html#tag_17_654	open	open	
+functions	vsnprintf	base	functions/vfprintf.html#tag_17_654	open	open	
+functions	vsprintf	base	functions/vfprintf.html#tag_17_654	open	open	
+functions	vfscanf	base	functions/vfscanf.html#tag_17_655	open	open	
+functions	vscanf	base	functions/vfscanf.html#tag_17_655	open	open	
+functions	vsscanf	base	functions/vfscanf.html#tag_17_655	open	open	
+functions	vfwprintf	base	functions/vfwprintf.html#tag_17_656	open	open	
+functions	vswprintf	base	functions/vfwprintf.html#tag_17_656	open	open	
+functions	vwprintf	base	functions/vfwprintf.html#tag_17_656	open	open	
+functions	vfwscanf	base	functions/vfwscanf.html#tag_17_657	open	open	
+functions	vswscanf	base	functions/vfwscanf.html#tag_17_657	open	open	
+functions	vwscanf	base	functions/vfwscanf.html#tag_17_657	open	open	
+functions	wait	base	functions/wait.html#tag_17_658	open	open	
+functions	waitpid	base	functions/wait.html#tag_17_658	partial	partial	native-exec/examples/family.c
+functions	waitid	base	functions/waitid.html#tag_17_659	open	open	
+functions	wcrtomb	base	functions/wcrtomb.html#tag_17_660	open	open	
+functions	wcscasecmp	base	functions/wcscasecmp.html#tag_17_661	open	open	
+functions	wcscasecmp_l	base	functions/wcscasecmp.html#tag_17_661	open	open	
+functions	wcsncasecmp	base	functions/wcscasecmp.html#tag_17_661	open	open	
+functions	wcsncasecmp_l	base	functions/wcscasecmp.html#tag_17_661	open	open	
+functions	wcscat	base	functions/wcscat.html#tag_17_662	open	open	
+functions	wcschr	base	functions/wcschr.html#tag_17_663	open	open	
+functions	wcscmp	base	functions/wcscmp.html#tag_17_664	open	open	
+functions	wcscoll	base	functions/wcscoll.html#tag_17_665	open	open	
+functions	wcscoll_l	base	functions/wcscoll.html#tag_17_665	open	open	
+functions	wcpcpy	base	functions/wcscpy.html#tag_17_666	open	open	
+functions	wcscpy	base	functions/wcscpy.html#tag_17_666	open	open	
+functions	wcscspn	base	functions/wcscspn.html#tag_17_667	open	open	
+functions	wcsdup	base	functions/wcsdup.html#tag_17_668	open	open	
+functions	wcsftime	base	functions/wcsftime.html#tag_17_669	open	open	
+functions	wcslcat	base	functions/wcslcat.html#tag_17_670	open	open	
+functions	wcslcpy	base	functions/wcslcat.html#tag_17_670	open	open	
+functions	wcslen	base	functions/wcslen.html#tag_17_671	open	open	
+functions	wcsnlen	base	functions/wcslen.html#tag_17_671	open	open	
+functions	wcsncat	base	functions/wcsncat.html#tag_17_672	open	open	
+functions	wcsncmp	base	functions/wcsncmp.html#tag_17_673	open	open	
+functions	wcpncpy	base	functions/wcsncpy.html#tag_17_674	open	open	
+functions	wcsncpy	base	functions/wcsncpy.html#tag_17_674	open	open	
+functions	wcspbrk	base	functions/wcspbrk.html#tag_17_675	open	open	
+functions	wcsrchr	base	functions/wcsrchr.html#tag_17_676	open	open	
+functions	wcsnrtombs	base	functions/wcsrtombs.html#tag_17_677	open	open	
+functions	wcsrtombs	base	functions/wcsrtombs.html#tag_17_677	open	open	
+functions	wcsspn	base	functions/wcsspn.html#tag_17_678	open	open	
+functions	wcsstr	base	functions/wcsstr.html#tag_17_679	partial	partial	scripts/qemu-libc-test.py#functional/wcsstr
+functions	wcstod	base	functions/wcstod.html#tag_17_680	open	open	
+functions	wcstof	base	functions/wcstod.html#tag_17_680	open	open	
+functions	wcstold	base	functions/wcstod.html#tag_17_680	open	open	
+functions	wcstoimax	base	functions/wcstoimax.html#tag_17_681	open	open	
+functions	wcstoumax	base	functions/wcstoimax.html#tag_17_681	open	open	
+functions	wcstok	base	functions/wcstok.html#tag_17_682	open	open	
+functions	wcstol	base	functions/wcstol.html#tag_17_683	partial	partial	scripts/qemu-libc-test.py#functional/wcstol
+functions	wcstoll	base	functions/wcstol.html#tag_17_683	open	open	
+functions	wcstombs	base	functions/wcstombs.html#tag_17_684	open	open	
+functions	wcstoul	base	functions/wcstoul.html#tag_17_685	partial	partial	scripts/qemu-libc-test.py#functional/wcstol
+functions	wcstoull	base	functions/wcstoul.html#tag_17_685	open	open	
+functions	wcswidth	XSI	functions/wcswidth.html#tag_17_686	open	open	
+functions	wcsxfrm	base	functions/wcsxfrm.html#tag_17_687	open	open	
+functions	wcsxfrm_l	base	functions/wcsxfrm.html#tag_17_687	open	open	
+functions	wctob	base	functions/wctob.html#tag_17_688	open	open	
+functions	wctomb	base	functions/wctomb.html#tag_17_689	open	open	
+functions	wctrans	base	functions/wctrans.html#tag_17_690	open	open	
+functions	wctrans_l	base	functions/wctrans.html#tag_17_690	open	open	
+functions	wctype	base	functions/wctype.html#tag_17_691	open	open	
+functions	wctype_l	base	functions/wctype.html#tag_17_691	open	open	
+functions	wcwidth	XSI	functions/wcwidth.html#tag_17_692	open	open	
+functions	wmemchr	base	functions/wmemchr.html#tag_17_693	open	open	
+functions	wmemcmp	base	functions/wmemcmp.html#tag_17_694	open	open	
+functions	wmemcpy	base	functions/wmemcpy.html#tag_17_695	open	open	
+functions	wmemmove	base	functions/wmemmove.html#tag_17_696	open	open	
+functions	wmemset	base	functions/wmemset.html#tag_17_697	open	open	
+functions	wordexp	base	functions/wordexp.html#tag_17_698	open	open	
+functions	wordfree	base	functions/wordexp.html#tag_17_698	open	open	
+functions	pwrite	base	functions/write.html#tag_17_699	partial	partial	native-exec/examples/attrcheck.c
+functions	write	base	functions/write.html#tag_17_699	partial	partial	ports/musl/tests/files.c
+functions	writev	XSI	functions/writev.html#tag_17_700	open	open	
+functions	y0	XSI	functions/y0.html#tag_17_701	open	open	
+functions	y1	XSI	functions/y0.html#tag_17_701	open	open	
+functions	yn	XSI	functions/y0.html#tag_17_701	open	open	
+utilities	tag_18	chapter	utilities/V3_chap01.html#tag_18	open	open	
+utilities	tag_18_01	chapter	utilities/V3_chap01.html#tag_18_01	open	open	
+utilities	tag_18_01_01	chapter	utilities/V3_chap01.html#tag_18_01_01	open	open	
+utilities	tag_18_01_01_01	chapter	utilities/V3_chap01.html#tag_18_01_01_01	open	open	
+utilities	tag_18_01_01_02	chapter	utilities/V3_chap01.html#tag_18_01_01_02	open	open	
+utilities	tag_18_01_01_03	chapter	utilities/V3_chap01.html#tag_18_01_01_03	open	open	
+utilities	tag_18_01_01_04	chapter	utilities/V3_chap01.html#tag_18_01_01_04	open	open	
+utilities	tag_18_01_01_05	chapter	utilities/V3_chap01.html#tag_18_01_01_05	open	open	
+utilities	tag_18_01_01_06	chapter	utilities/V3_chap01.html#tag_18_01_01_06	open	open	
+utilities	tag_18_01_01_07	chapter	utilities/V3_chap01.html#tag_18_01_01_07	open	open	
+utilities	tag_18_01_01_08	chapter	utilities/V3_chap01.html#tag_18_01_01_08	open	open	
+utilities	tag_18_01_01_09	chapter	utilities/V3_chap01.html#tag_18_01_01_09	open	open	
+utilities	tag_18_01_01_10	chapter	utilities/V3_chap01.html#tag_18_01_01_10	open	open	
+utilities	tag_18_01_01_11	chapter	utilities/V3_chap01.html#tag_18_01_01_11	open	open	
+utilities	tag_18_01_02	chapter	utilities/V3_chap01.html#tag_18_01_02	open	open	
+utilities	tag_18_01_02_01	chapter	utilities/V3_chap01.html#tag_18_01_02_01	open	open	
+utilities	tag_18_01_02_02	chapter	utilities/V3_chap01.html#tag_18_01_02_02	open	open	
+utilities	tag_18_02	chapter	utilities/V3_chap01.html#tag_18_02	open	open	
+utilities	tag_18_03	chapter	utilities/V3_chap01.html#tag_18_03	open	open	
+utilities	tag_18_04	chapter	utilities/V3_chap01.html#tag_18_04	open	open	
+utilities	tag_18_05	chapter	utilities/V3_chap01.html#tag_18_05	open	open	
+utilities	tag_18_06	chapter	utilities/V3_chap01.html#tag_18_06	open	open	
+utilities	tag_18_07	chapter	utilities/V3_chap01.html#tag_18_07	open	open	
+utilities	tag_19	chapter	utilities/V3_chap02.html#tag_19	open	open	
+utilities	tag_19_01	chapter	utilities/V3_chap02.html#tag_19_01	open	open	
+utilities	tag_19_02	chapter	utilities/V3_chap02.html#tag_19_02	open	open	
+utilities	tag_19_02_01	chapter	utilities/V3_chap02.html#tag_19_02_01	open	open	
+utilities	tag_19_02_02	chapter	utilities/V3_chap02.html#tag_19_02_02	open	open	
+utilities	tag_19_02_03	chapter	utilities/V3_chap02.html#tag_19_02_03	open	open	
+utilities	tag_19_02_04	chapter	utilities/V3_chap02.html#tag_19_02_04	open	open	
+utilities	tag_19_03	chapter	utilities/V3_chap02.html#tag_19_03	open	open	
+utilities	tag_19_03_01	chapter	utilities/V3_chap02.html#tag_19_03_01	open	open	
+utilities	tag_19_04	chapter	utilities/V3_chap02.html#tag_19_04	open	open	
+utilities	tag_19_05	chapter	utilities/V3_chap02.html#tag_19_05	open	open	
+utilities	tag_19_05_01	chapter	utilities/V3_chap02.html#tag_19_05_01	open	open	
+utilities	tag_19_05_02	chapter	utilities/V3_chap02.html#tag_19_05_02	open	open	
+utilities	tag_19_05_03	chapter	utilities/V3_chap02.html#tag_19_05_03	open	open	
+utilities	tag_19_06	chapter	utilities/V3_chap02.html#tag_19_06	open	open	
+utilities	tag_19_06_01	chapter	utilities/V3_chap02.html#tag_19_06_01	partial	partial	tests/user-shell/expand.sh
+utilities	tag_19_06_02	chapter	utilities/V3_chap02.html#tag_19_06_02	partial	partial	tests/user-shell/expand.sh
+utilities	tag_19_06_03	chapter	utilities/V3_chap02.html#tag_19_06_03	partial	partial	tests/user-shell/control.sh
+utilities	tag_19_06_04	chapter	utilities/V3_chap02.html#tag_19_06_04	partial	partial	tests/user-shell/control.sh
+utilities	tag_19_06_05	chapter	utilities/V3_chap02.html#tag_19_06_05	partial	partial	tests/user-shell/ifs.sh
+utilities	tag_19_06_06	chapter	utilities/V3_chap02.html#tag_19_06_06	partial	partial	tests/user-shell/expand.sh
+utilities	tag_19_06_07	chapter	utilities/V3_chap02.html#tag_19_06_07	open	open	
+utilities	tag_19_07	chapter	utilities/V3_chap02.html#tag_19_07	open	open	
+utilities	tag_19_07_01	chapter	utilities/V3_chap02.html#tag_19_07_01	open	open	
+utilities	tag_19_07_02	chapter	utilities/V3_chap02.html#tag_19_07_02	open	open	
+utilities	tag_19_07_03	chapter	utilities/V3_chap02.html#tag_19_07_03	open	open	
+utilities	tag_19_07_04	chapter	utilities/V3_chap02.html#tag_19_07_04	partial	partial	tests/user-shell/here.sh
+utilities	tag_19_07_05	chapter	utilities/V3_chap02.html#tag_19_07_05	open	open	
+utilities	tag_19_07_06	chapter	utilities/V3_chap02.html#tag_19_07_06	open	open	
+utilities	tag_19_07_07	chapter	utilities/V3_chap02.html#tag_19_07_07	open	open	
+utilities	tag_19_08	chapter	utilities/V3_chap02.html#tag_19_08	open	open	
+utilities	tag_19_08_01	chapter	utilities/V3_chap02.html#tag_19_08_01	open	open	
+utilities	tag_19_08_02	chapter	utilities/V3_chap02.html#tag_19_08_02	open	open	
+utilities	tag_19_09	chapter	utilities/V3_chap02.html#tag_19_09	open	open	
+utilities	tag_19_09_01	chapter	utilities/V3_chap02.html#tag_19_09_01	open	open	
+utilities	tag_19_09_01_01	chapter	utilities/V3_chap02.html#tag_19_09_01_01	open	open	
+utilities	tag_19_09_01_02	chapter	utilities/V3_chap02.html#tag_19_09_01_02	open	open	
+utilities	tag_19_09_01_03	chapter	utilities/V3_chap02.html#tag_19_09_01_03	open	open	
+utilities	tag_19_09_01_04	chapter	utilities/V3_chap02.html#tag_19_09_01_04	partial	partial	tests/user-shell/variables.sh,scripts/qemu-user-shell.py
+utilities	tag_19_09_01_05	chapter	utilities/V3_chap02.html#tag_19_09_01_05	open	open	
+utilities	tag_19_09_01_06	chapter	utilities/V3_chap02.html#tag_19_09_01_06	open	open	
+utilities	tag_19_09_02	chapter	utilities/V3_chap02.html#tag_19_09_02	open	open	
+utilities	tag_19_09_02_01	chapter	utilities/V3_chap02.html#tag_19_09_02_01	open	open	
+utilities	tag_19_09_03	chapter	utilities/V3_chap02.html#tag_19_09_03	open	open	
+utilities	tag_19_09_03_02	chapter	utilities/V3_chap02.html#tag_19_09_03_02	open	open	
+utilities	tag_19_09_03_03	chapter	utilities/V3_chap02.html#tag_19_09_03_03	open	open	
+utilities	tag_19_09_03_04	chapter	utilities/V3_chap02.html#tag_19_09_03_04	open	open	
+utilities	tag_19_09_03_05	chapter	utilities/V3_chap02.html#tag_19_09_03_05	open	open	
+utilities	tag_19_09_03_06	chapter	utilities/V3_chap02.html#tag_19_09_03_06	open	open	
+utilities	tag_19_09_03_07	chapter	utilities/V3_chap02.html#tag_19_09_03_07	open	open	
+utilities	tag_19_09_03_08	chapter	utilities/V3_chap02.html#tag_19_09_03_08	open	open	
+utilities	tag_19_09_03_09	chapter	utilities/V3_chap02.html#tag_19_09_03_09	open	open	
+utilities	tag_19_09_04	chapter	utilities/V3_chap02.html#tag_19_09_04	open	open	
+utilities	tag_19_09_04_01	chapter	utilities/V3_chap02.html#tag_19_09_04_01	open	open	
+utilities	tag_19_09_04_02	chapter	utilities/V3_chap02.html#tag_19_09_04_02	open	open	
+utilities	tag_19_09_04_03	chapter	utilities/V3_chap02.html#tag_19_09_04_03	open	open	
+utilities	tag_19_09_04_04	chapter	utilities/V3_chap02.html#tag_19_09_04_04	open	open	
+utilities	tag_19_09_04_05	chapter	utilities/V3_chap02.html#tag_19_09_04_05	open	open	
+utilities	tag_19_09_04_06	chapter	utilities/V3_chap02.html#tag_19_09_04_06	open	open	
+utilities	tag_19_09_04_07	chapter	utilities/V3_chap02.html#tag_19_09_04_07	open	open	
+utilities	tag_19_09_04_08	chapter	utilities/V3_chap02.html#tag_19_09_04_08	open	open	
+utilities	tag_19_09_04_09	chapter	utilities/V3_chap02.html#tag_19_09_04_09	open	open	
+utilities	tag_19_09_04_10	chapter	utilities/V3_chap02.html#tag_19_09_04_10	open	open	
+utilities	tag_19_09_04_11	chapter	utilities/V3_chap02.html#tag_19_09_04_11	open	open	
+utilities	tag_19_09_04_12	chapter	utilities/V3_chap02.html#tag_19_09_04_12	open	open	
+utilities	tag_19_09_05	chapter	utilities/V3_chap02.html#tag_19_09_05	open	open	
+utilities	tag_19_09_05_01	chapter	utilities/V3_chap02.html#tag_19_09_05_01	open	open	
+utilities	tag_19_10	chapter	utilities/V3_chap02.html#tag_19_10	open	open	
+utilities	tag_19_10_01	chapter	utilities/V3_chap02.html#tag_19_10_01	open	open	
+utilities	tag_19_10_02	chapter	utilities/V3_chap02.html#tag_19_10_02	open	open	
+utilities	tag_19_11	chapter	utilities/V3_chap02.html#tag_19_11	open	open	
+utilities	tag_19_12	chapter	utilities/V3_chap02.html#tag_19_12	open	open	
+utilities	tag_19_13	chapter	utilities/V3_chap02.html#tag_19_13	open	open	
+utilities	tag_19_14	chapter	utilities/V3_chap02.html#tag_19_14	open	open	
+utilities	tag_19_14_01	chapter	utilities/V3_chap02.html#tag_19_14_01	open	open	
+utilities	tag_19_14_02	chapter	utilities/V3_chap02.html#tag_19_14_02	open	open	
+utilities	tag_19_14_03	chapter	utilities/V3_chap02.html#tag_19_14_03	open	open	
+utilities	tag_19_15	chapter	utilities/V3_chap02.html#tag_19_15	open	open	
+utilities	break	base	utilities/V3_chap02.html#tag_19_16	open	open	
+utilities	colon	base	utilities/V3_chap02.html#tag_19_17	open	open	
+utilities	continue	base	utilities/V3_chap02.html#tag_19_18	open	open	
+utilities	dot	base	utilities/V3_chap02.html#tag_19_19	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh,tests/user-shell/source-errors.sh
+utilities	eval	base	utilities/V3_chap02.html#tag_19_20	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-errors.sh
+utilities	exec	base	utilities/V3_chap02.html#tag_19_21	partial	partial	tests/user-shell/command-state.sh,tests/user-shell/command-errors.sh
+utilities	exit	base	utilities/V3_chap02.html#tag_19_22	open	open	
+utilities	export	base	utilities/V3_chap02.html#tag_19_23	partial	partial	tests/user-shell/variables.sh
+utilities	readonly	base	utilities/V3_chap02.html#tag_19_24	partial	partial	tests/user-shell/variables.sh
+utilities	return	base	utilities/V3_chap02.html#tag_19_25	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh
+utilities	set	base	utilities/V3_chap02.html#tag_19_26	partial	partial	tests/user-shell/expand.sh
+utilities	shift	base	utilities/V3_chap02.html#tag_19_27	partial	partial	tests/user-shell/expand.sh
+utilities	times	base	utilities/V3_chap02.html#tag_19_28	open	open	
+utilities	trap	base	utilities/V3_chap02.html#tag_19_29	open	open	
+utilities	unset	base	utilities/V3_chap02.html#tag_19_30	partial	partial	tests/user-shell/variables.sh
+utilities	tag_20	chapter	utilities/V3_chap03.html#tag_20	open	open	
+utilities	admin	XSI	utilities/admin.html#tag_20_01	open	open	
+utilities	alias	base	utilities/alias.html#tag_20_02	open	open	
+utilities	ar	base	utilities/ar.html#tag_20_03	open	open	
+utilities	asa	FR	utilities/asa.html#tag_20_04	open	open	
+utilities	at	base	utilities/at.html#tag_20_05	open	open	
+utilities	awk	base	utilities/awk.html#tag_20_06	open	open	
+utilities	basename	base	utilities/basename.html#tag_20_07	partial	partial	qemu-coreutils.py#69..79
+utilities	batch	base	utilities/batch.html#tag_20_08	open	open	
+utilities	bc	base	utilities/bc.html#tag_20_09	open	open	
+utilities	bg	UP	utilities/bg.html#tag_20_10	open	open	
+utilities	c17	CD	utilities/c17.html#tag_20_11	open	open	
+utilities	cal	XSI	utilities/cal.html#tag_20_12	open	open	
+utilities	cat	base	utilities/cat.html#tag_20_13	partial	partial	qemu-coreutils.py#0..22
+utilities	cd	base	utilities/cd.html#tag_20_14	partial	partial	tests/user-shell/directory.sh
+utilities	cflow	XSI	utilities/cflow.html#tag_20_15	open	open	
+utilities	chgrp	base	utilities/chgrp.html#tag_20_16	partial	partial	scripts/qemu-groups.py
+utilities	chmod	base	utilities/chmod.html#tag_20_17	partial	partial	scripts/qemu-coreutils.py#248
+utilities	chown	base	utilities/chown.html#tag_20_18	partial	partial	scripts/qemu-groups.py
+utilities	cksum	base	utilities/cksum.html#tag_20_19	partial	partial	scripts/qemu-coreutils.py#225,226
+utilities	cmp	base	utilities/cmp.html#tag_20_20	open	open	
+utilities	comm	base	utilities/comm.html#tag_20_21	partial	partial	scripts/qemu-coreutils.py#173,174
+utilities	command	base	utilities/command.html#tag_20_22	partial	partial	tests/user-shell/command.sh,tests/user-shell/command-state.sh,tests/user-shell/command-errors.sh
+utilities	compress	XSI	utilities/compress.html	open	open	
+utilities	uncompress	XSI	utilities/compress.html	open	open	
+utilities	zcat	XSI	utilities/compress.html	open	open	
+utilities	cp	base	utilities/cp.html#tag_20_24	partial	partial	scripts/qemu-coreutils.py#244,257,258
+utilities	crontab	base	utilities/crontab.html#tag_20_25	open	open	
+utilities	csplit	base	utilities/csplit.html#tag_20_26	partial	partial	scripts/qemu-coreutils.py#291,292,293
+utilities	ctags	CD SD	utilities/ctags.html#tag_20_27	open	open	
+utilities	cut	base	utilities/cut.html#tag_20_28	partial	partial	scripts/qemu-coreutils.py#175,176,177
+utilities	cxref	XSI	utilities/cxref.html#tag_20_29	open	open	
+utilities	date	base	utilities/date.html#tag_20_30	open	open	
+utilities	dd	base	utilities/dd.html#tag_20_31	partial	partial	scripts/qemu-coreutils.py#271,272,273,274
+utilities	delta	XSI	utilities/delta.html#tag_20_32	open	open	
+utilities	df	base	utilities/df.html#tag_20_33	partial	partial	scripts/qemu-df.py
+utilities	diff	base	utilities/diff.html#tag_20_34	open	open	
+utilities	dirname	base	utilities/dirname.html#tag_20_35	partial	partial	qemu-coreutils.py#61..68
+utilities	du	base	utilities/du.html#tag_20_36	partial	partial	scripts/qemu-coreutils.py#254
+utilities	echo	base	utilities/echo.html#tag_20_37	partial	partial	qemu-coreutils.py#52..60
+utilities	ed	base	utilities/ed.html#tag_20_38	open	open	
+utilities	env	base	utilities/env.html#tag_20_39	partial	partial	scripts/qemu-coreutils.py#307,308,309
+utilities	ex	UP	utilities/ex.html#tag_20_40	open	open	
+utilities	expand	base	utilities/expand.html#tag_20_41	partial	partial	scripts/qemu-coreutils.py#178,179
+utilities	expr	base	utilities/expr.html#tag_20_42	partial	partial	scripts/qemu-coreutils.py#229,230,231
+utilities	false	base	utilities/false.html#tag_20_43	partial	partial	qemu-coreutils.py#49..51
+utilities	fc	UP	utilities/fc.html#tag_20_44	open	open	
+utilities	fg	UP	utilities/fg.html#tag_20_45	open	open	
+utilities	file	base	utilities/file.html#tag_20_46	open	open	
+utilities	find	base	utilities/find.html#tag_20_47	open	open	
+utilities	fold	base	utilities/fold.html#tag_20_48	partial	partial	scripts/qemu-coreutils.py#180,181
+utilities	fuser	XSI	utilities/fuser.html#tag_20_49	open	open	
+utilities	gencat	base	utilities/gencat.html#tag_20_50	open	open	
+utilities	get	XSI	utilities/get.html#tag_20_51	open	open	
+utilities	getconf	base	utilities/getconf.html#tag_20_52	open	open	
+utilities	getopts	base	utilities/getopts.html#tag_20_53	partial	partial	tests/user-shell/getopts.sh,tests/user-shell/variables.sh
+utilities	gettext	base	utilities/gettext.html#tag_20_54	open	open	
+utilities	ngettext	base	utilities/gettext.html#tag_20_54	open	open	
+utilities	grep	base	utilities/grep.html#tag_20_55	open	open	
+utilities	hash	base	utilities/hash.html#tag_20_56	open	open	
+utilities	head	base	utilities/head.html#tag_20_57	partial	partial	qemu-coreutils.py#84..103
+utilities	iconv	base	utilities/iconv.html#tag_20_58	open	open	
+utilities	id	base	utilities/id.html#tag_20_59	partial	partial	scripts/qemu-groups.py
+utilities	ipcrm	XSI	utilities/ipcrm.html#tag_20_60	open	open	
+utilities	ipcs	XSI	utilities/ipcs.html#tag_20_61	open	open	
+utilities	jobs	UP	utilities/jobs.html#tag_20_62	open	open	
+utilities	join	base	utilities/join.html#tag_20_63	partial	partial	scripts/qemu-coreutils.py#294,295,296,297
+utilities	kill	base	utilities/kill.html#tag_20_64	partial	partial	qemu-libc-test.py#functional/popen,functional/vfork
+utilities	lex	CD	utilities/lex.html#tag_20_65	open	open	
+utilities	link	XSI	utilities/link.html#tag_20_66	partial	partial	scripts/qemu-coreutils.py#125,126,127,128,129
+utilities	ln	base	utilities/ln.html#tag_20_67	partial	partial	scripts/qemu-coreutils.py#245,246,267
+utilities	locale	base	utilities/locale.html#tag_20_68	open	open	
+utilities	localedef	base	utilities/localedef.html#tag_20_69	open	open	
+utilities	logger	base	utilities/logger.html#tag_20_70	open	open	
+utilities	logname	base	utilities/logname.html#tag_20_71	open	open	
+utilities	lp	base	utilities/lp.html#tag_20_72	open	open	
+utilities	ls	base	utilities/ls.html#tag_20_73	partial	partial	scripts/qemu-coreutils.py#250,270
+utilities	m4	base	utilities/m4.html#tag_20_74	open	open	
+utilities	mailx	base	utilities/mailx.html#tag_20_75	open	open	
+utilities	make	SD	utilities/make.html#tag_20_76	open	open	
+utilities	man	UP	utilities/man.html#tag_20_77	open	open	
+utilities	mesg	base	utilities/mesg.html#tag_20_78	open	open	
+utilities	mkdir	base	utilities/mkdir.html#tag_20_79	partial	partial	scripts/qemu-coreutils.py#136,137,138,139,140,141,142,143,144,145
+utilities	mkfifo	base	utilities/mkfifo.html#tag_20_80	open	open	
+utilities	more	UP	utilities/more.html#tag_20_81	open	open	
+utilities	msgfmt	base	utilities/msgfmt.html#tag_20_82	open	open	
+utilities	mv	base	utilities/mv.html#tag_20_83	partial	partial	scripts/qemu-coreutils.py#251,259
+utilities	newgrp	base	utilities/newgrp.html#tag_20_84	open	open	
+utilities	gettext	base	utilities/ngettext.html#tag_20_54	open	open	
+utilities	ngettext	base	utilities/ngettext.html#tag_20_54	open	open	
+utilities	nice	base	utilities/nice.html#tag_20_86	open	open	
+utilities	nl	XSI	utilities/nl.html#tag_20_87	partial	partial	scripts/qemu-coreutils.py#182,183
+utilities	nm	SD | XSI	utilities/nm.html#tag_20_88	open	open	
+utilities	nohup	base	utilities/nohup.html#tag_20_89	partial	partial	scripts/qemu-coreutils.py#338..341
+utilities	od	base	utilities/od.html#tag_20_90	partial	partial	scripts/qemu-coreutils.py#238,239
+utilities	paste	base	utilities/paste.html#tag_20_91	partial	partial	scripts/qemu-coreutils.py#184,185
+utilities	patch	base	utilities/patch.html#tag_20_92	open	open	
+utilities	pathchk	base	utilities/pathchk.html#tag_20_93	partial	partial	scripts/qemu-coreutils.py#283,284
+utilities	pax	base	utilities/pax.html#tag_20_94	open	open	
+utilities	pr	base	utilities/pr.html#tag_20_95	partial	partial	scripts/qemu-coreutils.py#298,299,300,301,302,303,304,305,306
+utilities	printf	base	utilities/printf.html#tag_20_96	partial	partial	scripts/qemu-coreutils.py#186,187
+utilities	prs	XSI	utilities/prs.html#tag_20_97	open	open	
+utilities	ps	base	utilities/ps.html#tag_20_98	open	open	
+utilities	pwd	base	utilities/pwd.html#tag_20_99	partial	partial	tests/user-shell/directory.sh
+utilities	read	base	utilities/read.html#tag_20_100	partial	partial	tests/user-shell/read.sh,tests/user-shell/variables.sh
+utilities	readlink	base	utilities/readlink.html#tag_20_101	partial	partial	scripts/qemu-coreutils.py#247
+utilities	realpath	base	utilities/realpath.html#tag_20_102	partial	partial	scripts/qemu-coreutils.py#280,281,282
+utilities	renice	base	utilities/renice.html#tag_20_103	open	open	
+utilities	rm	base	utilities/rm.html#tag_20_104	partial	partial	scripts/qemu-coreutils.py#266,268,269
+utilities	rmdel	XSI	utilities/rmdel.html#tag_20_105	open	open	
+utilities	rmdir	base	utilities/rmdir.html#tag_20_106	partial	partial	scripts/qemu-coreutils.py#146,147,148,149,150,151,152
+utilities	sact	XSI	utilities/sact.html#tag_20_107	open	open	
+utilities	sccs	XSI	utilities/sccs.html#tag_20_108	open	open	
+utilities	sed	base	utilities/sed.html#tag_20_109	open	open	
+utilities	sh	base	utilities/sh.html#tag_20_110	open	open	
+utilities	sleep	base	utilities/sleep.html#tag_20_111	partial	partial	scripts/qemu-coreutils.py#325..330
+utilities	sort	base	utilities/sort.html#tag_20_112	partial	partial	scripts/qemu-coreutils.py#191,192,193
+utilities	split	base	utilities/split.html#tag_20_113	partial	partial	scripts/qemu-coreutils.py#263,264
+utilities	strings	base	utilities/strings.html#tag_20_114	open	open	
+utilities	strip	SD	utilities/strip.html#tag_20_115	open	open	
+utilities	stty	base	utilities/stty.html#tag_20_116	open	open	
+utilities	tabs	base	utilities/tabs.html#tag_20_117	open	open	
+utilities	tail	base	utilities/tail.html#tag_20_118	partial	partial	qemu-coreutils.py#104..123
+utilities	talk	UP	utilities/talk.html#tag_20_119	open	open	
+utilities	tee	base	utilities/tee.html#tag_20_120	partial	partial	scripts/qemu-coreutils.py#255,256
+utilities	test	base	utilities/test.html#tag_20_121	partial	partial	scripts/qemu-coreutils.py#314,315,316,317,318,319,320,321,322,323,324
+utilities	time	base	utilities/time.html#tag_20_122	open	open	
+utilities	timeout	base	utilities/timeout.html#tag_20_123	open	open	
+utilities	touch	base	utilities/touch.html#tag_20_124	partial	partial	scripts/qemu-coreutils.py#261
+utilities	tput	base	utilities/tput.html#tag_20_125	open	open	
+utilities	tr	base	utilities/tr.html#tag_20_126	partial	partial	scripts/qemu-coreutils.py#194,195,196
+utilities	true	base	utilities/true.html#tag_20_127	partial	partial	qemu-coreutils.py#46..48
+utilities	tsort	base	utilities/tsort.html#tag_20_128	partial	partial	scripts/qemu-coreutils.py#242,243
+utilities	tty	base	utilities/tty.html#tag_20_129	open	open	
+utilities	type	XSI	utilities/type.html#tag_20_130	open	open	
+utilities	ulimit	base	utilities/ulimit.html#tag_20_131	open	open	
+utilities	umask	base	utilities/umask.html#tag_20_132	open	open	
+utilities	unalias	base	utilities/unalias.html#tag_20_133	open	open	
+utilities	uname	base	utilities/uname.html#tag_20_134	partial	partial	scripts/qemu-uname.py
+utilities	compress	XSI	utilities/uncompress.html	open	open	
+utilities	uncompress	XSI	utilities/uncompress.html	open	open	
+utilities	zcat	XSI	utilities/uncompress.html	open	open	
+utilities	unexpand	base	utilities/unexpand.html#tag_20_136	partial	partial	scripts/qemu-coreutils.py#197,198
+utilities	unget	XSI	utilities/unget.html#tag_20_137	open	open	
+utilities	uniq	base	utilities/uniq.html#tag_20_138	partial	partial	scripts/qemu-coreutils.py#199,200,201
+utilities	unlink	XSI	utilities/unlink.html#tag_20_139	partial	partial	scripts/qemu-coreutils.py#131,133,134,135
+utilities	uucp	UU	utilities/uucp.html#tag_20_140	open	open	
+utilities	uudecode	base	utilities/uudecode.html#tag_20_141	open	open	
+utilities	uuencode	base	utilities/uuencode.html#tag_20_142	open	open	
+utilities	uustat	UU	utilities/uustat.html#tag_20_143	open	open	
+utilities	uux	UU	utilities/uux.html#tag_20_144	open	open	
+utilities	val	XSI	utilities/val.html#tag_20_145	open	open	
+utilities	vi	UP	utilities/vi.html#tag_20_146	open	open	
+utilities	wait	base	utilities/wait.html#tag_20_147	open	open	
+utilities	wc	base	utilities/wc.html#tag_20_148	partial	partial	qemu-coreutils.py#23..45,80..83
+utilities	what	XSI	utilities/what.html#tag_20_149	open	open	
+utilities	who	base	utilities/who.html#tag_20_150	open	open	
+utilities	write	base	utilities/write.html#tag_20_151	open	open	
+utilities	xargs	base	utilities/xargs.html#tag_20_152	open	open	
+utilities	xgettext	CD	utilities/xgettext.html#tag_20_153	open	open	
+utilities	yacc	CD	utilities/yacc.html#tag_20_154	open	open	
+utilities	compress	XSI	utilities/zcat.html	open	open	
+utilities	uncompress	XSI	utilities/zcat.html	open	open	
+utilities	zcat	XSI	utilities/zcat.html	open	open	

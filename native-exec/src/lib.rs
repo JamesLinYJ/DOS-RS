@@ -16,8 +16,13 @@ pub const END: usize = BASE + 0x20_0000;
 /// Sparse anonymous mappings keep the original ELF and stack ABI intact.
 pub const ANON_BASE: usize = 0x6100_0000;
 pub const ANON_END: usize = 0x8000_0000;
-pub const STACK: usize = END - 16 * PAGE;
-const LIMIT: usize = STACK - PAGE;
+// Keep legacy PT_LOAD addresses valid and give the main stack a disjoint
+// growing range. Both ends are aligned to the 2 MiB supervisor mappings.
+const LIMIT: usize = END - 17 * PAGE;
+pub const STACK_TOP: usize = ANON_BASE - (2 << 20);
+pub const STACK_MAX: usize = 8 << 20;
+pub const STACK_LIMIT: usize = STACK_TOP - STACK_MAX;
+pub const STACK: usize = STACK_TOP - 16 * PAGE;
 /// The kernel identity-maps the low four GiB. Sparse ELF64 segments can use
 /// the rest of the lower canonical half in four-level paging mode.
 pub const HIGH_USER_START: u64 = 1 << 32;
@@ -42,24 +47,44 @@ pub trait Frame: Sized {
 
 pub struct Mapping<F> {
     frame: F,
+    anonymous: bool,
+    pub accessible: bool,
     pub writable: bool,
     pub executable: bool,
 }
 pub struct Image<F: Frame> {
     pages: Vec<(usize, Mapping<F>)>,
+    stack_bottom: usize,
+    stack_size_limit: usize,
     pub entry: usize,
+    pub phdr: Option<(usize, usize, usize)>,
 }
 pub type Result<T> = core::result::Result<T, &'static str>;
 
 impl<F: Frame> Image<F> {
     pub fn load(file: &[u8], machine: Machine) -> Result<Self> {
+        Self::load_with_stack_limit(file, machine, STACK_MAX)
+    }
+
+    pub fn load_with_stack_limit(file: &[u8], machine: Machine, limit: usize) -> Result<Self> {
+        if limit > STACK_MAX {
+            return Err("unsupported stack limit");
+        }
         match machine {
-            Machine::I386 => Self::parse::<elf::FileHeader32<LittleEndian>>(file, elf::EM_386),
-            Machine::Amd64 => Self::parse::<elf::FileHeader64<LittleEndian>>(file, elf::EM_X86_64),
+            Machine::I386 => {
+                Self::parse::<elf::FileHeader32<LittleEndian>>(file, elf::EM_386, limit)
+            }
+            Machine::Amd64 => {
+                Self::parse::<elf::FileHeader64<LittleEndian>>(file, elf::EM_X86_64, limit)
+            }
         }
     }
 
-    fn parse<E: FileHeader<Endian = LittleEndian>>(file: &[u8], machine: u16) -> Result<Self> {
+    fn parse<E: FileHeader<Endian = LittleEndian>>(
+        file: &[u8],
+        machine: u16,
+        limit: usize,
+    ) -> Result<Self> {
         let le = LittleEndian;
         let h = E::parse(file).map_err(|_| "invalid ELF header")?;
         if h.e_ident().data != elf::ELFDATA2LSB
@@ -76,15 +101,49 @@ impl<F: Frame> Image<F> {
         let entry = usize::try_from(h.e_entry(le).into()).map_err(|_| "invalid ELF entry")?;
         let mut image = Self {
             pages: Vec::new(),
+            stack_bottom: STACK.max(STACK_TOP - limit / PAGE * PAGE),
+            stack_size_limit: limit,
             entry,
+            phdr: None,
         };
+        let table_at: u64 = h.e_phoff(le).into();
+        let table_bytes = size_of_val(headers) as u64;
+        let mut needs_tls = false;
         let mut prior_end = BASE;
         let mut executable_entry = false;
         for p in headers {
             match p.p_type(le) {
                 elf::PT_LOAD => (),
-                elf::PT_INTERP | elf::PT_DYNAMIC | elf::PT_TLS => {
-                    return Err("ELF requires a runtime linker or TLS");
+                elf::PT_TLS => {
+                    if needs_tls {
+                        return Err("duplicate TLS segment");
+                    }
+                    needs_tls = true;
+                    let (offset, filesz) = p.file_range(le);
+                    let addr: u64 = p.p_vaddr(le).into();
+                    let memsz: u64 = p.p_memsz(le).into();
+                    let align: u64 = p.p_align(le).into();
+                    if filesz > memsz
+                        || addr.checked_add(memsz).is_none()
+                        || (align > 1
+                            && (!align.is_power_of_two() || addr % align != offset % align))
+                        || (filesz > 0
+                            && !headers.iter().any(|q| {
+                                let (at, n) = q.file_range(le);
+                                let vaddr: u64 = q.p_vaddr(le).into();
+                                q.p_type(le) == elf::PT_LOAD
+                                    && offset.checked_sub(at).is_some_and(|delta| {
+                                        delta.checked_add(filesz).is_some_and(|end| end <= n)
+                                            && vaddr.checked_add(delta) == Some(addr)
+                                    })
+                            }))
+                    {
+                        return Err("invalid ELF TLS template");
+                    }
+                    continue;
+                }
+                elf::PT_INTERP | elf::PT_DYNAMIC => {
+                    return Err("ELF requires a runtime linker");
                 }
                 _ => continue,
             }
@@ -107,12 +166,22 @@ impl<F: Frame> Image<F> {
                 .and_then(|v| usize::try_from(v).ok())
                 .ok_or("invalid ELF address")?;
             let legacy = start >= BASE && end <= LIMIT;
+            let program_arena = start >= ANON_BASE && end <= ANON_END;
             let high =
                 machine == elf::EM_X86_64 && address >= HIGH_USER_START && end as u64 <= USER_END;
-            if start < prior_end || !(legacy || high) {
+            if start < prior_end || !(legacy || program_arena || high) {
                 return Err("ELF segment is outside the process image");
             }
             prior_end = end;
+            if let Some(delta) = table_at.checked_sub(off)
+                && delta.checked_add(table_bytes).is_some_and(|n| n <= filesz)
+            {
+                image.phdr = Some((
+                    start + delta as usize,
+                    size_of::<E::ProgramHeader>(),
+                    headers.len(),
+                ));
+            }
             let flags = p.p_flags(le);
             let write = flags & elf::PF_W != 0;
             let exec = flags & elf::PF_X != 0;
@@ -133,10 +202,13 @@ impl<F: Frame> Image<F> {
             }
             executable_entry |= exec && (start..end).contains(&entry);
         }
+        if needs_tls && image.phdr.is_none() {
+            return Err("static TLS requires mapped program headers");
+        }
         if !executable_entry {
             return Err("entry is outside executable code");
         }
-        for addr in (STACK..END).step_by(PAGE) {
+        for addr in (image.stack_bottom..STACK_TOP).step_by(PAGE) {
             image.append_page(addr)?.writable = true;
         }
         // Keep binary searches valid when the ABI stack precedes high segments.
@@ -160,6 +232,43 @@ impl<F: Frame> Image<F> {
             .binary_search_by_key(&base, |p| p.0)
             .map_err(|_| "unmapped user address")
     }
+    /// Copy private mappings while all threads of the source process are stopped.
+    /// A partially built image owns and releases every frame it has claimed.
+    pub fn fork(&self) -> Result<Self> {
+        if self.pages.len() > F::available() {
+            return Err("insufficient physical memory");
+        }
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(self.pages.len())
+            .map_err(|_| "insufficient page metadata")?;
+        let mut bytes = [0; 512];
+        for (address, source) in &self.pages {
+            let mut frame = F::allocate_zeroed()?;
+            for offset in (0..PAGE).step_by(bytes.len()) {
+                source.frame.read(offset, &mut bytes);
+                frame.write(offset, &bytes);
+            }
+            pages.push((
+                *address,
+                Mapping {
+                    frame,
+                    anonymous: source.anonymous,
+                    accessible: source.accessible,
+                    writable: source.writable,
+                    executable: source.executable,
+                },
+            ));
+        }
+        Ok(Self {
+            pages,
+            stack_bottom: self.stack_bottom,
+            stack_size_limit: self.stack_size_limit,
+            entry: self.entry,
+            phdr: self.phdr,
+        })
+    }
+
     pub fn pages(&self) -> impl Iterator<Item = (usize, &Mapping<F>)> {
         self.pages.iter().map(|(addr, mapping)| (*addr, mapping))
     }
@@ -174,7 +283,8 @@ impl<F: Frame> Image<F> {
         }
         let end = addr.checked_add(len).ok_or("invalid user address")?;
         for base in (addr / PAGE * PAGE..end).step_by(PAGE) {
-            if !self.pages[self.index(base)?].1.writable && write {
+            let mapping = &self.pages[self.index(base)?].1;
+            if !mapping.accessible || (!mapping.writable && write) {
                 return Err("unmapped or protected user address");
             }
         }
@@ -229,6 +339,51 @@ impl<F: Frame> Image<F> {
         if size > ANON_END - base {
             return Err("insufficient virtual memory");
         }
+        self.allocate_pages(base, count, true)?;
+        Ok(base)
+    }
+
+    pub fn stack_bottom(&self) -> usize {
+        self.stack_bottom
+    }
+
+    pub fn set_stack_limit(&mut self, bytes: usize) -> Result<()> {
+        if bytes > STACK_MAX {
+            return Err("unsupported stack limit");
+        }
+        self.stack_size_limit = bytes;
+        Ok(())
+    }
+
+    pub fn grow_stack(&mut self, address: usize) -> Result<()> {
+        if !(STACK_LIMIT..STACK_TOP).contains(&address) {
+            return Err("address outside the main stack");
+        }
+        if address < self.stack_bottom {
+            let limit = STACK_TOP - self.stack_size_limit / PAGE * PAGE;
+            if address < limit {
+                return Err("main stack limit exceeded");
+            }
+            let base = (address & !(16 * PAGE - 1)).max(limit);
+            self.allocate_pages(base, (self.stack_bottom - base) / PAGE, false)?;
+            self.stack_bottom = base;
+        }
+        Ok(())
+    }
+
+    /// Discard only the pages of an uncommitted stack extension after a table
+    /// rebuild failed. Existing frames still belong to the old hardware root.
+    pub fn rollback_stack(&mut self, old_bottom: usize) {
+        debug_assert!((self.stack_bottom..=STACK_TOP).contains(&old_bottom));
+        let start = self
+            .pages
+            .partition_point(|page| page.0 < self.stack_bottom);
+        let end = self.pages.partition_point(|page| page.0 < old_bottom);
+        self.pages.drain(start..end);
+        self.stack_bottom = old_bottom;
+    }
+
+    fn allocate_pages(&mut self, base: usize, count: usize, anonymous: bool) -> Result<()> {
         if count > F::available() {
             return Err("insufficient physical memory");
         }
@@ -236,9 +391,10 @@ impl<F: Frame> Image<F> {
             .try_reserve(count)
             .map_err(|_| "insufficient page metadata")?;
         let start = self.pages.len();
-        for address in (base..base + size).step_by(PAGE) {
+        for address in (base..base + count * PAGE).step_by(PAGE) {
             match Mapping::zero() {
                 Ok(mut mapping) => {
+                    mapping.anonymous = anonymous;
                     mapping.writable = true;
                     self.pages.push((address, mapping));
                 }
@@ -251,7 +407,7 @@ impl<F: Frame> Image<F> {
         // Move the appended run into address order without a second allocation.
         let insert = self.pages[..start].partition_point(|page| page.0 < base);
         self.pages[insert..].rotate_right(count);
-        Ok(base)
+        Ok(())
     }
 
     fn unmap_range(&self, base: usize, count: usize) -> Result<core::ops::Range<usize>> {
@@ -267,9 +423,21 @@ impl<F: Frame> Image<F> {
         if self.pages.get(end - 1).map(|p| p.0) != Some(base + (count - 1) * PAGE) {
             return Err("unmapped user address");
         }
+        if self.pages[i..end].iter().any(|(_, page)| !page.anonymous) {
+            return Err("invalid anonymous mapping");
+        }
         Ok(i..end)
     }
 
+    pub fn set_protection(&mut self, base: usize, pages: usize, prot: u8) -> Result<()> {
+        let range = self.unmap_range(base, pages)?;
+        for (_, page) in &mut self.pages[range] {
+            page.accessible = prot != 0;
+            page.writable = prot & 2 != 0;
+            page.executable = prot & 4 != 0;
+        }
+        Ok(())
+    }
     pub fn validate_unmap(&self, base: usize, count: usize) -> Result<()> {
         self.unmap_range(base, count).map(|_| ())
     }
@@ -285,6 +453,8 @@ impl<F: Frame> Mapping<F> {
     fn zero() -> Result<Self> {
         Ok(Self {
             frame: F::allocate_zeroed()?,
+            anonymous: false,
+            accessible: true,
             writable: false,
             executable: false,
         })

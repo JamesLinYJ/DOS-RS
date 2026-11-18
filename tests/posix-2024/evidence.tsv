@@ -1,0 +1,299 @@
+source	item	i686	x86_64	test	behavior
+functions/popen.html#tag_17_379	popen	partial	partial	qemu-libc-test.py#functional/popen	Open read and write pipes to shell commands with installed ELF dependencies
+functions/pclose.html#tag_17_375	pclose	partial	partial	qemu-libc-test.py#functional/popen	Wait for shell commands in both pipe directions and report their exit status
+functions/posix_spawn.html#tag_17_388	posix_spawnp	partial	partial	qemu-libc-test.py#functional/spawn	Search PATH for echo and apply close and dup2 file actions to the child
+utilities/kill.html#tag_20_64	kill	partial	partial	qemu-libc-test.py#functional/popen,functional/vfork	Send named USR1 and numeric KILL from the independent kill ELF to a process ID
+utilities/getopts.html#tag_20_53	getopts	partial	partial	tests/user-shell/getopts.sh,tests/user-shell/variables.sh	Grouped options, attached/separate/empty arguments, silent errors, unset OPTARG, reset via assignment/export/read/arithmetic, subshell cursor, function and explicit operands; readonly destination errors preserve the value; full locale coverage remains open
+utilities/cat.html#tag_20_13	cat	partial	partial	qemu-coreutils.py#0..22	File operands, stdin, repeated operands, byte preservation and option/IO errors
+utilities/wc.html#tag_20_148	wc	partial	partial	qemu-coreutils.py#23..45,80..83	C and C.UTF-8, bytes/lines/words/characters/width, multiple operands, errors and totals
+utilities/true.html#tag_20_127	true	partial	partial	qemu-coreutils.py#46..48	Zero status and empty streams for normal and ignored operands
+utilities/false.html#tag_20_43	false	partial	partial	qemu-coreutils.py#49..51	Status 1 and empty streams for normal and ignored operands
+utilities/echo.html#tag_20_37	echo	partial	partial	qemu-coreutils.py#52..60	Arguments, spaces, control escapes, no newline and early termination
+utilities/dirname.html#tag_20_35	dirname	partial	partial	qemu-coreutils.py#61..68	Lexical directory result, slash runs, multiple operands and NUL output
+utilities/basename.html#tag_20_07	basename	partial	partial	qemu-coreutils.py#69..79	Final component, removable suffix, slash runs, multi-operand and NUL output
+utilities/cat.html#tag_20_13_03	shall:1	partial	partial	qemu-coreutils.py#0..6	Files and standard input in supplied order
+utilities/cat.html#tag_20_13_03	shall:2	partial	partial	qemu-coreutils.py#0..6	Binary output including NUL remains byte-for-byte equal
+utilities/wc.html#tag_20_148_03	shall:1	partial	partial	qemu-coreutils.py#23..36,80..83	Input bytes and words with C and C.UTF-8 fixtures
+utilities/wc.html#tag_20_148_03	shall:2	partial	partial	qemu-coreutils.py#33..34,37..39	Two or more operands emit total with GNU-compatible width
+utilities/wc.html#tag_20_148_03	shall:3	partial	partial	qemu-coreutils.py#23,26,80..83	Whitespace including nonbreaking space and malformed UTF-8 scenarios
+utilities/true.html#tag_20_127_03	shall:1	passed	passed	qemu-coreutils.py#46..48	Always exits zero in the normative invocations
+utilities/false.html#tag_20_43_03	shall:1	passed	passed	qemu-coreutils.py#49..51	Exits nonzero
+utilities/false.html#tag_20_43_14	shall:1	passed	passed	qemu-coreutils.py#49..51	Implemented failure code is 1
+utilities/echo.html#tag_20_37_05	implementation-defined:1	partial	partial	qemu-coreutils.py#54..59	-n suppresses newline; initial -e enables escapes and -E disables them
+utilities/basename.html#tag_20_07_03	implementation-defined:1	passed	passed	qemu-coreutils.py#71	The operand // produces one slash
+utilities/head.html#tag_20_57	head	partial	partial	qemu-coreutils.py#84..103	Line/byte selection, signed counts, NUL separator, multiple files, headers and errors
+utilities/tail.html#tag_20_118	tail	partial	partial	qemu-coreutils.py#104..123	Line/byte selection, signed counts, NUL separator, multiple files, headers and errors
+functions/link.html#tag_17_304	link	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/symlink.html#tag_17_597	symlink	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/fstatat.html#tag_17_190	lstat	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/fstatat.html#tag_17_190	stat	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/readlink.html#tag_17_478	readlink	partial	partial	ports/musl/tests/files.c	Btrfs hard and symbolic links, link count and inode identity observed with musl
+functions/mkdir.html#tag_17_338	mkdir	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/chdir.html#tag_17_71	chdir	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/getcwd.html#tag_17_205	getcwd	partial	partial	tests/native-cwd/src/lib.rs	Both native Btrfs kernels retrieve the exact physical pathname above PATH_MAX, return ERANGE on short buffers, and ENOENT for an unlinked cwd
+functions/rmdir.html#tag_17_493	rmdir	partial	partial	ports/musl/tests/files.c	Create a temporary Btrfs directory, enter it, return to recorded cwd and remove it
+functions/fstat.html#tag_17_189	fstat	partial	partial	ports/musl/tests/files.c	Create with O_CREAT|O_EXCL and umask 0027, check resulting file mode, size and inode
+functions/open.html#tag_17_372	open	partial	partial	ports/musl/tests/files.c	Create with O_CREAT|O_EXCL and umask 0027, check resulting file mode, size and inode
+functions/umask.html#tag_17_645	umask	partial	partial	ports/musl/tests/files.c	Create with O_CREAT|O_EXCL and umask 0027, check resulting file mode, size and inode
+functions/chmod.html#tag_17_72	chmod	partial	partial	ports/musl/tests/files.c	Change permissions via hard link and observe through symbolic link
+functions/fdopendir.html#tag_17_143	opendir	partial	partial	ports/musl/tests/files.c	Enumerate three independently created entries to end of stream and close directory
+functions/readdir.html#tag_17_477	readdir	partial	partial	ports/musl/tests/files.c	Enumerate three independently created entries to end of stream and close directory
+functions/closedir.html#tag_17_82	closedir	partial	partial	ports/musl/tests/files.c	Enumerate three independently created entries to end of stream and close directory
+functions/unlink.html#tag_17_649	unlink	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/rename.html#tag_17_489	rename	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/lseek.html#tag_17_321	lseek	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/read.html#tag_17_476	read	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/write.html#tag_17_699	write	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/close.html#tag_17_81	close	partial	partial	ports/musl/tests/files.c	Remove both hard links, recreate name, seek and read old bytes via held descriptor
+functions/open.html#tag_17_372	openat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/fstatat.html#tag_17_190	fstatat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/mkdir.html#tag_17_338	mkdirat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/link.html#tag_17_304	linkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/symlink.html#tag_17_597	symlinkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/readlink.html#tag_17_478	readlinkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/rename.html#tag_17_489	renameat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/unlink.html#tag_17_649	unlinkat	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/truncate.html#tag_17_639	truncate	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/ftruncate.html#tag_17_195	ftruncate	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/access.html#tag_17_07	access	partial	partial	ports/musl/tests/files.c	Relative to an open directory, inspect links and change file size, verify operations and removal
+functions/fork.html#tag_17_172	fork	partial	partial	native-exec/examples/family.c	Check independent memory, shared offsets, raw-byte argv/env, ENOENT and process-group waits
+functions/exec.html#tag_17_129	execve	partial	partial	native-exec/examples/family.c	Check independent memory, shared offsets, raw-byte argv/env, ENOENT and process-group waits
+functions/wait.html#tag_17_658	waitpid	partial	partial	native-exec/examples/family.c	Check independent memory, shared offsets, raw-byte argv/env, ENOENT and process-group waits
+functions/pipe.html#tag_17_377	pipe	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/dup.html#tag_17_116	dup2	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getpid.html#tag_17_225	getpid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getppid.html#tag_17_226	getppid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getsid.html#tag_17_234	getsid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/getpgid.html#tag_17_223	getpgid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/setpgid.html#tag_17_527	setpgid	partial	partial	native-exec/examples/family.c	Transfer an interprocess byte, retain redirected fd across exec, verify PID, session and process-group identities
+functions/pthread_create.html#tag_17_427	pthread_create	partial	partial	ports/musl/tests/libc.c	Two workers retain separate initialized/zero-initialized TLS and errno and return distinct argument pointers
+functions/pthread_join.html#tag_17_434	pthread_join	partial	partial	ports/musl/tests/libc.c	Two workers retain separate initialized/zero-initialized TLS and errno and return distinct argument pointers
+functions/pthread_cond_broadcast.html#tag_17_421	pthread_cond_broadcast	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_cond_clockwait.html#tag_17_422	pthread_cond_wait	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_cond_clockwait.html#tag_17_422	pthread_cond_timedwait	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_mutex_lock.html#tag_17_442	pthread_mutex_lock	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_mutex_lock.html#tag_17_442	pthread_mutex_unlock	partial	partial	ports/musl/tests/libc.c	Two workers synchronize via a condition variable and mutex, timed wait reaches ETIMEDOUT
+functions/pthread_cancel.html#tag_17_419	pthread_cancel	partial	partial	ports/musl/tests/libc.c	Deferred cancellation at a blocked pipe read runs cleanup and joins with PTHREAD_CANCELED
+functions/pthread_cleanup_pop.html#tag_17_420	pthread_cleanup_push	partial	partial	ports/musl/tests/libc.c	Deferred cancellation at a blocked pipe read runs cleanup and joins with PTHREAD_CANCELED
+functions/pthread_cleanup_pop.html#tag_17_420	pthread_cleanup_pop	partial	partial	ports/musl/tests/libc.c	Deferred cancellation at a blocked pipe read runs cleanup and joins with PTHREAD_CANCELED
+functions/calloc.html#tag_17_53	calloc	partial	partial	ports/musl/tests/libc.c	Allocate zeroed storage, preserve data across resize and free the allocation
+functions/realloc.html#tag_17_480	realloc	partial	partial	ports/musl/tests/libc.c	Allocate zeroed storage, preserve data across resize and free the allocation
+functions/free.html#tag_17_181	free	partial	partial	ports/musl/tests/libc.c	Allocate zeroed storage, preserve data across resize and free the allocation
+functions/fopen.html#tag_17_171	fopen	partial	partial	ports/musl/tests/libc.c	Write formatted fields to a FAT file and compare its bytes after shutdown
+functions/fclose.html#tag_17_138	fclose	partial	partial	ports/musl/tests/libc.c	Write formatted fields to a FAT file and compare its bytes after shutdown
+functions/fprintf.html#tag_17_175	fprintf	partial	partial	ports/musl/tests/libc.c	Write formatted fields to a FAT file and compare its bytes after shutdown
+functions/getenv.html#tag_17_210	getenv	partial	partial	ports/musl/tests/libc.c	A fork/exec child receives and reads the specified environment
+functions/clock_getres.html#tag_17_78	clock_gettime	partial	partial	ports/musl/tests/libc.c	Query realtime and monotonic clocks and resolution, time a blocking relative sleep
+functions/clock_getres.html#tag_17_78	clock_getres	partial	partial	ports/musl/tests/libc.c	Query realtime and monotonic clocks and resolution, time a blocking relative sleep
+functions/nanosleep.html#tag_17_365	nanosleep	partial	partial	ports/musl/tests/libc.c	Query realtime and monotonic clocks and resolution, time a blocking relative sleep
+functions/sigaction.html#tag_17_544	sigaction	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/pthread_sigmask.html#tag_17_461	sigprocmask	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigpending.html#tag_17_554	sigpending	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigismember.html#tag_17_550	sigismember	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigemptyset.html#tag_17_548	sigemptyset	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/sigaddset.html#tag_17_545	sigaddset	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/kill.html#tag_17_296	kill	partial	partial	ports/musl/tests/libc.c	Block, enqueue and observe SIGUSR1, unblock and run its installed handler
+functions/poll.html#tag_17_378	poll	partial	partial	tests/native-poll/poll.c	Event masks, invalid/negative fds, bounded pipe, last peer close, blocking wake, relative timeout and signal-mask restoration
+functions/poll.html#tag_17_378	ppoll	partial	partial	tests/native-poll/poll.c	Event masks, invalid/negative fds, bounded pipe, last peer close, blocking wake, relative timeout and signal-mask restoration
+functions/chown.html#tag_17_73	chown	partial	partial	native-exec/examples/vfscheck.c	Drop process credentials, enforce group permission and prohibit privilege regain
+functions/setgid.html#tag_17_523	setgid	partial	partial	native-exec/examples/vfscheck.c	Drop process credentials, enforce group permission and prohibit privilege regain
+functions/setuid.html#tag_17_534	setuid	partial	partial	native-exec/examples/vfscheck.c	Drop process credentials, enforce group permission and prohibit privilege regain
+utilities/comm.html#tag_20_21	comm	partial	partial	scripts/qemu-coreutils.py#173,174	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/cut.html#tag_20_28	cut	partial	partial	scripts/qemu-coreutils.py#175,176,177	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/expand.html#tag_20_41	expand	partial	partial	scripts/qemu-coreutils.py#178,179	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/fold.html#tag_20_48	fold	partial	partial	scripts/qemu-coreutils.py#180,181	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/nl.html#tag_20_87	nl	partial	partial	scripts/qemu-coreutils.py#182,183	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/paste.html#tag_20_91	paste	partial	partial	scripts/qemu-coreutils.py#184,185	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/printf.html#tag_20_96	printf	partial	partial	scripts/qemu-coreutils.py#186,187	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/sort.html#tag_20_112	sort	partial	partial	scripts/qemu-coreutils.py#191,192,193	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/tr.html#tag_20_126	tr	partial	partial	scripts/qemu-coreutils.py#194,195,196	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/unexpand.html#tag_20_136	unexpand	partial	partial	scripts/qemu-coreutils.py#197,198	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+utilities/uniq.html#tag_20_138	uniq	partial	partial	scripts/qemu-coreutils.py#199,200,201	Standalone upstream Rust std ELF, C locale, named and/or standard input checked against GNU 9.12
+functions/access.html#tag_17_07	faccessat	partial	partial	native-exec/examples/attrcheck.c	Check read, write and execute from an open directory, including denial on a file with no execute bits
+functions/chmod.html#tag_17_72	fchmodat	partial	partial	native-exec/examples/attrcheck.c	Follow a relative symlink from a directory descriptor and change the mode on its target
+functions/chown.html#tag_17_73	fchownat	partial	partial	native-exec/examples/attrcheck.c	Update the owner of a symlink with AT_SYMLINK_NOFOLLOW while the regular inode retains its owner
+functions/fchdir.html#tag_17_135	fchdir	partial	partial	native-exec/examples/attrcheck.c	Change cwd by directory descriptor including later rename or unlink, reject regular and invalid descriptors
+functions/fchmod.html#tag_17_136	fchmod	partial	partial	native-exec/examples/atcheck.c	Change permissions via an open regular file and recover the mode via fstat
+functions/fchown.html#tag_17_137	fchown	partial	partial	native-exec/examples/atcheck.c	Set regular file owner and group via a descriptor
+functions/fcntl.html#tag_17_139	fcntl	partial	partial	native-exec/examples/lockcheck.c	Check per-descriptor flags, shared OFD and per-process advisory locks, conflicting ranges, inherited aliases, final close and wakeup
+functions/fsync.html#tag_17_192	fsync	partial	partial	native-exec/examples/atcheck.c	Flush a changed Btrfs descriptor and compare its bytes after cold boot with Linux btrfs-progs
+functions/read.html#tag_17_476	pread	partial	partial	native-exec/examples/attrcheck.c	Read a regular file at the requested offset without moving the shared file position, reject negative offsets and pipes
+functions/write.html#tag_17_699	pwrite	partial	partial	native-exec/examples/attrcheck.c	Overwrite at the requested offset with O_APPEND active, preserve descriptor position and verify bytes from the stopped disk
+functions/futimens.html#tag_17_196	utimensat	partial	partial	native-exec/examples/attrcheck.c	Set pre-epoch and post-2038 timestamps on a relative symlink without following it, preserve a regular file time using UTIME_OMIT
+functions/futimens.html#tag_17_196	futimens	partial	partial	native-exec/examples/attrcheck.c	Write seconds and nanoseconds through a descriptor, preserve both times for UTIME_OMIT and reject invalid nanoseconds
+functions/dup.html#tag_17_116	dup3	partial	partial	native-exec/examples/lockcheck.c	Create an alias with close-on-exec and close-on-fork flags, retain flags in the parent and omit the alias in the child
+functions/pipe.html#tag_17_377	pipe2	partial	partial	native-exec/examples/lockcheck.c	Set nonblocking and descriptor inheritance flags on a new pair atomically, verify EAGAIN on an empty pipe and exclusion at fork
+utilities/link.html#tag_20_66	link	partial	partial	scripts/qemu-coreutils.py#125,126,127,128,129	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+utilities/unlink.html#tag_20_139	unlink	partial	partial	scripts/qemu-coreutils.py#131,133,134,135	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+utilities/mkdir.html#tag_20_79	mkdir	partial	partial	scripts/qemu-coreutils.py#136,137,138,139,140,141,142,143,144,145	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+utilities/rmdir.html#tag_20_106	rmdir	partial	partial	scripts/qemu-coreutils.py#146,147,148,149,150,151,152	GNU streams, waits, shared inode or Linux-restored directory modes and namespace side effects
+functions/getentropy.html#tag_17_209	getentropy	partial	partial	tests/native-entropy/random.c	256-byte reads and overlong EIO with a hardware CPU source and with VirtIO, checked on a stopped disk
+functions/isatty.html#tag_17_265	isatty	partial	partial	ports/musl/tests/terminal.c	Recognize keyboard and screen descriptors; pipe and invalid descriptor report ENOTTY and EBADF
+functions/tcgetwinsize.html#tag_17_609	tcgetwinsize	partial	partial	ports/musl/tests/terminal.c	Read the actual 80 by 25 VGA console geometry on both kernel architectures
+functions/tcsetwinsize.html#tag_17_613	tcsetwinsize	partial	partial	ports/musl/tests/terminal.c	Set the supported dimensions and reject an unsupported row count with EINVAL, preserving the prior size
+functions/tcgetattr.html#tag_17_606	tcgetattr	partial	partial	ports/musl/tests/terminal.c	Read and compare the line discipline and control characters via two handles to the console
+functions/tcsetattr.html#tag_17_611	tcsetattr	partial	partial	ports/musl/tests/terminal.c	Change canonical, echo, signal and all four VMIN/VTIME read modes through a real keyboard
+functions/tcgetpgrp.html#tag_17_607	tcgetpgrp	partial	partial	ports/musl/tests/terminal.c	Read the actual foreground process group and reject an invalid destination with EFAULT
+functions/tcsetpgrp.html#tag_17_612	tcsetpgrp	partial	partial	ports/musl/tests/terminal.c	Select the current process group and reject an invalid source with EFAULT
+functions/tcgetsid.html#tag_17_608	tcgetsid	partial	partial	ports/musl/tests/terminal.c	Read the controlling session and compare it to the process session
+functions/tcdrain.html#tag_17_603	tcdrain	partial	partial	ports/musl/tests/terminal.c	Drain output on the foreground physical text console
+functions/tcflush.html#tag_17_605	tcflush	partial	partial	ports/musl/tests/terminal.c	Flush the console input queue while switching modes
+functions/tcflow.html#tag_17_604	tcflow	partial	partial	ports/musl/tests/terminal.c	Stop and resume output and observe POLLOUT readiness change on the output descriptor
+functions/pthread_kill.html#tag_17_437	pthread_kill	partial	partial	ports/musl/tests/libc.c	Send SIGUSR2 to the selected worker, observe its pending signal while blocked and deliver it in that thread only
+functions/pthread_sigmask.html#tag_17_461	pthread_sigmask	partial	partial	ports/musl/tests/libc.c	Block and restore a worker signal mask, observe SIGUSR2 pending in that thread and run its handler after unblocking
+utilities/cksum.html#tag_20_19	cksum	partial	partial	scripts/qemu-coreutils.py#225,226	POSIX CRC and lengths on standard input and multiple operands
+utilities/expr.html#tag_20_42	expr	partial	partial	scripts/qemu-coreutils.py#229,230,231	Arithmetic, comparison status and substring evaluation
+utilities/od.html#tag_20_90	od	partial	partial	scripts/qemu-coreutils.py#238,239	Byte formats, skip and length with standard input and file operands
+utilities/tsort.html#tag_20_128	tsort	partial	partial	scripts/qemu-coreutils.py#242,243	Ordered edge stream and empty input
+utilities/cp.html#tag_20_24	cp	partial	partial	scripts/qemu-coreutils.py#244,257,258	Copy binary and text file contents, including buffered tee output
+utilities/ln.html#tag_20_67	ln	partial	partial	scripts/qemu-coreutils.py#245,246,267	Create hard links and relative symbolic links before and after rename
+utilities/readlink.html#tag_20_101	readlink	partial	partial	scripts/qemu-coreutils.py#247	Read the text of a relative symbolic link
+utilities/chmod.html#tag_20_17	chmod	partial	partial	scripts/qemu-coreutils.py#248	Change a file mode through its hard link; confirm mode on the other name
+utilities/ls.html#tag_20_73	ls	partial	partial	scripts/qemu-coreutils.py#250,270	List directory entries before and after mutations
+utilities/mv.html#tag_20_83	mv	partial	partial	scripts/qemu-coreutils.py#251,259	Rename while preserving hard-link contents and replace an existing destination
+utilities/du.html#tag_20_36	du	partial	partial	scripts/qemu-coreutils.py#254	Report apparent byte size after truncation
+utilities/tee.html#tag_20_120	tee	partial	partial	scripts/qemu-coreutils.py#255,256	Write standard input to a file and append; check both output and final bytes
+utilities/touch.html#tag_20_124	touch	partial	partial	scripts/qemu-coreutils.py#261	Set a fixed UTC file modification time and compare it after cold volume restoration
+utilities/split.html#tag_20_113	split	partial	partial	scripts/qemu-coreutils.py#263,264	Line-based and byte-based parts with complete contents checked from the stopped volume
+utilities/rm.html#tag_20_104	rm	partial	partial	scripts/qemu-coreutils.py#266,268,269	Remove files and symbolic links, distinguish a missing name with and without force
+utilities/uname.html#tag_20_134	uname	partial	partial	scripts/qemu-uname.py	Single and combined field order, architecture and boot-local node identity on both kernels
+functions/uname.html#tag_17_646	uname	partial	partial	tests/native-uts/names.c	Return kernel system name, nodename, release, version and machine fields
+functions/gethostname.html#tag_17_217	gethostname	partial	partial	tests/native-uts/names.c	Read the boot and renamed hostname across fork with the maximum supported length
+functions/fstatvfs.html#tag_17_191	statvfs	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c	Path resolution on Btrfs and FAT, allocation units, capacity and read-only GPT mounts, missing path error
+functions/fstatvfs.html#tag_17_191	fstatvfs	partial	partial	scripts/qemu-btrfs-capacity.py; ports/musl/tests/files.c	Descriptor identity, available blocks before and after growing a Btrfs data group, read-only mounts and invalid descriptor
+functions/sigtimedwait.html#tag_17_558	sigtimedwait	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c	Immediate, finite and interrupted waits, realtime order and sender PID/UID from a separate process; timer SI_TIMER preserves full-width value and a delivery-bound overrun snapshot
+functions/sigtimedwait.html#tag_17_558	sigwaitinfo	partial	partial	ports/musl/tests/sigwait.c,ports/musl/tests/timers.c	Competing threads consume a process signal once, directed delivery selects its target and SIGCHLD returns child status; timer SI_TIMER preserves full-width value and a delivery-bound overrun snapshot
+functions/sigwait.html#tag_17_559	sigwait	partial	partial	ports/musl/tests/sigwait.c	Receive a blocked standard signal through the public musl interface and verify coalescing with a zero-time second wait
+utilities/V3_chap02.html#tag_19_06_03	tag_19_06_03	partial	partial	tests/user-shell/control.sh	Nested grammar and case patterns, backquotes, child status, newline stripping, quoted and unquoted output, and capture beyond pipe capacity
+utilities/V3_chap02.html#tag_19_06_04	tag_19_06_04	partial	partial	tests/user-shell/control.sh	Integer precedence, signed constants, assignment side effects, conditional evaluation, nested expansion and invalid division
+functions/exec.html#tag_17_129	execlp	partial	partial	ports/musl/tests/exec_script.c	Explicit path, PATH search including empty component, preserved arguments, environment and text scripts with option-like names
+functions/exec.html#tag_17_129	execvp	partial	partial	ports/musl/tests/exec_script.c	Executable text script receives arguments and environment after ENOEXEC; direct execve still returns ENOEXEC
+utilities/dd.html#tag_20_31	dd	partial	partial	scripts/qemu-coreutils.py#271,272,273,274	Copy selected blocks, seek without truncation, sparse seek and pad; compare stopped file bytes
+utilities/realpath.html#tag_20_102	realpath	partial	partial	scripts/qemu-coreutils.py#280,281,282	Physical and lexical resolution for relative paths through a symbolic link in a copied directory
+utilities/pathchk.html#tag_20_93	pathchk	partial	partial	scripts/qemu-coreutils.py#283,284	Portable characters and complete operand diagnostic
+utilities/df.html#tag_20_33	df	partial	partial	scripts/qemu-df.py	List live mounted volumes and verify FAT fields and Btrfs total capacity on the same disk with Linux GNU df 9.12; verify each implementation against its raw statvfs counters
+functions/realpath.html#tag_17_481	realpath	partial	partial	tests/native-df/mounts.c	Canonicalize the virtual DOS mount directory, nested volume and regular file
+utilities/V3_chap02.html#tag_19_06_01	tag_19_06_01	partial	partial	tests/user-shell/expand.sh	Unquoted and quoted tilde, HOME with whitespace and wildcard, assignment and export operands
+utilities/V3_chap02.html#tag_19_06_02	tag_19_06_02	partial	partial	tests/user-shell/expand.sh	Set, unset and null operands, nested expansion, positional arguments, length and pattern removal
+utilities/V3_chap02.html#tag_19_06_05	tag_19_06_05	partial	partial	tests/user-shell/ifs.sh	IFS whitespace and nonwhite separators across adjacent quoted and unquoted expansions
+utilities/V3_chap02.html#tag_19_06_06	tag_19_06_06	partial	partial	tests/user-shell/expand.sh	Directory-relative glob, quoted patterns, unmatched patterns and the noglob option
+utilities/V3_chap02.html#tag_19_26	set	partial	partial	tests/user-shell/expand.sh	Replace positional arguments, set and clear noglob, enable nounset on invocation
+utilities/V3_chap02.html#tag_19_27	shift	partial	partial	tests/user-shell/expand.sh	Shift through two-digit positional arguments; default shift also covered by read.sh
+utilities/read.html#tag_20_100	read	partial	partial	tests/user-shell/read.sh,tests/user-shell/variables.sh	Read successive records from one descriptor, escaped IFS, continuation, raw input, delimiter, NUL, EOF and pipeline input; readonly destination fails without terminating the caller
+utilities/csplit.html#tag_20_26	csplit	partial	partial	scripts/qemu-coreutils.py#291,292,293	Line and pattern operands, stdin, suppressed empty pieces and failed-match cleanup verified after shutdown
+utilities/env.html#tag_20_39	env	partial	partial	scripts/qemu-coreutils.py#307,308,309	Cleared environment, assignments with spaces and NUL-separated output
+utilities/join.html#tag_20_63	join	partial	partial	scripts/qemu-coreutils.py#294,295,296,297	Sorted matching and unpaired rows, explicit field order, delimiters and stdin
+utilities/pr.html#tag_20_95	pr	partial	partial	scripts/qemu-coreutils.py#298,299,300,301,302,303,304,305,306	Page length, numbering and arbitrary bytes, horizontal and vertical columns, merge, separators, page width and indentation
+utilities/test.html#tag_20_121	test	partial	partial	scripts/qemu-coreutils.py#314,315,316,317,318,319,320,321,322,323,324	Status for empty, string, integer, inode identity, directory, file and size expressions
+functions/getgroups.html#tag_17_215	getgroups	partial	partial	scripts/qemu-groups.py	Process-wide list, size query, undersized buffer, IDs beyond 65535 and inheritance across pthread, fork and exec
+functions/getpwnam.html#tag_17_228	getpwnam_r	partial	partial	scripts/qemu-groups.py	Look up an installed account with a 70001 user ID and handle a named missing account through musl
+functions/getgrgid.html#tag_17_213	getgrgid_r	partial	partial	scripts/qemu-groups.py	Look up a 70002 group ID in the editable account database
+utilities/id.html#tag_20_59	id	partial	partial	scripts/qemu-groups.py	Real root and unprivileged credentials, named user, derived supplementary groups, NUL lists and missing-name diagnostics
+utilities/chgrp.html#tag_20_16	chgrp	partial	partial	scripts/qemu-groups.py	Named supplementary group, permitted ownership update and forbidden nonmember update, stopped inode verified
+utilities/chown.html#tag_20_18	chown	partial	partial	scripts/qemu-groups.py	Resolve named user and group and reject unprivileged ownership reassignment, stopped inode verified
+utilities/V3_chap02.html#tag_19_07_04	tag_19_07_04	partial	partial	tests/user-shell/here.sh	Quoted and unquoted delimiters, tabs, continuation, multiple descriptors, lazy evaluation, function and command substitution, and 16401-byte input; new shell cold-booted on installed Btrfs roots with archived a3e57a6 kernels
+functions/socketpair.html#tag_17_565	socketpair	partial	partial	scripts/qemu-local-sockets.py	Anonymous AF_UNIX stream and sequenced-packet pairs, CLOEXEC, NONBLOCK, descriptor exhaustion rollback and fork inheritance
+functions/send.html#tag_17_516	send	partial	partial	scripts/qemu-local-sockets.py	Connected local stream and sequenced-packet transport, backpressure, empty records, MSG_NOSIGNAL and thread-directed SIGPIPE identity
+functions/recv.html#tag_17_482	recv	partial	partial	scripts/qemu-local-sockets.py	Connected local stream and sequenced-packet transport, MSG_PEEK, MSG_TRUNC, MSG_DONTWAIT, EOF and 100000-byte blocking cross-process transfer
+functions/posix_spawn.html#tag_17_388	posix_spawn	partial	partial	scripts/qemu-local-sockets.py	Private child address space, argv and environment, file actions, process group, signal mask, exit status and missing-executable error reaping
+functions/posix_spawn_file_actions_destroy.html#tag_17_392	posix_spawn_file_actions_init	partial	partial	scripts/qemu-local-sockets.py	Initialize and use a file-action object for a real child executable
+functions/posix_spawn_file_actions_destroy.html#tag_17_392	posix_spawn_file_actions_destroy	partial	partial	scripts/qemu-local-sockets.py	Release a file-action object after a real child executable starts
+functions/posix_spawn_file_actions_adddup2.html#tag_17_391	posix_spawn_file_actions_adddup2	partial	partial	scripts/qemu-local-sockets.py	Inherit a connected socket at a requested descriptor and clear its close-on-exec flag
+functions/posix_spawn_file_actions_addclose.html#tag_17_390	posix_spawn_file_actions_addclose	partial	partial	scripts/qemu-local-sockets.py	Close the parent endpoint in the child before executing its independent ELF
+functions/posix_spawn_file_actions_addclose.html#tag_17_390	posix_spawn_file_actions_addopen	partial	partial	scripts/qemu-local-sockets.py	Create and truncate a file at a requested descriptor; stopped disk contains the exact child-written bytes
+functions/posix_spawnattr_destroy.html#tag_17_393	posix_spawnattr_init	partial	partial	scripts/qemu-local-sockets.py	Initialize and use spawn attributes for a real child executable
+functions/posix_spawnattr_destroy.html#tag_17_393	posix_spawnattr_destroy	partial	partial	scripts/qemu-local-sockets.py	Release the spawn-attribute object after a real child executable starts
+functions/posix_spawnattr_getsigmask.html#tag_17_399	posix_spawnattr_setsigmask	partial	partial	scripts/qemu-local-sockets.py	Start the child with SIGUSR1 blocked and inspect its actual mask
+functions/posix_spawnattr_getpgroup.html#tag_17_395	posix_spawnattr_setpgroup	partial	partial	scripts/qemu-local-sockets.py	Create the child process group with its PID and verify getpgrp
+functions/posix_spawnattr_getflags.html#tag_17_394	posix_spawnattr_setflags	partial	partial	scripts/qemu-local-sockets.py	Apply POSIX_SPAWN_SETSIGMASK and POSIX_SPAWN_SETPGROUP to an independent executable
+functions/timer_create.html#tag_17_626	timer_create	partial	partial	ports/musl/tests/timers.c	Realtime/monotonic clocks, SIGNAL/NONE/default notification, process ownership and EINVAL/EOPNOTSUPP errors; SIGEV_THREAD remains unsupported
+functions/timer_delete.html#tag_17_627	timer_delete	partial	partial	ports/musl/tests/timers.c	Delete deadlines and pending notifications, reject stale IDs, recreate 128 timers in four exited children
+functions/timer_getoverrun.html#tag_17_628	timer_getoverrun	partial	partial	ports/musl/tests/timers.c	Periodic blocked signal coalescing and delivered SI_TIMER overrun snapshot agree; 64-bit sigval and two timers sharing one standard signal
+functions/timer_getoverrun.html#tag_17_628	timer_gettime	partial	partial	ports/musl/tests/timers.c	Disarmed values, active periodic interval and remaining deadline, absolute expired timer and invalid timer IDs
+functions/timer_getoverrun.html#tag_17_628	timer_settime	partial	partial	ports/musl/tests/timers.c	Relative periodic and absolute realtime deadlines, past monotonic deadline immediately readable, old value and invalid nanosecond/flag errors
+utilities/V3_chap02.html#tag_19_23	export	partial	partial	tests/user-shell/variables.sh	Unset versus empty values, inherited environment and removal of export attributes, quoted -p roundtrip, invalid name/option and output errors
+utilities/V3_chap02.html#tag_19_24	readonly	partial	partial	tests/user-shell/variables.sh	Unset/empty/value attributes, quoted -p roundtrip, assignment/prefix/loop/arithmetic/default/read/getopts protection and interactive error survival
+utilities/V3_chap02.html#tag_19_30	unset	partial	partial	tests/user-shell/variables.sh	Absent names succeed, -v and -f select separate namespaces, variable attributes removed and readonly/name/option errors diagnosed
+utilities/V3_chap02.html#tag_19_09_01_04	tag_19_09_01_04	partial	partial	tests/user-shell/variables.sh,scripts/qemu-user-shell.py	Functions precede external lookup; search continues after a FAT candidate name is too long, missing command returns 127, trace records resolved independent ELF paths
+functions/getrlimit.html#tag_17_232	getrlimit	partial	partial	ports/musl/tests/limits.c	RLIMIT_STACK soft/hard bounds, 100 KiB actual growth enforcement, syscall entry, privilege, fork and exec inheritance, failed exec survival; other resource types remain open
+functions/getrlimit.html#tag_17_232	setrlimit	partial	partial	ports/musl/tests/limits.c	RLIMIT_STACK soft/hard bounds, 100 KiB actual growth enforcement, syscall entry, privilege, fork and exec inheritance, failed exec survival; other resource types remain open
+utilities/sleep.html#tag_20_111	sleep	partial	partial	scripts/qemu-coreutils.py#325..330	Zero and fractional delays, unit operands and argument errors; guest monotonic durations and GNU 9.12 streams/status
+utilities/nohup.html#tag_20_89	nohup	partial	partial	scripts/qemu-coreutils.py#338..341	Non-terminal command execution, output and failure statuses against GNU 9.12; terminal redirection and delivered SIGHUP cases remain open
+functions/basename.html#tag_17_42	basename	partial	partial	scripts/qemu-libc-test.py#functional/basename	Null, empty, relative and repeated-slash final components
+functions/dirname.html#tag_17_108	dirname	partial	partial	scripts/qemu-libc-test.py#functional/dirname	Null, empty, relative and repeated-slash directory components
+functions/putenv.html#tag_17_468	putenv	partial	partial	scripts/qemu-libc-test.py#functional/env	Environment lookup, removal, replacement policy and invalid empty names
+functions/setenv.html#tag_17_521	setenv	partial	partial	scripts/qemu-libc-test.py#functional/env	Environment lookup, removal, replacement policy and invalid empty names
+functions/unsetenv.html#tag_17_651	unsetenv	partial	partial	scripts/qemu-libc-test.py#functional/env	Environment lookup, removal, replacement policy and invalid empty names
+functions/fnmatch.html#tag_17_170	fnmatch	partial	partial	scripts/qemu-libc-test.py#functional/fnmatch	Upstream pathname pattern, bracket, escaping and matching-flag fixtures
+functions/iconv_open.html#tag_17_250	iconv_open	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open	Invalid codeset, UTF-8 round trip and E2BIG output buffer
+functions/iconv.html#tag_17_248	iconv	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open	Invalid codeset, UTF-8 round trip and E2BIG output buffer
+functions/iconv_close.html#tag_17_249	iconv_close	partial	partial	scripts/qemu-libc-test.py#functional/iconv_open	Invalid codeset, UTF-8 round trip and E2BIG output buffer
+functions/inet_ntop.html#tag_17_260	inet_pton	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/inet_ntop.html#tag_17_260	inet_ntop	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/inet_addr.html#tag_17_259	inet_addr	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/inet_addr.html#tag_17_259	inet_ntoa	partial	partial	scripts/qemu-libc-test.py#functional/inet_pton	IPv4 and IPv6 text/address conversion, malformed input and buffer errors
+functions/fmemopen.html#tag_17_166	fmemopen	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/open_memstream.html#tag_17_373	open_memstream	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/fflush.html#tag_17_154	fflush	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/fseek.html#tag_17_187	fseek	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/ftell.html#tag_17_193	ftell	partial	partial	scripts/qemu-libc-test.py#functional/memstream	Memory stream growth, flush publication, seek holes and bounded append/read offsets
+functions/qsort.html#tag_17_472	qsort	partial	partial	scripts/qemu-libc-test.py#functional/qsort	Character, string, signed integer and uint64 orderings
+functions/initstate.html#tag_17_261	random	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/initstate.html#tag_17_261	srandom	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/initstate.html#tag_17_261	initstate	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/initstate.html#tag_17_261	setstate	partial	partial	scripts/qemu-libc-test.py#functional/random	Default and selected seeds, saved-state restoration and fixed statistical fixtures
+functions/hcreate.html#tag_17_245	hcreate	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch	Hash insertion, lookup, duplicate keys and impossible-capacity ENOMEM
+functions/hcreate.html#tag_17_245	hsearch	partial	partial	scripts/qemu-libc-test.py#functional/search_hsearch	Hash insertion, lookup, duplicate keys and impossible-capacity ENOMEM
+functions/insque.html#tag_17_262	insque	partial	partial	scripts/qemu-libc-test.py#functional/search_insque	Bidirectional queue links before and after removal
+functions/insque.html#tag_17_262	remque	partial	partial	scripts/qemu-libc-test.py#functional/search_insque	Bidirectional queue links before and after removal
+functions/lsearch.html#tag_17_320	lfind	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch	Linear search, insertion and duplicate count preservation
+functions/lsearch.html#tag_17_320	lsearch	partial	partial	scripts/qemu-libc-test.py#functional/search_lsearch	Linear search, insertion and duplicate count preservation
+functions/tdelete.html#tag_17_614	tfind	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/tdelete.html#tag_17_614	tsearch	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/tdelete.html#tag_17_614	twalk	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/tdelete.html#tag_17_614	tdelete	partial	partial	scripts/qemu-libc-test.py#functional/search_tsearch	Tree keys, traversal order and leaf/root deletion
+functions/setjmp.html#tag_17_524	setjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/longjmp.html#tag_17_317	longjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/sigsetjmp.html#tag_17_556	sigsetjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/siglongjmp.html#tag_17_551	siglongjmp	partial	partial	scripts/qemu-libc-test.py#functional/setjmp	Jump values including zero-to-one and optional signal-mask restoration
+functions/fprintf.html#tag_17_175	snprintf	partial	partial	scripts/qemu-libc-test.py#functional/snprintf	Upstream bounded integer and floating formatting fixtures
+functions/fscanf.html#tag_17_186	sscanf	partial	partial	scripts/qemu-libc-test.py#functional/sscanf,scripts/qemu-libc-test.py#functional/sscanf_long	Upstream string scanning fixtures, with the separate 8 MiB input case under a real 100 KiB stack limit
+functions/strcpy.html#tag_17_573	strcpy	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strncpy.html#tag_17_583	strncpy	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strncmp.html#tag_17_582	strncmp	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strncat.html#tag_17_581	strncat	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strrchr.html#tag_17_586	strrchr	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strspn.html#tag_17_588	strspn	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strpbrk.html#tag_17_584	strpbrk	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strtok.html#tag_17_592	strtok	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strlcat.html#tag_17_579	strlcpy	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/strlcat.html#tag_17_579	strlcat	partial	partial	scripts/qemu-libc-test.py#functional/string	Return pointers, bounded copies, zero padding, spans, tokens and truncation
+functions/memcpy.html#tag_17_334	memcpy	partial	partial	scripts/qemu-libc-test.py#functional/string_memcpy	Upstream variable-size and alignment copy fixtures
+functions/memmem.html#tag_17_335	memmem	partial	partial	scripts/qemu-libc-test.py#functional/string_memmem	Upstream byte-substring fixtures
+functions/memset.html#tag_17_337	memset	partial	partial	scripts/qemu-libc-test.py#functional/string_memset	Upstream fill sizes, values and alignment fixtures
+functions/strchr.html#tag_17_570	strchr	partial	partial	scripts/qemu-libc-test.py#functional/string_strchr	Upstream character-search fixtures
+functions/strcspn.html#tag_17_574	strcspn	partial	partial	scripts/qemu-libc-test.py#functional/string_strcspn	Upstream rejected-character span fixtures
+functions/strstr.html#tag_17_589	strstr	partial	partial	scripts/qemu-libc-test.py#functional/string_strstr	Upstream substring positions and absent matches
+functions/strtod.html#tag_17_590	strtod	partial	partial	scripts/qemu-libc-test.py#functional/strtod,scripts/qemu-libc-test.py#functional/strtod_simple	Decimal/hex and subnormal/overflow rounding boundaries, plus 100 separate decimal round trips
+functions/strtod.html#tag_17_590	strtof	partial	partial	scripts/qemu-libc-test.py#functional/strtof	Float subnormal and maximum-mantissa rounding boundaries
+functions/strtol.html#tag_17_593	strtol	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtoul.html#tag_17_594	strtoul	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtol.html#tag_17_593	strtoll	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtoul.html#tag_17_594	strtoull	partial	partial	scripts/qemu-libc-test.py#functional/strtol	32/64-bit limits, signs, bases, end pointers and ERANGE
+functions/strtod.html#tag_17_590	strtold	partial	partial	scripts/qemu-libc-test.py#functional/strtold	Upstream long-double conversion boundary fixtures
+functions/fwprintf.html#tag_17_198	swprintf	partial	partial	scripts/qemu-libc-test.py#functional/swprintf	Bounded wide formatting, UTF-8 conversion and integer/float fixtures
+functions/ungetc.html#tag_17_647	ungetc	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/tmpfile.html#tag_17_631	tmpfile	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/fread.html#tag_17_180	fread	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/fgetc.html#tag_17_156	fgetc	partial	partial	scripts/qemu-libc-test.py#functional/ungetc	Temporary-file pushback, cursor positions and byte-for-byte readback
+functions/wcsstr.html#tag_17_679	wcsstr	partial	partial	scripts/qemu-libc-test.py#functional/wcsstr	Wide substring positions, empty and absent matches
+functions/wcstol.html#tag_17_683	wcstol	partial	partial	scripts/qemu-libc-test.py#functional/wcstol	Wide 32/64-bit limits, bases, signs, end pointers and ERANGE
+functions/wcstoul.html#tag_17_685	wcstoul	partial	partial	scripts/qemu-libc-test.py#functional/wcstol	Wide 32/64-bit limits, bases, signs, end pointers and ERANGE
+utilities/V3_chap02.html#tag_19_19	dot	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh,tests/user-shell/source-errors.sh	PATH without implicit cwd fallback, current-environment variables/functions/cwd/positionals, empty files and files without a final newline, nested return, stdin separation, CLOEXEC descriptors, 256 reloads and 16 KiB input; optional argument scope follows KornShell; full permission matrix remains open
+utilities/V3_chap02.html#tag_19_20	eval	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-errors.sh	Arguments joined with spaces, empty arguments/status, current-environment assignments/functions/pipelines/redirections, script syntax errors and interactive recovery, return and exit propagation; full Shell integration remains open
+utilities/V3_chap02.html#tag_19_25	return	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh	Nearest function/dot boundary, explicit and previous status, loops, nested dot/function/eval and negated return; trap-status semantics remain open
+utilities/command.html#tag_20_22	command	partial	partial	tests/user-shell/command.sh,tests/user-shell/command-state.sh,tests/user-shell/command-errors.sh	Function bypass, current-shell builtins, default PATH, absolute queries, recursive declarations, temporary prefix assignments, wrapped special-builtin errors and explicit exit; frozen 20036fa binaries passed dual native FAT 30-file and installed Btrfs 33-file readback, cold boot and Linux checks; aliases, locale and symlink/I/O query errors remain open
+utilities/V3_chap02.html#tag_19_21	exec	partial	partial	tests/user-shell/command-state.sh,tests/user-shell/command-errors.sh	Program replacement, permanent redirection, noninteractive failure and command-wrapped recovery; complete descriptor and trap integration remains open
+utilities/cd.html#tag_20_14	cd	partial	partial	tests/user-shell/directory.sh	Initial PWD, HOME and OLDPWD, CDPATH selection/output/bypass/fallback, canonical parents, empty operands, -L/-P/-e parsing, unchanged cwd on path errors and DOS-RS readonly-variable policy; dual native FAT 32-file readback. Dual native Btrfs Rust probe covers relative cd from a 4346-byte cwd, cd -Pe in an unnamed directory, denied search and descriptor-based restoration after output failure
+utilities/pwd.html#tag_20_99	pwd	partial	partial	tests/user-shell/directory.sh	Default logical PWD, physical output, last -L/-P option, preserved valid inherited path, repaired missing/invalid inherited PWD and invalid-option status; dual native FAT cold boot. Dual native Btrfs probe checks a 4351-byte physical leaf name, an unnamed directory and non-UTF-8 pathname output
+basedefs/V1_chap10.html#tag_10_01	tag_10_01	partial	partial	scripts/qemu-native-null.py	Installed Btrfs roots expose /dev/null as character device 1:3. Both native kernels verify EOF, discard, unprivileged redirection, cold boot and GNU cat 9.12 output and exit status. /dev/tty and /dev/console remain open.

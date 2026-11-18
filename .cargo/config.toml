@@ -1,3 +1,8 @@
 [unstable]
 build-std = ["core", "alloc", "compiler_builtins"]
 build-std-features = ["compiler-builtins-mem"]
+
+# Keep dependency reports available through cargo report future-incompatibilities.
+# The current soft-float targets trigger the upstream SSE diagnostic in rust-src.
+[future-incompat-report]
+frequency = "never"

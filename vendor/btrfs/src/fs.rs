@@ -501,7 +501,7 @@ pub struct Filesystem {
     pub(crate) leaving: Option<u64>,
 }
 
-/// Tree blocks a mount keeps: 1024, 16 MiB at the default 16 KiB node.
+/// Tree blocks a mount keeps: 128 KiB at the default 16 KiB node.
 pub const NODE_CACHE_BLOCKS: usize = 8;
 
 /// A least-recently-used set of verified tree blocks by logical address.
@@ -1542,6 +1542,8 @@ impl Filesystem {
                     buf,
                 )
             }),
+            cache_get: Box::new(|logical| self.nodes.borrow_mut().get(logical)),
+            cache_put: Box::new(|logical, block| self.nodes.borrow_mut().put(logical, block)),
         }
     }
 
@@ -1833,96 +1835,6 @@ impl Filesystem {
         Ok(n)
     }
 
-    /// The bytes at `physical` on device `devid`, as they lie: one element
-    /// of a RAID5/6 full stripe, for scrub's parity check (#301).
-    pub(crate) fn read_element(&self, devid: u64, physical: u64, buf: &mut [u8]) -> Result<()> {
-        if self.devices.is_empty() {
-            self.device.read_at(physical, buf)?;
-            return Ok(());
-        }
-        let dev = self
-            .devices
-            .get(&devid)
-            .ok_or_else(|| Error::UnsupportedFeature(format!("device {devid} was not given")))?;
-        dev.read_at(physical, buf)?;
-        Ok(())
-    }
-
-    /// Copy `mirror` of the logical range, read as it lies: no checksum,
-    /// no fallback. For scrub, which judges each copy itself.
-    pub(crate) fn read_mirror_unverified(
-        &self,
-        logical: u64,
-        mirror: usize,
-        buf: &mut [u8],
-    ) -> Result<()> {
-        Self::read_logical_pool_mirror(&self.device, &self.devices, &self.map, mirror, logical, buf)
-    }
-
-    /// Write `buf` over copy `mirror` of the logical range and no other
-    /// copy, as it lies: no checksum stamped, no transaction. For scrub
-    /// repair, which writes a copy that already verified over one that
-    /// did not, so the logical contents do not change (#302).
-    ///
-    /// Each span goes to the device its stripe names, so on a pool a copy
-    /// is repaired on its own member (#350). On a RAID5/6 chunk copy 0 is
-    /// the data element, and writing back the bytes its parity rebuilt
-    /// leaves that parity true. Every span is resolved and checked
-    /// against its device before the first byte is written.
-    pub(crate) fn write_mirror_in_place(
-        &self,
-        logical: u64,
-        mirror: usize,
-        buf: &[u8],
-    ) -> Result<()> {
-        let mut spans = Vec::new();
-        let mut done = 0usize;
-        while done < buf.len() {
-            let m = self.map.map_mirror(logical + done as u64, mirror)?;
-            let n = (m.len as usize).min(buf.len() - done);
-            if n == 0 {
-                return Err(Error::UnmappedLogical(logical + done as u64));
-            }
-            let device = self.write_device(m.devid)?;
-            Self::writable_span(device, m.physical, n)?;
-            spans.push((Arc::clone(device), m.physical, done, n));
-            done += n;
-        }
-        for (device, physical, from, n) in spans {
-            device.write_at(physical, &buf[from..from + n])?;
-        }
-        Ok(())
-    }
-
-    /// Write `buf` at `physical` on device `devid`, as it lies: one
-    /// RAID5/6 parity element, or part of one, computed again from its
-    /// data by scrub repair (#350). The span is checked against the
-    /// device before anything is written.
-    pub(crate) fn write_element(&self, devid: u64, physical: u64, buf: &[u8]) -> Result<()> {
-        let device = self.write_device(devid)?;
-        Self::writable_span(device, physical, buf.len())?;
-        device.write_at(physical, buf)?;
-        Ok(())
-    }
-
-    /// Every data checksum the csum tree holds for `[start, start + len)`,
-    /// by sector address; empty on a volume with no csum tree.
-    pub(crate) fn data_digests(&self, start: u64, len: u64) -> Result<crate::csum::SectorDigests> {
-        let Some(csum_root) = self.csum_tree_root else {
-            return Ok(crate::csum::SectorDigests::new());
-        };
-        let reader = self.pool_reader();
-        let tree = reader.tree();
-        crate::csum::digests_for_range(
-            &tree,
-            csum_root,
-            self.sb.csum_type.digest_len(),
-            u64::from(self.sb.sectorsize),
-            start,
-            len,
-        )
-    }
-
     /// A handle over the same device, reading a different tree.
     ///
     /// Used by [`Filesystem::open_subvolume`]. The device, superblock
@@ -2039,6 +1951,10 @@ impl Filesystem {
     pub fn read_tree_block(&self, logical: u64) -> Result<crate::btree::TreeBlock> {
         let reader = self.pool_reader();
         reader.tree().read_block(logical)
+    }
+
+    pub(crate) fn cached_tree_block(&self, logical: u64) -> Result<crate::btree::TreeBlock> {
+        self.pool_reader().cached_tree().read_block(logical)
     }
 
     /// The chunk map — how logical addresses become physical ones.
@@ -3023,6 +2939,8 @@ pub(crate) struct PoolReader<'a> {
     read: OwnedReadBlock<'a>,
     mirrors: OwnedMirrorCount<'a>,
     read_mirror: OwnedReadMirror<'a>,
+    cache_get: Box<dyn Fn(u64) -> Option<crate::btree::TreeBlock> + 'a>,
+    cache_put: OwnedCachePut<'a>,
 }
 
 /// An owned block reader, the counterpart to
@@ -3036,6 +2954,7 @@ type OwnedReadBlock<'a> = Box<dyn Fn(u64, &mut [u8]) -> Result<()> + 'a>;
 /// [`crate::btree::ReadMirror`], for the same reason.
 type OwnedMirrorCount<'a> = Box<dyn Fn(u64) -> Result<usize> + 'a>;
 type OwnedReadMirror<'a> = Box<dyn Fn(u64, usize, &mut [u8]) -> Result<()> + 'a>;
+type OwnedCachePut<'a> = Box<dyn Fn(u64, &crate::btree::TreeBlock) + 'a>;
 
 impl PoolReader<'_> {
     /// A walker over any tree in this pool. The root address is a
@@ -3050,5 +2969,11 @@ impl PoolReader<'_> {
         crate::btree::Tree::new(self.geom, &*self.read)
             .with_redundancy(&*self.mirrors, &*self.read_mirror)
             .with_seed_fsids(self.seeds)
+    }
+
+    /// Share verified nodes between the transaction planning and rendering
+    /// walks. The commit invalidates these entries before reusing the mount.
+    pub(crate) fn cached_tree(&self) -> crate::btree::Tree<'_> {
+        self.tree().with_cache(&*self.cache_get, &*self.cache_put)
     }
 }

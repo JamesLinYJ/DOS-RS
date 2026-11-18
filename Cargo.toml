@@ -10,6 +10,7 @@ native-gate-test = []
 tlb-selftest = []
 pc386 = []
 thread-trace = []
+exec-trace = []
 
 [profile.dev]
 panic = "abort"

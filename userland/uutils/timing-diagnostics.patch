@@ -1,0 +1,43 @@
+--- a/src/uu/sleep/src/sleep.rs
++++ b/src/uu/sleep/src/sleep.rs
+@@ -20,7 +20,16 @@
+ 
+ #[uucore::main]
+ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
+-    let matches = uucore::clap_localization::handle_clap_result(uu_app(), args)?;
++    let args = args.collect::<Vec<_>>();
++    for arg in args.iter().skip(1).take_while(|arg| *arg != "--") {
++        let text = arg.to_string_lossy();
++        if text.starts_with('-') && !text.starts_with("--") {
++            if let Some(option) = text.chars().nth(1) {
++                return Err(UUsageError::new(1, format!("invalid option -- '{option}'")));
++            }
++        }
++    }
++    let matches = uucore::clap_localization::handle_clap_result(uu_app(), args.into_iter())?;
+ 
+     #[expect(clippy::unwrap_used, reason = "set as required by clap")]
+     let numbers = matches
+--- a/src/uu/timeout/src/timeout.rs
++++ b/src/uu/timeout/src/timeout.rs
+@@ -275,7 +275,8 @@
+         };
+         USimpleError::new(
+             status_code,
+-            translate!("timeout-error-failed-to-execute-process", "error" => err),
++            translate!("timeout-error-failed-to-execute-process",
++                "command" => cmd[0].quote(), "error" => uucore::error::strip_errno(&err)),
+         )
+     })?;
+ 
+--- a/src/uu/timeout/locales/en-US.ftl
++++ b/src/uu/timeout/locales/en-US.ftl
+@@ -21,7 +21,7 @@
+ 
+ # Error messages
+ timeout-error-invalid-signal = { $signal }: invalid signal
+-timeout-error-failed-to-execute-process = failed to execute process: { $error }
++timeout-error-failed-to-execute-process = failed to run command { $command }: { $error }
+ 
+ # Verbose messages
+ timeout-verbose-sending-signal = sending signal { $signal } to command { $command }

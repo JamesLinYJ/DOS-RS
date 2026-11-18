@@ -23,11 +23,20 @@ pub enum Errno {
     TooManyFiles,
     Io,
     BrokenPipe,
+    NoMemory,
+    MessageSize,
     NotDirectory,
     ReadOnly,
     NotSupported,
     IllegalSeek,
     FileTooLarge,
+    Permission,
+    Loop,
+    NotEmpty,
+    CrossDevice,
+    Range,
+    Busy,
+    Again,
 }
 impl Errno {
     pub fn message(self) -> &'static str {
@@ -42,12 +51,21 @@ impl Errno {
             Self::NoSpace => "no space left",
             Self::TooManyFiles => "too many open files",
             Self::Io => "I/O error",
+            Self::NoMemory => "out of memory",
+            Self::MessageSize => "message too long",
             Self::BrokenPipe => "broken pipe",
             Self::NotDirectory => "not a directory",
             Self::ReadOnly => "read-only file system",
             Self::NotSupported => "operation not supported",
             Self::IllegalSeek => "illegal seek",
             Self::FileTooLarge => "file too large",
+            Self::Permission => "operation not permitted",
+            Self::Loop => "too many symbolic links",
+            Self::NotEmpty => "directory not empty",
+            Self::CrossDevice => "cross-device link",
+            Self::Range => "buffer too small",
+            Self::Again => "resource temporarily unavailable",
+            Self::Busy => "resource busy",
         }
     }
 }
@@ -140,40 +158,14 @@ pub trait Process {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum Program {
-    Cat,
-    Wc,
-    FdCheck,
-    Unlink,
-}
-impl Program {
-    pub fn lookup(name: &str) -> Option<Self> {
-        match name {
-            "cat" => Some(Self::Cat),
-            "wc" => Some(Self::Wc),
-            "unlink" => Some(Self::Unlink),
-            "fdcheck" => Some(Self::FdCheck),
-            _ => None,
-        }
-    }
-    pub async fn run(self, process: &mut (impl Process + Send), argv: &[String]) -> u8 {
-        let result = match self {
-            Self::Unlink => match &argv[1..] {
-                [path] => process.unlink(path),
-                _ => Err(Errno::Invalid),
-            },
-            Self::Cat => utilities::cat(process, &argv[1..]).await,
-            Self::Wc => utilities::wc(process, &argv[1..]).await,
-            Self::FdCheck => utilities::fdcheck(process, &argv[1..]).await,
-        };
-        match result {
-            Ok(()) => 0,
-            Err(error) => {
-                let message = alloc::format!("{}: {}\n", argv[0], error.message());
-                let _ = process.write_all(2, message.as_bytes()).await;
-                1
-            }
+/// Run the descriptor conformance probe from the DOS diagnostics entry point.
+pub async fn fdcheck(process: &mut (impl Process + Send), argv: &[String]) -> u8 {
+    match utilities::fdcheck(process, &argv[1..]).await {
+        Ok(()) => 0,
+        Err(error) => {
+            let message = alloc::format!("fdcheck: {}\n", error.message());
+            let _ = process.write_all(2, message.as_bytes()).await;
+            1
         }
     }
 }

@@ -58,6 +58,7 @@ impl Filesystem {
     /// lists. Nothing is written unless everything is.
     pub fn set_xattr(&mut self, ino: u64, name: &[u8], value: &[u8]) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         if name.is_empty() || name.len() > MAX_XATTR_NAME || name.contains(&0) {
             return Err(Error::UnsupportedFeature(format!(
                 "{:?} is not an attribute name: 1 to {MAX_XATTR_NAME} bytes, with no NUL",
@@ -100,6 +101,7 @@ impl Filesystem {
     /// inode has no attribute of that name.
     pub fn remove_xattr(&mut self, ino: u64, name: &[u8]) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let generation = self.next_generation()?;
         let now = crate::namespace::now();
         let mut raw = self.raw_inode(ino)?;
@@ -137,6 +139,13 @@ impl Filesystem {
     /// As [`Filesystem::set_xattr`].
     pub fn set_owner(&mut self, ino: u64, uid: Option<u32>, gid: Option<u32>) -> Result<()> {
         self.change_inode(ino, |raw| {
+            if uid.is_some_and(|id| id != le32(raw, io::UID))
+                || gid.is_some_and(|id| id != le32(raw, io::GID)) {
+                let mode = le32(raw, io::MODE);
+                if crate::inode::FileType::from_mode(mode) == Some(crate::inode::FileType::Regular) {
+                    put32(raw, io::MODE, mode & !0o6000);
+                }
+            }
             if let Some(uid) = uid {
                 put32(raw, io::UID, uid);
             }
@@ -176,6 +185,7 @@ impl Filesystem {
     /// time, transaction and change counter moved, as one transaction.
     fn change_inode(&mut self, ino: u64, change: impl FnOnce(&mut [u8])) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let generation = self.next_generation()?;
         let now = crate::namespace::now();
         let mut raw = self.raw_inode(ino)?;

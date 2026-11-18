@@ -107,17 +107,33 @@ pub(crate) fn read_sectors(mut lba: u32, out: &mut [u8]) -> bool {
 }
 
 pub(crate) fn write(lba: u32, sector: &[u8; 512]) -> bool {
-    if !address(lba, 1) {
+    write_sectors(lba, sector)
+}
+
+pub(crate) fn write_sectors(mut lba: u32, data: &[u8]) -> bool {
+    if !data.len().is_multiple_of(512) {
         return false;
     }
-    outb(STATUS, 0x30);
-    if !wait(true) {
-        return false;
+    for batch in data.chunks(128 * 512) {
+        let count = (batch.len() / 512) as u8;
+        if !address(lba, count) {
+            return false;
+        }
+        outb(STATUS, 0x30);
+        for sector in batch.chunks_exact(512) {
+            if !wait(true) {
+                return false;
+            }
+            for word in sector.chunks_exact(2) {
+                outw(DATA, u16::from_le_bytes([word[0], word[1]]));
+            }
+        }
+        if !wait(false) {
+            return false;
+        }
+        lba += u32::from(count);
     }
-    for word in sector.chunks_exact(2) {
-        outw(DATA, u16::from_le_bytes([word[0], word[1]]));
-    }
-    wait(false)
+    true
 }
 
 pub(crate) fn flush() -> bool {

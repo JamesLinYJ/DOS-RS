@@ -1,0 +1,4 @@
+local:srcargs.sh:2:supplied:[supplied words]
+nested:srcargs.sh:2:nested:[nested words]
+after-nested:1:replacement
+restored:17:srcargs.sh:2:caller:[caller words]

@@ -90,6 +90,7 @@ const FIRST_DIR_INDEX: u64 = 2;
 const S_IFMT: u32 = 0o170_000;
 const S_IFREG: u32 = 0o100_000;
 const S_IFDIR: u32 = 0o040_000;
+const S_IFCHR: u32 = 0o020_000;
 const S_IFLNK: u32 = 0o120_000;
 
 /// `BTRFS_INODE_COMPRESS` and `BTRFS_INODE_NOCOMPRESS`, which a new
@@ -103,11 +104,16 @@ const INODE_REF_HEADER: usize = 8 + 2;
 /// name length.
 const INODE_EXTREF_HEADER: usize = 8 + 8 + 2;
 
+fn can_reap_open(inode: &Inode) -> bool {
+    matches!(inode.mode & S_IFMT, S_IFREG | S_IFDIR | S_IFCHR)
+}
+
 /// What a new inode is.
 #[derive(Debug, Clone, Copy)]
 enum NewKind<'a> {
     File,
     Dir,
+    Character(u32),
     Symlink(&'a [u8]),
 }
 
@@ -148,6 +154,18 @@ impl Filesystem {
         self.add_inode(parent, name, NewKind::Dir, mode, uid, gid)
     }
 
+    /// Create a character-device inode owned by root. The number uses the
+    /// Linux on-disk device encoding, and the inode has no file data.
+    pub fn create_character_device(
+        &mut self,
+        parent: u64,
+        name: &[u8],
+        mode: u32,
+        device: u32,
+    ) -> Result<u64> {
+        self.add_inode(parent, name, NewKind::Character(device), mode, 0, 0)
+    }
+
     /// Create a symbolic link `name` in `parent` pointing at `target`,
     /// stored inline. As [`Filesystem::create`]; a target that is empty
     /// or does not fit inline in one sector is refused.
@@ -174,6 +192,7 @@ impl Filesystem {
             return self.writing_subvolume(|fs| fs.link(ino, parent, name));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         let root = self.written_tree();
         let dir = self.writable_parent(parent, name)?;
         let target = self.read_inode(ino)?;
@@ -242,47 +261,69 @@ impl Filesystem {
         self.remove_name(parent, name, false)
     }
 
-    /// Unlink a regular file while a descriptor still pins its last link.
+    /// Unlink a nondirectory inode while a descriptor still pins its last link.
     /// Commit the unlinked inode and its on-disk orphan item with the name removal.
     pub fn unlink_open(&mut self, parent: u64, name: &[u8]) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let child = self.named_inode(parent, name)?;
-        if !child.is_regular_file() || child.nlink != 1 {
+        if child.is_dir() || !can_reap_open(&child) || child.nlink != 1 {
             return self.unlink(parent, name);
         }
+        self.detach_open(parent, name, child)
+    }
+
+    /// Detach an empty open directory and keep its inode until its last reference closes.
+    pub fn rmdir_open(&mut self, parent: u64, name: &[u8]) -> Result<()> {
+        self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
+        let dir = self.named_inode(parent, name)?;
+        if !dir.is_dir() { return Err(Error::NotADirectory); }
+        self.refuse_non_empty(&dir, name)?;
+        self.detach_open(parent, name, dir)
+    }
+
+    fn detach_open(&mut self, parent: u64, name: &[u8], child: Inode) -> Result<()> {
         crate::verity::refuse_mutation(child.ino, child.flags)?;
         let mut pending = Pending::default();
         self.drop_entry(&mut pending, parent, name, child.ino)?;
-        let inode_key = key(child.ino, INODE_ITEM_KEY, 0);
-        let mut inode = pending.get(self, inode_key)?.ok_or(Error::NotFound)?;
-        inode[io::NLINK..io::NLINK + 4].fill(0);
-        pending.set(inode_key, Some(inode));
-        pending.touch(child.ino, &[io::CTIME]);
+        self.orphan_last_link(&mut pending, child.ino)?;
         pending.touch(parent, &[io::CTIME, io::MTIME]);
-        let orphan = key(crate::subvol::ORPHAN_OBJECTID, crate::subvol::ORPHAN_ITEM_KEY, child.ino);
-        if pending.get(self, orphan)?.is_some() {
-            return Err(Error::BadSuperblock("duplicate file orphan".into()));
-        }
-        pending.set(orphan, Some(Vec::new()));
         let generation = self.next_generation()?;
         let time = now();
         let edits = pending.into_edits(self, generation, time)?;
         self.commit_edits_in(self.written_tree(), child.ino, edits, generation, time)
     }
 
+    fn orphan_last_link(&self, pending: &mut Pending, ino: u64) -> Result<()> {
+        let inode_key = key(ino, INODE_ITEM_KEY, 0);
+        let mut inode = pending.get(self, inode_key)?.ok_or(Error::NotFound)?;
+        inode[io::NLINK..io::NLINK + 4].fill(0);
+        pending.set(inode_key, Some(inode));
+        pending.touch(ino, &[io::CTIME]);
+        let orphan = key(crate::subvol::ORPHAN_OBJECTID, crate::subvol::ORPHAN_ITEM_KEY, ino);
+        if pending.get(self, orphan)?.is_some() {
+            return Err(Error::BadSuperblock("duplicate file orphan".into()));
+        }
+        pending.set(orphan, Some(Vec::new()));
+        Ok(())
+    }
+
     /// Reclaim a pinned inode on last close, or after reopening a volume whose
     /// previous owner stopped before its descriptors could be closed.
     pub fn reap_file(&mut self, ino: u64) -> Result<()> {
         self.require_writable_top_level()?;
+        self.ensure_metadata_reserve()?;
         let orphan = key(crate::subvol::ORPHAN_OBJECTID, crate::subvol::ORPHAN_ITEM_KEY, ino);
         let mut pending = Pending::default();
         if pending.get(self, orphan)?.as_deref() != Some(&[]) {
             return Err(Error::NotFound);
         }
         let inode = self.read_inode(ino)?;
-        if !inode.is_regular_file() || inode.nlink != 0 || ino <= FIRST_FREE_OBJECTID {
+        if !can_reap_open(&inode) || inode.nlink != 0 || ino <= FIRST_FREE_OBJECTID {
             return Err(Error::UnsupportedFeature("orphan requires Linux recovery".into()));
         }
+        if inode.is_dir() { self.refuse_non_empty(&inode, b"")?; }
         pending.set(orphan, None);
         self.release_name(pending, &inode, b"")
     }
@@ -313,6 +354,7 @@ impl Filesystem {
             return self.writing_subvolume(|fs| fs.remove_name(parent, name, want_dir));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         check_name(name)?;
         let dir = self.read_inode(parent)?;
         if !dir.is_dir() {
@@ -397,11 +439,20 @@ impl Filesystem {
         new_parent: u64,
         new_name: &[u8],
     ) -> Result<()> {
+        self.rename_pinned(old_parent, old_name, new_parent, new_name, None)
+    }
+
+    /// Preserve an open destination inode in the same transaction as rename.
+    pub fn rename_pinned(
+        &mut self, old_parent: u64, old_name: &[u8], new_parent: u64, new_name: &[u8],
+        pinned: Option<u64>,
+    ) -> Result<()> {
         if self.writable.is_none() && self.subvolume_writes.is_some() {
             return self
-                .writing_subvolume(|fs| fs.rename(old_parent, old_name, new_parent, new_name));
+                .writing_subvolume(|fs| fs.rename_pinned(old_parent, old_name, new_parent, new_name, pinned));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         let root = self.written_tree();
         check_name(old_name)?;
         check_name(new_name)?;
@@ -438,9 +489,13 @@ impl Filesystem {
                     (false, false) => {}
                 }
                 self.drop_entry(&mut p, new_parent, new_name, target.ino)?;
-                let (releases, unrefs) = self.drop_link(&mut p, &target, new_name)?;
-                if !releases.is_empty() || !unrefs.is_empty() {
-                    replaced = Some((target.ino, releases, unrefs));
+                if Some(target.ino) == pinned && target.nlink == 1 && can_reap_open(&target) {
+                    self.orphan_last_link(&mut p, target.ino)?;
+                } else {
+                    let (releases, unrefs) = self.drop_link(&mut p, &target, new_name)?;
+                    if !releases.is_empty() || !unrefs.is_empty() {
+                        replaced = Some((target.ino, releases, unrefs));
+                    }
                 }
             }
             Err(Error::NotFound) => {}
@@ -516,6 +571,34 @@ impl Filesystem {
             )));
         }
         Ok(())
+    }
+
+    /// The current name and parent of a directory, read from its inode reference.
+    /// A working directory keeps its inode even when a different process renames it.
+    pub fn directory_parent(&self, ino: u64) -> Result<(u64, Vec<u8>)> {
+        if !self.read_inode(ino)?.is_dir() {
+            return Err(Error::NotADirectory);
+        }
+        if ino == self.root_inode()?.ino {
+            return Ok((ino, Vec::new()));
+        }
+        let mut parent = None;
+        self.pool_reader().tree().for_each_from(
+            self.fs_tree_root,
+            &key(ino, INODE_REF_KEY, 0),
+            &mut |k, record| {
+                if k.objectid == ino && k.key_type == INODE_REF_KEY {
+                    let n = record.get(8..10)
+                        .map(|b| usize::from(u16::from_le_bytes([b[0], b[1]])))
+                        .ok_or_else(|| Error::BadSuperblock("short directory inode reference".into()))?;
+                    let name = record.get(10..10 + n)
+                        .ok_or_else(|| Error::BadSuperblock("truncated directory inode name".into()))?;
+                    parent = Some((k.offset, name.to_vec()));
+                }
+                Ok(false)
+            },
+        )?;
+        parent.ok_or(Error::NotFound)
     }
 
     /// Whether directory `dir` is `ancestor` or lies below it, walking
@@ -748,6 +831,7 @@ impl Filesystem {
         uid: u32,
         gid: u32,
     ) -> Result<u64> {
+        self.ensure_metadata_reserve()?;
         let dir = self.writable_parent(parent, name)?;
         if let NewKind::Symlink(target) = kind {
             let limit = (self.sb.sectorsize as usize - 1).min(self.max_item_size() - INLINE_HEADER);
@@ -767,6 +851,7 @@ impl Filesystem {
         let (type_bits, ft, size) = match kind {
             NewKind::File => (S_IFREG, ftype::REG_FILE, 0),
             NewKind::Dir => (S_IFDIR, ftype::DIR, 0),
+            NewKind::Character(_) => (S_IFCHR, ftype::CHRDEV, 0),
             NewKind::Symlink(t) => (S_IFLNK, ftype::SYMLINK, t.len() as u64),
         };
         // What a new inode takes from its directory: copy-on-write or
@@ -776,10 +861,10 @@ impl Filesystem {
         let mut flags = dir.flags & (INODE_NODATACOW | INODE_COMPRESS | INODE_NOCOMPRESS);
         match kind {
             NewKind::File if flags & INODE_NODATACOW != 0 => flags |= INODE_NODATASUM,
-            NewKind::Symlink(_) => flags = 0,
+            NewKind::Symlink(_) | NewKind::Character(_) => flags = 0,
             _ => {}
         }
-        let raw = new_inode(NewInode {
+        let mut raw = new_inode(NewInode {
             generation,
             size,
             mode: type_bits | (mode & 0o7777),
@@ -788,6 +873,9 @@ impl Filesystem {
             flags,
             now,
         });
+        if let NewKind::Character(device) = kind {
+            raw[io::RDEV..io::RDEV + 8].copy_from_slice(&u64::from(device).to_le_bytes());
+        }
 
         let mut edits = vec![
             put(ino, INODE_ITEM_KEY, 0, raw),
@@ -918,7 +1006,7 @@ impl Filesystem {
     ) -> Result<()> {
         let mut dirty: Vec<u64> = {
             let reader = self.pool_reader();
-            let tree = reader.tree();
+            let tree = reader.cached_tree();
             let mut leaves = alloc::collections::BTreeSet::new();
             for edit in &write.edits {
                 leaves.insert(tree.descend(self.fs_tree_root, &edit.key())?.header.bytenr);
@@ -1058,16 +1146,6 @@ impl Filesystem {
     pub(crate) fn require_writable(&self) -> Result<()> {
         if self.writable.is_none() {
             return Err(Error::ReadOnly);
-        }
-        self.refuse_stale()
-    }
-
-    /// Refuse a write through a stale handle, leaving a read-only handle to
-    /// be refused by the write itself. For a caller that has to read before
-    /// it can start the write, such as the C ABI resolving a path (#715).
-    pub(crate) fn refuse_stale_write(&self) -> Result<()> {
-        if self.writable.is_none() && self.subvolume_writes.is_none() {
-            return Ok(());
         }
         self.refuse_stale()
     }

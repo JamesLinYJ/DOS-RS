@@ -78,6 +78,7 @@ impl Filesystem {
             return self.writing_subvolume(|fs| fs.truncate(ino, size));
         }
         self.require_writable()?;
+        self.ensure_metadata_reserve()?;
         let inode = self.read_inode(ino)?;
         if !inode.is_regular_file() {
             return Err(Error::NotAFile);

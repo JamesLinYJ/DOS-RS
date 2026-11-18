@@ -1,18 +1,20 @@
 //! A bounded byte stream. Each end has one shared open description, so dup
 //! and inheritance delay EOF/EPIPE until the final reference to that end goes.
-use super::Waiters;
+use super::{Waiters, poll};
 use crate::kernel_cell::KernelCell;
 use alloc::{collections::VecDeque, sync::Arc};
 use core::task::{Context, Poll};
 use dosrs_native_posix::{Errno, Result};
 
-pub(super) const CAPACITY: usize = 512;
+// musl advertises PIPE_BUF = 4096. A single native write of this size is atomic.
+pub(super) const CAPACITY: usize = 4096;
 pub(super) struct Pipe {
     data: VecDeque<u8>,
     reader: bool,
     writer: bool,
     reads: Waiters,
     writes: Waiters,
+    pollers: poll::Subscribers,
 }
 
 pub(super) struct End {
@@ -27,6 +29,7 @@ impl End {
             writer: true,
             reads: Waiters::default(),
             writes: Waiters::default(),
+            pollers: poll::Subscribers::default(),
         }));
         (
             Self {
@@ -38,6 +41,34 @@ impl End {
                 pipe,
             },
         )
+    }
+
+    pub fn readiness(
+        &self,
+        events: i16,
+        waker: Option<&Arc<core::task::Waker>>,
+    ) -> core::result::Result<i16, isize> {
+        let mut pipe = self.pipe.borrow();
+        let mut result = 0;
+        if self.read_end {
+            if !pipe.data.is_empty() {
+                result |= events & poll::READ;
+            }
+            if !pipe.writer {
+                result |= poll::HANGUP;
+            }
+        } else {
+            if pipe.data.len() < CAPACITY {
+                result |= events & poll::WRITE;
+            }
+            if !pipe.reader {
+                result |= poll::ERROR;
+            }
+        }
+        if result == 0 {
+            pipe.pollers.subscribe(waker)?;
+        }
+        Ok(result)
     }
 
     pub fn read(&self, cx: &Context, out: &mut [u8]) -> Poll<Result<usize>> {
@@ -57,6 +88,7 @@ impl End {
         out[..split].copy_from_slice(&head[..split]);
         out[split..count].copy_from_slice(&tail[..count - split]);
         pipe.data.drain(..count);
+        pipe.pollers.wake();
         pipe.writes.wake();
         Poll::Ready(Ok(count))
     }
@@ -78,6 +110,7 @@ impl End {
         }
         let count = data.len().min(space);
         pipe.data.extend(&data[..count]);
+        pipe.pollers.wake();
         pipe.reads.wake();
         Poll::Ready(Ok(count))
     }
@@ -85,6 +118,7 @@ impl End {
 impl Drop for End {
     fn drop(&mut self) {
         let mut pipe = self.pipe.borrow();
+        pipe.pollers.wake();
         if self.read_end {
             pipe.reader = false;
             pipe.writes.wake();

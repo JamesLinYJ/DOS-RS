@@ -7,7 +7,7 @@ use crate::{
 };
 use alloc::vec;
 use core::task::Waker;
-use dosrs_native_exec::{ANON_BASE, END, Machine};
+use dosrs_native_exec::{ANON_BASE, Machine, STACK_TOP};
 
 pub(crate) fn run() -> Result<(), &'static str> {
     if crate::platform::cpu_count() < 2 {
@@ -44,7 +44,7 @@ pub(crate) fn run() -> Result<(), &'static str> {
         space.prepare()?;
         space.write(page, &[0])?;
         let root = space.page_table();
-        let thread = Thread::try_new(space.entry, END - 32, 0, 0)?;
+        let thread = Thread::try_new(space.entry, STACK_TOP - 32, 0, 0)?;
         let result = Completion::new()?;
         user::submit(1, thread, root.clone(), &result, Waker::noop())
             .map_err(|_| "AP work submission failed")?;

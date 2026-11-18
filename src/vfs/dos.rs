@@ -86,7 +86,7 @@ pub fn resolve_dir(path: &[u8]) -> Option<u32> {
     let (base, path) = path_start(path)?;
     walk(base, path)
 }
-fn walk(mut dir: u32, path: &[u8]) -> Option<u32> {
+pub(super) fn walk(mut dir: u32, path: &[u8]) -> Option<u32> {
     for part in path.split(|b| matches!(*b, b'/' | b'\\')) {
         if part.is_empty() || part == b"." {
             continue;
@@ -103,6 +103,16 @@ pub fn path_start(path: &[u8]) -> Option<(u32, &[u8])> {
     directories().start(working_directory(), path)
 }
 
+/// POSIX-visible absolute names for mounted DOS drives.
+pub(crate) fn mount_path(path: &[u8]) -> Option<(u8, &[u8])> {
+    let tail = path.strip_prefix(b"/dos/")?;
+    let (&letter, rest) = tail.split_first()?;
+    if !(b'a'..=b'c').contains(&letter) || !(rest.is_empty() || rest.starts_with(b"/")) {
+        return None;
+    }
+    Some((letter - b'a', rest))
+}
+
 impl Directories {
     fn start(self, current: u32, path: &[u8]) -> Option<(u32, &[u8])> {
         let (dir, tail) = if path.get(1) == Some(&b':') {
@@ -116,7 +126,14 @@ impl Directories {
         Some((if absolute { root(dir) } else { dir }, tail))
     }
 
+    pub(super) fn active(self) -> u8 {
+        self.active
+    }
+
     pub fn locate(self, path: &[u8]) -> Option<(u32, &[u8])> {
+        if let Some((drive, rest)) = mount_path(path) {
+            return Some((drive_root(drive)?, rest));
+        }
         self.start(self.paths[usize::from(self.active)], path)
     }
 }

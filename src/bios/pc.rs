@@ -129,7 +129,7 @@ impl Keyboard {
             if ch == 0 {
                 return None;
             }
-            if self.ctrl != 0 && ch.is_ascii_alphabetic() {
+            if self.ctrl != 0 && (ch.is_ascii_alphabetic() || matches!(ch, b'[' | b'\\' | b']')) {
                 ch & 0x1f
             } else if (self.shift != 0) ^ (ch.is_ascii_alphabetic() && self.caps) {
                 upper[usize::from(scan)]
@@ -301,6 +301,9 @@ pub(crate) fn position(row: u8, col: u8) {
 }
 pub(crate) fn enable_terminals() {
     CONSOLES.borrow().multiplexed = true;
+}
+pub(crate) fn terminal_geometry() -> (usize, u16, u16) {
+    (CONSOLES.borrow().running, ROWS as u16, COLS as u16)
 }
 pub(crate) fn route_output(id: usize) {
     CONSOLES.borrow().running = id;

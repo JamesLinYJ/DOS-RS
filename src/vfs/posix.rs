@@ -1,0 +1,251 @@
+//! Native process directory and credentials, separate from the DOS drive context.
+use super::{Directories, File, btrfs};
+use alloc::vec::Vec;
+use dosrs_native_posix::{Errno, Open, Result};
+
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum PosixDir {
+    Btrfs(u64),
+    Mount(super::mounts::MountDir),
+}
+impl PosixDir {
+    pub(crate) fn inode(self) -> Result<u64> {
+        match self {
+            Self::Btrfs(n) => Ok(n),
+            Self::Mount(_) => Err(Errno::CrossDevice),
+        }
+    }
+}
+pub(crate) const ROOT_INODE: u64 = 256;
+pub(crate) const ROOT: PosixDir = PosixDir::Btrfs(ROOT_INODE);
+#[derive(Clone, Copy)]
+pub(crate) struct Credentials<'a> {
+    pub uid: u32,
+    pub gid: u32,
+    pub groups: &'a [u32],
+}
+impl Credentials<'_> {
+    pub(crate) fn in_group(self, gid: u32) -> bool {
+        self.gid == gid || self.groups.binary_search(&gid).is_ok()
+    }
+}
+pub(crate) const ADMIN: Credentials<'static> = Credentials { uid: 0, gid: 0, groups: &[] };
+#[derive(Clone, Copy)]
+pub(crate) struct Times {
+    pub value: [Option<(i64, u32)>; 2],
+    pub both_now: bool,
+}
+
+pub(crate) enum Attribute {
+    Access(u32),
+    Mode(u32),
+    Owner(u32, u32),
+    Times(Times),
+}
+pub(crate) use btrfs::posix::capacity;
+#[cfg(not(test))]
+pub(crate) use btrfs::posix::{
+    change_at, check_access, chmod, chown, link, link_at, mkdir, rename, rename_at, rmdir, symlink,
+    unlink,
+};
+
+pub(crate) fn pin_directory(dir: PosixDir) -> Result<File> {
+    if let PosixDir::Mount(node) = dir {
+        return Ok(alloc::boxed::Box::new(node));
+    }
+    btrfs::posix::pin_directory(dir)
+}
+/// Reconstruct the physical name, including the NUL copied to userspace.
+pub(crate) fn getcwd(dir: PosixDir, size: usize) -> Result<Vec<u8>> {
+    if let PosixDir::Mount(node) = dir {
+        let mut path = node.path();
+        if path.len() >= size {
+            return Err(Errno::Range);
+        }
+        path.push(0);
+        return Ok(path);
+    }
+    btrfs::posix::getcwd(dir, size)
+}
+pub(crate) fn chdir(
+    dos: Directories,
+    dir: PosixDir,
+    path: &[u8],
+    who: Credentials,
+) -> Result<PosixDir> {
+    let path = super::mounts::qualify(dir, path);
+    if let Some(node) = super::mounts::MountDir::from_path(&path) {
+        return Ok(PosixDir::Mount(node));
+    }
+    if mount_namespace(&path) {
+        stat(dir, &path, who, true)?;
+        return Err(Errno::NotDirectory);
+    }
+    if !native(&path) {
+        if let Some(node) = super::mounts::MountDir::on_dos_root(dos, &path) {
+            return Ok(PosixDir::Mount(node));
+        }
+        super::open_dos(
+            dos,
+            core::str::from_utf8(&path).map_err(|_| Errno::Invalid)?,
+            Open::READ,
+        )?;
+        return Err(Errno::NotDirectory);
+    }
+    btrfs::posix::chdir(dir, &path, who)
+}
+pub(crate) fn stat(dir: PosixDir, path: &[u8], who: Credentials, follow: bool) -> Result<Metadata> {
+    let path = super::mounts::qualify(dir, path);
+    if let Some(node) = super::mounts::MountDir::from_path(&path) {
+        return super::Node::metadata(&node);
+    }
+    if super::dos::mount_path(&path).is_some() {
+        return super::open_dos(
+            Directories::ROOTS,
+            core::str::from_utf8(&path).map_err(|_| Errno::Invalid)?,
+            Open::READ,
+        )?
+        .0
+        .metadata();
+    }
+    if mount_namespace(&path) {
+        return Err(Errno::NoEntry);
+    }
+    btrfs::posix::stat(dir, &path, who, follow)
+}
+pub(crate) fn readlink(dir: PosixDir, path: &[u8], who: Credentials) -> Result<Vec<u8>> {
+    let path = super::mounts::qualify(dir, path);
+    if mount_namespace(&path) {
+        stat(dir, &path, who, false)?;
+        return Err(Errno::Invalid);
+    }
+    btrfs::posix::readlink(dir, &path, who)
+}
+pub(crate) fn is_mount_point(dir: PosixDir, path: &[u8]) -> bool {
+    super::mounts::MountDir::from_path(&super::mounts::qualify(dir, path))
+        .is_some_and(super::mounts::MountDir::mount_point)
+}
+pub(crate) fn mount_namespace(path: &[u8]) -> bool {
+    path == b"/dos" || path.starts_with(b"/dos/")
+}
+pub(crate) fn native(path: &[u8]) -> bool {
+    btrfs::is_mounted()
+        && !mount_namespace(path)
+        && !(path.len() >= 2 && path[0].is_ascii_alphabetic() && path[1] == b':')
+}
+pub(crate) fn initial(dos: Directories) -> PosixDir {
+    let Some((dir, _)) = dos.locate(b"") else {
+        return ROOT;
+    };
+    #[cfg(not(test))]
+    if super::driver::btrfs_drive() && dir & super::driver::HARD != 0 {
+        return btrfs::posix::from_dos(dir).unwrap_or(ROOT);
+    }
+    if !btrfs::is_mounted() {
+        return PosixDir::Mount(super::mounts::MountDir::Drive {
+            letter: dos.active(),
+            cluster: dir,
+            at_root: true,
+        });
+    }
+    ROOT
+}
+pub(crate) fn open(
+    dos: Directories,
+    cwd: PosixDir,
+    path: &[u8],
+    flags: Open,
+    mode: u32,
+    credentials: Credentials,
+    executable: bool,
+) -> Result<(File, bool)> {
+    let name = super::mounts::qualify(cwd, path);
+    let path = name.as_ref();
+    if path.is_empty() {
+        return Err(Errno::NoEntry);
+    }
+    let directory = super::mounts::MountDir::from_path(path).or_else(|| {
+        if !mount_namespace(path) && !native(path) {
+            super::mounts::MountDir::on_dos_root(dos, path)
+        } else {
+            None
+        }
+    });
+    if let Some(node) = directory {
+        if executable {
+            return Err(Errno::Access);
+        }
+        if flags.create && flags.exclusive {
+            return Err(Errno::Exists);
+        }
+        if flags.access.writable() || flags.truncate {
+            return Err(Errno::IsDirectory);
+        }
+        return Ok((alloc::boxed::Box::new(node), false));
+    }
+    if mount_namespace(path) && super::dos::mount_path(path).is_none() {
+        return Err(Errno::NoEntry);
+    }
+    if native(path) {
+        let (object, dirty) = btrfs::posix::open(cwd, path, flags, mode, credentials, executable)?;
+        return Ok((alloc::boxed::Box::new(object), dirty));
+    }
+    let (file, dirty) = super::open_dos(
+        dos,
+        core::str::from_utf8(path).map_err(|_| Errno::Invalid)?,
+        flags,
+    )?;
+    // ENOEXEC is reserved for an executable file with an unknown format.
+    // Returning it for a directory makes execvp try to interpret the directory
+    // as a shell script instead of continuing its PATH search.
+    if executable && file.metadata()?.mode & 0o170000 != 0o100000 {
+        return Err(Errno::Access);
+    }
+    Ok((file, dirty))
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Metadata {
+    pub dev: u64,
+    pub rdev: u32,
+    pub ino: u64,
+    pub size: u64,
+    pub blocks: u64,
+    pub mode: u32,
+    pub nlink: u32,
+    pub uid: u32,
+    pub gid: u32,
+    pub times: [(i64, u32); 3],
+}
+impl Metadata {
+    pub(crate) fn bytes(self) -> [u8; 96] {
+        let mut out = [0; 96];
+        for (offset, word) in [self.dev, self.ino, self.size, self.blocks]
+            .into_iter()
+            .enumerate()
+        {
+            out[offset * 8..offset * 8 + 8].copy_from_slice(&word.to_le_bytes());
+        }
+        for (offset, word) in [self.mode, self.nlink, self.uid, self.gid]
+            .into_iter()
+            .enumerate()
+        {
+            let i = 32 + offset * 4;
+            out[i..i + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        for (i, (sec, nsec)) in self.times.into_iter().enumerate() {
+            let i = 48 + i * 16;
+            out[i..i + 8].copy_from_slice(&sec.to_le_bytes());
+            out[i + 8..i + 12].copy_from_slice(&nsec.to_le_bytes());
+        }
+        // The first timestamp's reserved word carries the encoded device
+        // number without changing the 96-byte ABI of existing binaries.
+        out[60..64].copy_from_slice(&self.rdev.to_le_bytes());
+        out
+    }
+}
+pub(crate) struct DirEntry {
+    pub ino: u64,
+    pub kind: u8,
+    pub name: Vec<u8>,
+}
