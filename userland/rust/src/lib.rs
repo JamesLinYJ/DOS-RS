@@ -24,6 +24,7 @@ pub mod ffi {
         pub fn write(fd: i32, p: *const u8, count: usize) -> isize;
         pub fn open(name: *const i8, flags: i32, ...) -> i32;
         pub fn close(fd: i32) -> i32;
+        pub fn kill(pid: i32, signal: i32) -> i32;
         pub fn faccessat(dir: i32, name: *const i8, mode: i32, flags: i32) -> i32;
         pub fn lseek(fd: i32, offset: i64, whence: i32) -> i64;
         pub fn __errno_location() -> *mut i32;
@@ -125,6 +126,13 @@ pub fn open(name: &CStr, flags: i32) -> Result<i32, i32> {
 }
 pub fn close(fd: i32) -> Result<(), i32> {
     if unsafe { ffi::close(fd) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+pub fn send_signal(pid: i32, signal: i32) -> Result<(), i32> {
+    if unsafe { ffi::kill(pid, signal) } < 0 {
         Err(errno())
     } else {
         Ok(())

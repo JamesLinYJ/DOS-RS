@@ -89,14 +89,16 @@ def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None,*,s
     if programs:
         snapshot = work / "programs"
         snapshot.mkdir()
-        for name in ("sh", "cat", "wc", "echo"):
+        for name in installer.replay_programs(programs):
             shutil.copyfile(programs/name, snapshot/name)
             inputs[name] = hashlib.sha256((snapshot/name).read_bytes()).hexdigest()
         programs = snapshot
     # Publish frozen inputs before the VM run so failure records retain them too.
     (proof/(arch+"-inputs.json")).write_text(json.dumps(inputs,indent=2)+"\n")
     expected = {"count.txt": b"21254\n", "copy.bin": shell.DATA, "a.txt": shell.DATA}
-    std_tools = volume is None and programs is None and bool(os.environ.get("DOSRS_UUTILS_ARCHIVE"))
+    std_tools = volume is None and (
+        (programs / "base64").is_file() if programs else bool(os.environ.get("DOSRS_UUTILS_ARCHIVE"))
+    )
     fixture_sha256 = {}
     if volume is None:
         data.mkdir()
@@ -201,7 +203,7 @@ if __name__=="__main__":
     cli.add_argument("--proof",type=Path,default=qemu.ROOT/"target/posix-install-proof")
     cli.add_argument("--archive",type=Path,help="retain the checked stopped disk as a new gzip archive")
     cli.add_argument("--kernel",type=Path,help="use a frozen kernel for the selected native architecture")
-    cli.add_argument("--programs",type=Path,help="use that architecture's sh, cat, wc and echo for the root volume")
+    cli.add_argument("--programs",type=Path,help="use that architecture's sh, cat, wc, echo and optional base64 for the root volume")
     cli.add_argument("--probes",type=Path,help="use that architecture's execprog and dirprobe ELF probes")
     args=cli.parse_args()
     if args.root_image and (args.programs or args.probes):

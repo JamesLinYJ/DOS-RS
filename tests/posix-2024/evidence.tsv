@@ -1,4 +1,8 @@
 source	item	i686	x86_64	test	behavior
+functions/popen.html#tag_17_379	popen	partial	partial	qemu-libc-test.py#functional/popen	Open read and write pipes to shell commands with installed ELF dependencies
+functions/pclose.html#tag_17_375	pclose	partial	partial	qemu-libc-test.py#functional/popen	Wait for shell commands in both pipe directions and report their exit status
+functions/posix_spawn.html#tag_17_388	posix_spawnp	partial	partial	qemu-libc-test.py#functional/spawn	Search PATH for echo and apply close and dup2 file actions to the child
+utilities/kill.html#tag_20_64	kill	partial	partial	qemu-libc-test.py#functional/popen,functional/vfork	Send named USR1 and numeric KILL from the independent kill ELF to a process ID
 utilities/getopts.html#tag_20_53	getopts	partial	partial	tests/user-shell/getopts.sh,tests/user-shell/variables.sh	Grouped options, attached/separate/empty arguments, silent errors, unset OPTARG, reset via assignment/export/read/arithmetic, subshell cursor, function and explicit operands; readonly destination errors preserve the value; full locale coverage remains open
 utilities/cat.html#tag_20_13	cat	partial	partial	qemu-coreutils.py#0..22	File operands, stdin, repeated operands, byte preservation and option/IO errors
 utilities/wc.html#tag_20_148	wc	partial	partial	qemu-coreutils.py#23..45,80..83	C and C.UTF-8, bytes/lines/words/characters/width, multiple operands, errors and totals

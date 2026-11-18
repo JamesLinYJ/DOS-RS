@@ -53,6 +53,7 @@ pub fn diagnostic(tool: &[u8], path: &[u8], errno: i32) {
     let message: &[u8] = match errno {
         1 => b"Operation not permitted",
         2 => b"No such file or directory",
+        3 => b"No such process",
         5 => b"Input/output error",
         9 => b"Bad file descriptor",
         12 => b"Cannot allocate memory",

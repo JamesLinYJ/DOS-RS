@@ -26,6 +26,8 @@ python3 scripts/qemu-libc-test.py --arch i686 --arch x86_64 --build-dir target/l
 
 `--kernel` accepts one frozen kernel with exactly one `--arch`. Every result identifies the executing 32-bit i686 BIOS or 64-bit x86_64 UEFI kernel. The 16-bit DOS line has its own acceptance suite.
 
+The test root uses the same `/dev/null` device seeder as the installed system. For cases that invoke other programs, pass `--programs DIR` with executable dependencies at `DIR/i686/PROGRAM` and `DIR/x86_64/PROGRAM`. The runner records their SHA-256 values. The `popen`, `spawn` and `vfork` cases use the installed Rust `sh`, `echo`, `test` and `kill` executables.
+
 The guest records stdout, stderr and wait status for every case. After shutdown, Linux btrfs-progs checks and recovers the disk. A passing case must have zero exit status, empty output as required by upstream, and a trace confirming its own ELF path. Failures and timeouts remain in the result alongside successful cases. Issue 8 ledger updates require inspection of the assertions and their actual guest results. The full POSIX inventory remains the completion criterion.
 
 The upstream archive carries `COPYRIGHT` and `AUTHORS`. Its principal license is MIT. Some math-vector directories carry additional BSD or GPL notices, which remain in the pinned source archive.

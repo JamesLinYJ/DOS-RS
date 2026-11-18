@@ -16,6 +16,20 @@ MIB = 1 << 20
 SECTOR = 512
 
 
+def replay_programs(directory):
+    programs = ["sh", "cat", "wc", "echo"]
+    if (directory / "base64").is_file():
+        programs.append("base64")
+    return programs
+
+
+def seed_devices(volume):
+    subprocess.run(["cargo", "+stable", "run", "--locked", "--release",
+                    "--manifest-path", qemu.ROOT / "boot/posix-seed/Cargo.toml",
+                    "--target-dir", qemu.ROOT / "target/posix-seed",
+                    "--", volume], cwd=qemu.ROOT, check=True)
+
+
 def make_root(arch, work, extra, programs=None):
     tree = work / "root"
     if extra:
@@ -38,7 +52,7 @@ def make_root(arch, work, extra, programs=None):
         subprocess.run([sys.executable, qemu.ROOT/"scripts/build-rust-tools.py", "--arch", arch,
                         "--output", tree/"bin"], check=True)
     else:
-        for name in ("sh", "cat", "wc", "echo"):
+        for name in replay_programs(programs):
             shutil.copyfile(programs / name, tree / "bin" / name)
     for app in (tree/"bin").iterdir():
         if app.is_file(): app.chmod(0o755)
@@ -51,10 +65,7 @@ def make_root(arch, work, extra, programs=None):
             f.truncate(128*MIB)
         subprocess.run(["mkfs.btrfs", "-f", "-m", "single", "-d", "single", "-L", "DOSRS-ROOT",
                         "--rootdir", tree, volume], check=True)
-    subprocess.run(["cargo", "+stable", "run", "--locked", "--release",
-                    "--manifest-path", qemu.ROOT / "boot/posix-seed/Cargo.toml",
-                    "--target-dir", qemu.ROOT / "target/posix-seed",
-                    "--", volume], cwd=qemu.ROOT, check=True)
+    seed_devices(volume)
     return volume
 
 

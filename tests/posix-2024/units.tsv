@@ -1541,13 +1541,13 @@ functions	openat	base	functions/open.html#tag_17_372	partial	partial	ports/musl/
 functions	open_memstream	base	functions/open_memstream.html#tag_17_373	partial	partial	scripts/qemu-libc-test.py#functional/memstream
 functions	open_wmemstream	base	functions/open_memstream.html#tag_17_373	open	open	
 functions	pause	base	functions/pause.html#tag_17_374	open	open	
-functions	pclose	base	functions/pclose.html#tag_17_375	open	open	
+functions	pclose	base	functions/pclose.html#tag_17_375	partial	partial	qemu-libc-test.py#functional/popen
 functions	perror	base	functions/perror.html#tag_17_376	open	open	
 functions	pipe	base	functions/pipe.html#tag_17_377	partial	partial	native-exec/examples/family.c
 functions	pipe2	base	functions/pipe.html#tag_17_377	partial	partial	native-exec/examples/lockcheck.c
 functions	poll	base	functions/poll.html#tag_17_378	partial	partial	tests/native-poll/poll.c
 functions	ppoll	base	functions/poll.html#tag_17_378	partial	partial	tests/native-poll/poll.c
-functions	popen	base	functions/popen.html#tag_17_379	open	open	
+functions	popen	base	functions/popen.html#tag_17_379	partial	partial	qemu-libc-test.py#functional/popen
 functions	posix_devctl	DC	functions/posix_devctl.html#tag_17_380	open	open	
 functions	posix_fadvise	ADV	functions/posix_fadvise.html#tag_17_381	open	open	
 functions	posix_fallocate	ADV	functions/posix_fallocate.html#tag_17_382	open	open	
@@ -1557,7 +1557,7 @@ functions	posix_mem_offset	TYM	functions/posix_mem_offset.html#tag_17_385	open	o
 functions	posix_memalign	ADV	functions/posix_memalign.html#tag_17_386	open	open	
 functions	posix_openpt	XSI	functions/posix_openpt.html#tag_17_387	open	open	
 functions	posix_spawn	SPN	functions/posix_spawn.html#tag_17_388	partial	partial	scripts/qemu-local-sockets.py
-functions	posix_spawnp	SPN	functions/posix_spawn.html#tag_17_388	open	open	
+functions	posix_spawnp	SPN	functions/posix_spawn.html#tag_17_388	partial	partial	qemu-libc-test.py#functional/spawn
 functions	posix_spawn_file_actions_addchdir	SPN	functions/posix_spawn_file_actions_addchdir.html#tag_17_389	open	open	
 functions	posix_spawn_file_actions_addfchdir	SPN	functions/posix_spawn_file_actions_addchdir.html#tag_17_389	open	open	
 functions	posix_spawn_file_actions_addclose	SPN	functions/posix_spawn_file_actions_addclose.html#tag_17_390	partial	partial	scripts/qemu-local-sockets.py
@@ -2227,7 +2227,7 @@ utilities	ipcrm	XSI	utilities/ipcrm.html#tag_20_60	open	open
 utilities	ipcs	XSI	utilities/ipcs.html#tag_20_61	open	open	
 utilities	jobs	UP	utilities/jobs.html#tag_20_62	open	open	
 utilities	join	base	utilities/join.html#tag_20_63	partial	partial	scripts/qemu-coreutils.py#294,295,296,297
-utilities	kill	base	utilities/kill.html#tag_20_64	open	open	
+utilities	kill	base	utilities/kill.html#tag_20_64	partial	partial	qemu-libc-test.py#functional/popen,functional/vfork
 utilities	lex	CD	utilities/lex.html#tag_20_65	open	open	
 utilities	link	XSI	utilities/link.html#tag_20_66	partial	partial	scripts/qemu-coreutils.py#125,126,127,128,129
 utilities	ln	base	utilities/ln.html#tag_20_67	partial	partial	scripts/qemu-coreutils.py#245,246,267

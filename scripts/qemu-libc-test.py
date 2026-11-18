@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
@@ -39,12 +40,21 @@ def run(arch, args):
     with tempfile.TemporaryDirectory(prefix="libc-test-", dir=args.ram_dir) as temporary:
         work = Path(temporary)
         tree = work / "seed"
-        for name in ("bin", "libctest", "tmp"):
+        for name in ("bin", "dev", "libctest", "tmp"):
             (tree / name).mkdir(parents=True)
         (tree / "tmp").chmod(0o1777)
         kernel = work / "kernel.efi"
         shutil.copyfile(source_kernel, kernel)
         timeout = tree / "bin/timeout"
+        programs = {}
+        if args.programs:
+            for executable in sorted((args.programs / arch).iterdir()):
+                if executable.name == timeout.name:
+                    raise ValueError("--timeout-dir supplies the timeout ELF")
+                binary = tree / "bin" / executable.name
+                shutil.copyfile(executable, binary)
+                binary.chmod(0o755)
+                programs[binary.name] = sha(binary)
         shutil.copyfile(args.timeout_dir / arch / "timeout", timeout)
         timeout.chmod(0o755)
         (tree / "z.txt").write_bytes(b"")
@@ -65,6 +75,7 @@ def run(arch, args):
                         qemu.ROOT / "tests/native-coreutils/driver.c"], check=True)
         disk = work / "root.img"
         coreutils.format_image(disk, tree, "btrfs", [], proof / "format.log")
+        runpy.run_path(str(qemu.ROOT / "scripts/posix-install-image.py"))["seed_devices"](disk)
         command = qemu.boot_args(kernel, arch, work / "boot", 2, mode, esp_mib=36)
         command.extend(["-device", "virtio-rng-pci", "-drive", f"if=ide,format=raw,file={disk}"])
         guest = Shell(command, proof / "serial.log", work)
@@ -106,6 +117,7 @@ def run(arch, args):
                     result["status"] = "timed_out"
             row.update(result)
         manifest.update(firmware=mode, kernel_sha256=sha(kernel), timeout_sha256=sha(timeout),
+                        program_sha256=programs,
                         driver_sha256=sha(tree / "probe.elf"), kernel_bits=32 if arch == "i686" else 64,
                         filesystem="btrfs", locale="C", timezone="UTC", runtime_error=error,
                         case_timeout_seconds=args.case_timeout,
@@ -125,6 +137,7 @@ if __name__ == "__main__":
     cli.add_argument("--ram-dir", required=True, type=Path)
     cli.add_argument("--build-dir", default=qemu.ROOT / "target/libc-test", type=Path)
     cli.add_argument("--timeout-dir", required=True, type=Path)
+    cli.add_argument("--programs", type=Path, help="optional directories of native ARCH/PROGRAM ELF dependencies")
     cli.add_argument("--proof", default=qemu.ROOT / "target/libc-test-proof", type=Path)
     cli.add_argument("--linker-dir", type=Path)
     cli.add_argument("--case-timeout", default=15, type=int, choices=range(1, 61))
