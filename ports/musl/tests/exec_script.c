@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int main(void)
@@ -20,9 +21,23 @@ int main(void)
         perror("prepare script");
         return 1;
     }
-    if (setenv("PATH", ".:/bin", 1) || setenv("SCRIPT_VALUE", "inherited", 1)) return 2;
+    // The runner supplies this directory on both FAT and Btrfs. Keep the exec
+    // assertions independent of directory-creation support on a shared mount.
+    struct stat directory;
+    if (stat("execdir/plaincmd", &directory) || !S_ISDIR(directory.st_mode)) {
+        fputs("exec: missing directory fixture execdir/plaincmd\n", stderr);
+        return 8;
+    }
+    if (setenv("PATH", "execdir:.:/bin", 1) || setenv("SCRIPT_VALUE", "inherited", 1)) return 2;
     char *av[] = {"ignored argv0", "two words", "", NULL};
     char *ev[] = {"SCRIPT_VALUE=explicit", NULL};
+    const char *directories[] = {".", "/", "./execdir/plaincmd", "./execdir/plaincmd/"};
+    for (unsigned i = 0; i < sizeof directories / sizeof *directories; ++i) {
+        if (execve(directories[i], av, ev) != -1 || errno != EACCES) {
+            perror("direct execve directory expected EACCES");
+            return 9;
+        }
+    }
     if (execve("./plaincmd", av, ev) != -1 || errno != ENOEXEC) {
         perror("direct execve expected ENOEXEC");
         return 3;
@@ -61,5 +76,6 @@ int main(void)
         return 7;
     }
     puts("exec: ENOEXEC, PATH, argv and environment passed");
+    puts("exec: directories rejected with EACCES; PATH skipped directories");
     return 0;
 }

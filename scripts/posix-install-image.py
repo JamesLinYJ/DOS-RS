@@ -16,7 +16,7 @@ MIB = 1 << 20
 SECTOR = 512
 
 
-def make_root(arch, work, extra):
+def make_root(arch, work, extra, programs=None):
     tree = work / "root"
     if extra:
         shutil.copytree(extra, tree, symlinks=True)
@@ -34,8 +34,12 @@ def make_root(arch, work, extra):
                 continue
             dest.chmod(0o644)
     (tree/"tmp").chmod(0o1777)
-    subprocess.run([sys.executable, qemu.ROOT/"scripts/build-rust-tools.py", "--arch", arch,
-                    "--output", tree/"bin"], check=True)
+    if programs is None:
+        subprocess.run([sys.executable, qemu.ROOT/"scripts/build-rust-tools.py", "--arch", arch,
+                        "--output", tree/"bin"], check=True)
+    else:
+        for name in ("sh", "cat", "wc", "echo"):
+            shutil.copyfile(programs / name, tree / "bin" / name)
     for app in (tree/"bin").iterdir():
         if app.is_file(): app.chmod(0o755)
     volume = work / "root.img"
@@ -60,7 +64,7 @@ def fat(work, name, size, label, kernel=None, arch=None):
     return image
 
 
-def assemble(arch, output, ram_dir, volume=None, tree=None, trace=False):
+def assemble(arch, output, ram_dir, volume=None, tree=None, trace=False, *, kernel=None, programs=None):
     if output.exists():
         raise FileExistsError(output)
     if volume:
@@ -70,8 +74,8 @@ def assemble(arch, output, ram_dir, volume=None, tree=None, trace=False):
                 raise ValueError("expected a raw Btrfs volume")
     with tempfile.TemporaryDirectory(dir=ram_dir) as temporary:
         work=Path(temporary)
-        kernel=qemu.build(arch,qemu.ROOT/"target",features="exec-trace" if trace else None)
-        root=volume or make_root(arch,work,tree)
+        kernel=kernel or qemu.build(arch,qemu.ROOT/"target",features="exec-trace" if trace else None)
+        root=volume or make_root(arch,work,tree,programs)
         c=fat(work,"shared.img",36,"DOS-SHARED")
         disk=work/"system.img"
         if arch=="i686":

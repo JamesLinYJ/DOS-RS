@@ -1,0 +1,23 @@
+function:shadow
+external
+nested
+changed-directory
+shift:1:two
+set:2:alpha:two words
+function-only:127
+function_only
+function-description
+export
+cd
+if
+special-description
+builtin-description
+reserved-description
+query-missing
+missing-query-silent
+default-path
+/bin/cat
+/bin/cat
+external-description
+preserved-path:./SUB
+readonly-path

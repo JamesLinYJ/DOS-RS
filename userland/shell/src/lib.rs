@@ -7,6 +7,7 @@ mod getopts;
 mod here_input;
 mod input;
 mod jobs;
+mod lookup;
 mod options;
 mod redirection;
 mod source;
@@ -67,7 +68,7 @@ struct Variable {
     readonly: bool,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum CommandKind {
     Special,
     Function,
@@ -78,6 +79,7 @@ enum CommandKind {
 struct Invocation {
     words: Vec<String>,
     assignments: Vec<(String, String)>,
+    action: lookup::Action,
 }
 
 struct Shell {
@@ -100,6 +102,8 @@ struct Shell {
     noglob: bool,
     nounset: bool,
     exiting: bool,
+    requested_exit: bool,
+    regular_builtin: bool,
 }
 impl Shell {
     fn new(args: Vec<String>, env: &[String]) -> Self {
@@ -150,6 +154,8 @@ impl Shell {
             noglob: false,
             nounset: false,
             exiting: false,
+            requested_exit: false,
+            regular_builtin: false,
         }
     }
     fn get(&self, key: &str) -> &str {
@@ -164,8 +170,17 @@ impl Shell {
                 self.exiting = !self.interactive;
             })
     }
-    fn external(&self, words: &[String], assignments: &[(String, String)]) -> i32 {
+    fn external(
+        &self,
+        words: &[String],
+        assignments: &[(String, String)],
+        default_path: bool,
+    ) -> i32 {
         let name = &words[0];
+        if name.is_empty() {
+            diagnostic("empty command name");
+            return 127;
+        }
         let variables = self
             .vars
             .iter()
@@ -191,11 +206,15 @@ impl Shell {
         };
         let av = vector(&argv);
         let ev = vector(&env);
-        let path = assignments
-            .iter()
-            .rev()
-            .find(|(k, _)| k == "PATH")
-            .map_or(self.get("PATH"), |(_, v)| v);
+        let path = if default_path {
+            lookup::DEFAULT_PATH
+        } else {
+            assignments
+                .iter()
+                .rev()
+                .find(|(k, _)| k == "PATH")
+                .map_or(self.get("PATH"), |(_, v)| v)
+        };
         let mut denied = false;
         let mut attempt = |filename: &str| -> Option<i32> {
             let file = CString::new(filename).ok()?;
@@ -243,13 +262,13 @@ impl Shell {
         ));
         if denied { 126 } else { 127 }
     }
-    fn command_kind(&self, name: &str) -> CommandKind {
+    fn command_kind(&self, name: &str, functions: bool) -> CommandKind {
         match name {
             "." | ":" | "break" | "continue" | "eval" | "exec" | "exit" | "export" | "readonly"
             | "return" | "set" | "shift" | "unset" => CommandKind::Special,
-            _ if self.functions.contains_key(name) => CommandKind::Function,
+            _ if functions && self.functions.contains_key(name) => CommandKind::Function,
             "true" | "false" | "cd" | "pwd" | "read" | "getopts" | "wait" | "jobs" | "fg"
-            | "bg" => CommandKind::Builtin,
+            | "bg" | "command" => CommandKind::Builtin,
             _ => CommandKind::External,
         }
     }
@@ -318,6 +337,7 @@ impl Shell {
                     return Some(1);
                 }
                 self.exiting = true;
+                self.requested_exit = true;
                 args.first().map_or(self.last, |s| {
                     s.parse::<i64>().map_or(2, |n| (n & 255) as i32)
                 })
@@ -394,7 +414,11 @@ impl Shell {
                     last
                 }
             }
-            "exec" if !args.is_empty() => self.external(args, &[]),
+            "exec" if !args.is_empty() => {
+                let status = self.external(args, &[], false);
+                self.special_failure();
+                status
+            }
             "exec" => 0,
             _ => return None,
         };
@@ -406,10 +430,7 @@ impl Shell {
         let mut assignments: Vec<(String, String)> = Vec::new();
         let mut words = Vec::new();
         for word in &command.words {
-            if (words.is_empty()
-                || words
-                    .first()
-                    .is_some_and(|s| s == "export" || s == "readonly"))
+            if (words.is_empty() || self.declaration(&words))
                 && let Some(Part::Literal(first)) = word.first()
                 && let Some((key, _)) = first.split_once('=')
                 && syntax::identifier(key)
@@ -434,7 +455,12 @@ impl Shell {
                 return Err(());
             }
         }
-        Ok(Invocation { words, assignments })
+        let action = self.resolve(&words);
+        Ok(Invocation {
+            words,
+            assignments,
+            action,
+        })
     }
     fn command(&mut self, command: &syntax::Command, child: bool) -> i32 {
         match self.invocation(command) {
@@ -443,15 +469,16 @@ impl Shell {
         }
     }
     fn invoke(&mut self, command: &syntax::Command, child: bool, invocation: Invocation) -> i32 {
-        let Invocation { words, assignments } = invocation;
-        let permanent = words.as_slice() == ["exec"];
+        let Invocation {
+            words,
+            assignments,
+            action,
+        } = invocation;
+        let permanent = action.permanent_redirect(&words);
         let saved = match redirection::apply(self, &command.redirects, !child) {
             Ok(saved) => saved,
             Err(()) => {
-                if words
-                    .first()
-                    .is_some_and(|name| self.command_kind(name) == CommandKind::Special)
-                {
+                if action.special() {
                     self.exiting = !self.interactive;
                 }
                 return 1;
@@ -470,26 +497,65 @@ impl Shell {
             }
             status
         } else {
-            let kind = self.command_kind(&words[0]);
-            match kind {
-                CommandKind::External => self.external(&words, &assignments),
-                CommandKind::Function => {
-                    let body = self.functions[&words[0]].clone();
-                    self.call_function(&body, &words, assignments)
-                }
-                CommandKind::Builtin | CommandKind::Special => match self.prefix(assignments) {
-                    Ok(old) => {
-                        let status = self.builtin(&words).unwrap();
-                        if kind == CommandKind::Builtin {
-                            self.restore_prefix(old);
+            match action {
+                lookup::Action::Execute {
+                    first,
+                    kind,
+                    wrapped,
+                    default_path,
+                } => {
+                    let words = &words[first..];
+                    match kind {
+                        CommandKind::External => self.external(words, &assignments, default_path),
+                        CommandKind::Function => {
+                            let body = self.functions[&words[0]].clone();
+                            self.call_function(&body, words, assignments)
                         }
+                        CommandKind::Builtin | CommandKind::Special => {
+                            match self.prefix(assignments) {
+                                Ok(old) => {
+                                    let regular = kind == CommandKind::Builtin || wrapped;
+                                    let previous =
+                                        core::mem::replace(&mut self.regular_builtin, regular);
+                                    let status = self.builtin(words).unwrap();
+                                    self.regular_builtin = previous;
+                                    // An error in eval/dot stops that evaluation,
+                                    // but command suppresses the special builtin's
+                                    // abort of its caller. An explicit exit still
+                                    // leaves the shell, including from a script.
+                                    if wrapped && !self.requested_exit {
+                                        self.exiting = false;
+                                    }
+                                    if regular {
+                                        self.restore_prefix(old);
+                                    }
+                                    status
+                                }
+                                Err(()) => {
+                                    self.exiting = !self.interactive;
+                                    1
+                                }
+                            }
+                        }
+                    }
+                }
+                lookup::Action::Describe {
+                    first,
+                    verbose,
+                    default_path,
+                } => match self.prefix(assignments) {
+                    Ok(old) => {
+                        let status = self.describe(&words[first..], verbose, default_path);
+                        self.restore_prefix(old);
                         status
                     }
-                    Err(()) => {
-                        self.exiting = !self.interactive;
-                        1
-                    }
+                    Err(()) => 1,
                 },
+                lookup::Action::Empty => 0,
+                lookup::Action::Invalid => {
+                    diagnostic("command: invalid options or missing query operand");
+                    127
+                }
             }
         };
         redirection::finish(saved, !permanent);
@@ -501,9 +567,8 @@ impl Shell {
             let Ok(call) = self.invocation(&p.commands[0]) else {
                 return 1;
             };
-            let name = call.words.first().map(String::as_str);
             if !matches!(p.commands[0].compound, Some(syntax::Compound::Subshell(_)))
-                && name.is_none_or(|name| self.command_kind(name) != CommandKind::External)
+                && !call.action.external()
             {
                 return self.invoke(&p.commands[0], false, call);
             }

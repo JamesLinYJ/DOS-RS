@@ -62,6 +62,12 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
             vm.command("sh srcerr.sh > srcerr.out", prompt=b"$ ", timeout=180)
             vm.command("echo $? > srcerr.rc", prompt=b"$ ")
             vm.command(". ./large.sh > dotlarge.bin", prompt=b"$ ", timeout=180)
+            vm.command("sh command.sh > command.out", prompt=b"$ ", timeout=300)
+            vm.command("echo $? > command.rc", prompt=b"$ ")
+            vm.command("sh cmdstate.sh > cmdstate.out", prompt=b"$ ", timeout=300)
+            vm.command("echo $? > cmdstate.rc", prompt=b"$ ")
+            vm.command("sh cmderror.sh > cmderror.out", prompt=b"$ ", timeout=300)
+            vm.command("echo $? > cmderror.rc", prompt=b"$ ")
             vm.command("eval : < ./absent", prompt=b"$ ", expect=b"redirection error")
             vm.command("echo $?", prompt=b"$ ", expect=b"1\r\n")
             vm.command(". ./missing.sh", prompt=b"$ ", expect=b"open error")
@@ -99,6 +105,8 @@ def exercise(args, arch, mode, root, serial, dual_volume=False, job_control=Fals
     trace = serial.read_bytes()
     if grammar and b"$ eval 'if ;'\r\n" not in trace:
         raise RuntimeError(f"{arch}: interactive eval input lost its quote or semicolon")
+    if grammar and b"exec: directories rejected with EACCES; PATH skipped directories" not in trace:
+        raise RuntimeError(f"{arch}: missing executable-directory assertions")
     for path in (b"/bin/sh", b"/bin/cat", b"/bin/wc", b"/bin/echo"):
         if b"path=" + path + b"\r\n" not in trace:
             raise RuntimeError(f"{arch}: missing executed path {path!r}")
@@ -118,6 +126,11 @@ def script_fixture(fixture, work):
     (fixture / "SUB/ONE.TX").write_bytes(b"one")
     (fixture / "SUB/TWO.TX").write_bytes(b"two")
     (fixture / "SUB/pick.sh").mkdir()
+    (fixture / "CMDDIR/cat").mkdir(parents=True)
+    (fixture / "execdir/plaincmd").mkdir(parents=True)
+    (fixture / "cmdsrc.sh").write_bytes(b"sourced=$token\n")
+    (fixture / "cmdbad.sh").write_bytes(b"export 1bad\necho BAD-inner\n")
+    (fixture / "cmddata.txt").write_bytes(b"disk-command\n")
     (fixture / "empty.sh").write_bytes(b"")
     (fixture / "comment.sh").write_bytes(b"# no commands\n\n")
     (fixture / "noend.sh").write_bytes(b"echo no-final-newline")
@@ -131,6 +144,8 @@ def script_fixture(fixture, work):
     shutil.copyfile(qemu.ROOT / "tests/user-shell/source.sh", fixture / "source.sh")
     shutil.copyfile(qemu.ROOT / "tests/user-shell/source-args.sh", fixture / "srcargs.sh")
     shutil.copyfile(qemu.ROOT / "tests/user-shell/source-errors.sh", fixture / "srcerr.sh")
+    for source, target in [("command", "command"), ("command-state", "cmdstate"), ("command-errors", "cmderror")]:
+        shutil.copyfile(qemu.ROOT / "tests/user-shell" / (source + ".sh"), fixture / (target + ".sh"))
     (fixture / "plain").chmod(0o755)
     reference_shell = os.environ.get("REFERENCE_SH") or shutil.which("dash") or "/bin/sh"
     with tempfile.TemporaryDirectory(dir=work) as temporary:
@@ -177,6 +192,9 @@ def script_fixture(fixture, work):
     expected["srcerr.out"] = (qemu.ROOT / "tests/user-shell/source-errors.expected").read_bytes()
     expected["srcerr.rc"] = b"61\n"
     expected["dotlarge.bin"] = HERE_DATA
+    for source, target, code in [("command", "command", 65), ("command-state", "cmdstate", 67), ("command-errors", "cmderror", 71)]:
+        expected[target + ".out"] = (qemu.ROOT / "tests/user-shell" / (source + ".expected")).read_bytes()
+        expected[target + ".rc"] = f"{code}\n".encode()
     return expected
 
 
@@ -210,6 +228,9 @@ def check(arch, root, proof, kernel=None, programs=None, probes=None):
             build_probe(arch, fixture / name)
         else:
             shutil.copyfile(probes / name, fixture / name)
+    fixture_sha256 = {str(path.relative_to(fixture)): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in sorted(fixture.rglob("*")) if path.is_file()}
+    (proof / (arch+"-fixtures.json")).write_text(json.dumps(fixture_sha256, indent=2)+"\n")
     subprocess.run(["mcopy", "-s", "-i", disk, *sorted(fixture.iterdir()), "::"], check=True)
     serial = proof / (arch+".serial")
     args=qemu.boot_args(kernel, arch, root / "boot", 4, mode, esp_mib=36)
@@ -238,6 +259,7 @@ def check(arch, root, proof, kernel=None, programs=None, probes=None):
                              for name in ("sh", "cat", "wc", "echo")}, "files": files,
                 "probes": {name: hashlib.sha256((fixture/name).read_bytes()).hexdigest()
                            for name in PROBES},
+                "fixture_sha256": fixture_sha256,
                 "passed": not mismatches, "mismatches": mismatches}
     (proof / (arch+".json")).write_text(json.dumps(manifest, indent=2)+"\n")
     if mismatches:

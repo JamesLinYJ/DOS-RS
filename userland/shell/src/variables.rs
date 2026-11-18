@@ -31,7 +31,7 @@ impl Shell {
 
     fn variable_builtin_error(&mut self, message: &str) -> i32 {
         diagnostic(message);
-        self.exiting = !self.interactive;
+        self.special_failure();
         1
     }
 
@@ -81,7 +81,7 @@ impl Shell {
             }
             if let Some(value) = value {
                 if self.set(name, value).is_err() {
-                    self.exiting = !self.interactive;
+                    self.special_failure();
                     return 1;
                 }
             }
@@ -125,7 +125,7 @@ impl Shell {
             if functions == Some(true) {
                 self.functions.remove(name);
             } else if self.unset_variable(name).is_err() {
-                self.exiting = !self.interactive;
+                self.special_failure();
                 return 1;
             }
         }

@@ -73,14 +73,30 @@ def archive_disk(disk, destination):
     return original.hexdigest()
 
 
-def run(arch,work,proof,volume,archive):
+def run(arch,work,proof,volume,archive,kernel=None,programs=None,probes=None):
     installer=module("posix-install-image")
     shell=module("qemu-user-shell")
     mode="bios" if arch=="i686" else "uefi"
     disk=work/"system.img"
     data=work/"tree"
+    inputs = {}
+    if kernel:
+        snapshot = work / "kernel.efi"
+        shutil.copyfile(kernel, snapshot)
+        kernel = snapshot
+        inputs["kernel"] = hashlib.sha256(kernel.read_bytes()).hexdigest()
+    if programs:
+        snapshot = work / "programs"
+        snapshot.mkdir()
+        for name in ("sh", "cat", "wc", "echo"):
+            shutil.copyfile(programs/name, snapshot/name)
+            inputs[name] = hashlib.sha256((snapshot/name).read_bytes()).hexdigest()
+        programs = snapshot
+    # Publish frozen inputs before the VM run so failure records retain them too.
+    (proof/(arch+"-inputs.json")).write_text(json.dumps(inputs,indent=2)+"\n")
     expected = {"count.txt": b"21254\n", "copy.bin": shell.DATA, "a.txt": shell.DATA}
-    std_tools = volume is None and bool(os.environ.get("DOSRS_UUTILS_ARCHIVE"))
+    std_tools = volume is None and programs is None and bool(os.environ.get("DOSRS_UUTILS_ARCHIVE"))
+    fixture_sha256 = {}
     if volume is None:
         data.mkdir()
         reference = shell.script_fixture(data, work)
@@ -89,18 +105,27 @@ def run(arch,work,proof,volume,archive):
         if std_tools:
             expected.update({"encoded.txt": base64.encodebytes(shell.DATA), "decoded.bin": shell.DATA})
         (data/"a.txt").write_bytes(shell.DATA)
-    installer.assemble(arch,disk,work,volume,data if volume is None else None,trace=True)
+        fixture_sha256 = {str(path.relative_to(data)): hashlib.sha256(path.read_bytes()).hexdigest()
+                          for path in sorted(data.rglob("*")) if path.is_file()}
+    (proof/(arch+"-fixtures.json")).write_text(json.dumps(fixture_sha256,indent=2)+"\n")
+    installer.assemble(arch,disk,work,volume,data if volume is None else None,trace=True,kernel=kernel,programs=programs)
     table=partitions(disk)
     app=work/"fdcheck.elf"
     subprocess.run([sys.executable,qemu.ROOT/"scripts/native-cc.py","--arch",arch,"-o",app,
                     qemu.ROOT/"native-exec/examples/fdcheck.c"],check=True)
+    inputs["fdcheck"] = hashlib.sha256(app.read_bytes()).hexdigest()
     fat=table[0x0c]
     subprocess.run(["mcopy","-i",f"{disk}@@{fat[0]*512}",app,"::FDCHECK.ELF"],check=True)
     if volume is None:
         for name in shell.PROBES:
             probe = work / name
-            shell.build_probe(arch, probe)
+            if probes is None:
+                shell.build_probe(arch, probe)
+            else:
+                shutil.copyfile(probes / name, probe)
+            inputs[name] = hashlib.sha256(probe.read_bytes()).hexdigest()
             subprocess.run(["mcopy", "-i", f"{disk}@@{fat[0]*512}", probe, "::" + name], check=True)
+    (proof/(arch+"-inputs.json")).write_text(json.dumps(inputs,indent=2)+"\n")
     serial=proof/(arch+"-install.serial")
     shell.exercise(boot(arch,disk,work),arch,mode,work,serial,dual_volume=True,grammar=volume is None,std_tools=std_tools)
     second=Shell(boot(arch,disk,work),proof/(arch+"-cold.serial"),work)
@@ -142,18 +167,24 @@ def run(arch,work,proof,volume,archive):
             shutil.copyfile(restored/"check.log",proof/(arch+"-btrfs-check.log"))
             restored=restored/"files"
         result={}
+        mismatches=[]
         for name,reference_bytes in expected.items():
             actual=(restored/name).read_bytes()
             if actual!=reference_bytes:
                 (proof/(arch+"-"+name+".actual")).write_bytes(actual)
                 (proof/(arch+"-"+name+".expected")).write_bytes(reference_bytes)
-                raise ValueError(f"Linux recovered different {name}")
-            result[name]={"bytes":len(actual),"sha256":hashlib.sha256(actual).hexdigest()}
+                mismatches.append(name)
+            result[name]={"bytes":len(actual),"sha256":hashlib.sha256(actual).hexdigest(),
+                          "matches":actual==reference_bytes}
             (proof/(arch+"-"+name)).write_bytes(actual)
         if (restored/"gone.tmp").exists():raise ValueError("unlinked file survived")
         (proof/(arch+".json")).write_text(json.dumps({"arch":arch,"kernel_bits":32 if arch=="i686" else 64,"firmware":mode,"files":result,
                 "qemu":subprocess.check_output(["qemu-system-"+qemu.ARCH[arch][0],"--version"], text=True).splitlines()[0],
-                "partitions":{hex(k):v for k,v in table.items()}},indent=2)+"\n")
+                "partitions":{hex(k):v for k,v in table.items()},"inputs":inputs,
+                "fixture_sha256":fixture_sha256,"passed":not mismatches,
+                "mismatches":mismatches},indent=2)+"\n")
+        if mismatches:
+            raise ValueError("Linux recovered different files: " + ", ".join(mismatches))
     if archive:
         verified=archive_disk(disk,archive)
         (proof/(arch+"-disk.sha256")).write_text(verified+"  system.img\n")
@@ -166,7 +197,12 @@ if __name__=="__main__":
     cli.add_argument("--ram-dir",type=Path,required=True)
     cli.add_argument("--proof",type=Path,default=qemu.ROOT/"target/posix-install-proof")
     cli.add_argument("--archive",type=Path,help="retain the checked stopped disk as a new gzip archive")
+    cli.add_argument("--kernel",type=Path,help="use a frozen kernel for the selected native architecture")
+    cli.add_argument("--programs",type=Path,help="use that architecture's sh, cat, wc and echo for the root volume")
+    cli.add_argument("--probes",type=Path,help="use that architecture's execprog and dirprobe ELF probes")
     args=cli.parse_args()
+    if args.root_image and (args.programs or args.probes):
+        cli.error("--programs and --probes require building a fresh root volume")
     args.proof.mkdir(parents=True,exist_ok=True)
     if args.archive and args.archive.exists():
         raise FileExistsError(args.archive)
@@ -174,7 +210,7 @@ if __name__=="__main__":
         staged = Path(directory)
         try:
             with tempfile.TemporaryDirectory(dir=args.ram_dir) as work:
-                run(args.arch,Path(work),staged,args.root_image,args.archive)
+                run(args.arch,Path(work),staged,args.root_image,args.archive,args.kernel,args.programs,args.probes)
         except BaseException:
             failures = args.proof / "failed"
             failures.mkdir(exist_ok=True)

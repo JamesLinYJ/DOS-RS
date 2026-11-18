@@ -65,21 +65,27 @@ impl Shell {
         }
     }
 
+    fn dot_error(&mut self, message: &str) -> i32 {
+        diagnostic(message);
+        self.special_failure();
+        2
+    }
+
     pub(super) fn dot(&mut self, args: &[String]) -> i32 {
         let delimiter = args.first().is_some_and(|s| s == "--");
         let args = if delimiter { &args[1..] } else { args };
         let Some((name, positional)) = args.split_first() else {
-            return self.source_error(".: expected a file");
+            return self.dot_error(".: expected a file");
         };
         if !delimiter && name.starts_with('-') && name != "-" {
-            return self.source_error(&format!(".: unknown option {name}"));
+            return self.dot_error(&format!(".: unknown option {name}"));
         }
         if !self.source_available() {
             return 2;
         }
         let script = match Script::find(name, self.get("PATH")) {
             Ok(script) => script,
-            Err(e) => return self.source_error(&format!(".: {name}: open error {e}")),
+            Err(e) => return self.dot_error(&format!(".: {name}: open error {e}")),
         };
         // Optional operands are a documented extension. Without them, set and
         // shift in the file operate on the caller's positional parameters.

@@ -2150,7 +2150,7 @@ utilities	colon	base	utilities/V3_chap02.html#tag_19_17	open	open
 utilities	continue	base	utilities/V3_chap02.html#tag_19_18	open	open	
 utilities	dot	base	utilities/V3_chap02.html#tag_19_19	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-args.sh,tests/user-shell/source-errors.sh
 utilities	eval	base	utilities/V3_chap02.html#tag_19_20	partial	partial	tests/user-shell/source.sh,tests/user-shell/source-errors.sh
-utilities	exec	base	utilities/V3_chap02.html#tag_19_21	open	open	
+utilities	exec	base	utilities/V3_chap02.html#tag_19_21	partial	partial	tests/user-shell/command-state.sh,tests/user-shell/command-errors.sh
 utilities	exit	base	utilities/V3_chap02.html#tag_19_22	open	open	
 utilities	export	base	utilities/V3_chap02.html#tag_19_23	partial	partial	tests/user-shell/variables.sh
 utilities	readonly	base	utilities/V3_chap02.html#tag_19_24	partial	partial	tests/user-shell/variables.sh
@@ -2182,7 +2182,7 @@ utilities	chown	base	utilities/chown.html#tag_20_18	partial	partial	scripts/qemu
 utilities	cksum	base	utilities/cksum.html#tag_20_19	partial	partial	scripts/qemu-coreutils.py#225,226
 utilities	cmp	base	utilities/cmp.html#tag_20_20	open	open	
 utilities	comm	base	utilities/comm.html#tag_20_21	partial	partial	scripts/qemu-coreutils.py#173,174
-utilities	command	base	utilities/command.html#tag_20_22	open	open	
+utilities	command	base	utilities/command.html#tag_20_22	partial	partial	tests/user-shell/command.sh,tests/user-shell/command-state.sh,tests/user-shell/command-errors.sh
 utilities	compress	XSI	utilities/compress.html	open	open	
 utilities	uncompress	XSI	utilities/compress.html	open	open	
 utilities	zcat	XSI	utilities/compress.html	open	open	

@@ -164,6 +164,9 @@ pub(crate) fn open(
         }
     });
     if let Some(node) = directory {
+        if executable {
+            return Err(Errno::Access);
+        }
         if flags.create && flags.exclusive {
             return Err(Errno::Exists);
         }
@@ -179,11 +182,18 @@ pub(crate) fn open(
         let (object, dirty) = btrfs::posix::open(cwd, path, flags, mode, credentials, executable)?;
         return Ok((alloc::boxed::Box::new(object), dirty));
     }
-    super::open_dos(
+    let (file, dirty) = super::open_dos(
         dos,
         core::str::from_utf8(path).map_err(|_| Errno::Invalid)?,
         flags,
-    )
+    )?;
+    // ENOEXEC is reserved for an executable file with an unknown format.
+    // Returning it for a directory makes execvp try to interpret the directory
+    // as a shell script instead of continuing its PATH search.
+    if executable && file.metadata()?.mode & 0o170000 != 0o100000 {
+        return Err(Errno::Access);
+    }
+    Ok((file, dirty))
 }
 
 #[derive(Clone, Copy, Default)]

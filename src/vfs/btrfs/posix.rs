@@ -295,7 +295,10 @@ pub(crate) fn open(
                 if flags.create && flags.exclusive {
                     return Err(Errno::Exists);
                 }
-                if n.is_dir() && (flags.access.writable() || executable) {
+                if executable && !n.is_regular_file() {
+                    return Err(Errno::Access);
+                }
+                if n.is_dir() && flags.access.writable() {
                     return Err(Errno::IsDirectory);
                 }
                 if !n.is_regular_file() && !n.is_dir() {
